@@ -28,7 +28,8 @@ Route all model providers through LLM Service Daemon (LSD):
 export CHAOS_EGRESS_URL="http://localhost:8847/egress/chaos"
 ```
 
-This overrides root-level `egress_url` in `~/.chaos/config.toml`.
+This overrides the `egress_url` bootstrap key
+(`chaos config bootstrap set egress_url <url>`).
 Keep provider URLs and credentials unchanged. Invalid or empty values fail
 configuration loading. LSD rejects local/private providers; gateway failures
 are reported as errors. Leave both settings unset for direct access.
@@ -596,7 +597,7 @@ chaos config set model_providers.slow.stream_idle_timeout_ms 600000
 
 ## FILES
 
-- `~/.chaos/config.toml` - bootstrap settings, including global egress
+- `~/.chaos/config.toml` - bootstrap: `storage_url` and `egress_url` only
 
 ## SEE ALSO
 

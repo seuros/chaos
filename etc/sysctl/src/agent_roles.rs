@@ -1,6 +1,7 @@
 use crate::ConfigLayerStack;
-use crate::ConfigLayerStackOrdering;
+use crate::assets::AssetScope;
 use crate::types::AgentRoleConfig;
+use crate::types::AgentRoleSource;
 use chaos_realpath::AbsolutePathBufGuard;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -10,28 +11,21 @@ use std::path::Path;
 use std::path::PathBuf;
 use toml::Value as TomlValue;
 
+/// Database roles form the base; trusted project `.chaos/agents` folders
+/// overlay them from the project root toward cwd.
 pub fn load_agent_roles(
     config_layer_stack: &ConfigLayerStack,
+    database_roles: BTreeMap<String, AgentRoleConfig>,
     startup_warnings: &mut Vec<String>,
 ) -> std::io::Result<BTreeMap<String, AgentRoleConfig>> {
-    let layers = config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    );
-    let mut roles: BTreeMap<String, AgentRoleConfig> = BTreeMap::new();
-    for layer in layers {
-        // Resolve role assets relative to bootstrap.
-        let folder = match &layer.name {
-            chaos_ipc::api::ConfigLayerSource::Bootstrap { file } => file.parent(),
-            _ => layer.config_folder(),
-        };
-        let Some(config_folder) = folder else {
-            continue;
-        };
-        let layer_roles = discover_agent_roles_in_dir(
-            config_folder.as_path().join("agents").as_path(),
-            startup_warnings,
-        )?;
+    let mut roles = database_roles;
+    for folder in config_layer_stack
+        .asset_folders()
+        .iter()
+        .filter(|folder| folder.is_enabled() && folder.scope == AssetScope::Project)
+    {
+        let layer_roles =
+            discover_agent_roles_in_dir(folder.agents_dir().as_path(), startup_warnings)?;
 
         for (role_name, role) in layer_roles {
             let mut merged_role = role;
@@ -50,6 +44,42 @@ pub fn load_agent_roles(
     }
 
     Ok(roles)
+}
+
+/// Parse a stored role document. `format` is `toml` or `md`; the document's
+/// `name` must match `name`.
+pub fn database_role(
+    name: &str,
+    format: &str,
+    source: &str,
+    base_dir: Option<&Path>,
+) -> std::io::Result<AgentRoleConfig> {
+    let label = PathBuf::from(format!("{name}.{format}"));
+    let parsed = parse_agent_role_file_contents(
+        source,
+        &label,
+        base_dir.unwrap_or_else(|| Path::new(".")),
+        /*require_developer_instructions*/ true,
+    )?;
+    if parsed.role_name != name {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "stored agent role `{name}` declares name `{}`",
+                parsed.role_name
+            ),
+        ));
+    }
+    Ok(AgentRoleConfig {
+        description: parsed.description,
+        source: Some(AgentRoleSource::Database {
+            config: parsed.config,
+            base_dir: base_dir.map(Path::to_path_buf),
+        }),
+        nickname_candidates: parsed.nickname_candidates,
+        topics: parsed.topics,
+        catchphrases: parsed.catchphrases,
+    })
 }
 
 fn push_agent_role_warning(startup_warnings: &mut Vec<String>, err: std::io::Error) {
@@ -387,7 +417,7 @@ fn discover_agent_roles_in_dir(
             role_name,
             AgentRoleConfig {
                 description: parsed_file.description,
-                config_file: Some(agent_file),
+                source: Some(AgentRoleSource::File(agent_file)),
                 nickname_candidates: parsed_file.nickname_candidates,
                 topics: parsed_file.topics,
                 catchphrases: parsed_file.catchphrases,

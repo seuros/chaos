@@ -52,15 +52,13 @@ pub(crate) fn theme_picker_suite() {
     wide_preview_renders_all_lines_with_vertical_center_and_left_inset();
     narrow_preview_renders_single_add_and_single_remove_in_four_lines();
     deleted_preview_code_uses_dim_overlay_like_real_diff_renderer();
-    subtitle_uses_tilde_path_when_codex_home_under_home_directory();
-    subtitle_falls_back_when_tilde_path_subtitle_is_too_wide();
-    subtitle_falls_back_to_preview_instructions_without_tilde_path();
+    subtitle_points_at_import_command_when_it_fits();
     subtitle_falls_back_for_94_column_terminal_side_by_side_layout();
     unavailable_configured_theme_falls_back_to_configured_or_default_selection();
 }
 #[cfg(test)]
 fn theme_picker_uses_half_width_with_stacked_fallback_preview() {
-    let params = build_theme_picker_params(None, None, None);
+    let params = build_theme_picker_params(None, None);
     assert_eq!(params.side_content_width, SideContentWidth::Half);
     assert_eq!(params.side_content_min_width, WIDE_PREVIEW_MIN_WIDTH);
     assert!(params.stacked_side_content.is_some());
@@ -68,7 +66,7 @@ fn theme_picker_uses_half_width_with_stacked_fallback_preview() {
 
 #[cfg(test)]
 fn theme_picker_items_include_search_values_for_preview_mapping() {
-    let params = build_theme_picker_params(None, None, None);
+    let params = build_theme_picker_params(None, None);
     assert!(
         params.items.iter().all(|item| item.search_value.is_some()),
         "theme picker preview mapping relies on item search_value to stay aligned with final item order"
@@ -167,47 +165,21 @@ fn deleted_preview_code_uses_dim_overlay_like_real_diff_renderer() {
 }
 
 #[cfg(test)]
-fn subtitle_uses_tilde_path_when_codex_home_under_home_directory() {
-    let home = dirs::home_dir().expect("home directory should be available");
-    let chaos_home = home.join(".chaos");
-
-    let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(200));
-
-    assert!(subtitle.contains("~"));
-    assert!(subtitle.contains("directory"));
-}
-
-#[cfg(test)]
-fn subtitle_falls_back_when_tilde_path_subtitle_is_too_wide() {
-    let home = dirs::home_dir().expect("home directory should be available");
-    let long_segment = "a".repeat(120);
-    let chaos_home = home.join(long_segment).join(".chaos");
-
-    let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(140));
-
-    assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
-}
-
-#[cfg(test)]
-fn subtitle_falls_back_to_preview_instructions_without_tilde_path() {
-    let subtitle = theme_picker_subtitle(None, None);
-    assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
+fn subtitle_points_at_import_command_when_it_fits() {
+    let subtitle = theme_picker_subtitle(Some(200));
+    assert!(subtitle.contains("chaos themes import"), "{subtitle}");
 }
 
 #[cfg(test)]
 fn subtitle_falls_back_for_94_column_terminal_side_by_side_layout() {
-    let home = dirs::home_dir().expect("home directory should be available");
-    let chaos_home = home.join(".chaos");
-
-    let subtitle = theme_picker_subtitle(Some(&chaos_home), Some(94));
-
+    let subtitle = theme_picker_subtitle(Some(94));
     assert_eq!(subtitle, PREVIEW_FALLBACK_SUBTITLE);
 }
 
 #[cfg(test)]
 fn unavailable_configured_theme_falls_back_to_configured_or_default_selection() {
     let configured_or_default_theme = highlight::configured_theme_name();
-    let params = build_theme_picker_params(Some("not-a-real-theme"), None, Some(120));
+    let params = build_theme_picker_params(Some("not-a-real-theme"), Some(120));
     let selected_idx = params
         .initial_selected_idx
         .expect("expected selected index for active fallback theme");

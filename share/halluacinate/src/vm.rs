@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 use tracing;
 
 use crate::api::ScriptRegistrations;
+use crate::api::ScriptSource;
 use crate::api::SessionInfo;
 use crate::api::{self};
 use crate::discovery;
@@ -58,10 +59,12 @@ pub struct HalluacinateEngine {
     statusline_renderer: Option<RegistryKey>,
     /// Session info shared with scripts.
     info: Arc<SessionInfo>,
-    /// Working directory (for script discovery).
+    /// Working directory (for project script discovery).
     cwd: PathBuf,
-    /// Override for the user-layer scripts directory (see `SessionInfo`).
-    user_scripts_dir: Option<PathBuf>,
+    /// Stored user scripts, loaded before project scripts.
+    user_scripts: Vec<ScriptSource>,
+    /// Whether `<cwd>/.chaos/scripts` may run (trusted project).
+    project_scripts_enabled: bool,
 }
 
 impl HalluacinateEngine {
@@ -71,7 +74,9 @@ impl HalluacinateEngine {
         let deadline = sandbox::apply(&lua)?;
 
         let cwd = PathBuf::from(&info.cwd);
-        let user_scripts_dir = info.user_scripts_dir.clone();
+        let mut user_scripts = info.user_scripts.clone();
+        user_scripts.sort_by(|a, b| a.name.cmp(&b.name));
+        let project_scripts_enabled = info.project_scripts_enabled;
         let info = Arc::new(info);
 
         let mut engine = Self {
@@ -82,29 +87,57 @@ impl HalluacinateEngine {
             statusline_renderer: None,
             info,
             cwd,
-            user_scripts_dir,
+            user_scripts,
+            project_scripts_enabled,
         };
 
         engine.load_scripts();
         Ok(engine)
     }
 
-    /// Discover and load all scripts, collecting their registrations.
+    /// Load the built-in statusline, stored user scripts, then project scripts.
     fn load_scripts(&mut self) {
         self.deadline.reset(LOAD_DEADLINE);
         self.load_default_statusline_script();
-        let paths = discovery::discover_scripts(&self.cwd, self.user_scripts_dir.as_deref());
-        for path in &paths {
-            if let Err(e) = self.load_script(path) {
-                tracing::warn!(
-                    script = %path.display(),
-                    "failed to load lua script: {e}"
-                );
+        let errors = self.load_user_and_project_scripts();
+        for error in errors {
+            tracing::warn!("failed to load lua script: {error}");
+        }
+    }
+
+    /// Project scripts are discovered per load so a trusted project's edits
+    /// show up on reload; user scripts are the stored snapshot.
+    fn project_script_paths(&self) -> Vec<PathBuf> {
+        if self.project_scripts_enabled {
+            discovery::discover_project_scripts(&self.cwd)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Returns one error string per script that failed to load.
+    fn load_user_and_project_scripts(&mut self) -> Vec<String> {
+        let mut errors = Vec::new();
+        let user_scripts = self.user_scripts.clone();
+        for script in &user_scripts {
+            if let Err(e) = self.load_script_source(&script.name, &script.source) {
+                errors.push(format!("{}: {e}", script.name));
             }
         }
-        if !paths.is_empty() {
-            tracing::info!(count = paths.len(), "halluacinate: loaded lua scripts");
+        let paths = self.project_script_paths();
+        for path in &paths {
+            if let Err(e) = self.load_script(path) {
+                errors.push(format!("{}: {e}", path.display()));
+            }
         }
+        let total = user_scripts.len() + paths.len();
+        if total > 0 {
+            tracing::info!(
+                count = total - errors.len(),
+                "halluacinate: loaded lua scripts"
+            );
+        }
+        errors
     }
 
     fn load_default_statusline_script(&mut self) {
@@ -271,19 +304,13 @@ impl HalluacinateEngine {
             }
         }
 
-        let paths = discovery::discover_scripts(&self.cwd, self.user_scripts_dir.as_deref());
-        let mut errors = Vec::new();
-
         self.deadline.reset(LOAD_DEADLINE);
         self.load_default_statusline_script();
-        for path in &paths {
-            if let Err(e) = self.load_script(path) {
-                errors.push(format!("{}: {e}", path.display()));
-            }
-        }
+        let total = self.user_scripts.len() + self.project_script_paths().len();
+        let errors = self.load_user_and_project_scripts();
 
         ReloadResult {
-            scripts_loaded: paths.len() - errors.len(),
+            scripts_loaded: total.saturating_sub(errors.len()),
             errors,
         }
     }

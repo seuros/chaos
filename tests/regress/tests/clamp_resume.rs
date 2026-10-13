@@ -41,6 +41,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
     let work = root.path().join("work");
     std::fs::create_dir_all(&home)?;
     std::fs::create_dir_all(&work)?;
+    chaos_kern::test_support::bootstrap_sqlite(&home)?;
     // An authoritative catalog prevents even background provider discovery in CI.
     let catalog_path = home.join("models.json");
     let mut model = chaos_kern::test_support::test_model_info("claude-haiku-4-5");
@@ -116,11 +117,11 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
             let mut command = Command::new(&binary);
             command.current_dir(&work)
                 .env("CHAOS_HOME", &home)
-                .env_remove("CHAOS_STORAGE_URL").env_remove("CHAOS_SQLITE_HOME")
+                .env_remove("CHAOS_STORAGE_URL")
                 .env_remove("CHAOS_JOURNALD_SOCKET").env_remove("CLAUDECODE")
                 .args(["exec", "--json", if live { "--full-auto" } else { "--headless" }, "--skip-git-repo-check",
                     "-c", "clamp=true", "-c", "machine_warnings.enabled=false",
-                    "-c", "disable_user_scripts=true", "-m", "claude-haiku-4-5"])
+                    "-m", "claude-haiku-4-5"])
                 .kill_on_drop(true);
             if agy {
                 command.args(["-c", "clamp_backend=antigravity"])
@@ -180,7 +181,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
                 let mut command = Command::new(&binary);
                 command.current_dir(&work)
                     .env("CHAOS_HOME", &home)
-                    .env_remove("CHAOS_STORAGE_URL").env_remove("CHAOS_SQLITE_HOME")
+                    .env_remove("CHAOS_STORAGE_URL")
                     .env_remove("CHAOS_JOURNALD_SOCKET")
                     .env("PATH", &path).env("CLAMP_TEST_ROOT", root.path())
                     .env("CHAOS_AGY_PATH", peer_dir.join("agy"))
@@ -190,7 +191,7 @@ async fn tool_continuity(live: bool, agy: bool) -> Result<()> {
                     .env(if recover { "CLAMP_TEST_RECOVER" } else { "CLAMP_TEST_FAIL" }, "1")
                     .args(["exec", "--json", "--headless", "--skip-git-repo-check",
                         "-c", "clamp=true", "-c", "clamp_backend=antigravity",
-                        "-c", "machine_warnings.enabled=false", "-c", "disable_user_scripts=true",
+                        "-c", "machine_warnings.enabled=false",
                         "-c", &format!("model_catalog_json={}", catalog_path.display()),
                         "-m", "claude-haiku-4-5", "resume", id,
                         if recover { "Explicit fresh attempt; do not repeat the failed write." } else { "Write once then fail." }])

@@ -31,8 +31,8 @@ impl RolloutConfig for Config {
         &self.chaos_home
     }
 
-    fn sqlite_home(&self) -> &Path {
-        &self.sqlite_home
+    fn storage_home(&self) -> &Path {
+        &self.storage_home
     }
 
     fn cwd(&self) -> &Path {

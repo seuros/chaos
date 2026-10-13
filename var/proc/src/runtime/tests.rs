@@ -7,6 +7,25 @@ async fn runtime_db_uses_new_filename() {
 }
 
 #[tokio::test]
+async fn message_history_log_id_follows_the_open_sqlite_file() -> anyhow::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let root = test_support::unique_temp_dir();
+    let chaos_home = root.join("home");
+    let state_dir = root.join("elsewhere");
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    tokio::fs::create_dir_all(&state_dir).await?;
+    let state_file = state_dir.join("state.sqlite");
+    let pool = open_runtime_db_at_path(&state_file).await?;
+    let runtime = StateRuntime::from_sqlite_pool(chaos_home.clone(), "test".into(), pool);
+
+    let log_id = runtime.message_history_log_id().await?;
+
+    assert_eq!(log_id, std::fs::metadata(&state_file)?.ino());
+    assert!(!runtime_db_path(&chaos_home).exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn open_runtime_db_creates_unified_runtime_schema() {
     let chaos_home = test_support::unique_temp_dir();
     tokio::fs::create_dir_all(&chaos_home)
@@ -24,9 +43,8 @@ async fn open_runtime_db_creates_unified_runtime_schema() {
         "journal_entries",
         "logs",
         "message_history",
-        "backfill_state",
-        "jobs",
-        "stage1_outputs",
+        "agent_roles",
+        "user_documents",
         "process_dynamic_tools",
         "agent_jobs",
         "agent_job_items",
@@ -42,6 +60,15 @@ async fn open_runtime_db_creates_unified_runtime_schema() {
 
         let discovered_name: String = row.get("name");
         assert_eq!(discovered_name, table_name);
+    }
+
+    for dropped in ["stage1_outputs", "jobs", "backfill_state"] {
+        let row = sqlx::query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+            .bind(dropped)
+            .fetch_optional(&pool)
+            .await
+            .expect("query dropped table");
+        assert!(row.is_none(), "{dropped} should have been dropped by 0023");
     }
 
     for view_name in [
@@ -475,31 +502,34 @@ async fn journal_entries_are_append_only() {
         .expect("open runtime db");
 
     sqlx::query(
-            "INSERT INTO processes (
+        "INSERT INTO processes (
                 id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
                 created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
                 tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
                 git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
                 agent_path, process_name
-            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
-        )
-        .bind("process-1")
-        .bind("cli")
-        .bind("\"cli\"")
-        .bind("openai")
-        .bind("/tmp")
-        .bind(1_i64)
-        .bind(1_i64)
-        .bind("")
-        .bind("")
-        .bind("")
-        .bind(0_i64)
-        .bind("")
-        .bind("")
-        .bind("enabled")
-        .execute(&pool)
-        .await
-        .expect("insert process");
+            ) VALUES (
+                ?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?,
+                NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL
+            )",
+    )
+    .bind("process-1")
+    .bind("cli")
+    .bind("\"cli\"")
+    .bind("openai")
+    .bind("/tmp")
+    .bind(1_i64)
+    .bind(1_i64)
+    .bind("")
+    .bind("")
+    .bind("")
+    .bind(0_i64)
+    .bind("")
+    .bind("")
+    .bind("enabled")
+    .execute(&pool)
+    .await
+    .expect("insert process");
 
     sqlx::query(
         "INSERT INTO journal_entries (process_id, seq, recorded_at, item_type, payload_json)
@@ -551,31 +581,34 @@ async fn processes_touch_trigger_updates_updated_at() {
         .expect("open runtime db");
 
     sqlx::query(
-            "INSERT INTO processes (
+        "INSERT INTO processes (
                 id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
                 created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
                 tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
                 git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
                 agent_path, process_name
-            ) VALUES (?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
-        )
-        .bind("process-1")
-        .bind("cli")
-        .bind("\"cli\"")
-        .bind("openai")
-        .bind("/tmp")
-        .bind(1_i64)
-        .bind(1_i64)
-        .bind("")
-        .bind("")
-        .bind("")
-        .bind(0_i64)
-        .bind("")
-        .bind("")
-        .bind("enabled")
-        .execute(&pool)
-        .await
-        .expect("insert process");
+            ) VALUES (
+                ?, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?,
+                NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL
+            )",
+    )
+    .bind("process-1")
+    .bind("cli")
+    .bind("\"cli\"")
+    .bind("openai")
+    .bind("/tmp")
+    .bind(1_i64)
+    .bind(1_i64)
+    .bind("")
+    .bind("")
+    .bind("")
+    .bind(0_i64)
+    .bind("")
+    .bind("")
+    .bind("enabled")
+    .execute(&pool)
+    .await
+    .expect("insert process");
 
     sqlx::query("UPDATE processes SET title = ? WHERE id = ?")
         .bind("hello")
@@ -599,33 +632,36 @@ async fn insert_test_process(
     fork_at_seq: Option<i64>,
 ) {
     sqlx::query(
-            "INSERT INTO processes (
+        "INSERT INTO processes (
                 id, parent_process_id, fork_at_seq, source, source_json, model_provider, cwd,
                 created_at, updated_at, archived_at, title, sandbox_policy, approval_mode,
                 tokens_used, first_user_message, cli_version, agent_nickname, agent_role,
                 git_sha, git_branch, git_origin_url, memory_mode, model, reasoning_effort,
                 agent_path, process_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL)",
-        )
-        .bind(id)
-        .bind(parent_process_id)
-        .bind(fork_at_seq)
-        .bind("cli")
-        .bind("\"cli\"")
-        .bind("openai")
-        .bind("/tmp")
-        .bind(1_i64)
-        .bind(1_i64)
-        .bind("")
-        .bind("")
-        .bind("")
-        .bind(0_i64)
-        .bind("")
-        .bind("")
-        .bind("enabled")
-        .execute(pool)
-        .await
-        .unwrap_or_else(|_| panic!("insert process {id}"));
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?,
+                NULL, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL
+            )",
+    )
+    .bind(id)
+    .bind(parent_process_id)
+    .bind(fork_at_seq)
+    .bind("cli")
+    .bind("\"cli\"")
+    .bind("openai")
+    .bind("/tmp")
+    .bind(1_i64)
+    .bind(1_i64)
+    .bind("")
+    .bind("")
+    .bind("")
+    .bind(0_i64)
+    .bind("")
+    .bind("")
+    .bind("enabled")
+    .execute(pool)
+    .await
+    .unwrap_or_else(|_| panic!("insert process {id}"));
 }
 
 #[tokio::test]

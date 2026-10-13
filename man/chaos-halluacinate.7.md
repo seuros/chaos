@@ -16,7 +16,8 @@ script into the right folder and the LLM can call it as a tool.
 
 ## QUICK START
 
-Create a script at `~/.config/chaos/scripts/project_info.lua`:
+Write a script, say `project_info.lua`, and store it with
+`chaos scripts import project_info.lua`:
 
 ```lua
 chaos.tool({
@@ -43,13 +44,15 @@ last registered statusline wins.
 
 Scripts are loaded automatically on session startup from two places:
 
-| Layer | Path | Priority |
-|-------|------|----------|
-| User | `~/.config/chaos/scripts/` | Lower |
-| Project | `.chaos/scripts/` (relative to working directory) | Higher |
+| Layer | Source | Priority |
+|-------|--------|----------|
+| User | runtime database (`chaos scripts import|list|show|export|remove|enable|disable`) | Lower |
+| Project | `.chaos/scripts/` in a **trusted** project (relative to working directory) | Higher |
 
 Project scripts load after user scripts and can override tools with the
-same name. Scripts load in alphabetical order within each layer.
+same name. Scripts load in alphabetical order within each layer. Project
+scripts are executable code shipped by the repository, so they only load once
+the project is trusted. `~/.config/chaos/scripts/` is no longer read.
 
 Only `.lua` files are loaded. WASM support is planned.
 
@@ -126,10 +129,10 @@ chaos.statusline(function(ctx)
 end)
 ```
 
-Place a statusline script in either of the normal script layers:
+Store a statusline script in either of the normal script layers:
 
-- Per-user: `~/.config/chaos/scripts/statusline.lua`
-- Per-project: `.chaos/scripts/statusline.lua`
+- Per-user: `chaos scripts import statusline.lua`
+- Per-project: `.chaos/scripts/statusline.lua` (trusted projects only)
 
 The project copy overrides the user copy because project scripts load later.
 
@@ -256,8 +259,9 @@ end)
 
 ## TROUBLESHOOTING
 
-**Tool doesn't appear** — Check the file is in `~/.config/chaos/scripts/`
-or `.chaos/scripts/` and has a `.lua` extension. Check logs for load errors.
+**Tool doesn't appear** — Check `chaos scripts list` shows it enabled, or that
+the project is trusted and the file is in `.chaos/scripts/` with a `.lua`
+extension. Check logs for load errors.
 
 **Script fails silently** — Look at `~/.chaos/log/` for error details.
 Common causes: syntax errors, exceeding memory or time limits.

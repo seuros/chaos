@@ -6,25 +6,27 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
+use std::path::Path;
 
-const CONFIG_TOML: &str = "config.toml";
+async fn settings_snapshot(home: &Path) -> anyhow::Result<(i64, serde_json::Value)> {
+    let runtime = chaos_kern::user_settings::open(home).await?;
+    let snapshot = runtime.settings_snapshot().await?;
+    Ok((snapshot.revision, snapshot.settings))
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn override_turn_context_does_not_persist_when_config_exists() {
+async fn override_turn_context_does_not_persist_when_settings_exist() -> anyhow::Result<()> {
     let server = start_mock_server().await;
-    let initial_contents = format!("model = \"{TEST_MODEL}\"\n");
-    let seed_contents = initial_contents.clone();
-    let mut builder = test_chaos()
-        .with_pre_build_hook(move |home| {
-            let config_path = home.join(CONFIG_TOML);
-            std::fs::write(config_path, &seed_contents).expect("seed config.toml");
-        })
-        .with_config(|config| {
-            config.model = Some(TEST_MODEL.to_string());
-        });
+    let home = std::sync::Arc::new(tempfile::TempDir::new().expect("create chaos home"));
+    core_test_support::seed_settings(&home, &format!("model = \"{TEST_MODEL}\"\n")).await;
+    let (initial_revision, initial_settings) = settings_snapshot(home.path()).await?;
+    assert_eq!(initial_settings["model"], serde_json::json!(TEST_MODEL));
+
+    let mut builder = test_chaos().with_home(home.clone()).with_config(|config| {
+        config.model = Some(TEST_MODEL.to_string());
+    });
     let test = builder.build(&server).await.expect("create conversation");
     let chaos = test.process.clone();
-    let config_path = test.home.path().join(CONFIG_TOML);
 
     chaos
         .submit(Op::OverrideTurnContext {
@@ -46,23 +48,25 @@ async fn override_turn_context_does_not_persist_when_config_exists() {
     chaos.submit(Op::Shutdown).await.expect("request shutdown");
     wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
 
-    let contents = tokio::fs::read_to_string(&config_path)
-        .await
-        .expect("read config.toml after override");
-    assert_eq!(contents, initial_contents);
+    let (revision, settings) = settings_snapshot(home.path()).await?;
+    assert_eq!(
+        revision, initial_revision,
+        "override must not commit settings"
+    );
+    assert_eq!(settings, initial_settings);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn override_turn_context_does_not_create_config_file() {
+async fn override_turn_context_does_not_create_settings() -> anyhow::Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos();
     let test = builder.build(&server).await.expect("create conversation");
     let chaos = test.process.clone();
-    let config_path = test.home.path().join(CONFIG_TOML);
-    assert!(
-        !config_path.exists(),
-        "test setup should start without config"
-    );
+    let home = test.home.clone();
+    let bootstrap =
+        chaos_kern::user_settings::BootstrapConfig::read(home.path()).expect("read bootstrap");
+    let (initial_revision, initial_settings) = settings_snapshot(home.path()).await?;
 
     chaos
         .submit(Op::OverrideTurnContext {
@@ -84,8 +88,16 @@ async fn override_turn_context_does_not_create_config_file() {
     chaos.submit(Op::Shutdown).await.expect("request shutdown");
     wait_for_event(&chaos, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
 
-    assert!(
-        !config_path.exists(),
-        "override should not create config.toml"
+    assert_eq!(
+        chaos_kern::user_settings::BootstrapConfig::read(home.path()).expect("read bootstrap"),
+        bootstrap,
+        "override must not touch the bootstrap file"
     );
+    let (revision, settings) = settings_snapshot(home.path()).await?;
+    assert_eq!(
+        revision, initial_revision,
+        "override must not commit settings"
+    );
+    assert_eq!(settings, initial_settings);
+    Ok(())
 }

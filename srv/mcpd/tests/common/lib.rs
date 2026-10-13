@@ -7,6 +7,8 @@ pub use core_test_support::format_with_current_shell_display_non_login;
 pub use core_test_support::format_with_current_shell_non_login;
 use mcp_host::protocol::types::JsonRpcResponse;
 pub use mcp_process::McpProcess;
+pub use mcp_process::SETTINGS_FILE;
+pub use mcp_process::bootstrap_sqlite;
 pub use mock_model_server::create_mock_responses_server;
 pub use responses::create_apply_patch_sse_response;
 pub use responses::create_enable_tools_sse_response;

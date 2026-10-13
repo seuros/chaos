@@ -53,14 +53,7 @@ fn mode_switches_keep_storage_specific_instructions() {
     assert!(!text.contains("`consolidate`"));
 }
 
-#[test]
-fn loads_custom_modes_and_omits_instructions_from_resource() {
-    let chaos_home = tempfile::tempdir().expect("temp chaos home");
-    let modes_dir = chaos_home.path().join("modes");
-    fs::create_dir_all(&modes_dir).expect("create modes dir");
-    fs::write(
-        modes_dir.join("research.md"),
-        r#"+++
+const RESEARCH_MODE: &str = r#"+++
 id = "research"
 title = "Research"
 description = "Evidence-first investigation."
@@ -72,18 +65,63 @@ request_user_input = true
 planning_records = true
 +++
 Secret full instructions that must not appear in the metadata resource.
-"#,
-    )
-    .expect("write mode");
+"#;
 
-    let registry = ModeRegistry::load(chaos_home.path(), CollaborationModesConfig::default())
-        .expect("load registry");
+#[tokio::test]
+async fn loads_custom_modes_and_omits_instructions_from_resource() -> anyhow::Result<()> {
+    use crate::user_documents::DocumentKind;
+    let chaos_home = tempfile::tempdir()?;
+    crate::test_support::seed_document(
+        chaos_home.path(),
+        DocumentKind::Mode,
+        "research",
+        RESEARCH_MODE,
+    )
+    .await?;
+
+    let registry =
+        ModeRegistry::load(chaos_home.path(), CollaborationModesConfig::default()).await?;
     let policy = ModePolicy::root(&registry);
     let resource = registry.resource_json(&policy).expect("serialize resource");
 
     assert!(registry.get("research").is_some());
     assert!(resource.contains("\"research\""));
     assert!(!resource.contains("Secret full instructions"));
+    Ok(())
+}
+
+#[test]
+fn malformed_or_mismatched_stored_modes_are_skipped() -> anyhow::Result<()> {
+    use crate::user_documents::{DocumentKind, StoredDocument};
+    let document = |name: &str, source: &str| StoredDocument {
+        kind: DocumentKind::Mode,
+        name: name.to_string(),
+        source: source.to_string(),
+        revision: 1,
+        enabled: true,
+    };
+    let unterminated = RESEARCH_MODE
+        .replace("+++\nSecret", "Secret")
+        .replace("id = \"research\"", "id = \"broken\"");
+    let documents = [
+        document("research", RESEARCH_MODE),
+        document("broken", &unterminated),
+        document("renamed", RESEARCH_MODE),
+    ];
+
+    let registry = ModeRegistry::from_documents(&documents, CollaborationModesConfig::default())?;
+
+    assert!(registry.get("research").is_some());
+    assert!(registry.get("broken").is_none());
+    assert!(registry.get("renamed").is_none());
+
+    let error = crate::user_documents::validate(DocumentKind::Mode, "renamed", RESEARCH_MODE)
+        .expect_err("name must match the declared id");
+    assert!(
+        error.to_string().contains("declares id `research`"),
+        "{error}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -158,4 +196,19 @@ fn child_policy_cannot_broaden_parent_modes() {
         .expect_err("must reject broadened child policy");
 
     assert!(error.contains("not allowed by the active parent mode"));
+}
+
+#[test]
+fn reserved_mode_ids_are_rejected_at_import() {
+    for reserved in [DEFAULT_MODE_ID, PLAN_MODE_ID] {
+        let source = RESEARCH_MODE.replace("id = \"research\"", &format!("id = \"{reserved}\""));
+        let error = crate::user_documents::validate(
+            crate::user_documents::DocumentKind::Mode,
+            reserved,
+            &source,
+        )
+        .expect_err("reserved id must not be stored")
+        .to_string();
+        assert!(error.contains("reserved"), "{error}");
+    }
 }

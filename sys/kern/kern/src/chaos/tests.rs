@@ -365,6 +365,7 @@ fn init_test_tracing() {
 }
 
 async fn build_test_config(chaos_home: &Path) -> Config {
+    crate::test_support::bootstrap_sqlite(chaos_home).expect("bootstrap test storage");
     ConfigBuilder::default()
         .chaos_home(chaos_home.to_path_buf())
         .build()
@@ -405,7 +406,7 @@ fn make_test_collaboration_mode(config: &Config) -> (CollaborationMode, ModelInf
     (collaboration_mode, model_info)
 }
 
-fn make_test_session_config(
+async fn make_test_session_config(
     config: &Arc<Config>,
     model_info: &ModelInfo,
     collaboration_mode: CollaborationMode,
@@ -415,6 +416,7 @@ fn make_test_session_config(
             &config.chaos_home,
             crate::collaboration_modes::CollaborationModesConfig::default(),
         )
+        .await
         .expect("load test mode registry"),
     );
     let mode_policy = crate::modes::ModePolicy::root(&mode_registry);
@@ -522,16 +524,18 @@ fn make_test_session_services(
 }
 
 pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(&chaos_home).await;
     let config = Arc::new(config);
     let (collaboration_mode, model_info) = make_test_collaboration_mode(&config);
-    make_test_session_config(&config, &model_info, collaboration_mode)
+    make_test_session_config(&config, &model_info, collaboration_mode).await
 }
 
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    make_session_and_context_with_home(chaos_home.path()).await
+    // Storage resolution reads the bootstrap file on every open, so the home
+    // must outlive the session; leak it like the other fixtures do.
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    make_session_and_context_with_home(&chaos_home).await
 }
 
 pub(crate) async fn make_session_and_context_with_home(
@@ -552,7 +556,8 @@ pub(crate) async fn make_session_and_context_with_home(
     let exec_policy = ExecPolicyManager::default();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
-    let session_configuration = make_test_session_config(&config, &_model_info, collaboration_mode);
+    let session_configuration =
+        make_test_session_config(&config, &_model_info, collaboration_mode).await;
     let per_turn_config = Session::build_per_turn_config(&session_configuration);
     let model_info = ModelsManager::construct_model_info_offline_for_tests(
         session_configuration.collaboration_mode.model(),
@@ -621,8 +626,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     async_channel::Receiver<Event>,
 ) {
     let (tx_event, rx_event) = async_channel::unbounded();
-    let chaos_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(chaos_home.path()).await;
+    let chaos_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(&chaos_home).await;
     let config = Arc::new(config);
     let conversation_id = ProcessId::default();
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
@@ -637,7 +642,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
     let (collaboration_mode, _model_info) = make_test_collaboration_mode(&config);
     let mut session_configuration =
-        make_test_session_config(&config, &_model_info, collaboration_mode);
+        make_test_session_config(&config, &_model_info, collaboration_mode).await;
     session_configuration.dynamic_tools = dynamic_tools;
     let per_turn_config = Session::build_per_turn_config(&session_configuration);
     let model_info = ModelsManager::construct_model_info_offline_for_tests(

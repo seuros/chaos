@@ -181,6 +181,7 @@ fn filter_mcp_servers_by_allowlist_blocks_all_when_empty() {
 #[tokio::test]
 async fn load_global_mcp_servers_returns_empty_if_missing() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
 
     let servers = load_global_mcp_servers(chaos_home.path()).await?;
     assert!(servers.is_empty());
@@ -191,6 +192,7 @@ async fn load_global_mcp_servers_returns_empty_if_missing() -> anyhow::Result<()
 #[tokio::test]
 async fn upsert_and_delete_global_mcp_server_round_trip() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
     let docs = McpServerConfig {
         transport: McpServerTransportConfig::Stdio {
             command: "echo".to_string(),
@@ -234,6 +236,7 @@ async fn upsert_and_delete_global_mcp_server_round_trip() -> anyhow::Result<()> 
 #[tokio::test]
 async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
 
     let mut servers = BTreeMap::new();
     servers.insert(
@@ -277,6 +280,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
 async fn replace_mcp_servers_round_trips_stdio_env_and_cwd() -> anyhow::Result<()> {
     initialize_mcp_credential_store();
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
     let servers = BTreeMap::from([(
         "docs".to_string(),
         McpServerConfig {
@@ -319,6 +323,7 @@ async fn replace_mcp_servers_round_trips_stdio_env_and_cwd() -> anyhow::Result<(
 async fn replace_mcp_servers_round_trips_streamable_http_options() -> anyhow::Result<()> {
     initialize_mcp_credential_store();
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
     let servers = BTreeMap::from([(
         "docs".to_string(),
         McpServerConfig {

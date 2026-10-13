@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 async fn test_config(temp_home: &TempDir) -> Config {
+    chaos_kern::test_support::bootstrap_sqlite(temp_home.path()).expect("bootstrap sqlite");
     ConfigBuilder::default()
         .chaos_home(temp_home.path().to_path_buf())
         .build()

@@ -520,7 +520,8 @@ pub struct Config {
 
     /// Preferred store for MCP OAuth credentials.
     /// keyring: Use an OS-specific keyring service.
-    ///          Credentials stored in the keyring will only be readable by Chaos unless the user explicitly grants access via OS-level keyring access.
+    ///          Credentials stored in the keyring will only be readable by Chaos
+    ///          unless the user explicitly grants access via OS-level keyring access.
     /// file: `${CHAOS_HOME}/.credentials.json`
     ///       This file will be readable to ChaOS and other applications running as the same user.
     /// auto (default): keyring if available, otherwise file.
@@ -555,6 +556,10 @@ pub struct Config {
     /// User-defined role declarations keyed by role name.
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
 
+    /// Enabled stored role documents, kept so role rebuilds (which pass no
+    /// override) re-parse the same rows instead of dropping them.
+    pub database_agent_roles: Vec<chaos_proc::AgentRoleRecord>,
+
     /// Memory subsystem configuration.
     pub memories: MemoriesConfig,
 
@@ -565,14 +570,18 @@ pub struct Config {
     /// Kernel-only mode policy carrier used when an orchestrator spawns a
     /// child session. This is never loaded from user config directly.
     pub(crate) mode_policy_override: Option<crate::modes::ModePolicy>,
-    /// Kernel-only admission flag; never accepted from config.toml.
+    /// Kernel-only admission flag; never accepted from user settings.
     pub(crate) unattended_recovery: bool,
 
-    /// Directory where Chaos stores the SQLite runtime DB.
-    pub sqlite_home: PathBuf,
+    /// Directory keying the mounted storage backend for this home. On SQLite it
+    /// is where `chaos.sqlite` lives; on PostgreSQL it is only a registry key.
+    pub storage_home: PathBuf,
 
-    /// Optional database URL for ChaOS runtime storage.
-    pub storage_url: Option<String>,
+    /// Runtime storage URL resolved from bootstrap; never a silent default.
+    pub storage_url: String,
+
+    /// Egress gateway from the bootstrap file, before `CHAOS_EGRESS_URL`.
+    pub(crate) bootstrap_egress_url: Option<String>,
 
     /// Directory where Chaos writes log files (defaults to `${CHAOS_HOME}/log`).
     pub log_dir: PathBuf,
@@ -710,7 +719,7 @@ pub struct Config {
     pub disable_user_scripts: bool,
 }
 
-/// Base config deserialized from ~/.chaos/config.toml.
+/// Base config deserialized from the merged settings layers.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ConfigToml {
@@ -725,11 +734,6 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
-
-    /// Route all provider API requests through LSD's dynamic egress endpoint
-    /// (for example `http://gateway:3000/egress/chaos`), preserving vendor auth.
-    /// Overridden by `CHAOS_EGRESS_URL`.
-    pub egress_url: Option<String>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -881,15 +885,6 @@ pub struct ConfigToml {
     /// message-history store.
     #[serde(default)]
     pub history: Option<History>,
-
-    /// Directory where Chaos stores the SQLite runtime DB.
-    /// Defaults to `$CHAOS_SQLITE_HOME` when set. Otherwise uses `$CHAOS_HOME`.
-    pub sqlite_home: Option<AbsolutePathBuf>,
-
-    /// Optional database URL for ChaOS runtime storage.
-    /// Supports `sqlite:`, `sqlite://`, `postgres://`, and `postgresql://`.
-    /// When set, this takes precedence over `CHAOS_STORAGE_URL`.
-    pub storage_url: Option<String>,
 
     /// Directory where Chaos writes log files, for example `chaos-tui.log`.
     /// Defaults to `$CHAOS_HOME/log`.
@@ -1058,6 +1053,7 @@ impl From<ConfigToml> for UserSavedConfig {
 }
 
 pub use chaos_sysctl::types::AgentRoleConfig;
+pub use chaos_sysctl::types::AgentRoleSource;
 pub use chaos_sysctl::types::AgentsToml;
 pub use chaos_sysctl::types::RealtimeAudioConfig;
 pub use chaos_sysctl::types::RealtimeAudioToml;
@@ -1094,6 +1090,8 @@ pub struct ConfigOverrides {
     pub ephemeral: Option<bool>,
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     pub active_project_trust: Option<ProjectTrust>,
+    /// Stored agent role documents; parsed into roles during config build.
+    pub database_agent_roles: Option<Vec<chaos_proc::AgentRoleRecord>>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
 }
@@ -1205,37 +1203,54 @@ pub(crate) fn normalize_storage_url(storage_url: Option<&str>) -> anyhow::Result
 pub async fn load_global_mcp_servers(
     chaos_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
+    let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_servers_from_runtime_db(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
-    )
-    .await
+    load_global_mcp_servers_from_runtime_db(&bootstrap.storage_url, &bootstrap.storage_home).await
 }
 
 pub async fn load_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let storage_config = runtime_storage_config(chaos_home).map_err(|err| {
+    let bootstrap = runtime_storage_config(chaos_home).map_err(|err| {
         std::io::Error::other(format!("failed to resolve runtime storage: {err}"))
     })?;
-    load_global_mcp_server_from_runtime_db(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
-        name,
-    )
-    .await
+    load_global_mcp_server_from_runtime_db(&bootstrap.storage_url, &bootstrap.storage_home, name)
+        .await
+}
+
+/// Enabled agent role documents from the runtime database.
+pub(crate) async fn load_agent_role_records(
+    storage_url: &str,
+    storage_home: &std::path::Path,
+) -> std::io::Result<Vec<chaos_proc::AgentRoleRecord>> {
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
+    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_agent_roles()).await {
+        Ok(records) => Ok(records
+            .into_iter()
+            .filter(|record| record.enabled)
+            .collect()),
+        Err(BreakerError::Open) => Err(std::io::Error::other(
+            "runtime storage circuit is open while loading agent roles",
+        )),
+        Err(BreakerError::Operation(err)) => Err(std::io::Error::other(format!(
+            "failed to load agent roles: {err}"
+        ))),
+    }
 }
 
 pub(crate) async fn load_effective_mcp_servers(
-    storage_url: Option<&str>,
-    sqlite_home: &std::path::Path,
+    storage_url: &str,
+    storage_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
-    let global = load_global_mcp_servers_from_runtime_db(storage_url, sqlite_home).await?;
+    let global = load_global_mcp_servers_from_runtime_db(storage_url, storage_home).await?;
     let mut effective = global.into_iter().collect::<HashMap<_, _>>();
 
     for layer in config_layer_stack.get_layers(
@@ -1262,16 +1277,15 @@ pub(crate) async fn load_effective_mcp_servers(
 }
 
 async fn load_global_mcp_servers_from_runtime_db(
-    storage_url: Option<&str>,
-    sqlite_home: &std::path::Path,
+    storage_url: &str,
+    storage_home: &std::path::Path,
 ) -> std::io::Result<BTreeMap<String, McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_url,
-        sqlite_home,
-        "unknown",
-    )
-    .await
-    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
         .await
     {
@@ -1291,17 +1305,16 @@ async fn load_global_mcp_servers_from_runtime_db(
 }
 
 async fn load_global_mcp_server_from_runtime_db(
-    storage_url: Option<&str>,
-    sqlite_home: &std::path::Path,
+    storage_url: &str,
+    storage_home: &std::path::Path,
     name: &str,
 ) -> std::io::Result<Option<McpServerConfig>> {
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_url,
-        sqlite_home,
-        "unknown",
-    )
-    .await
-    .map_err(|err| std::io::Error::other(format!("failed to open runtime storage: {err}")))?;
+    let runtime =
+        crate::runtime_db::open_or_create_runtime_db(storage_url, storage_home, "unknown")
+            .await
+            .map_err(|err| {
+                std::io::Error::other(format!("failed to open runtime storage: {err}"))
+            })?;
     match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
         .await
     {
@@ -1325,7 +1338,8 @@ fn ensure_mcp_credentials_migrated(config: &McpServerConfig) -> std::io::Result<
     let value = serde_json::to_value(config).map_err(std::io::Error::other)?;
     if chaos_sysctl::secrets::has_literals(&value) {
         return Err(std::io::Error::other(
-            "MCP configuration contains literal credentials/environment values; run `chaos config migrate`",
+            "MCP configuration contains literal credentials/environment values; \
+             run `chaos config migrate`",
         ));
     }
     Ok(())
@@ -1339,7 +1353,8 @@ pub(crate) fn ensure_mcp_endpoint_has_no_credentials(
             .is_ok_and(|url| !url.username().is_empty() || url.password().is_some())
     {
         return Err(std::io::Error::other(
-            "MCP endpoint userinfo is not supported in stored configuration; move credentials to a bearer-token or header reference",
+            "MCP endpoint userinfo is not supported in stored configuration; \
+             move credentials to a bearer-token or header reference",
         ));
     }
     Ok(())
@@ -1351,10 +1366,10 @@ pub async fn upsert_global_mcp_server(
     config: &McpServerConfig,
 ) -> anyhow::Result<()> {
     ensure_mcp_endpoint_has_no_credentials(config)?;
-    let storage_config = runtime_storage_config(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
+    let bootstrap = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(
+        &bootstrap.storage_url,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await?;
@@ -1366,10 +1381,10 @@ pub async fn delete_global_mcp_server(
     chaos_home: &std::path::Path,
     name: &str,
 ) -> anyhow::Result<bool> {
-    let storage_config = runtime_storage_config(chaos_home)?;
-    let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_config.storage_url.as_deref(),
-        &storage_config.sqlite_home,
+    let bootstrap = runtime_storage_config(chaos_home)?;
+    let runtime = crate::runtime_db::open_or_create_runtime_db(
+        &bootstrap.storage_url,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await?;
@@ -1380,7 +1395,7 @@ pub fn replace_global_mcp_servers(
     chaos_home: &std::path::Path,
     servers: &BTreeMap<String, McpServerConfig>,
 ) -> anyhow::Result<()> {
-    let storage_config = runtime_storage_config(chaos_home)?;
+    let bootstrap = runtime_storage_config(chaos_home)?;
     let servers = servers
         .iter()
         .map(|(name, config)| {
@@ -1396,9 +1411,9 @@ pub fn replace_global_mcp_servers(
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-                    storage_config.storage_url.as_deref(),
-                    &storage_config.sqlite_home,
+                let runtime = crate::runtime_db::open_or_create_runtime_db(
+                    &bootstrap.storage_url,
+                    &bootstrap.storage_home,
                     "unknown",
                 )
                 .await?;
@@ -1412,17 +1427,10 @@ pub fn replace_global_mcp_servers(
 #[cfg(test)]
 pub(crate) use requirements::resolve_web_search_mode;
 
-struct RuntimeStorageConfig {
-    storage_url: Option<String>,
-    sqlite_home: PathBuf,
-}
-
-fn runtime_storage_config(chaos_home: &std::path::Path) -> anyhow::Result<RuntimeStorageConfig> {
-    let parsed = crate::user_settings::BootstrapConfig::read(chaos_home)?;
-    Ok(RuntimeStorageConfig {
-        storage_url: normalize_storage_url(parsed.resolved_storage_url(chaos_home)?.as_deref())?,
-        sqlite_home: parsed.sqlite_home(chaos_home),
-    })
+fn runtime_storage_config(
+    chaos_home: &std::path::Path,
+) -> anyhow::Result<crate::user_settings::ResolvedBootstrap> {
+    crate::user_settings::BootstrapConfig::read(chaos_home)?.resolve(chaos_home)
 }
 
 /// Persist project trust state in the runtime DB.
@@ -1431,16 +1439,16 @@ pub fn set_project_trust_level(
     project_path: &std::path::Path,
     trust_level: TrustLevel,
 ) -> anyhow::Result<()> {
-    let storage_config = runtime_storage_config(chaos_home)?;
+    let bootstrap = runtime_storage_config(chaos_home)?;
     let project_path = crate::runtime_db::normalize_cwd_for_runtime_db(project_path);
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async move {
-                let runtime = crate::runtime_db::open_or_create_runtime_db_with_config(
-                    storage_config.storage_url.as_deref(),
-                    &storage_config.sqlite_home,
+                let runtime = crate::runtime_db::open_or_create_runtime_db(
+                    &bootstrap.storage_url,
+                    &bootstrap.storage_home,
                     "unknown",
                 )
                 .await?;
@@ -1453,7 +1461,7 @@ pub fn set_project_trust_level(
     .map_err(|_| anyhow::anyhow!("project trust persistence task panicked"))?
 }
 
-/// Save the default OSS provider preference to config.toml
+/// Save the default OSS provider preference in user settings.
 pub fn set_default_oss_provider(
     chaos_home: &std::path::Path,
     provider: &str,

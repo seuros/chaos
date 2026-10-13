@@ -99,6 +99,8 @@ minijinja = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+# tmTheme import validation only: the plist loader, no regex engine.
+syntect = { version = "5", default-features = false, features = ["plist-load"] }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 shlex = { workspace = true }

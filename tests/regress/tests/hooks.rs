@@ -16,10 +16,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Result<Self> {
+        let root = tempfile::Builder::new()
+            .prefix("hooks-")
+            .tempdir_in("/tmp")?;
+        // The child runs with a cleared environment, so storage must be in the file.
+        chaos_kern::test_support::bootstrap_sqlite(root.path())?;
         Ok(Self {
-            root: tempfile::Builder::new()
-                .prefix("hooks-")
-                .tempdir_in("/tmp")?,
+            root,
             binary: chaos_which::cargo_bin("chaos")?,
         })
     }
@@ -232,8 +235,6 @@ async fn imported_and_resident_hooks_execute_after_restart_without_human_endpoin
                 "--skip-git-repo-check",
                 "-c",
                 "machine_warnings.enabled=false",
-                "-c",
-                "disable_user_scripts=true",
                 "-c",
                 "model_provider=fixture",
                 "-c",

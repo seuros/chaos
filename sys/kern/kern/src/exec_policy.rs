@@ -6,7 +6,6 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 
 use crate::config_loader::ConfigLayerStack;
-use crate::config_loader::ConfigLayerStackOrdering;
 use crate::is_dangerous_command::command_might_be_dangerous;
 use crate::is_safe_command::is_known_safe_command;
 use chaos_ipc::approvals::ExecPolicyAmendment;
@@ -37,7 +36,6 @@ const REJECT_SANDBOX_APPROVAL_REASON: &str =
     "approval required by policy, but ApprovalPolicy::Granular.sandbox_approval is false";
 const REJECT_RULES_APPROVAL_REASON: &str =
     "approval required by policy rule, but ApprovalPolicy::Granular.rules is false";
-const RULES_DIR_NAME: &str = "rules";
 const RULE_EXTENSION: &str = "decrees";
 #[cfg(test)]
 const DEFAULT_POLICY_FILE: &str = "default.decrees";
@@ -173,8 +171,11 @@ impl ExecPolicyManager {
     }
 
     #[instrument(level = "info", skip_all)]
-    pub(crate) async fn load(config_stack: &ConfigLayerStack) -> Result<Self, ExecPolicyError> {
-        let policy = load_exec_policy(config_stack).await?;
+    pub(crate) async fn load(
+        config_stack: &ConfigLayerStack,
+        chaos_home: &Path,
+    ) -> Result<Self, ExecPolicyError> {
+        let policy = load_exec_policy(config_stack, chaos_home).await?;
         Ok(Self::new(Arc::new(policy)))
     }
 
@@ -353,8 +354,9 @@ impl Default for ExecPolicyManager {
 
 pub async fn check_execpolicy_for_warnings(
     config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
 ) -> Result<Option<ExecPolicyError>, ExecPolicyError> {
-    let (_, warning) = load_exec_policy_with_warning(config_stack).await?;
+    let (_, warning) = load_exec_policy_with_warning(config_stack, chaos_home).await?;
     Ok(warning)
 }
 
@@ -431,47 +433,40 @@ pub fn format_exec_policy_error_with_source(error: &ExecPolicyError) -> String {
 
 async fn load_exec_policy_with_warning(
     config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
 ) -> Result<(Policy, Option<ExecPolicyError>), ExecPolicyError> {
-    match load_exec_policy(config_stack).await {
+    match load_exec_policy(config_stack, chaos_home).await {
         Ok(policy) => Ok((policy, None)),
         Err(err @ ExecPolicyError::ParsePolicy { .. }) => Ok((Policy::empty(), Some(err))),
         Err(err) => Err(err),
     }
 }
 
-pub async fn load_exec_policy(config_stack: &ConfigLayerStack) -> Result<Policy, ExecPolicyError> {
-    // Iterate the layers in increasing order of precedence, adding the *.rules
-    // from each layer, so that higher-precedence layers can override
-    // rules defined in lower-precedence ones.
+/// Administrator rules (`/etc/chaos/rules`) may grant; trusted project rules
+/// and the user's stored rules only restrict.
+pub async fn load_exec_policy(
+    config_stack: &ConfigLayerStack,
+    chaos_home: &Path,
+) -> Result<Policy, ExecPolicyError> {
+    // Iterate asset folders in increasing order of precedence, adding the
+    // rules from each, so that higher-precedence folders can override rules
+    // defined in lower-precedence ones.
     let mut policy_paths = Vec::new();
-    let mut database_restrictions = Policy::empty();
-    for layer in config_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    ) {
-        if let chaos_ipc::api::ConfigLayerSource::Bootstrap { file } = &layer.name
-            && let Some(home) = file.parent()
-            && let Some(policy) =
-                crate::user_settings::migrated_user_restrictions(home.as_path()).await?
-        {
-            database_restrictions = database_restrictions.merge_overlay(&policy);
-            continue;
-        }
-        let config_folder = match &layer.name {
-            chaos_ipc::api::ConfigLayerSource::Bootstrap { file } => file.parent(),
-            _ => layer.config_folder(),
-        };
-        if let Some(config_folder) = config_folder {
-            let policy_dir = config_folder.join(RULES_DIR_NAME);
-            let layer_policy_paths = collect_policy_files(&policy_dir).await?;
-            let restrictions_only =
-                !matches!(layer.name, chaos_ipc::api::ConfigLayerSource::System { .. });
-            policy_paths.extend(
-                layer_policy_paths
-                    .into_iter()
-                    .map(|path| (path, restrictions_only)),
-            );
-        }
+    let database_restrictions =
+        crate::user_settings::database_user_restrictions(chaos_home).await?;
+    for folder in config_stack
+        .asset_folders()
+        .iter()
+        .filter(|folder| folder.is_enabled())
+    {
+        let layer_policy_paths = collect_policy_files(folder.rules_dir()).await?;
+        // Only administrator policy may grant; every other scope restricts.
+        let restrictions_only = folder.scope != chaos_sysctl::AssetScope::Admin;
+        policy_paths.extend(
+            layer_policy_paths
+                .into_iter()
+                .map(|path| (path, restrictions_only)),
+        );
     }
     tracing::trace!(
         policy_paths = ?policy_paths,
@@ -601,7 +596,9 @@ pub fn render_decision_for_unmatched_command(
 
 #[cfg(test)]
 fn default_policy_path(chaos_home: &Path) -> PathBuf {
-    chaos_home.join(RULES_DIR_NAME).join(DEFAULT_POLICY_FILE)
+    chaos_home
+        .join(chaos_sysctl::assets::RULES_DIR_NAME)
+        .join(DEFAULT_POLICY_FILE)
 }
 
 fn commands_for_exec_policy(command: &[String]) -> (Vec<Vec<String>>, bool) {

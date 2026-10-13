@@ -144,14 +144,14 @@ async fn mounted_manager() -> TestResult<(PathBuf, ModelsCacheManager)> {
 }
 
 async fn write_cache_row(
-    sqlite_home: &Path,
+    storage_home: &Path,
     cache: &ModelsCache,
     envelope: bool,
 ) -> TestResult<()> {
     let scope = cache.scope.as_ref().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "cache scope expected")
     })?;
-    let pool = match chaos_vfs::pool_for(sqlite_home)? {
+    let pool = match chaos_vfs::pool_for(storage_home)? {
         chaos_vfs::Vfs::Sqlite(pool) => pool,
         chaos_vfs::Vfs::Postgres(_) => {
             return Err(std::io::Error::new(

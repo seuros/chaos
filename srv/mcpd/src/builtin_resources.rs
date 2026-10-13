@@ -119,7 +119,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
 
     async fn modes_json(&self) -> Result<String, String> {
         let config = load_config_for_resource("mode listing").await?;
-        builtin_mcp_resources::modes_json_from_chaos_home(&config.chaos_home)
+        builtin_mcp_resources::modes_json_from_chaos_home(&config.chaos_home).await
     }
 
     async fn mcp_json(&self) -> Result<String, String> {

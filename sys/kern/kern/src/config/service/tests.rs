@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::CONFIG_TOML_FILE;
 use anyhow::Result;
 use chaos_ipc::api::AppConfig;
 use chaos_ipc::api::AppToolApproval;
@@ -6,12 +7,21 @@ use chaos_ipc::api::AppsConfig;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
+async fn seeded_home(settings: &str) -> tempfile::TempDir {
+    let tmp = tempdir().expect("tempdir");
+    crate::test_support::seed_user_settings_toml(tmp.path(), settings)
+        .await
+        .expect("seed settings");
+    tmp
+}
+
 #[tokio::test]
 async fn inspection_does_not_expose_resolved_bootstrap_values() -> Result<()> {
-    let tmp = tempdir()?;
-    std::fs::write(
-        tmp.path().join(CONFIG_TOML_FILE),
-        "egress_url = 'https://user:private-connection-secret@example.com/egress'\n",
+    let tmp = seeded_home("").await;
+    crate::user_settings::set_bootstrap(
+        tmp.path(),
+        "egress_url",
+        "https://private-egress-host.example/egress/chaos",
     )?;
     let response = ConfigService::new_with_defaults(tmp.path().to_path_buf())
         .read(ConfigReadParams {
@@ -20,7 +30,8 @@ async fn inspection_does_not_expose_resolved_bootstrap_values() -> Result<()> {
         })
         .await?;
     let encoded = serde_json::to_string(&response)?;
-    assert!(!encoded.contains("private-connection-secret"));
+    assert!(!encoded.contains("private-egress-host"));
+    assert!(!encoded.contains("egress_url"));
     assert!(!response.config.additional.contains_key("egress_url"));
     Ok(())
 }
@@ -76,23 +87,20 @@ X-Doc = "42"
 
 #[tokio::test]
 async fn write_value_leaves_bootstrap_unchanged() -> Result<()> {
-    let tmp = tempdir().expect("tempdir");
-    let original = r#"# Chaos user configuration
-model = "serpent"
+    let tmp = seeded_home(
+        r#"model = "serpent"
 approval_policy = "interactive"
 
 [notice]
-# Preserve this comment
 hide_full_access_warning = true
-"#;
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), original)?;
-    crate::user_settings::migrate(tmp.path(), false).await?;
+"#,
+    )
+    .await;
     let bootstrap = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE))?;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "notice.hide_rate_limit_model_nudge".to_string(),
             value: serde_json::json!(true),
             merge_strategy: MergeStrategy::Replace,
@@ -117,13 +125,11 @@ hide_full_access_warning = true
 
 #[tokio::test]
 async fn write_value_supports_nested_app_paths() -> Result<()> {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "")?;
+    let tmp = seeded_home("").await;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "apps".to_string(),
             value: serde_json::json!({
                 "app1": {
@@ -138,7 +144,6 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
 
     service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "apps.app1.default_tools_approval_mode".to_string(),
             value: serde_json::json!("prompt"),
             merge_strategy: MergeStrategy::Replace,
@@ -178,12 +183,7 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
 
 #[tokio::test]
 async fn read_includes_origins_and_layers() {
-    let tmp = tempdir().expect("tempdir");
-    let user_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&user_path, "model = \"user\"").unwrap();
-    crate::user_settings::migrate(tmp.path(), false)
-        .await
-        .unwrap();
+    let tmp = seeded_home("model = \"user\"").await;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
@@ -202,30 +202,20 @@ async fn read_includes_origins_and_layers() {
         ConfigLayerSource::UserDatabase { revision: 1 },
     );
     let layers = response.layers.expect("layers present");
-    assert_eq!(layers.len(), 3, "database, bootstrap, system");
+    assert_eq!(layers.len(), 1, "only the database layer without a cwd");
     assert_eq!(
         layers.first().unwrap().name,
         ConfigLayerSource::UserDatabase { revision: 1 }
-    );
-    std::assert_matches!(
-        layers.get(2).unwrap().name,
-        ConfigLayerSource::System { .. }
     );
 }
 
 #[tokio::test]
 async fn version_conflict_rejected() {
-    let tmp = tempdir().expect("tempdir");
-    let user_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&user_path, "model = \"user\"").unwrap();
-    crate::user_settings::migrate(tmp.path(), false)
-        .await
-        .unwrap();
+    let tmp = seeded_home("model = \"user\"").await;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     let error = service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "model".to_string(),
             value: serde_json::json!("serpent"),
             merge_strategy: MergeStrategy::Replace,
@@ -242,13 +232,12 @@ async fn version_conflict_rejected() {
 
 #[tokio::test]
 async fn write_value_defaults_to_database() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "").unwrap();
+    let tmp = seeded_home("").await;
+    let bootstrap = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).unwrap();
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
         .write_value(ConfigValueWriteParams {
-            file_path: None,
             key_path: "model".to_string(),
             value: serde_json::json!("gordon"),
             merge_strategy: MergeStrategy::Replace,
@@ -258,7 +247,11 @@ async fn write_value_defaults_to_database() {
         .expect("write succeeds");
 
     let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    assert!(contents.is_empty(), "bootstrap must not be rewritten");
+    assert_eq!(contents, bootstrap, "bootstrap must not be rewritten");
+    assert!(
+        !contents.contains("model"),
+        "settings never land in the bootstrap file"
+    );
     assert_eq!(
         crate::user_settings::snapshot(tmp.path())
             .await
@@ -271,17 +264,12 @@ async fn write_value_defaults_to_database() {
 
 #[tokio::test]
 async fn invalid_user_value_rejected() {
-    let tmp = tempdir().expect("tempdir");
-    std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"").unwrap();
-    crate::user_settings::migrate(tmp.path(), false)
-        .await
-        .unwrap();
+    let tmp = seeded_home("model = \"user\"").await;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
 
     let error = service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "approval_policy".to_string(),
             value: serde_json::json!("bogus"),
             merge_strategy: MergeStrategy::Replace,
@@ -307,12 +295,7 @@ async fn invalid_user_value_rejected() {
 
 #[tokio::test]
 async fn read_reports_session_flags_override_user() {
-    let tmp = tempdir().expect("tempdir");
-    let user_path = tmp.path().join(CONFIG_TOML_FILE);
-    std::fs::write(&user_path, "model = \"user\"").unwrap();
-    crate::user_settings::migrate(tmp.path(), false)
-        .await
-        .unwrap();
+    let tmp = seeded_home("model = \"user\"").await;
 
     let cli_overrides = vec![(
         "model".to_string(),
@@ -351,8 +334,6 @@ async fn read_reports_session_flags_override_user() {
 
 #[tokio::test]
 async fn upsert_merges_tables_replace_overwrites() -> Result<()> {
-    let tmp = tempdir().expect("tempdir");
-    let path = tmp.path().join(CONFIG_TOML_FILE);
     let base = r#"[model_providers.linear]
 name = "linear"
 base_url = "https://linear.example"
@@ -375,13 +356,11 @@ alpha = "a"
         "base_url": "https://linear.example"
     });
 
-    std::fs::write(&path, base)?;
-    crate::user_settings::migrate(tmp.path(), false).await?;
+    let tmp = seeded_home(base).await;
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(path.display().to_string()),
             key_path: "model_providers.linear".to_string(),
             value: overlay.clone(),
             merge_strategy: MergeStrategy::Upsert,
@@ -419,7 +398,6 @@ beta = "b"
 
     service
         .write_value(ConfigValueWriteParams {
-            file_path: Some(path.display().to_string()),
             key_path: "model_providers.linear".to_string(),
             value: overlay,
             merge_strategy: MergeStrategy::Replace,

@@ -361,6 +361,7 @@ async fn build_config(
     forced_login_method: Option<ForcedLoginMethod>,
     forced_chatgpt_workspace_id: Option<String>,
 ) -> Config {
+    crate::test_support::bootstrap_sqlite(chaos_home).expect("bootstrap test storage");
     let mut config = ConfigBuilder::default()
         .chaos_home(chaos_home.to_path_buf())
         .build()

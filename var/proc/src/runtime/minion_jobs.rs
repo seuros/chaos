@@ -360,41 +360,6 @@ WHERE id = ?
         Ok(MinionJobStatus::parse(status.as_str())? == MinionJobStatus::Cancelled)
     }
 
-    pub async fn mark_minion_job_item_running(
-        &self,
-        job_id: &str,
-        item_id: &str,
-    ) -> anyhow::Result<bool> {
-        // Validate: only Pending → Running is allowed.
-        let mut wf = MinionJobItemWorkflow::new();
-        assert!(
-            wf.start(),
-            "item lifecycle: Pending → Running must be valid"
-        );
-
-        let now = jiff::Timestamp::now().as_second();
-        let result = sqlx::query(
-            r#"
-UPDATE agent_job_items
-SET
-    status = ?,
-    assigned_process_id = NULL,
-    attempt_count = attempt_count + 1,
-    updated_at = ?,
-    last_error = NULL
-WHERE job_id = ? AND item_id = ? AND status = ?
-            "#,
-        )
-        .bind(MinionJobItemStatus::Running.as_str())
-        .bind(now)
-        .bind(job_id)
-        .bind(item_id)
-        .bind(MinionJobItemStatus::Pending.as_str())
-        .execute(self.pool.as_ref())
-        .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
     pub(crate) async fn mark_minion_job_item_running_with_thread(
         &self,
         job_id: &str,
@@ -459,30 +424,6 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         .bind(MinionJobItemStatus::Pending.as_str())
         .bind(now)
         .bind(error_message)
-        .bind(job_id)
-        .bind(item_id)
-        .bind(MinionJobItemStatus::Running.as_str())
-        .execute(self.pool.as_ref())
-        .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    pub async fn set_minion_job_item_thread(
-        &self,
-        job_id: &str,
-        item_id: &str,
-        process_id: &str,
-    ) -> anyhow::Result<bool> {
-        let now = jiff::Timestamp::now().as_second();
-        let result = sqlx::query(
-            r#"
-UPDATE agent_job_items
-SET assigned_process_id = ?, updated_at = ?
-WHERE job_id = ? AND item_id = ? AND status = ?
-            "#,
-        )
-        .bind(process_id)
-        .bind(now)
         .bind(job_id)
         .bind(item_id)
         .bind(MinionJobItemStatus::Running.as_str())

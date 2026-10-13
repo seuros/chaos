@@ -7,6 +7,7 @@
 //! which role to use; the multi-agent tool handler owns that orchestration.
 
 use crate::config::AgentRoleConfig;
+use crate::config::AgentRoleSource;
 use crate::config::Config;
 use crate::config::ConfigOverrides;
 use crate::config::agent_roles::parse_agent_role_file_contents;
@@ -48,7 +49,7 @@ pub(crate) async fn apply_builtin_persona_to_config(
         .cloned()
         .ok_or_else(|| format!("unknown built-in persona '{persona_name}'"))?;
 
-    apply_role_to_config_inner(config, &role, /*is_built_in*/ true)
+    apply_role_to_config_inner(config, &role)
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply built-in persona to config: {err}");
@@ -66,8 +67,7 @@ pub(crate) async fn apply_role_to_config(
         .cloned()
         .ok_or_else(|| format!("unknown agent_type '{role_name}'"))?;
 
-    let is_built_in = !config.agent_roles.contains_key(role_name);
-    apply_role_to_config_inner(config, &role, is_built_in)
+    apply_role_to_config_inner(config, &role)
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply role to config: {err}");
@@ -78,12 +78,11 @@ pub(crate) async fn apply_role_to_config(
 async fn apply_role_to_config_inner(
     config: &mut Config,
     role: &AgentRoleConfig,
-    is_built_in: bool,
 ) -> anyhow::Result<()> {
-    let Some(config_file) = role.config_file.as_ref() else {
+    let Some(source) = role.source.as_ref() else {
         return Ok(());
     };
-    let role_layer_toml = load_role_layer_toml(config, config_file, is_built_in).await?;
+    let role_layer_toml = load_role_layer_toml(config, source).await?;
     let (preserve_current_profile, preserve_current_provider) =
         preservation_policy(config, &role_layer_toml);
 
@@ -98,41 +97,52 @@ async fn apply_role_to_config_inner(
 
 async fn load_role_layer_toml(
     config: &Config,
-    config_file: &Path,
-    is_built_in: bool,
+    source: &AgentRoleSource,
 ) -> anyhow::Result<TomlValue> {
-    let (role_config_toml, role_config_base) = if is_built_in {
-        let role_config_contents = built_in::config_file_contents(config_file)
-            .map(str::to_owned)
-            .ok_or(anyhow!("No corresponding config content"))?;
-        let role_config_toml = parse_agent_role_file_contents(
-            &role_config_contents,
-            config_file,
-            config.chaos_home.as_path(),
-            /*require_developer_instructions*/ false,
-        )
-        .map_err(|e| anyhow!(e))?
-        .config;
-        (role_config_toml, config.chaos_home.as_path())
-    } else {
-        let role_config_contents = tokio::fs::read_to_string(config_file).await?;
-        let role_config_base = config_file
-            .parent()
-            .ok_or(anyhow!("No corresponding config content"))?;
-        let role_config_toml = parse_agent_role_file_contents(
-            &role_config_contents,
-            config_file,
-            role_config_base,
-            /*require_developer_instructions*/ true,
-        )?
-        .config;
-        (role_config_toml, role_config_base)
+    let (role_config_toml, role_config_base) = match source {
+        AgentRoleSource::BuiltIn(config_file) => {
+            let role_config_contents = built_in::config_file_contents(config_file)
+                .map(str::to_owned)
+                .ok_or(anyhow!("No corresponding config content"))?;
+            let role_config_toml = parse_agent_role_file_contents(
+                &role_config_contents,
+                config_file,
+                config.chaos_home.as_path(),
+                /*require_developer_instructions*/ false,
+            )
+            .map_err(|e| anyhow!(e))?
+            .config;
+            (role_config_toml, config.chaos_home.clone())
+        }
+        AgentRoleSource::File(config_file) => {
+            let role_config_contents = tokio::fs::read_to_string(config_file).await?;
+            let role_config_base = config_file
+                .parent()
+                .ok_or(anyhow!("No corresponding config content"))?;
+            let role_config_toml = parse_agent_role_file_contents(
+                &role_config_contents,
+                config_file,
+                role_config_base,
+                /*require_developer_instructions*/ true,
+            )?
+            .config;
+            (role_config_toml, role_config_base.to_path_buf())
+        }
+        AgentRoleSource::Database {
+            config: role_config,
+            base_dir,
+        } => (
+            role_config.clone(),
+            base_dir
+                .clone()
+                .unwrap_or_else(|| config.chaos_home.clone()),
+        ),
     };
 
-    deserialize_config_toml_with_base(role_config_toml.clone(), role_config_base)?;
+    deserialize_config_toml_with_base(role_config_toml.clone(), &role_config_base)?;
     Ok(resolve_relative_paths_in_config_toml(
         role_config_toml,
-        role_config_base,
+        &role_config_base,
     )?)
 }
 
@@ -197,6 +207,7 @@ mod reload {
             reload_overrides(config, preserve_current_provider),
             config.chaos_home.clone(),
             config_layer_stack,
+            config.resolved_bootstrap(),
         )?;
         if preserve_current_profile {
             next_config.active_profile = config.active_profile.clone();
@@ -220,7 +231,8 @@ mod reload {
             layers,
             config.config_layer_stack.requirements().clone(),
             config.config_layer_stack.requirements_toml().clone(),
-        )?)
+        )?
+        .with_asset_folders(config.config_layer_stack.asset_folders().to_vec()))
     }
 
     fn resolved_profile_layer(
@@ -241,7 +253,8 @@ mod reload {
                 layers,
                 config.config_layer_stack.requirements().clone(),
                 config.config_layer_stack.requirements_toml().clone(),
-            )?,
+            )?
+            .with_asset_folders(config.config_layer_stack.asset_folders().to_vec()),
         )?;
         let resolved_profile =
             merged_config.get_config_profile(Some(active_profile_name.to_string()))?;
@@ -290,6 +303,9 @@ mod reload {
             model_provider: preserve_current_provider.then(|| config.model_provider_id.clone()),
             active_project_trust: Some(config.active_project_trust.clone()),
             alcatraz_exe: Some(config.alcatraz_exe.clone()),
+            // Stored roles are not re-read here; without this the child
+            // config would lose every database role after one role applied.
+            database_agent_roles: Some(config.database_agent_roles.clone()),
             ..Default::default()
         }
     }
@@ -297,8 +313,8 @@ mod reload {
 
 pub(crate) mod spawn_tool_spec {
     use super::{
-        AgentRoleConfig, BTreeMap, BTreeSet, DEFAULT_ROLE_NAME, TomlValue, built_in,
-        parse_agent_role_file_contents,
+        AgentRoleConfig, AgentRoleSource, BTreeMap, BTreeSet, DEFAULT_ROLE_NAME, TomlValue,
+        built_in, parse_agent_role_file_contents,
     };
 
     /// Builds the spawn-agent tool description text from built-in and configured roles.
@@ -326,32 +342,44 @@ pub(crate) mod spawn_tool_spec {
         }
 
         format!(
-            "Optional type name for the new agent. If omitted, `{DEFAULT_ROLE_NAME}` is used.\nAvailable roles:\n{}",
+            "Optional type name for the new agent. If omitted, `{DEFAULT_ROLE_NAME}` is used.\n\
+             Available roles:\n{}",
             formatted_roles.join("\n"),
         )
     }
 
     fn format_role(name: &str, declaration: &AgentRoleConfig) -> String {
         let locked_settings_note = declaration
-            .config_file
+            .source
             .as_ref()
-            .and_then(|config_file| {
-                let built_in_contents = built_in::config_file_contents(config_file);
-                let contents = built_in_contents
-                    .map(str::to_owned)
-                    .or_else(|| std::fs::read_to_string(config_file).ok())?;
-                parse_agent_role_file_contents(
-                    &contents,
-                    config_file,
-                    std::path::Path::new("."),
-                    /*require_developer_instructions*/ built_in_contents.is_none(),
-                )
-                .ok()
+            .and_then(|source| match source {
+                AgentRoleSource::Database { config, .. } => Some(config.clone()),
+                AgentRoleSource::BuiltIn(config_file) => {
+                    let contents = built_in::config_file_contents(config_file)?;
+                    parse_agent_role_file_contents(
+                        contents,
+                        config_file,
+                        std::path::Path::new("."),
+                        /*require_developer_instructions*/ false,
+                    )
+                    .ok()
+                    .map(|parsed| parsed.config)
+                }
+                AgentRoleSource::File(config_file) => {
+                    let contents = std::fs::read_to_string(config_file).ok()?;
+                    parse_agent_role_file_contents(
+                        &contents,
+                        config_file,
+                        std::path::Path::new("."),
+                        /*require_developer_instructions*/ true,
+                    )
+                    .ok()
+                    .map(|parsed| parsed.config)
+                }
             })
-            .map(|parsed| {
-                let model = parsed.config.get("model").and_then(TomlValue::as_str);
-                let reasoning_effort = parsed
-                    .config
+            .map(|role_config| {
+                let model = role_config.get("model").and_then(TomlValue::as_str);
+                let reasoning_effort = role_config
                     .get("model_reasoning_effort")
                     .and_then(TomlValue::as_str);
 
@@ -397,7 +425,9 @@ pub(crate) fn collect_roles_by_topics<'a>(
 }
 
 pub(crate) mod built_in {
-    use super::{AgentRoleConfig, BTreeMap, LazyLock, Path, parse_agent_role_file_contents};
+    use super::{
+        AgentRoleConfig, AgentRoleSource, BTreeMap, LazyLock, Path, parse_agent_role_file_contents,
+    };
     use include_dir::Dir;
     use include_dir::include_dir;
 
@@ -424,16 +454,16 @@ pub(crate) mod built_in {
                         /*require_developer_instructions*/ false,
                     )
                     .ok()?;
-                    let config_file = if parsed.config.as_table().is_some_and(|t| !t.is_empty()) {
-                        Some(path.to_path_buf())
-                    } else {
-                        None
-                    };
+                    let source = parsed
+                        .config
+                        .as_table()
+                        .is_some_and(|t| !t.is_empty())
+                        .then(|| AgentRoleSource::BuiltIn(path.to_path_buf()));
                     Some((
                         parsed.role_name.clone(),
                         AgentRoleConfig {
                             description: parsed.description,
-                            config_file,
+                            source,
                             nickname_candidates: parsed.nickname_candidates,
                             topics: parsed.topics,
                             catchphrases: parsed.catchphrases,
@@ -464,16 +494,16 @@ pub(crate) mod built_in {
                     .unwrap_or_else(|err| {
                         panic!("built-in role file {} is invalid: {err}", path.display())
                     });
-                    let config_file = if parsed.config.as_table().is_some_and(|t| !t.is_empty()) {
-                        Some(path.to_path_buf())
-                    } else {
-                        None
-                    };
+                    let source = parsed
+                        .config
+                        .as_table()
+                        .is_some_and(|t| !t.is_empty())
+                        .then(|| AgentRoleSource::BuiltIn(path.to_path_buf()));
                     Some((
                         parsed.role_name.clone(),
                         AgentRoleConfig {
                             description: parsed.description,
-                            config_file,
+                            source,
                             nickname_candidates: parsed.nickname_candidates,
                             topics: parsed.topics,
                             catchphrases: parsed.catchphrases,

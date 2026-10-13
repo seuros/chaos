@@ -511,7 +511,6 @@ async fn read_static_resource(
             uri: uri.to_string(),
             cwd: turn.cwd.clone(),
             project_root,
-            sqlite_home: turn.config.sqlite_home.clone(),
             session_id: session.conversation_id.to_string(),
         })
         .await

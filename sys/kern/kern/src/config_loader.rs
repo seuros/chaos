@@ -4,12 +4,12 @@ mod tests;
 use crate::async_breaker::BreakerError;
 use crate::config::ConfigToml;
 use crate::git_info::resolve_root_git_project_for_trust;
+use crate::user_settings::ResolvedBootstrap;
 use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::product::OS_NAME;
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_sysctl::ConfigRequirementsWithSources;
 use chaos_sysctl::types::McpServerConfig;
 use serde::Deserialize;
@@ -23,6 +23,8 @@ use tracing::warn;
 
 pub use chaos_sysctl::AppRequirementToml;
 pub use chaos_sysctl::AppsRequirementsToml;
+pub use chaos_sysctl::AssetFolder;
+pub use chaos_sysctl::AssetScope;
 pub use chaos_sysctl::ConfigError;
 pub use chaos_sysctl::ConfigLayerEntry;
 pub use chaos_sysctl::ConfigLayerStack;
@@ -44,47 +46,30 @@ pub use chaos_sysctl::TextPosition;
 pub use chaos_sysctl::TextRange;
 pub use chaos_sysctl::WebSearchModeRequirement;
 pub(crate) use chaos_sysctl::build_cli_overrides_layer;
-pub(crate) use chaos_sysctl::config_error_from_toml;
 pub use chaos_sysctl::format_config_error;
 pub use chaos_sysctl::format_config_error_with_source;
 pub use chaos_sysctl::format_error_chain;
-pub(crate) use chaos_sysctl::io_error_from_config_error;
 pub use chaos_sysctl::merge_toml_values;
 #[cfg(test)]
 pub(crate) use chaos_sysctl::version_for_toml;
 
-/// On Unix systems, load default settings from this file path, if present.
-/// Note that /etc/chaos/ is treated as a "config folder," so subfolders such
-/// as skills/ and rules/ will also be honored.
-pub const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/chaos/config.toml";
+/// Administrator configuration folder. `requirements.toml` lives here, and
+/// subfolders such as `rules/` and `agents/` are honored with admin authority.
+pub const SYSTEM_CONFIG_DIR_UNIX: &str = "/etc/chaos";
 
 const DEFAULT_PROJECT_ROOT_MARKERS: &[&str] = &[".git"];
 const PROJECT_MCP_JSON_FILE: &str = ".mcp.json";
 
-pub(crate) async fn first_layer_config_error(layers: &ConfigLayerStack) -> Option<ConfigError> {
-    chaos_sysctl::first_layer_config_error::<ConfigToml>(layers, CONFIG_TOML_FILE).await
-}
-
-pub(crate) async fn first_layer_config_error_from_entries(
-    layers: &[ConfigLayerEntry],
-) -> Option<ConfigError> {
-    chaos_sysctl::first_layer_config_error_from_entries::<ConfigToml>(layers, CONFIG_TOML_FILE)
-        .await
-}
-
-/// To build up the set of admin-enforced constraints, we load from the system
-/// requirements file `/etc/chaos/requirements.toml`.
+/// Configuration is built from these layers, lowest precedence first:
 ///
-/// Configuration is built up from multiple layers in the following order:
-///
-/// - system    `/etc/chaos/config.toml`
-/// - user      `${CHAOS_HOME}/config.toml`
-/// - cwd       `${PWD}/config.toml` (loaded but disabled when the directory is untrusted)
-/// - tree      parent directories up to root looking for `./.chaos/config.toml`
-///   (loaded but disabled when untrusted)
-/// - repo      `$(git rev-parse --show-toplevel)/.chaos/config.toml` (loaded
-///   but disabled when untrusted)
+/// - database  owner settings in the runtime database
+/// - project   `<project-root>/.mcp.json` (disabled when the project is untrusted)
 /// - runtime   e.g., --config flags, model selector in UI
+///
+/// Admin constraints come from `/etc/chaos/requirements.toml`. File-based
+/// assets (`rules/`, `agents/`) are anchored by the stack's asset folders:
+/// `/etc/chaos`, `$CHAOS_HOME`, and trusted `.chaos` folders between the
+/// project root and `cwd`.
 ///
 /// When loading the config stack for a thread, there should be a `cwd`
 /// associated with it such that `cwd` should be `Some(...)`. Only for
@@ -95,6 +80,20 @@ pub async fn load_config_layers_state(
     cwd: Option<AbsolutePathBuf>,
     cli_overrides: &[(String, TomlValue)],
     overrides: LoaderOverrides,
+) -> io::Result<ConfigLayerStack> {
+    let bootstrap = crate::user_settings::resolve_bootstrap(chaos_home)
+        .await
+        .map_err(io::Error::other)?;
+    load_config_layers_state_with_bootstrap(chaos_home, cwd, cli_overrides, overrides, &bootstrap)
+        .await
+}
+
+pub(crate) async fn load_config_layers_state_with_bootstrap(
+    chaos_home: &Path,
+    cwd: Option<AbsolutePathBuf>,
+    cli_overrides: &[(String, TomlValue)],
+    overrides: LoaderOverrides,
+    bootstrap: &ResolvedBootstrap,
 ) -> io::Result<ConfigLayerStack> {
     let mut config_requirements_toml = ConfigRequirementsWithSources::default();
 
@@ -129,43 +128,20 @@ pub async fn load_config_layers_state(
         )?)
     };
 
-    // Include an entry for the "system" config folder, loading its config.toml,
-    // if it exists.
-    let system_config_toml_file = system_config_toml_file()?;
-    let system_layer =
-        load_config_toml_for_required_layer(&system_config_toml_file, |config_toml| {
-            ConfigLayerEntry::new(
-                ConfigLayerSource::System {
-                    file: system_config_toml_file.clone(),
-                },
-                config_toml,
-            )
-        })
-        .await?;
-    layers.push(system_layer);
-
-    // Add a layer for $CHAOS_HOME/config.toml if it exists. Note if the file
-    // exists, but is malformed, then this error should be propagated to the
-    // user.
     let snapshot = crate::user_settings::snapshot(chaos_home)
         .await
         .map_err(io::Error::other)?;
-    let bootstrap = crate::user_settings::bootstrap_values(chaos_home)
-        .await
-        .map_err(io::Error::other)?;
     layers.push(ConfigLayerEntry::new(
-        ConfigLayerSource::Bootstrap {
-            file: AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, chaos_home),
-        },
-        bootstrap,
-    ));
-    let user_layer = ConfigLayerEntry::new(
         ConfigLayerSource::UserDatabase {
             revision: snapshot.revision,
         },
         snapshot.settings,
-    );
-    layers.push(user_layer);
+    ));
+
+    let mut asset_folders = vec![AssetFolder::new(
+        AssetScope::Admin,
+        AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_DIR_UNIX))?,
+    )];
 
     if let Some(cwd) = cwd {
         let mut merged_so_far = TomlValue::Table(toml::map::Map::new());
@@ -176,57 +152,15 @@ pub async fn load_config_layers_state(
             merge_toml_values(&mut merged_so_far, cli_overrides_layer);
         }
 
-        let project_root_markers = match project_root_markers_from_config(&merged_so_far) {
-            Ok(markers) => markers.unwrap_or_else(default_project_root_markers),
-            Err(err) => {
-                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
-                    return Err(io_error_from_config_error(
-                        io::ErrorKind::InvalidData,
-                        config_error,
-                        /*source*/ None,
-                    ));
-                }
-                return Err(err);
-            }
-        };
-        let storage_config = storage_config_from_merged_config(&merged_so_far, chaos_home);
-        let project_trust_context = match project_trust_context(
-            &cwd,
-            &project_root_markers,
-            storage_config.storage_url.as_deref(),
-            &storage_config.sqlite_home,
-        )
-        .await
-        {
-            Ok(context) => context,
-            Err(err) => {
-                let source = err
-                    .get_ref()
-                    .and_then(|err| err.downcast_ref::<toml::de::Error>())
-                    .cloned();
-                if let Some(config_error) = first_layer_config_error_from_entries(&layers).await {
-                    return Err(io_error_from_config_error(
-                        io::ErrorKind::InvalidData,
-                        config_error,
-                        source,
-                    ));
-                }
-                return Err(err);
-            }
-        };
-        let project_layers = load_project_layers(
-            &cwd,
-            &project_trust_context.project_root,
-            &project_trust_context,
-            chaos_home,
-        )
-        .await?;
-        for layer in &project_layers {
-            if !layer.is_disabled() && !matches!(layer.name, ConfigLayerSource::ProjectMcp { .. }) {
-                crate::user_settings::validate_project(&layer.config).map_err(io::Error::other)?;
-            }
+        let project_root_markers = project_root_markers_from_config(&merged_so_far)?
+            .unwrap_or_else(default_project_root_markers);
+        let project_trust_context =
+            project_trust_context(&cwd, &project_root_markers, bootstrap).await?;
+        if let Some(layer) = load_project_mcp_layer(&project_trust_context).await? {
+            layers.push(layer);
         }
-        layers.extend(project_layers);
+        asset_folders
+            .extend(project_asset_folders(&cwd, &project_trust_context, chaos_home).await?);
     }
 
     // Add a layer for runtime overrides from the CLI or UI, if any exist.
@@ -237,58 +171,12 @@ pub async fn load_config_layers_state(
         ));
     }
 
-    ConfigLayerStack::new(
+    Ok(ConfigLayerStack::new(
         layers,
         config_requirements_toml.clone().try_into()?,
         config_requirements_toml.into_toml(),
-    )
-}
-
-/// Attempts to load a config.toml file from `config_toml`.
-/// - If the file exists and is valid TOML, passes the parsed `toml::Value` to
-///   `create_entry` and returns the resulting layer entry.
-/// - If the file does not exist, uses an empty `Table` with `create_entry` and
-///   returns the resulting layer entry.
-/// - If there is an error reading the file or parsing the TOML, returns an
-///   error.
-async fn load_config_toml_for_required_layer(
-    config_toml: impl AsRef<Path>,
-    create_entry: impl FnOnce(TomlValue) -> ConfigLayerEntry,
-) -> io::Result<ConfigLayerEntry> {
-    let toml_file = config_toml.as_ref();
-    let toml_value = match tokio::fs::read_to_string(toml_file).await {
-        Ok(contents) => {
-            let config: TomlValue = toml::from_str(&contents).map_err(|err| {
-                let config_error = config_error_from_toml(toml_file, &contents, err.clone());
-                io_error_from_config_error(io::ErrorKind::InvalidData, config_error, Some(err))
-            })?;
-            reject_legacy_global_mcp_servers_in_config_toml(toml_file, &config)?;
-            let config_parent = toml_file.parent().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "Config file {} has no parent directory",
-                        toml_file.display()
-                    ),
-                )
-            })?;
-            resolve_relative_paths_in_config_toml(config, config_parent)
-        }
-        Err(e) => {
-            if e.kind() == io::ErrorKind::NotFound {
-                Ok(TomlValue::Table(toml::map::Map::new()))
-            } else {
-                Err(io::Error::new(
-                    e.kind(),
-                    format!("Failed to read config file {}: {e}", toml_file.display()),
-                ))
-            }
-        }
-    }?;
-
-    let mut toml_value = toml_value;
-    strip_global_mcp_servers(&mut toml_value);
-    Ok(create_entry(toml_value))
+    )?
+    .with_asset_folders(asset_folders))
 }
 
 /// If available, apply requirements from the platform system
@@ -336,16 +224,11 @@ async fn load_requirements_toml(
 }
 
 fn system_requirements_toml_file() -> io::Result<AbsolutePathBuf> {
-    AbsolutePathBuf::from_absolute_path(Path::new("/etc/chaos/requirements.toml"))
+    AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_DIR_UNIX).join("requirements.toml"))
 }
 
-fn system_config_toml_file() -> io::Result<AbsolutePathBuf> {
-    AbsolutePathBuf::from_absolute_path(Path::new(SYSTEM_CONFIG_TOML_FILE_UNIX))
-}
-
-/// Reads `project_root_markers` from the [toml::Value] produced by merging
-/// `config.toml` from the config layers in the stack preceding
-/// [ConfigLayerSource::Project].
+/// Reads `project_root_markers` from the [toml::Value] produced by merging the
+/// config layers in the stack preceding the project `.mcp.json` layer.
 ///
 /// Invariants:
 /// - If `project_root_markers` is not specified, returns `Ok(None)`.
@@ -400,10 +283,7 @@ pub(crate) fn project_root_markers_from_stack(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ false,
     ) {
-        if matches!(
-            layer.name,
-            ConfigLayerSource::Project { .. } | ConfigLayerSource::ProjectMcp { .. }
-        ) {
+        if matches!(layer.name, ConfigLayerSource::ProjectMcp { .. }) {
             continue;
         }
         merge_toml_values(&mut merged, &layer.config);
@@ -420,15 +300,13 @@ pub(crate) fn project_root_markers_from_stack(
 }
 
 pub(crate) async fn resolve_active_project_trust(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
+    bootstrap: &ResolvedBootstrap,
     cwd: &Path,
     config_layer_stack: &ConfigLayerStack,
 ) -> io::Result<crate::config::ProjectTrust> {
     let cwd = normalize_absolute_path_for_trust(cwd)?;
     let project_root_markers = project_root_markers_from_stack(config_layer_stack);
-    let trust_context =
-        project_trust_context(&cwd, &project_root_markers, storage_url, sqlite_home).await?;
+    let trust_context = project_trust_context(&cwd, &project_root_markers, bootstrap).await?;
     Ok(crate::config::ProjectTrust {
         trust_level: trust_context.decision_for_dir(&cwd).trust_level,
     })
@@ -496,17 +374,6 @@ struct ProjectTrustContext {
     trust_levels_by_path: std::collections::HashMap<String, TrustLevel>,
 }
 
-#[derive(Deserialize)]
-struct TrustStorageConfigToml {
-    storage_url: Option<String>,
-    sqlite_home: Option<AbsolutePathBuf>,
-}
-
-struct TrustStorageConfig {
-    storage_url: Option<String>,
-    sqlite_home: PathBuf,
-}
-
 struct ProjectTrustDecision {
     trust_level: Option<TrustLevel>,
     trust_key: String,
@@ -566,31 +433,13 @@ impl ProjectTrustContext {
         let trust_key = decision.trust_key.as_str();
         match decision.trust_level {
             Some(TrustLevel::Untrusted) => Some(format!(
-                "{trust_key} is marked as untrusted in {OS_NAME} project trust state. To load config.toml, mark it trusted."
+                "{trust_key} is marked as untrusted in {OS_NAME} project trust state. \
+                 To load its .mcp.json, rules, and agents, mark it trusted."
             )),
             _ => Some(format!(
-                "To load config.toml, trust {trust_key} in {OS_NAME}."
+                "To load its .mcp.json, rules, and agents, trust {trust_key} in {OS_NAME}."
             )),
         }
-    }
-}
-
-fn project_layer_entry(
-    trust_context: &ProjectTrustContext,
-    dot_chaos_folder: &AbsolutePathBuf,
-    layer_dir: &AbsolutePathBuf,
-    config: TomlValue,
-) -> ConfigLayerEntry {
-    let source = ConfigLayerSource::Project {
-        dot_codex_folder: dot_chaos_folder.clone(),
-    };
-
-    // Standalone role files are executable instructions even when this layer
-    // has no config.toml. They must not bypass project trust.
-    if let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
-        ConfigLayerEntry::new_disabled(source, config, reason)
-    } else {
-        ConfigLayerEntry::new(source, config)
     }
 }
 
@@ -614,8 +463,7 @@ fn project_mcp_layer_entry(
 async fn project_trust_context(
     cwd: &AbsolutePathBuf,
     project_root_markers: &[String],
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
+    bootstrap: &ResolvedBootstrap,
 ) -> io::Result<ProjectTrustContext> {
     let project_root = find_project_root(cwd, project_root_markers).await?;
     let project_root = normalize_absolute_path_for_trust(project_root.as_path())?;
@@ -638,9 +486,9 @@ async fn project_trust_context(
     }
 
     let mut trust_levels_by_path = std::collections::HashMap::new();
-    let runtime = match crate::runtime_db::open_or_create_runtime_db_with_config(
-        storage_url,
-        sqlite_home,
+    let runtime = match crate::runtime_db::open_or_create_runtime_db(
+        &bootstrap.storage_url,
+        &bootstrap.storage_home,
         "unknown",
     )
     .await
@@ -692,27 +540,6 @@ fn normalize_absolute_path_for_trust(path: &Path) -> io::Result<AbsolutePathBuf>
     AbsolutePathBuf::from_absolute_path(crate::runtime_db::normalize_cwd_for_runtime_db(path))
 }
 
-fn storage_config_from_merged_config(
-    merged_config: &TomlValue,
-    chaos_home: &Path,
-) -> TrustStorageConfig {
-    let config = merged_config
-        .clone()
-        .try_into::<TrustStorageConfigToml>()
-        .ok();
-    TrustStorageConfig {
-        storage_url: config
-            .as_ref()
-            .and_then(|config| config.storage_url.as_deref())
-            .map(str::trim)
-            .filter(|storage_url| !storage_url.is_empty())
-            .map(ToOwned::to_owned),
-        sqlite_home: config
-            .and_then(|config| config.sqlite_home.map(|path| path.to_path_buf()))
-            .unwrap_or_else(|| chaos_home.to_path_buf()),
-    }
-}
-
 fn strip_global_mcp_servers(value: &mut TomlValue) {
     let Some(table) = value.as_table_mut() else {
         return;
@@ -735,26 +562,7 @@ pub(crate) fn reject_legacy_global_mcp_servers_in_cli_overrides(
     Ok(())
 }
 
-fn reject_legacy_global_mcp_servers_in_config_toml(
-    config_path: &Path,
-    config: &TomlValue,
-) -> io::Result<()> {
-    if config
-        .as_table()
-        .is_some_and(|table| table.contains_key("mcp_servers"))
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "{} uses legacy top-level `mcp_servers`; use `chaos mcp add/remove/list/get` for global MCP servers or `.mcp.json` for project-local MCP servers",
-                config_path.display()
-            ),
-        ));
-    }
-    Ok(())
-}
-
-/// Takes a `toml::Value` parsed from a config.toml file and walks through it,
+/// Takes a `toml::Value` holding configuration and walks through it,
 /// resolving any `AbsolutePathBuf` fields against `base_dir`, returning a new
 /// `toml::Value` with the same shape but with paths resolved.
 ///
@@ -833,18 +641,48 @@ async fn find_project_root(
     Ok(cwd.clone())
 }
 
-/// Return the appropriate list of layers (each with
-/// [ConfigLayerSource::Project] as the source) between `cwd` and
-/// `project_root`, inclusive. The list is ordered in _increasing_ precdence,
-/// starting from folders closest to `project_root` (which is the lowest
-/// precedence) to those closest to `cwd` (which is the highest precedence).
-async fn load_project_layers(
+/// Load `<project-root>/.mcp.json` as the project MCP layer, if present.
+async fn load_project_mcp_layer(
+    trust_context: &ProjectTrustContext,
+) -> io::Result<Option<ConfigLayerEntry>> {
+    let project_root = &trust_context.project_root;
+    let project_mcp_json = project_root.join(PROJECT_MCP_JSON_FILE);
+    match tokio::fs::read_to_string(project_mcp_json.as_path()).await {
+        Ok(contents) => match parse_project_mcp_json(&contents) {
+            Ok(config) => Ok(Some(project_mcp_layer_entry(
+                trust_context,
+                &project_mcp_json,
+                config,
+            ))),
+            Err(err) => {
+                if trust_context.decision_for_dir(project_root).is_trusted() {
+                    Err(err)
+                } else {
+                    Ok(None)
+                }
+            }
+        },
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(io::Error::new(
+            err.kind(),
+            format!(
+                "Failed to read project MCP file {}: {err}",
+                project_mcp_json.as_path().display()
+            ),
+        )),
+    }
+}
+
+/// `.chaos` folders between the project root and `cwd`, inclusive, ordered from
+/// the project root (lowest precedence) to `cwd` (highest). Untrusted folders
+/// are listed as disabled so the UI can explain why their assets are ignored.
+async fn project_asset_folders(
     cwd: &AbsolutePathBuf,
-    project_root: &AbsolutePathBuf,
     trust_context: &ProjectTrustContext,
     chaos_home: &Path,
-) -> io::Result<Vec<ConfigLayerEntry>> {
-    let chaos_home_abs = AbsolutePathBuf::from_absolute_path(chaos_home)?;
+) -> io::Result<Vec<AssetFolder>> {
+    let project_root = &trust_context.project_root;
+    let chaos_home_abs = AbsolutePathBuf::try_from(chaos_home)?;
     let chaos_home_normalized =
         normalize_path(chaos_home_abs.as_path()).unwrap_or_else(|_| chaos_home_abs.to_path_buf());
     let mut dirs = cwd
@@ -863,33 +701,7 @@ async fn load_project_layers(
         .collect::<Vec<_>>();
     dirs.reverse();
 
-    let mut layers = Vec::new();
-    let project_mcp_json = project_root.join(PROJECT_MCP_JSON_FILE);
-    match tokio::fs::read_to_string(project_mcp_json.as_path()).await {
-        Ok(contents) => match parse_project_mcp_json(&contents) {
-            Ok(config) => layers.push(project_mcp_layer_entry(
-                trust_context,
-                &project_mcp_json,
-                config,
-            )),
-            Err(err) => {
-                if trust_context.decision_for_dir(project_root).is_trusted() {
-                    return Err(err);
-                }
-            }
-        },
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-        Err(err) => {
-            return Err(io::Error::new(
-                err.kind(),
-                format!(
-                    "Failed to read project MCP file {}: {err}",
-                    project_mcp_json.as_path().display()
-                ),
-            ));
-        }
-    }
-
+    let mut folders = Vec::new();
     for dir in dirs {
         let dot_chaos = dir.join(".chaos");
         if !tokio::fs::metadata(&dot_chaos)
@@ -901,77 +713,17 @@ async fn load_project_layers(
         }
 
         let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
-        let decision = trust_context.decision_for_dir(&layer_dir);
         let dot_chaos_abs = AbsolutePathBuf::from_absolute_path(&dot_chaos)?;
         let dot_chaos_normalized =
             normalize_path(dot_chaos_abs.as_path()).unwrap_or_else(|_| dot_chaos_abs.to_path_buf());
         if dot_chaos_abs == chaos_home_abs || dot_chaos_normalized == chaos_home_normalized {
             continue;
         }
-        let config_file = dot_chaos_abs.join(CONFIG_TOML_FILE);
-        match tokio::fs::read_to_string(&config_file).await {
-            Ok(contents) => {
-                let config: TomlValue = match toml::from_str(&contents) {
-                    Ok(config) => config,
-                    Err(e) => {
-                        if decision.is_trusted() {
-                            let config_file_display = config_file.as_path().display();
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!(
-                                    "Error parsing project config file {config_file_display}: {e}"
-                                ),
-                            ));
-                        }
-                        layers.push(project_layer_entry(
-                            trust_context,
-                            &dot_chaos_abs,
-                            &layer_dir,
-                            TomlValue::Table(toml::map::Map::new()),
-                        ));
-                        continue;
-                    }
-                };
-                if let Err(err) =
-                    reject_legacy_global_mcp_servers_in_config_toml(config_file.as_path(), &config)
-                {
-                    if decision.is_trusted() {
-                        return Err(err);
-                    }
-                    layers.push(project_layer_entry(
-                        trust_context,
-                        &dot_chaos_abs,
-                        &layer_dir,
-                        TomlValue::Table(toml::map::Map::new()),
-                    ));
-                    continue;
-                }
-                let config =
-                    resolve_relative_paths_in_config_toml(config, dot_chaos_abs.as_path())?;
-                let entry = project_layer_entry(trust_context, &dot_chaos_abs, &layer_dir, config);
-                layers.push(entry);
-            }
-            Err(err) => {
-                if err.kind() == io::ErrorKind::NotFound {
-                    // If there is no config.toml file, record an empty entry
-                    // for this project layer, as this may still have subfolders
-                    // that are significant in the overall ConfigLayerStack.
-                    layers.push(project_layer_entry(
-                        trust_context,
-                        &dot_chaos_abs,
-                        &layer_dir,
-                        TomlValue::Table(toml::map::Map::new()),
-                    ));
-                } else {
-                    let config_file_display = config_file.as_path().display();
-                    return Err(io::Error::new(
-                        err.kind(),
-                        format!("Failed to read project config file {config_file_display}: {err}"),
-                    ));
-                }
-            }
-        }
+        folders.push(match trust_context.disabled_reason_for_dir(&layer_dir) {
+            Some(reason) => AssetFolder::disabled(AssetScope::Project, dot_chaos_abs, reason),
+            None => AssetFolder::new(AssetScope::Project, dot_chaos_abs),
+        });
     }
 
-    Ok(layers)
+    Ok(folders)
 }

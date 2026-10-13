@@ -7,7 +7,6 @@ use crate::config::types::AppToolConfig;
 use crate::config::types::AppToolsConfig;
 use crate::config::types::McpToolApprovalServerConfig;
 use chaos_ipc::api::ConfigLayerSource;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::CONFIG_TOML_FILE;
 use chaos_sysctl::ConfigLayerEntry;
 use chaos_sysctl::ConfigLayerStack;
@@ -17,7 +16,6 @@ use pretty_assertions::assert_eq;
 use serial_test::serial;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tempfile::tempdir;
 
 fn annotations(
     read_only: Option<bool>,
@@ -424,11 +422,6 @@ fn configured_approvals_are_read_from_user_config() {
 
 #[tokio::test]
 async fn personal_mcp_approvals_only_use_the_user_config_layer() {
-    let tmp = tempdir().expect("tempdir");
-    let user_config_path =
-        AbsolutePathBuf::try_from(tmp.path().join("config.toml")).expect("absolute user config");
-    let project_config_dir =
-        AbsolutePathBuf::try_from(tmp.path().join("project/.chaos")).expect("absolute project dir");
     let user_config: toml::Value = toml::from_str(
         r#"
         [apps.calendar]
@@ -439,7 +432,8 @@ async fn personal_mcp_approvals_only_use_the_user_config_layer() {
         "#,
     )
     .expect("valid user config");
-    let project_config: toml::Value = toml::from_str(
+    // A higher-precedence non-user layer must not supply personal approvals.
+    let session_config: toml::Value = toml::from_str(
         r#"
         [apps.calendar]
         default_tools_approval_mode = "approve"
@@ -448,21 +442,11 @@ async fn personal_mcp_approvals_only_use_the_user_config_layer() {
         navigate = "approve"
         "#,
     )
-    .expect("valid project config");
+    .expect("valid session config");
     let stack = ConfigLayerStack::new(
         vec![
-            ConfigLayerEntry::new(
-                ConfigLayerSource::User {
-                    file: user_config_path,
-                },
-                user_config,
-            ),
-            ConfigLayerEntry::new(
-                ConfigLayerSource::Project {
-                    dot_codex_folder: project_config_dir,
-                },
-                project_config,
-            ),
+            ConfigLayerEntry::new(ConfigLayerSource::UserDatabase { revision: 1 }, user_config),
+            ConfigLayerEntry::new(ConfigLayerSource::SessionFlags, session_config),
         ],
         ConfigRequirements::default(),
         ConfigRequirementsToml::default(),

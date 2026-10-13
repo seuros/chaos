@@ -30,6 +30,7 @@ async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap sqlite");
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)
@@ -920,7 +921,7 @@ async fn spawn_process_subagent_uses_role_specific_nickname_candidates() {
         "researcher".to_string(),
         AgentRoleConfig {
             description: Some("Research role".to_string()),
-            config_file: None,
+            source: None,
             nickname_candidates: Some(vec!["Atlas".to_string()]),
             topics: None,
             catchphrases: None,

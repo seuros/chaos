@@ -18,6 +18,7 @@ pub mod handle;
 pub mod sandbox;
 pub mod vm;
 
+pub use api::ScriptSource;
 pub use api::SessionInfo;
 pub use engine::ScriptEngine;
 pub use handle::HalluacinateHandle;

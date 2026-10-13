@@ -5,7 +5,6 @@ use ratatui::style::Color as RtColor;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use std::path::Path;
 use std::str::FromStr;
 use syntect::highlighting::Color as SyntectColor;
 use syntect::highlighting::FontStyle;
@@ -24,14 +23,14 @@ use crate::highlight_engine::{
 use crate::style_conversion::{ansi_palette_color, convert_style};
 use crate::syntax_lookup::find_syntax;
 use crate::theme_management::{
-    diff_scope_background_rgbs_for_theme, load_custom_theme, parse_theme_name,
-    resolve_theme_by_name,
+    diff_scope_background_rgbs_for_theme, parse_theme_name, parse_tmtheme, resolve_theme_by_name,
+    set_custom_themes,
 };
+use std::collections::BTreeMap;
+use std::sync::Once;
 
-fn write_minimal_tmtheme(path: &Path) {
-    std::fs::write(
-            path,
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+fn minimal_tmtheme() -> &'static str {
+    r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>name</key><string>Test</string>
@@ -40,19 +39,16 @@ fn write_minimal_tmtheme(path: &Path) {
 <key>foreground</key><string>#FFFFFF</string>
 <key>background</key><string>#000000</string>
 </dict></dict></array>
-</dict></plist>"#,
-        )
-        .unwrap();
+</dict></plist>"#
 }
 
-fn write_tmtheme_with_diff_backgrounds(
-    path: &Path,
+fn tmtheme_with_diff_backgrounds(
     inserted_scope: &str,
     inserted_background: &str,
     deleted_scope: &str,
     deleted_background: &str,
-) {
-    let contents = format!(
+) -> String {
+    format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -78,8 +74,39 @@ fn write_tmtheme_with_diff_backgrounds(
 </dict>
 </array>
 </dict></plist>"#
-    );
-    std::fs::write(path, contents).unwrap();
+    )
+}
+
+/// Custom themes live in a process-wide `OnceLock`, so every test that needs
+/// one shares a single installation containing all of them.
+fn install_custom_themes() {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let mut themes = BTreeMap::new();
+        themes.insert(
+            "custom-diff".to_string(),
+            parse_tmtheme(&tmtheme_with_diff_backgrounds(
+                "diff.inserted",
+                "#102030",
+                "markup.deleted",
+                "#405060",
+            ))
+            .expect("diff theme parses"),
+        );
+        for name in [
+            "zzz-custom",
+            "Aaa-custom",
+            "mmm-custom",
+            "my-fancy",
+            "dracula",
+        ] {
+            themes.insert(
+                name.to_string(),
+                parse_tmtheme(minimal_tmtheme()).expect("minimal theme parses"),
+            );
+        }
+        set_custom_themes(themes);
+    });
 }
 
 /// Reconstruct plain text from highlighted Lines.
@@ -97,7 +124,7 @@ fn reconstructed(lines: &[Line<'static>]) -> String {
 }
 
 fn unique_foreground_colors_for_theme(theme_name: &str) -> Vec<String> {
-    let theme = resolve_theme_by_name(theme_name, None)
+    let theme = resolve_theme_by_name(theme_name)
         .unwrap_or_else(|| panic!("expected built-in theme {theme_name} to resolve"));
     let lines = highlight_to_line_spans_with_theme(
         "fn main() { let answer = 42; println!(\"hello\"); }\n",
@@ -341,7 +368,7 @@ fn ansi_palette_color_maps_ansi_white_to_gray() {
 #[test]
 fn ansi_family_themes_use_terminal_palette_colors_not_rgb() {
     for theme_name in ["ansi", "base16", "base16-256"] {
-        let theme = resolve_theme_by_name(theme_name, None)
+        let theme = resolve_theme_by_name(theme_name)
             .unwrap_or_else(|| panic!("expected built-in theme {theme_name} to resolve"));
         let lines = highlight_to_line_spans_with_theme(
             "fn main() { let answer = 42; println!(\"hello\"); }\n",
@@ -538,8 +565,7 @@ fn diff_scope_backgrounds_return_none_when_no_background_scope_matches() {
 
 #[test]
 fn bundled_theme_can_provide_diff_scope_backgrounds() {
-    let theme =
-        resolve_theme_by_name("github", None).expect("expected built-in GitHub theme to load");
+    let theme = resolve_theme_by_name("github").expect("expected built-in GitHub theme to load");
     let rgbs = diff_scope_background_rgbs_for_theme(&theme);
     assert!(
         rgbs.inserted.is_some() && rgbs.deleted.is_some(),
@@ -549,19 +575,8 @@ fn bundled_theme_can_provide_diff_scope_backgrounds() {
 
 #[test]
 fn custom_tmtheme_diff_scope_backgrounds_are_resolved() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    write_tmtheme_with_diff_backgrounds(
-        &themes_dir.join("custom-diff.tmTheme"),
-        "diff.inserted",
-        "#102030",
-        "markup.deleted",
-        "#405060",
-    );
-
-    let theme = resolve_theme_by_name("custom-diff", Some(dir.path()))
-        .expect("expected custom theme to resolve");
+    install_custom_themes();
+    let theme = resolve_theme_by_name("custom-diff").expect("expected custom theme to resolve");
     let rgbs = diff_scope_background_rgbs_for_theme(&theme);
     assert_eq!(
         rgbs,
@@ -639,109 +654,80 @@ fn parse_theme_name_returns_none_for_unknown() {
 }
 
 #[test]
-fn load_custom_theme_from_tmtheme_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    write_minimal_tmtheme(&themes_dir.join("test-custom.tmTheme"));
-    let theme = load_custom_theme("test-custom", dir.path());
-    assert!(theme.is_some(), "should load .tmTheme from themes dir");
+fn parse_tmtheme_accepts_valid_and_rejects_invalid_documents() {
+    assert!(parse_tmtheme(minimal_tmtheme()).is_some());
+    assert!(parse_tmtheme("placeholder").is_none());
+    assert!(parse_tmtheme("not a plist").is_none());
 }
 
 #[test]
-fn load_custom_theme_returns_none_for_missing() {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(load_custom_theme("nonexistent", dir.path()).is_none());
+fn resolve_theme_by_name_returns_none_for_unknown() {
+    install_custom_themes();
+    assert!(resolve_theme_by_name("nonexistent").is_none());
 }
 
 #[test]
 fn validate_theme_name_none_for_bundled() {
-    assert!(validate_theme_name(Some("dracula"), None).is_none());
-    assert!(validate_theme_name(Some("nord"), Some(Path::new("/nonexistent"))).is_none());
+    assert!(validate_theme_name(Some("dracula")).is_none());
+    assert!(validate_theme_name(Some("nord")).is_none());
 }
 
 #[test]
 fn validate_theme_name_none_when_no_override() {
-    assert!(validate_theme_name(None, None).is_none());
+    assert!(validate_theme_name(None).is_none());
 }
 
 #[test]
-fn validate_theme_name_warns_for_missing_custom() {
-    let dir = tempfile::tempdir().unwrap();
-    let warning = validate_theme_name(Some("my-fancy"), Some(dir.path()));
-    assert!(warning.is_some(), "should warn when theme file is absent");
-    let msg = warning.unwrap();
-    assert!(
-        msg.contains("my-fancy"),
-        "warning should mention the theme name"
-    );
+fn validate_theme_name_warns_for_unknown_with_import_hint() {
+    install_custom_themes();
+    let warning = validate_theme_name(Some("not-installed")).expect("unknown theme warns");
+    assert!(warning.contains("not-installed"), "{warning}");
+    assert!(warning.contains("chaos themes import"), "{warning}");
 }
 
 #[test]
-fn validate_theme_name_none_when_custom_file_is_valid() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    write_minimal_tmtheme(&themes_dir.join("my-fancy.tmTheme"));
+fn validate_theme_name_none_when_custom_theme_is_installed() {
+    install_custom_themes();
     assert!(
-        validate_theme_name(Some("my-fancy"), Some(dir.path())).is_none(),
-        "should not warn when custom .tmTheme file parses successfully"
+        validate_theme_name(Some("my-fancy")).is_none(),
+        "should not warn when a stored custom theme is installed"
     );
 }
 
 #[test]
-fn validate_theme_name_warns_when_custom_file_is_invalid() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    std::fs::write(themes_dir.join("my-fancy.tmTheme"), "placeholder").unwrap();
-    let warning = validate_theme_name(Some("my-fancy"), Some(dir.path()));
+fn builtin_shadows_custom_theme_with_same_name() {
+    install_custom_themes();
+    let entries = list_available_themes();
+    let dracula: Vec<_> = entries.iter().filter(|e| e.name == "dracula").collect();
+    assert_eq!(dracula.len(), 1);
     assert!(
-        warning.is_some(),
-        "should warn when custom .tmTheme exists but cannot be parsed"
-    );
-    assert!(
-        warning
-            .as_deref()
-            .is_some_and(|msg| msg.contains("could not be loaded")),
-        "warning should explain that the theme file is invalid"
+        !dracula[0].is_custom,
+        "built-in dracula wins over the custom one"
     );
 }
 
 #[test]
-fn list_available_themes_excludes_invalid_custom_files() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    write_minimal_tmtheme(&themes_dir.join("valid-custom.tmTheme"));
-    std::fs::write(themes_dir.join("broken-custom.tmTheme"), "not a plist").unwrap();
-
-    let entries = list_available_themes(Some(dir.path()));
-
-    assert!(
-        entries
-            .iter()
-            .any(|entry| entry.name == "valid-custom" && entry.is_custom),
-        "expected valid custom theme to be listed"
-    );
-    assert!(
-        !entries
-            .iter()
-            .any(|entry| entry.name == "broken-custom" && entry.is_custom),
-        "expected invalid custom theme to be excluded from list"
-    );
+fn list_available_themes_includes_installed_custom_themes() {
+    install_custom_themes();
+    let entries = list_available_themes();
+    for name in ["custom-diff", "my-fancy", "zzz-custom"] {
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry.name == name && entry.is_custom),
+            "expected custom theme {name} to be listed"
+        );
+    }
+    let names: Vec<&str> = entries.iter().map(|entry| entry.name.as_str()).collect();
+    let mut deduped = names.clone();
+    deduped.dedup();
+    assert_eq!(names, deduped, "no duplicate theme names");
 }
 
 #[test]
 fn list_available_themes_returns_stable_sorted_order() {
-    let dir = tempfile::tempdir().unwrap();
-    let themes_dir = dir.path().join("themes");
-    std::fs::create_dir(&themes_dir).unwrap();
-    write_minimal_tmtheme(&themes_dir.join("zzz-custom.tmTheme"));
-    write_minimal_tmtheme(&themes_dir.join("Aaa-custom.tmTheme"));
-    write_minimal_tmtheme(&themes_dir.join("mmm-custom.tmTheme"));
-
-    let entries = list_available_themes(Some(dir.path()));
+    install_custom_themes();
+    let entries = list_available_themes();
     let actual: Vec<(bool, String)> = entries
         .iter()
         .map(|entry| (entry.is_custom, entry.name.clone()))

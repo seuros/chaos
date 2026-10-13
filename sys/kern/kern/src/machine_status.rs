@@ -73,13 +73,19 @@ impl ObservationRequest {
 fn storage_targets(config: &Config, cwd: &Path, temporary: PathBuf) -> Vec<StorageTarget> {
     // Known working paths, not a drive inventory. Roles survive FS deduplication.
     let mut targets = Vec::new();
+    // SQLite keeps state next to the database file named by the storage URL;
+    // PostgreSQL holds it on the server, so no local directory is probed.
+    let sqlite_state_dir = crate::runtime_db::sqlite_state_dir(&config.storage_url);
     for (role, path) in [
-        (StorageRole::Workspace, cwd.to_path_buf()),
-        (StorageRole::State, config.chaos_home.clone()),
-        (StorageRole::State, config.sqlite_home.clone()),
-        (StorageRole::State, config.log_dir.clone()),
-        (StorageRole::Temporary, temporary),
-    ] {
+        Some((StorageRole::Workspace, cwd.to_path_buf())),
+        Some((StorageRole::State, config.chaos_home.clone())),
+        sqlite_state_dir.map(|dir| (StorageRole::State, dir)),
+        Some((StorageRole::State, config.log_dir.clone())),
+        Some((StorageRole::Temporary, temporary)),
+    ]
+    .into_iter()
+    .flatten()
+    {
         let target = StorageTarget { role, path };
         if !targets.contains(&target) {
             targets.push(target);

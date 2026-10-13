@@ -36,6 +36,7 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
 #[tokio::test]
 async fn approvals_reviewer_defaults_to_user() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).map_err(std::io::Error::other)?;
 
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())

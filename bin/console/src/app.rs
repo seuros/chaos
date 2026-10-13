@@ -33,7 +33,6 @@ use crate::tile_manager::TileManager;
 use crate::tui;
 use crate::tui::TuiEvent;
 use chaos_ipc::ProcessId;
-use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -55,7 +54,6 @@ use chaos_kern::config::edit::ConfigEdit;
 use chaos_kern::config::edit::ConfigEditsBuilder;
 use libui::transcript_reflow::TranscriptReflowState;
 
-use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::models_manager::manager::RefreshStrategy;
 use chaos_proc::LogQuery;
 use chaos_proc::RuntimeDbHandle;
@@ -180,35 +178,26 @@ fn session_summary(
 }
 
 fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) {
-    let mut disabled_folders = Vec::new();
-
-    for layer in config.config_layer_stack.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ true,
-    ) {
-        let ConfigLayerSource::Project { dot_codex_folder } = &layer.name else {
-            continue;
-        };
-        if layer.disabled_reason.is_none() {
-            continue;
-        }
-        disabled_folders.push((
-            dot_codex_folder.as_path().display().to_string(),
-            layer
+    let disabled_folders: Vec<(String, String)> = config
+        .config_layer_stack
+        .asset_folders()
+        .iter()
+        .filter(|folder| folder.scope == chaos_kern::config_loader::AssetScope::Project)
+        .filter_map(|folder| {
+            folder
                 .disabled_reason
                 .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "config.toml is disabled.".to_string()),
-        ));
-    }
+                .map(|reason| (folder.dir.as_path().display().to_string(), reason.clone()))
+        })
+        .collect();
 
     if disabled_folders.is_empty() {
         return;
     }
 
     let mut message = concat!(
-        "Project config.toml files are disabled in the following folders. ",
-        "Settings in those files are ignored, but skills and exec policies still load.\n",
+        "Project .chaos folders are untrusted in the following locations. ",
+        "Their rules and agents are ignored until the project is trusted.\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {

@@ -22,7 +22,6 @@ use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
-use std::fs;
 
 fn collaboration_mode_for_model(model: String) -> CollaborationMode {
     CollaborationMode {
@@ -81,12 +80,13 @@ fn assert_no_matched_rules_invariant(output_item: &Value) {
 #[tokio::test]
 async fn execpolicy_blocks_shell_invocation() -> Result<()> {
     let home = std::sync::Arc::new(tempfile::TempDir::new()?);
-    fs::create_dir_all(home.path().join("rules"))?;
-    fs::write(
-        home.path().join("rules/policy.decrees"),
+    // User rules are stored in the database and can only restrict.
+    chaos_kern::test_support::seed_user_rule(
+        home.path(),
+        "policy",
         r#"prefix_rule {pattern={"echo"}, decision="forbidden"}"#,
-    )?;
-    chaos_kern::user_settings::migrate(home.path(), false).await?;
+    )
+    .await?;
     let mut builder = test_chaos().with_home(home);
     let server = start_mock_server().await;
     let test = builder.build(&server).await?;

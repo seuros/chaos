@@ -42,7 +42,7 @@ pub struct Cli {
     #[usage(skip)]
     pub fork_show_all: bool,
 
-    /// Configuration profile from config.toml to specify default options.
+    /// Configuration profile (a `profiles.<name>` user setting) to specify default options.
     #[usage(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 

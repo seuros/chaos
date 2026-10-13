@@ -179,6 +179,7 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
         ephemeral: inputs.ephemeral.then_some(true),
         mcp_servers: None,
         active_project_trust: None,
+        database_agent_roles: None,
         additional_writable_roots: inputs.additional_writable_roots,
         provider_user_override,
         model_provider: inputs.model_provider,
@@ -350,7 +351,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
     }
 
     #[allow(clippy::print_stderr)]
-    match check_execpolicy_for_warnings(&config.config_layer_stack).await {
+    match check_execpolicy_for_warnings(&config.config_layer_stack, &config.chaos_home).await {
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(

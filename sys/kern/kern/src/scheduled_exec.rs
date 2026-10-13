@@ -165,7 +165,7 @@ async fn check_current_rules(policy: &ScheduledShellPolicy, config: &Config) -> 
     // Unlike the interactive loader's warning/fallback path, malformed rules
     // are fatal for unattended work.
     let manager = ExecPolicyManager::new(Arc::new(
-        load_exec_policy(&config.config_layer_stack).await?,
+        load_exec_policy(&config.config_layer_stack, &config.chaos_home).await?,
     ))
     .with_storage(&config.chaos_home, &policy.cwd);
     for approval in [

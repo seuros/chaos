@@ -24,7 +24,8 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
     let mut config = crate::config::test_config();
     config.cwd = PathBuf::from("/unused-startup-cwd");
     config.chaos_home = PathBuf::from("/state");
-    config.sqlite_home = PathBuf::from("/cache");
+    config.storage_home = PathBuf::from("/cache");
+    config.storage_url = "sqlite:///cache/chaos.sqlite".to_string();
     config.log_dir = PathBuf::from("/logs");
     let targets = storage_targets(&config, Path::new("/active-workspace"), "/scratch".into());
     assert_eq!(
@@ -38,6 +39,7 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
                 role: StorageRole::State,
                 path: "/state".into()
             },
+            // The SQLite file's directory, taken from the storage URL.
             StorageTarget {
                 role: StorageRole::State,
                 path: "/cache".into()
@@ -58,7 +60,8 @@ fn storage_targets_use_turn_cwd_and_configured_paths_not_global_disks() {
 fn repeated_paths_are_deduplicated_but_distinct_roles_are_preserved() {
     let mut config = crate::config::test_config();
     config.chaos_home = PathBuf::from("/shared");
-    config.sqlite_home = config.chaos_home.clone();
+    config.storage_home = config.chaos_home.clone();
+    config.storage_url = "sqlite:///shared/chaos.sqlite".to_string();
     config.log_dir = config.chaos_home.clone();
     let targets = storage_targets(&config, Path::new("/shared"), "/shared".into());
     assert_eq!(targets.len(), 3);
@@ -82,4 +85,19 @@ fn requests_track_policy_and_active_paths_not_unrelated_config() {
         request,
         ObservationRequest::new(&config, Path::new("/active"))
     );
+}
+
+#[test]
+fn postgres_storage_adds_no_local_state_directory() {
+    let mut config = crate::config::test_config();
+    config.chaos_home = PathBuf::from("/state");
+    config.storage_url = "postgres://chaos@db.example/chaos".to_string();
+    config.log_dir = PathBuf::from("/logs");
+    let targets = storage_targets(&config, Path::new("/ws"), "/scratch".into());
+    let state: Vec<_> = targets
+        .iter()
+        .filter(|target| target.role == StorageRole::State)
+        .map(|target| target.path.clone())
+        .collect();
+    assert_eq!(state, vec![PathBuf::from("/state"), PathBuf::from("/logs")]);
 }

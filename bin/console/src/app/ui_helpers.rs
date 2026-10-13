@@ -136,18 +136,14 @@ impl App {
 
     pub(super) fn restore_runtime_theme_from_config(&self) {
         if let Some(name) = self.config.tui_theme.as_deref()
-            && let Some(theme) =
-                crate::render::highlight::resolve_theme_by_name(name, Some(&self.config.chaos_home))
+            && let Some(theme) = crate::render::highlight::resolve_theme_by_name(name)
         {
             crate::render::highlight::set_syntax_theme(theme);
             return;
         }
 
         let auto_theme_name = crate::render::highlight::adaptive_default_theme_name();
-        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
-            auto_theme_name,
-            Some(&self.config.chaos_home),
-        ) {
+        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(auto_theme_name) {
             crate::render::highlight::set_syntax_theme(theme);
         }
     }

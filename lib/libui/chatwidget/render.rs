@@ -13,16 +13,13 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_halluacinate::StatusLineSpan;
-use chaos_ipc::api::ConfigLayerSource;
 use chaos_ipc::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use chaos_ipc::protocol::CreditsSnapshot;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
-use chaos_kern::config_loader::ConfigLayerStackOrdering;
 use chaos_kern::git_info::current_branch_name;
 use chaos_kern::git_info::get_git_repo_root;
-use chaos_pwd::find_chaos_home;
 use jiff::Timestamp;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -258,14 +255,12 @@ impl ChatWidget {
     }
 
     pub(super) fn open_theme_picker(&mut self) {
-        let chaos_home = find_chaos_home().ok();
         let terminal_width = self
             .last_rendered_width
             .get()
             .and_then(|width| u16::try_from(width).ok());
         let params = crate::theme_picker::build_theme_picker_params(
             self.config.tui_theme.as_deref(),
-            chaos_home.as_deref(),
             terminal_width,
         );
         self.bottom_pane.show_selection_view(params);
@@ -283,17 +278,10 @@ impl ChatWidget {
 
         self.config
             .config_layer_stack
-            .get_layers(
-                ConfigLayerStackOrdering::LowestPrecedenceFirst,
-                /*include_disabled*/ true,
-            )
+            .asset_folders()
             .iter()
-            .find_map(|layer| match &layer.name {
-                ConfigLayerSource::Project { dot_codex_folder } => {
-                    dot_codex_folder.as_path().parent().map(Path::to_path_buf)
-                }
-                _ => None,
-            })
+            .find(|folder| folder.scope == chaos_kern::config_loader::AssetScope::Project)
+            .and_then(|folder| folder.dir.as_path().parent().map(Path::to_path_buf))
     }
 
     fn status_line_project_root_name(&self) -> Option<String> {

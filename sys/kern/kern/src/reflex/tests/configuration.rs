@@ -130,7 +130,8 @@ async fn setup_stores_only_a_reference_and_resolves_without_environment() {
     assert!(!encoded.contains("test-reflex-secret"));
     assert!(!format!("{saved:?}").contains("test-reflex-secret"));
     assert!(!config.chaos_home.join("auth.json").exists());
-    assert!(!config.chaos_home.join("config.toml").exists());
+    // The bootstrap file names storage only; settings never land in it.
+    crate::user_settings::BootstrapConfig::read(&config.chaos_home).unwrap();
     let loaded: ReflexBackendSettings = snapshot.settings["reflex"]["typesafe"]
         .clone()
         .try_into()
@@ -192,8 +193,10 @@ async fn a_failed_settings_write_does_not_replace_existing_credentials() {
     let before = crate::user_settings::snapshot(&config.chaos_home)
         .await
         .unwrap();
+    // A bootstrap file carrying settings makes every storage open fail closed.
     let file = config.chaos_home.join("config.toml");
-    std::fs::write(&file, "model = 'requires-migration'").unwrap();
+    let bootstrap = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, format!("{bootstrap}model = 'not-a-bootstrap-key'\n")).unwrap();
     let err = save_backend(
         config,
         &auth,
@@ -208,7 +211,7 @@ async fn a_failed_settings_write_does_not_replace_existing_credentials() {
         resolve_api_key(config, &saved, None).unwrap().as_deref(),
         Some("original-key")
     );
-    std::fs::remove_file(file).unwrap();
+    std::fs::write(&file, bootstrap).unwrap();
     let after = crate::user_settings::snapshot(&config.chaos_home)
         .await
         .unwrap();
@@ -287,7 +290,8 @@ async fn invalid_setup_is_rejected_without_persistence() {
     let err = validate(config, &settings).unwrap_err().to_string();
     assert!(!err.contains("literal-private-key"));
     assert!(!config.chaos_home.join("auth.json").exists());
-    assert!(!config.chaos_home.join("config.toml").exists());
+    // The bootstrap file names storage only; settings never land in it.
+    crate::user_settings::BootstrapConfig::read(&config.chaos_home).unwrap();
     let snapshot = crate::user_settings::snapshot(&config.chaos_home)
         .await
         .unwrap();

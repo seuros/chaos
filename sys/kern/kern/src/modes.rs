@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 use anyhow::Context;
@@ -66,43 +65,44 @@ pub(crate) struct ModeRegistry {
 }
 
 impl ModeRegistry {
-    pub(crate) fn load(
+    /// Built-in modes plus the enabled custom modes stored for `chaos_home`.
+    pub(crate) async fn load(
         chaos_home: &Path,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Result<Self> {
+        let documents =
+            crate::user_documents::enabled(chaos_home, crate::user_documents::DocumentKind::Mode)
+                .await
+                .context("failed to load stored custom modes")?;
+        Self::from_documents(&documents, collaboration_modes_config)
+    }
+
+    /// A stored document that no longer parses is skipped with a warning
+    /// rather than failing session start; `chaos modes import` validates on
+    /// the way in.
+    pub(crate) fn from_documents(
+        documents: &[crate::user_documents::StoredDocument],
+        collaboration_modes_config: CollaborationModesConfig,
+    ) -> Result<Self> {
         let mut registry = Self::builtins(collaboration_modes_config)?;
-        let modes_dir = chaos_home.join("modes");
-        let entries = match fs::read_dir(&modes_dir) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(registry),
-            Err(err) => {
-                return Err(err).with_context(|| {
-                    format!("failed to read mode directory {}", modes_dir.display())
-                });
-            }
-        };
-
-        let mut mode_paths = entries
-            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .filter(|path| {
-                path.extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
-            })
-            .collect::<Vec<_>>();
-        mode_paths.sort();
-
-        for path in mode_paths {
-            let source = fs::read_to_string(&path)
-                .with_context(|| format!("failed to read custom mode {}", path.display()))?;
-            let definition = parse_custom_mode(&source)
-                .with_context(|| format!("failed to parse custom mode {}", path.display()))?;
-            if registry.modes.contains_key(&definition.id) {
-                bail!("duplicate or reserved mode id `{}`", definition.id);
+        for document in documents {
+            let definition = match parse_custom_mode(&document.source) {
+                Ok(definition) => definition,
+                Err(err) => {
+                    tracing::warn!("skipping stored mode `{}`: {err:#}", document.name);
+                    continue;
+                }
+            };
+            if definition.id != document.name || registry.modes.contains_key(&definition.id) {
+                tracing::warn!(
+                    "skipping stored mode `{}`: duplicate, reserved, or mismatched id `{}`",
+                    document.name,
+                    definition.id
+                );
+                continue;
             }
             registry.modes.insert(definition.id.clone(), definition);
         }
-
         Ok(registry)
     }
 
@@ -391,6 +391,11 @@ struct CustomModeFrontMatter {
     reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
     capabilities: ModeCapabilities,
+}
+
+/// The id a mode document declares, after full validation of the document.
+pub(crate) fn custom_mode_id(source: &str) -> Result<String> {
+    parse_custom_mode(source).map(|definition| definition.id)
 }
 
 fn parse_custom_mode(source: &str) -> Result<ModeDefinition> {

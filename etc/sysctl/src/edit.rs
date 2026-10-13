@@ -1,8 +1,4 @@
-use crate::CONFIG_TOML_FILE;
-use crate::path_utils::resolve_symlink_write_paths;
-use crate::path_utils::write_atomically;
 use crate::types::Notice;
-use anyhow::Context;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
 use chaos_ipc::openai_models::ReasoningEffort;
@@ -318,60 +314,6 @@ impl ConfigDocument {
     }
 }
 
-/// Persist edits using a blocking strategy.
-pub fn apply_file_edits_blocking(
-    chaos_home: &Path,
-    profile: Option<&str>,
-    edits: &[ConfigEdit],
-) -> anyhow::Result<()> {
-    if edits.is_empty() {
-        return Ok(());
-    }
-
-    let config_path = chaos_home.join(CONFIG_TOML_FILE);
-    let write_paths = resolve_symlink_write_paths(&config_path)?;
-    let serialized = match write_paths.read_path {
-        Some(path) => match std::fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(err) => return Err(err.into()),
-        },
-        None => String::new(),
-    };
-
-    let doc = if serialized.is_empty() {
-        DocumentMut::new()
-    } else {
-        serialized.parse::<DocumentMut>()?
-    };
-
-    let profile = profile.map(ToOwned::to_owned).or_else(|| {
-        doc.get("profile")
-            .and_then(|item| item.as_str())
-            .map(ToOwned::to_owned)
-    });
-
-    let mut document = ConfigDocument::new(doc, profile);
-    let mut mutated = false;
-
-    for edit in edits {
-        mutated |= document.apply(edit)?;
-    }
-
-    if !mutated {
-        return Ok(());
-    }
-
-    write_atomically(&write_paths.write_path, &document.doc.to_string()).with_context(|| {
-        format!(
-            "failed to persist config.toml at {}",
-            write_paths.write_path.display()
-        )
-    })?;
-
-    Ok(())
-}
-
 /// Persist edits using a revision-checked database transaction. No TOML fallback.
 pub async fn apply(
     chaos_home: &Path,
@@ -390,8 +332,12 @@ pub async fn apply(
             .map(ToOwned::to_owned)
     });
     let mut document = ConfigDocument::new(doc, profile);
+    let mut mutated = false;
     for edit in &edits {
-        document.apply(edit)?;
+        mutated |= document.apply(edit)?;
+    }
+    if !mutated {
+        return Ok(());
     }
     let settings = toml::from_str(&document.doc.to_string())?;
     backend

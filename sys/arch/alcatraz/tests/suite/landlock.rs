@@ -376,7 +376,7 @@ async fn workspace_write_currently_allows_git_and_chaos_writes_on_linux_landlock
     std::fs::create_dir_all(&dot_chaos).expect("create .chaos");
 
     let git_target = dot_git.join("config");
-    let chaos_target = dot_chaos.join("config.toml");
+    let chaos_target = dot_chaos.join("notes.txt");
 
     let git_output = run_cmd_result_with_writable_roots(
         &[
@@ -420,7 +420,7 @@ async fn workspace_write_currently_allows_chaos_symlink_replacement_on_linux_lan
     let dot_chaos = tmpdir.path().join(".chaos");
     symlink(&decoy, &dot_chaos).expect("create .chaos symlink");
 
-    let chaos_target = dot_chaos.join("config.toml");
+    let chaos_target = dot_chaos.join("notes.txt");
 
     let chaos_output = run_cmd_result_with_writable_roots(
         &[

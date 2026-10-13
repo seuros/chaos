@@ -379,6 +379,7 @@ async fn refresh_models_rejects_unknown_providers_and_custom_catalogs() {
 #[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
     let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()
@@ -410,6 +411,7 @@ async fn get_model_info_tracks_fallback_usage() {
 #[tokio::test]
 async fn get_model_info_uses_custom_catalog() {
     let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()
@@ -443,6 +445,7 @@ async fn get_model_info_uses_custom_catalog() {
 #[tokio::test]
 async fn get_model_info_matches_namespaced_suffix() {
     let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()
@@ -471,6 +474,7 @@ async fn get_model_info_matches_namespaced_suffix() {
 #[tokio::test]
 async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
     let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()
@@ -1259,6 +1263,7 @@ async fn provider_bound_cached_lookup_fails_when_custom_manager_cannot_rebind() 
 #[tokio::test]
 async fn families_use_catalog_then_exact_model_then_provider_fallback() {
     let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
     let auth_manager = AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key"));
     let mut explicit = remote_model("explicit", "Explicit", 2);
     explicit.model_family = ModelFamily::new("catalog-family");
@@ -1310,6 +1315,7 @@ async fn families_use_catalog_then_exact_model_then_provider_fallback() {
 #[tokio::test]
 async fn family_identity_does_not_follow_prefix_or_namespace_fallback() {
     let home = tempdir().unwrap();
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap");
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .build()
@@ -1396,6 +1402,7 @@ async fn configured_families_do_not_leak_through_shared_catalog_cache() {
 #[tokio::test]
 async fn cli_automatic_discovery_uses_only_fresh_cache() {
     let home = tempdir().unwrap();
+    crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap");
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .build()

@@ -1,4 +1,6 @@
 # chaos-sysctl
 
-Layered configuration kernel. Loads, merges, and validates TOML
-config from disk, cloud, CLI overrides, and project requirements.
+Layered configuration kernel. Merges and validates the database settings
+layer, the project `.mcp.json` layer, and CLI overrides; enforces
+`requirements.toml` constraints; and tracks the asset folders that anchor
+`rules/` and `agents/` files.

@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use anyhow::{anyhow, ensure};
 
-use super::{lock_bootstrap, read_toml, resolve_reference, write_bootstrap};
+use super::BootstrapConfig;
+use super::bootstrap::{lock_bootstrap, resolve_reference, write_bootstrap};
 
 pub enum StorageChoice {
     Postgres(String),
@@ -21,17 +22,16 @@ impl std::fmt::Debug for StorageChoice {
     }
 }
 
-/// Require a non-empty storage_url in config.toml before interactive startup.
+/// Interactive startup needs setup unless storage is already explicit: a
+/// `storage_url` in the bootstrap file or a non-empty `CHAOS_STORAGE_URL`.
+/// References are not resolved here; that happens when storage opens.
 pub fn is_needed(home: &Path) -> anyhow::Result<bool> {
-    Ok(!has_storage_url(&read_toml(home)?)?)
-}
-
-fn has_storage_url(file: &toml::Value) -> anyhow::Result<bool> {
-    match file.get("storage_url") {
-        None => Ok(false),
-        Some(toml::Value::String(url)) => Ok(!url.trim().is_empty()),
-        Some(_) => Err(anyhow!("storage_url in config.toml must be a string.")),
+    if BootstrapConfig::read(home)?.has_storage_url() {
+        return Ok(false);
     }
+    Ok(std::env::var("CHAOS_STORAGE_URL")
+        .map(|value| value.trim().is_empty())
+        .unwrap_or(true))
 }
 
 fn postgres_url(home: &Path, connection: &str) -> anyhow::Result<String> {
@@ -57,9 +57,9 @@ fn postgres_url(home: &Path, connection: &str) -> anyhow::Result<String> {
 /// Errors are safe to show in a terminal: driver errors can contain credentials
 /// and are intentionally not propagated or logged here.
 pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()> {
-    let before = read_toml(home)?;
+    let before = BootstrapConfig::read(home)?;
     ensure!(
-        !has_storage_url(&before)?,
+        !before.has_storage_url(),
         "Storage configuration changed. Restart ChaOS to use it."
     );
     let (url, reference) = match choice {
@@ -79,7 +79,7 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
     };
     tokio::time::timeout(
         Duration::from_secs(30),
-        crate::runtime_db::open_or_create_runtime_db_with_config(Some(&url), home, "settings"),
+        crate::runtime_db::open_or_create_runtime_db(&url, home, "settings"),
     )
     .await
     .map_err(|_| anyhow!("Database connection timed out. Check the server and network, then retry."))?
@@ -92,14 +92,14 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
 
 fn persist_choice(
     home: &Path,
-    before: toml::Value,
+    before: BootstrapConfig,
     url: String,
     reference: Option<String>,
     externalize: impl FnOnce(&str) -> anyhow::Result<String>,
 ) -> anyhow::Result<()> {
     let _lock = lock_bootstrap(home)?;
     ensure!(
-        read_toml(home)? == before,
+        BootstrapConfig::read(home)? == before,
         "Storage configuration changed during setup. Restart ChaOS to use it."
     );
     let mut new_secret = false;
@@ -122,7 +122,8 @@ fn persist_choice(
         },
         None => url,
     };
-    if write_bootstrap(home, "storage_url", &stored).is_err() {
+    let saved = stored.clone();
+    if write_bootstrap(home, |bootstrap| bootstrap.storage_url = Some(saved)).is_err() {
         if new_secret {
             let _ = chaos_sysctl::secrets::remove(home, &stored);
         }

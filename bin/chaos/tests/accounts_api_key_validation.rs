@@ -6,12 +6,13 @@ use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
 fn account_command(home: &TempDir, provider: &str) -> Command {
+    chaos_kern::test_support::bootstrap_sqlite(home.path())
+        .unwrap_or_else(|err| panic!("bootstrap test home: {err}"));
     let mut command = Command::new(env!("CARGO_BIN_EXE_chaos"));
     command
         .current_dir(home.path())
         .env("CHAOS_HOME", home.path())
         .env_remove("CHAOS_STORAGE_URL")
-        .env_remove("CHAOS_SQLITE_HOME")
         .env("NO_COLOR", "1")
         .timeout(std::time::Duration::from_secs(15))
         .args([

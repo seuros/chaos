@@ -29,7 +29,7 @@ macro_rules! impl_config_arc_forward {
 /// Minimal config surface for rollout persistence (recorder, metadata, list).
 pub trait RolloutConfig: Send + Sync {
     fn chaos_home(&self) -> &Path;
-    fn sqlite_home(&self) -> &Path;
+    fn storage_home(&self) -> &Path;
     fn cwd(&self) -> &Path;
     fn model_provider_id(&self) -> &str;
     fn generate_memories(&self) -> bool;
@@ -40,7 +40,7 @@ pub trait RolloutConfig: Send + Sync {
 
 impl_config_arc_forward!(RolloutConfig {
     fn chaos_home(&self) -> &Path;
-    fn sqlite_home(&self) -> &Path;
+    fn storage_home(&self) -> &Path;
     fn cwd(&self) -> &Path;
     fn model_provider_id(&self) -> &str;
     fn generate_memories(&self) -> bool;

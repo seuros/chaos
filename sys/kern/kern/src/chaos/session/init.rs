@@ -470,15 +470,36 @@ impl Session {
         // Lifecycle hooks are loaded from the authoritative database at each event.
         let hooks = Hooks::default();
 
-        let user_scripts_dir = session_configuration
-            .original_config_do_not_use
-            .disable_user_scripts
-            .then(|| std::path::PathBuf::from("/dev/null/no_user_scripts"));
+        // User scripts come from the runtime database; project scripts are
+        // repository code and only run once the project is trusted.
+        let user_scripts = if config.disable_user_scripts {
+            Vec::new()
+        } else {
+            match crate::user_documents::enabled(
+                &config.chaos_home,
+                crate::user_documents::DocumentKind::Script,
+            )
+            .await
+            {
+                Ok(documents) => documents
+                    .into_iter()
+                    .map(|document| chaos_halluacinate::ScriptSource {
+                        name: document.name,
+                        source: document.source,
+                    })
+                    .collect(),
+                Err(err) => {
+                    tracing::warn!("stored halluacinate scripts unavailable: {err:#}");
+                    Vec::new()
+                }
+            }
+        };
         let halluacinate = match chaos_halluacinate::spawn(chaos_halluacinate::SessionInfo {
             session_id: conversation_id.to_string(),
             cwd: session_configuration.cwd.to_string_lossy().to_string(),
             provider: session_configuration.provider.name.clone(),
-            user_scripts_dir,
+            user_scripts,
+            project_scripts_enabled: config.active_project_trust.is_trusted(),
         }) {
             Ok(handle) => Some(handle),
             Err(e) => {

@@ -59,7 +59,7 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
 
     let runtime = runtime_handle_from_vfs(
         vfs,
-        config.sqlite_home.clone(),
+        config.storage_home.clone(),
         config.model_provider_id.clone(),
     );
 
@@ -96,7 +96,7 @@ async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron:
 
 async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
     let mut registry = chaos_abi::SpoolRegistry::new();
-    let cache = ModelsCacheManager::new(config.sqlite_home.clone(), Duration::from_secs(3600));
+    let cache = ModelsCacheManager::new(config.storage_home.clone(), Duration::from_secs(3600));
     let client = chaos_client::ChaosHttpClient::default_client_with_egress(
         config.model_provider.egress.clone(),
     );
@@ -150,11 +150,10 @@ fn runtime_handle_from_vfs(
     }
 }
 
-/// Mount the storage backend named by the config, `CHAOS_STORAGE_URL`, or the
-/// chaos home, in that order. Idempotent, so every entry point may call it and
-/// the process still opens exactly one pool.
+/// Mount the storage backend named by the resolved bootstrap. Idempotent, so
+/// every entry point may call it and the process still opens exactly one pool.
 pub async fn mount_vfs(config: &Config) -> anyhow::Result<&'static ChaosVfs> {
-    mount_root_for(config.storage_url.as_deref(), config.sqlite_home.as_path()).await
+    mount_root_for(&config.storage_url, config.storage_home.as_path()).await
 }
 
 /// Mount runtime storage for an application entry point.
@@ -166,10 +165,10 @@ pub async fn mount_vfs_for_startup(config: &Config) -> anyhow::Result<Option<&'s
 
 /// Trait-friendly variant: accepts only the fields needed to mount.
 pub async fn mount_root_for(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
+    storage_url: &str,
+    storage_home: &Path,
 ) -> anyhow::Result<&'static ChaosVfs> {
-    let vfs = mount_vfs_for(storage_url, sqlite_home).await?;
+    let vfs = mount_vfs_for(storage_url, storage_home).await?;
     chaos_vfs::set_root(vfs);
     Ok(vfs)
 }
@@ -177,10 +176,10 @@ pub async fn mount_root_for(
 /// Open the backend without claiming the root, for callers that run before boot
 /// has settled which one the process serves.
 pub async fn mount_vfs_for(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
+    storage_url: &str,
+    storage_home: &Path,
 ) -> anyhow::Result<&'static ChaosVfs> {
-    let config = chaos_vfs::resolve_mount_config(storage_url, sqlite_home)?;
+    let config = mount_config_for(storage_url, storage_home)?;
     if let Some(vfs) = chaos_vfs::mounted(&config) {
         return Ok(vfs);
     }
@@ -189,39 +188,71 @@ pub async fn mount_vfs_for(
     Ok(chaos_vfs::mount(config, vfs))
 }
 
-/// Open the runtime DB handle, mounting the backend if boot has not yet.
-pub async fn open_or_create_runtime_db(
-    sqlite_home: &Path,
-    default_provider: &str,
-) -> anyhow::Result<RuntimeDbHandle> {
-    open_or_create_runtime_db_with_config(None, sqlite_home, default_provider).await
+/// A SQLite URL that names exactly `<storage_home>/chaos.sqlite` mounts under the
+/// home key, so per-home lookups (`chaos_vfs::root_for`) find it. Any other URL
+/// mounts as written.
+pub(crate) fn mount_config_for(
+    storage_url: &str,
+    storage_home: &Path,
+) -> anyhow::Result<chaos_vfs::MountConfig> {
+    let config = chaos_vfs::MountConfig::from_url(storage_url)?;
+    if let chaos_vfs::MountConfig::SqliteUrl(url) = &config
+        && let Some(path) = sqlite_file_path(url)
+        && path == chaos_proc::runtime_db_path(storage_home)
+    {
+        return Ok(chaos_vfs::MountConfig::sqlite_home(storage_home));
+    }
+    Ok(config)
 }
 
-/// Variant that also honours an explicit config-backed storage URL.
-pub async fn open_or_create_runtime_db_with_config(
-    storage_url: Option<&str>,
-    sqlite_home: &Path,
+/// The directory holding the SQLite database named by `storage_url`, or `None`
+/// for PostgreSQL. This is where SQLite state actually lives, whichever mount
+/// key the URL ends up under.
+pub(crate) fn sqlite_state_dir(storage_url: &str) -> Option<PathBuf> {
+    match chaos_vfs::MountConfig::from_url(storage_url).ok()? {
+        chaos_vfs::MountConfig::SqliteHome(dir) => Some(dir),
+        chaos_vfs::MountConfig::SqliteUrl(url) => {
+            sqlite_file_path(&url).and_then(|path| path.parent().map(Path::to_path_buf))
+        }
+        chaos_vfs::MountConfig::PostgresUrl(_) => None,
+    }
+}
+
+/// The file a plain `sqlite:` URL points at, when it has no query options.
+fn sqlite_file_path(url: &str) -> Option<PathBuf> {
+    let parsed = url::Url::parse(&url.replacen("sqlite:", "file:", 1)).ok()?;
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return None;
+    }
+    parsed.to_file_path().ok()
+}
+
+/// Open the runtime DB handle, mounting the backend if boot has not yet.
+/// `storage_home` keys the handle's local state; the URL decides the backend.
+pub async fn open_or_create_runtime_db(
+    storage_url: &str,
+    storage_home: &Path,
     default_provider: &str,
 ) -> anyhow::Result<RuntimeDbHandle> {
-    let vfs = mount_vfs_for(storage_url, sqlite_home).await?;
+    let vfs = mount_vfs_for(storage_url, storage_home).await?;
     Ok(runtime_handle_from_vfs(
         vfs,
-        sqlite_home.to_path_buf(),
+        storage_home.to_path_buf(),
         default_provider.to_string(),
     ))
 }
 
 /// Get the runtime DB handle when a backend is mounted.
 pub fn get_runtime_db(config: &Config) -> Option<RuntimeDbHandle> {
-    get_runtime_db_for(config.sqlite_home.as_path(), &config.model_provider_id)
+    get_runtime_db_for(config.storage_home.as_path(), &config.model_provider_id)
 }
 
 /// Trait-friendly variant: accepts only the fields needed to open the runtime DB.
-pub fn get_runtime_db_for(sqlite_home: &Path, model_provider_id: &str) -> Option<RuntimeDbHandle> {
-    let vfs = chaos_vfs::root_for(sqlite_home).ok()?;
+pub fn get_runtime_db_for(storage_home: &Path, model_provider_id: &str) -> Option<RuntimeDbHandle> {
+    let vfs = chaos_vfs::root_for(storage_home).ok()?;
     Some(runtime_handle_from_vfs(
         vfs,
-        sqlite_home.to_path_buf(),
+        storage_home.to_path_buf(),
         model_provider_id.to_string(),
     ))
 }

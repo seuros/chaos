@@ -11,7 +11,7 @@ It enforces an allow/deny policy and a "limited" mode intended for read-only net
 
 ### 1) Configure
 
-`chaos-pf` reads from Chaos's merged `config.toml` (via `chaos-kern` config loading).
+`chaos-pf` reads Chaos's merged configuration (database user settings plus session overrides, via `chaos-kern` config loading). Administrator network limits come from `/etc/chaos/requirements.toml`.
 
 Network settings live under the selected permissions profile. Example config:
 

@@ -8,13 +8,9 @@ async fn scheduled_authorization_survives_storage_but_not_policy_revocation() {
     let (session, mut turn) = crate::chaos::make_session_and_context().await;
     let home = tempfile::tempdir().unwrap();
     let cwd = home.path().canonicalize().unwrap();
-    let config_path = cwd.join("config.toml");
-    std::fs::write(&config_path, "sandbox_mode = 'workspace-write'\n").unwrap();
-    std::fs::create_dir(cwd.join("rules")).unwrap();
-    let rules_path = cwd.join("rules/cron.decrees");
-    let allowed = "prefix_rule {pattern = {'echo'}, decision = 'allow'}\n";
-    std::fs::write(&rules_path, allowed).unwrap();
-    crate::user_settings::migrate(&cwd, false).await.unwrap();
+    crate::test_support::seed_user_settings_toml(&cwd, "sandbox_mode = 'workspace-write'\n")
+        .await
+        .unwrap();
     crate::user_settings::put_scoped_approval(
         &cwd,
         &cwd,

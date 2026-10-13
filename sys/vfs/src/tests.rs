@@ -2,7 +2,6 @@ use super::CHAOS_STORAGE_URL_ENV;
 use super::ChaosVfs;
 use super::MountConfig;
 use super::VfsKind;
-use std::path::Path;
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -84,10 +83,7 @@ async fn sqlite_storage_url_opens_runtime_db() {
     let db_path = chaos_proc::runtime_db_path(temp_dir.path());
     let sqlite_url = format!("sqlite://{}", db_path.display());
 
-    let config = {
-        let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, Some(&sqlite_url));
-        super::resolve_mount_config(None, temp_dir.path()).expect("resolve from env")
-    };
+    let config = MountConfig::from_url(&sqlite_url).expect("sqlite url");
     assert_eq!(config, MountConfig::sqlite_url(&sqlite_url));
 
     let vfs = ChaosVfs::from_config(config)
@@ -193,31 +189,6 @@ fn mount_config_from_url_parses_supported_schemes() {
     );
     assert!(MountConfig::from_url("mysql://localhost/chaos").is_err());
     assert!(MountConfig::from_url("   ").is_err());
-}
-
-#[test]
-fn resolve_mount_config_prefers_explicit_url_then_env_then_home() {
-    let guard = EnvGuard::set(
-        CHAOS_STORAGE_URL_ENV,
-        Some("postgres://ubuntu:ubuntu@localhost:5432/postgres"),
-    );
-
-    assert_eq!(
-        super::resolve_mount_config(Some("sqlite:///tmp/explicit.sqlite"), Path::new("/tmp"))
-            .expect("explicit url wins"),
-        MountConfig::sqlite_url("sqlite:///tmp/explicit.sqlite")
-    );
-    assert_eq!(
-        super::resolve_mount_config(None, Path::new("/tmp")).expect("env url"),
-        MountConfig::postgres_url("postgres://ubuntu:ubuntu@localhost:5432/postgres")
-    );
-
-    drop(guard);
-    let _guard = EnvGuard::set(CHAOS_STORAGE_URL_ENV, None);
-    assert_eq!(
-        super::resolve_mount_config(None, Path::new("/tmp/chaos-home")).expect("home fallback"),
-        MountConfig::sqlite_home("/tmp/chaos-home")
-    );
 }
 
 struct EnvGuard {

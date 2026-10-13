@@ -197,6 +197,16 @@ installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.
 
+## Getting started
+
+1. Provision a database. PostgreSQL is recommended; SQLite works for one machine.
+2. Run `chaos`. First-run setup asks for the database and writes the two-key
+   bootstrap file (`storage_url`, `egress_url`). Headless: `chaos config bootstrap set storage_url env:CHAOS_DATABASE_URL`.
+3. Add a provider with `chaos config set model_providers.<id> '{...}'`.
+
+Everything else is a database setting. The full walkthrough is in
+[docs/getting-started.md](./docs/getting-started.md).
+
 ### NixOS
 
 NixOS is supported through the repository flake, which builds chaos
@@ -288,6 +298,7 @@ current setting.
 
 ## Docs
 
+- [Getting started](./docs/getting-started.md) — database, first run, first provider
 - [Installing & building from source](./man/chaos-install.7.md)
 - [Keyboard shortcuts](./man/chaos-keyboard.7.md) — press `?` with an empty input for in-app help
 - [Adding LLM providers](./man/chaos-providers.7.md)
@@ -298,6 +309,7 @@ current setting.
 - [Synopsis — how FreeChaOS coordinates sub-agents](./man/chaos-synopsis.7.md)
 - [Attested review — independent multi-model review](./man/chaos-attested-review.7.md)
 - [Storage — SQLite and PostgreSQL backends](./man/chaos-storage.7.md)
+- [Database configuration and approvals](./docs/database-configuration.md)
 - [Halluacinate — scripting engine](./man/chaos-halluacinate.7.md)
 - [Contributing](./docs/contributing.md)
 - [Comparison](./docs/comparison.md)

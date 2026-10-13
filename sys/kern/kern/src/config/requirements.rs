@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -59,15 +60,6 @@ pub(super) fn resolve_egress_url(
     }
 }
 
-fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
-    let path = PathBuf::from(chaos_proc::sqlite_home_env_value()?);
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        Some(resolved_cwd.join(path))
-    }
-}
-
 fn add_additional_vfs_writes(
     vfs_policy: &mut VfsPolicy,
     additional_writable_roots: &[AbsolutePathBuf],
@@ -77,7 +69,8 @@ fn add_additional_vfs_writes(
             matches!(
                 &entry.path,
                 chaos_ipc::permissions::VfsPath::Path { path: existing }
-                    if existing == path && entry.access == chaos_ipc::permissions::VfsAccessMode::Write
+                    if existing == path
+                        && entry.access == chaos_ipc::permissions::VfsAccessMode::Write
             )
         });
         if !exists {
@@ -129,6 +122,15 @@ fn resolve_web_search_config_inner(
 }
 
 impl Config {
+    /// The bootstrap values this config was built from, for in-process reloads.
+    pub(crate) fn resolved_bootstrap(&self) -> crate::user_settings::ResolvedBootstrap {
+        crate::user_settings::ResolvedBootstrap {
+            storage_url: self.storage_url.clone(),
+            storage_home: self.storage_home.clone(),
+            egress_url: self.bootstrap_egress_url.clone(),
+        }
+    }
+
     /// Clamp transport selection for a model client, with `CHAOS_AGY_*`
     /// environment overrides already applied.
     pub fn clamp_settings(&self) -> crate::config::ClampSettings {
@@ -143,8 +145,8 @@ impl Config {
 
     pub(crate) async fn reload_mcp_servers_from_layer_stack(&mut self) -> std::io::Result<()> {
         let effective = crate::config::load_effective_mcp_servers(
-            self.storage_url.as_deref(),
-            self.sqlite_home.as_path(),
+            &self.storage_url,
+            self.storage_home.as_path(),
             &self.config_layer_stack,
         )
         .await?;
@@ -163,7 +165,14 @@ impl Config {
         chaos_home: PathBuf,
     ) -> std::io::Result<Self> {
         let config_layer_stack = ConfigLayerStack::default();
-        Self::load_config_with_layer_stack(cfg, overrides, chaos_home, config_layer_stack)
+        let bootstrap = crate::user_settings::ResolvedBootstrap::sqlite_in(&chaos_home);
+        Self::load_config_with_layer_stack(
+            cfg,
+            overrides,
+            chaos_home,
+            config_layer_stack,
+            bootstrap,
+        )
     }
 
     pub(crate) fn load_config_with_layer_stack(
@@ -171,6 +180,7 @@ impl Config {
         overrides: ConfigOverrides,
         chaos_home: PathBuf,
         config_layer_stack: ConfigLayerStack,
+        bootstrap: crate::user_settings::ResolvedBootstrap,
     ) -> std::io::Result<Self> {
         let ConfigRequirements {
             approval_policy: mut constrained_approval_policy,
@@ -205,6 +215,7 @@ impl Config {
             ephemeral,
             mcp_servers: mcp_servers_override,
             active_project_trust: active_project_trust_override,
+            database_agent_roles,
             additional_writable_roots,
         } = overrides;
 
@@ -354,7 +365,8 @@ impl Config {
         {
             tracing::warn!(
                 error = %err,
-                "default approval policy is disallowed by requirements; falling back to required default"
+                "default approval policy is disallowed by requirements; \
+                 falling back to required default"
             );
             approval_policy = constrained_approval_policy.value();
         }
@@ -366,8 +378,29 @@ impl Config {
             resolve_web_search_mode_inner(&cfg, &config_profile).unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config_inner(&cfg, &config_profile);
 
-        let agent_roles =
-            agent_roles::load_agent_roles(&config_layer_stack, &mut startup_warnings)?;
+        let database_agent_roles = database_agent_roles.unwrap_or_default();
+        let mut database_roles = BTreeMap::new();
+        for record in &database_agent_roles {
+            match agent_roles::database_role(
+                &record.name,
+                &record.format,
+                &record.source,
+                record.base_dir.as_deref().map(Path::new),
+            ) {
+                Ok(role) => {
+                    database_roles.insert(record.name.clone(), role);
+                }
+                Err(err) => startup_warnings.push(format!(
+                    "Ignoring malformed stored agent role `{}`: {err}",
+                    record.name
+                )),
+            }
+        }
+        let agent_roles = agent_roles::load_agent_roles(
+            &config_layer_stack,
+            database_roles,
+            &mut startup_warnings,
+        )?;
 
         let mut model_providers = built_in_model_providers();
         // User-configured providers replace built-ins. Partial overrides
@@ -378,7 +411,10 @@ impl Config {
             model_providers.insert(key, provider);
         }
 
-        let egress_url = resolve_egress_url(cfg.egress_url, std::env::var_os("CHAOS_EGRESS_URL"))?;
+        let egress_url = resolve_egress_url(
+            bootstrap.egress_url.clone(),
+            std::env::var_os("CHAOS_EGRESS_URL"),
+        )?;
         let egress = egress_url
             .as_deref()
             .map(chaos_client::Egress::parse)
@@ -532,14 +568,11 @@ impl Config {
                 p.push("log");
                 p
             });
-        let sqlite_home = cfg
-            .sqlite_home
-            .as_ref()
-            .map(AbsolutePathBuf::to_path_buf)
-            .or_else(|| resolve_sqlite_home_env(&resolved_cwd))
-            .unwrap_or_else(|| chaos_home.to_path_buf());
-        let storage_url = crate::config::normalize_storage_url(cfg.storage_url.as_deref())
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+        let crate::user_settings::ResolvedBootstrap {
+            storage_url,
+            storage_home,
+            egress_url: bootstrap_egress_url,
+        } = bootstrap;
         let original_sandbox_policy = sandbox_policy.clone();
 
         validation::apply_requirement_constrained_value(
@@ -653,12 +686,14 @@ impl Config {
             agent_max_threads,
             agent_max_depth,
             agent_roles,
+            database_agent_roles,
             minion_job_max_runtime_seconds,
             chaos_home,
             mode_policy_override: None,
             unattended_recovery: false,
-            sqlite_home,
+            storage_home,
             storage_url,
+            bootstrap_egress_url,
             log_dir,
             config_layer_stack,
             history,

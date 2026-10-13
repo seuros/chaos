@@ -18,11 +18,11 @@ async fn malformed_rules_should_not_panic() -> anyhow::Result<()> {
     // TODO(mbolin): Figure out why using a temp dir as the cwd causes this test
     // to hang.
     let cwd = std::env::current_dir()?;
-    let config_contents = r#"
-# Pick a local provider so the CLI doesn't prompt for OpenAI auth in this test.
-model_provider = "ollama"
-"#;
-    std::fs::write(chaos_home.join("config.toml"), config_contents)?;
+    // Pick a local provider so the CLI doesn't prompt for OpenAI auth in this
+    // test. Settings live in the runtime database; the child reads the same
+    // SQLite file through the bootstrap written by the seeding helper.
+    chaos_kern::test_support::seed_user_settings_toml(chaos_home, "model_provider = \"ollama\"")
+        .await?;
     chaos_kern::config::set_project_trust_level(
         chaos_home,
         &cwd,

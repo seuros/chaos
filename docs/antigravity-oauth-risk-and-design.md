@@ -125,7 +125,7 @@ home, while `agy` owns its OAuth state.
 
 The home, the CLI path, the working directory, the model slug, the conversation
 state directory, and the print timeout are all configurable under
-`[antigravity]` in `config.toml`; the `CHAOS_AGY_*` variables override the
+the `antigravity` user settings; the `CHAOS_AGY_*` variables override the
 corresponding key for a single run. Conversation state files are written with
 owner-only permissions into a directory created owner-only.
 

@@ -15,6 +15,7 @@ fn create(id: &str, project: Option<&str>) -> HookChangeRequest {
 #[tokio::test]
 async fn scopes_trust_and_no_file_discovery() -> anyhow::Result<()> {
     let home = tempfile::tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
     let project = tempfile::tempdir()?;
     let other = tempfile::tempdir()?;
     std::fs::write(home.path().join("hooks.json"), "invalid legacy file")?;
@@ -71,6 +72,7 @@ async fn scopes_trust_and_no_file_discovery() -> anyhow::Result<()> {
 #[tokio::test]
 async fn elicitation_requires_explicit_human_accept_and_rechecks_revision() -> anyhow::Result<()> {
     let home = tempfile::tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
     let (session, mut turn, events) = crate::chaos::make_session_and_context_with_rx().await;
     let context = Arc::make_mut(&mut turn);
     Arc::make_mut(&mut context.config).chaos_home = home.path().into();
@@ -186,6 +188,7 @@ async fn automatic_policy_manages_hooks_without_elicitation() -> anyhow::Result<
     use crate::tools::registry::ToolHandler;
 
     let home = tempfile::tempdir()?;
+    crate::test_support::bootstrap_sqlite(home.path())?;
     let (session, mut turn, events) = crate::chaos::make_session_and_context_with_rx().await;
     let context = Arc::make_mut(&mut turn);
     let config = Arc::make_mut(&mut context.config);

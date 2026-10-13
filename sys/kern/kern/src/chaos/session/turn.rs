@@ -45,15 +45,7 @@ impl Session {
     ) -> crate::config::ConstraintResult<Arc<TurnContext>> {
         let config = self.get_config().await;
         // Database-backed sessions fail closed when storage is unavailable.
-        if config
-            .config_layer_stack
-            .get_user_layer()
-            .is_some_and(|layer| {
-                matches!(
-                    layer.name,
-                    chaos_ipc::api::ConfigLayerSource::UserDatabase { .. }
-                )
-            })
+        if config.config_layer_stack.get_user_layer().is_some()
             && crate::user_settings::snapshot(&config.chaos_home)
                 .await
                 .is_err()

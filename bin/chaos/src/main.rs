@@ -35,13 +35,16 @@ use std::io::IsTerminal;
 #[cfg(feature = "tui")]
 use supports_color::Stream;
 
+mod agents_cmd;
 mod config_cmd;
 mod debug_logging;
+mod documents_cmd;
 mod hooks_cmd;
 mod mcp_cmd;
 mod models_cmd;
 mod planning_cmd;
 mod reflex_cmd;
+mod rules_cmd;
 #[cfg(feature = "self-update")]
 mod update_cmd;
 
@@ -98,7 +101,7 @@ struct MultitoolCli {
     interactive: TuiCli,
 
     // Models also uses the root profile flag; do not require the console to parse it.
-    /// Configuration profile from config.toml to specify default options.
+    /// Configuration profile (a `profiles.<name>` user setting) to specify default options.
     #[cfg(not(feature = "tui"))]
     #[usage(long = "profile", short = 'p')]
     config_profile: Option<String>,
@@ -132,6 +135,18 @@ enum Subcommand {
     Config(config_cmd::ConfigCommand),
     /// Manage database lifecycle hooks.
     Hooks(hooks_cmd::HooksCommand),
+    /// Manage stored agent role definitions.
+    Agents(agents_cmd::AgentsCommand),
+    /// Manage stored user exec-policy rules (restrictions only).
+    Rules(rules_cmd::RulesCommand),
+    /// Manage stored custom collaboration modes.
+    Modes(documents_cmd::DocumentsCommand),
+    /// Manage stored custom prompts (`/prompts:<name>`).
+    Prompts(documents_cmd::DocumentsCommand),
+    /// Manage stored syntax themes (`.tmTheme`) for the `/theme` picker.
+    Themes(documents_cmd::DocumentsCommand),
+    /// Manage stored halluacinate Lua scripts.
+    Scripts(documents_cmd::DocumentsCommand),
     /// Register shared workspaces/projects and manage installation-local checkouts.
     Workspace(planning_cmd::WorkspaceCommand),
     /// Inspect, attach, and maintain durable database plans.
@@ -449,6 +464,20 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
+        Some(Subcommand::Agents(command)) => agents_cmd::run(command).await?,
+        Some(Subcommand::Rules(command)) => rules_cmd::run(command).await?,
+        Some(Subcommand::Modes(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Mode, command).await?
+        }
+        Some(Subcommand::Prompts(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Prompt, command).await?
+        }
+        Some(Subcommand::Themes(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Theme, command).await?
+        }
+        Some(Subcommand::Scripts(command)) => {
+            documents_cmd::run(chaos_kern::user_documents::DocumentKind::Script, command).await?
+        }
         Some(Subcommand::Workspace(command)) => planning_cmd::workspace(command).await?,
         Some(Subcommand::Plan(command)) => planning_cmd::plan(command).await?,
         Some(Subcommand::Approvals(command)) => config_cmd::approvals(command).await?,

@@ -108,7 +108,7 @@ See [setup and commands](./chaos-providers.7.md#clamp-transports).
 
 | Backend | How selected | Level | Notes |
 |---------|--------------|-------|-------|
-| SQLite | default (`chaos.sqlite` under chaos home) | Supported | Default single-node store |
+| SQLite | `storage_url` / `CHAOS_STORAGE_URL` / first-run setup | Supported | Single-node store |
 | PostgreSQL | `storage_url` / `CHAOS_STORAGE_URL` | Supported | Shared multi-node history; PostgreSQL ≥ 10 |
 | Semantic recall (`chaos-recall`) | same PG mount + **pgvector** | Supported (PG only) | SQLite mount returns backend error for recall |
 

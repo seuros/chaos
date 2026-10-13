@@ -4,6 +4,7 @@ use crate::config::resolve_permission_profile;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::LoaderOverrides;
+use crate::config_loader::NetworkConstraints;
 use crate::config_loader::load_config_layers_state;
 use crate::exec_policy::ExecPolicyError;
 use crate::exec_policy::format_exec_policy_error_with_source;
@@ -21,7 +22,6 @@ use chaos_pf::build_config_state;
 use chaos_pf::normalize_host;
 use chaos_pf::validate_policy_against_constraints;
 use chaos_pwd::find_chaos_home;
-use chaos_sysctl::CONFIG_TOML_FILE;
 use serde::Deserialize;
 use std::future::Future;
 use std::path::PathBuf;
@@ -49,7 +49,7 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
             .await
             .context("failed to load Chaos config")?;
 
-    let (exec_policy, warning) = match load_exec_policy(&config_layer_stack).await {
+    let (exec_policy, warning) = match load_exec_policy(&config_layer_stack, &chaos_home).await {
         Ok(policy) => (policy, None),
         Err(err @ ExecPolicyError::ParsePolicy { .. }) => {
             (chaos_selinux::Policy::empty(), Some(err))
@@ -72,88 +72,56 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
 }
 
 fn collect_layer_mtimes(stack: &ConfigLayerStack) -> Vec<LayerMtime> {
-    stack
-        .get_layers(
-            ConfigLayerStackOrdering::LowestPrecedenceFirst,
-            /*include_disabled*/ false,
-        )
-        .iter()
-        .filter_map(|layer| {
-            let path = match &layer.name {
-                ConfigLayerSource::System { file } => Some(file.as_path().to_path_buf()),
-                ConfigLayerSource::User { file } => Some(file.as_path().to_path_buf()),
+    let mut paths =
+        vec![PathBuf::from(crate::config_loader::SYSTEM_CONFIG_DIR_UNIX).join("requirements.toml")];
+    paths.extend(
+        stack
+            .get_layers(
+                ConfigLayerStackOrdering::LowestPrecedenceFirst,
+                /*include_disabled*/ false,
+            )
+            .iter()
+            .filter_map(|layer| match &layer.name {
                 ConfigLayerSource::ProjectMcp { file } => Some(file.as_path().to_path_buf()),
-                ConfigLayerSource::Project { dot_codex_folder } => {
-                    Some(dot_codex_folder.join(CONFIG_TOML_FILE).into_path_buf())
-                }
-                _ => None,
-            };
-            path.map(LayerMtime::new)
-        })
-        .collect()
+                ConfigLayerSource::UserDatabase { .. } | ConfigLayerSource::SessionFlags => None,
+            }),
+    );
+    paths.into_iter().map(LayerMtime::new).collect()
 }
 
 fn enforce_trusted_constraints(
     layers: &ConfigLayerStack,
     config: &NetworkProxyConfig,
 ) -> Result<NetworkProxyConstraints> {
-    let constraints = network_constraints_from_trusted_layers(layers)?;
+    let constraints = constraints_from_requirements(
+        layers
+            .requirements()
+            .network
+            .as_ref()
+            .map(|sourced| &sourced.value),
+    );
     validate_policy_against_constraints(config, &constraints)
         .map_err(NetworkProxyConstraintError::into_anyhow)
         .context("network proxy constraints")?;
     Ok(constraints)
 }
 
-fn network_constraints_from_trusted_layers(
-    layers: &ConfigLayerStack,
-) -> Result<NetworkProxyConstraints> {
+/// Administrator network policy comes from `requirements.toml` only; user,
+/// project, and session layers can never widen it.
+fn constraints_from_requirements(network: Option<&NetworkConstraints>) -> NetworkProxyConstraints {
     let mut constraints = NetworkProxyConstraints::default();
-    for layer in layers.get_layers(
-        ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    ) {
-        if is_user_controlled_layer(&layer.name) {
-            continue;
-        }
-
-        let parsed = network_tables_from_toml(&layer.config)?;
-        if let Some(network) = selected_network_from_tables(parsed)? {
-            apply_network_constraints(network, &mut constraints);
-        }
-    }
-    Ok(constraints)
-}
-
-fn apply_network_constraints(network: NetworkToml, constraints: &mut NetworkProxyConstraints) {
-    if let Some(enabled) = network.enabled {
-        constraints.enabled = Some(enabled);
-    }
-    if let Some(mode) = network.mode {
-        constraints.mode = Some(mode);
-    }
-    if let Some(allow_upstream_proxy) = network.allow_upstream_proxy {
-        constraints.allow_upstream_proxy = Some(allow_upstream_proxy);
-    }
-    if let Some(dangerously_allow_non_loopback_proxy) = network.dangerously_allow_non_loopback_proxy
-    {
-        constraints.dangerously_allow_non_loopback_proxy =
-            Some(dangerously_allow_non_loopback_proxy);
-    }
-    if let Some(dangerously_allow_all_unix_sockets) = network.dangerously_allow_all_unix_sockets {
-        constraints.dangerously_allow_all_unix_sockets = Some(dangerously_allow_all_unix_sockets);
-    }
-    if let Some(allowed_domains) = network.allowed_domains {
-        constraints.allowed_domains = Some(allowed_domains);
-    }
-    if let Some(denied_domains) = network.denied_domains {
-        constraints.denied_domains = Some(denied_domains);
-    }
-    if let Some(allow_unix_sockets) = network.allow_unix_sockets {
-        constraints.allow_unix_sockets = Some(allow_unix_sockets);
-    }
-    if let Some(allow_local_binding) = network.allow_local_binding {
-        constraints.allow_local_binding = Some(allow_local_binding);
-    }
+    let Some(network) = network else {
+        return constraints;
+    };
+    constraints.enabled = network.enabled;
+    constraints.allow_upstream_proxy = network.allow_upstream_proxy;
+    constraints.dangerously_allow_non_loopback_proxy = network.dangerously_allow_non_loopback_proxy;
+    constraints.dangerously_allow_all_unix_sockets = network.dangerously_allow_all_unix_sockets;
+    constraints.allowed_domains = network.allowed_domains.clone();
+    constraints.denied_domains = network.denied_domains.clone();
+    constraints.allow_unix_sockets = network.allow_unix_sockets.clone();
+    constraints.allow_local_binding = network.allow_local_binding;
+    constraints
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -230,16 +198,6 @@ fn upsert_network_domain(target: &mut Vec<String>, opposite: &mut Vec<String>, h
     opposite.retain(|entry| normalize_host(entry) != host);
     target.retain(|entry| normalize_host(entry) != host);
     target.push(host);
-}
-
-fn is_user_controlled_layer(layer: &ConfigLayerSource) -> bool {
-    matches!(
-        layer,
-        ConfigLayerSource::User { .. }
-            | ConfigLayerSource::UserDatabase { .. }
-            | ConfigLayerSource::Project { .. }
-            | ConfigLayerSource::SessionFlags
-    )
 }
 
 #[derive(Clone)]

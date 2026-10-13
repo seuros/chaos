@@ -101,7 +101,8 @@ use libui::tui;
 const DEFAULT_LOG_FILTER: &str = "chaos_kern=info,chaos_console=info,libui=warn,\
 chaos_mcp_runtime=info,mcp_guest=info,chaos_snitch::startup=info";
 
-const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,chaos_fork=debug,\
+const DEBUG_LOG_FILTER: &str = "warn,chaos_kern=debug,chaos_coreboot=debug,chaos_boot=debug,\
+chaos_fork=debug,\
 chaos_console=debug,chaos_mcpd=debug,chaos_pam=debug,chaos_snitch=debug,\
 chaos_ipc=debug,chaos_selinux=debug,chaos_dtrace=debug,chaos_halluacinate=debug,\
 chaos_mcp_runtime=debug,mcp_guest=debug,chaos_clamp=debug,chaos_parrot=debug";
@@ -236,7 +237,7 @@ pub async fn run_main(
     startup.mark("storage_mounted");
 
     #[allow(clippy::print_stderr)]
-    match check_execpolicy_for_warnings(&config.config_layer_stack).await {
+    match check_execpolicy_for_warnings(&config.config_layer_stack, &config.chaos_home).await {
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
@@ -448,7 +449,8 @@ async fn run_ratatui_app(
             process_id: None,
             process_name: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `chaos {action}` without an ID to choose from existing sessions."
+                "No saved session found with ID {id_str}. Run `chaos {action}` without an ID \
+                 to choose from existing sessions."
             )),
         })
     };
@@ -591,13 +593,41 @@ async fn run_ratatui_app(
 
     libui::theme::set_appearance(config.appearance.clone());
 
+    // Custom themes come from the runtime database; install them before the
+    // override so a stored name resolves. Without the syntax feature the
+    // parser is a stub, and every stored theme would be reported as invalid.
+    #[cfg(feature = "syntax")]
+    match chaos_kern::user_documents::enabled(
+        &config.chaos_home,
+        chaos_kern::user_documents::DocumentKind::Theme,
+    )
+    .await
+    {
+        Ok(documents) => {
+            let mut themes = std::collections::BTreeMap::new();
+            for document in documents {
+                match crate::render::highlight::parse_tmtheme(&document.source) {
+                    Some(theme) => {
+                        themes.insert(document.name, theme);
+                    }
+                    None => config.startup_warnings.push(format!(
+                        "Stored theme `{}` is not a valid .tmTheme; re-import or remove it \
+                         with `chaos themes`.",
+                        document.name
+                    )),
+                }
+            }
+            crate::render::highlight::set_custom_themes(themes);
+        }
+        Err(err) => config
+            .startup_warnings
+            .push(format!("Custom themes could not be loaded: {err:#}")),
+    }
+
     // Configure syntax highlighting theme from the final config — onboarding
     // and resume/fork can both reload config with a different tui_theme, so
     // this must happen after the last possible reload.
-    if let Some(w) = crate::render::highlight::set_theme_override(
-        config.tui_theme.clone(),
-        find_chaos_home().ok(),
-    ) {
+    if let Some(w) = crate::render::highlight::set_theme_override(config.tui_theme.clone()) {
         config.startup_warnings.push(w);
     }
 

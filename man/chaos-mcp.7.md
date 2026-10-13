@@ -41,8 +41,7 @@ chaos mcp remove my-server  # Remove a server
 
 ### Storage
 
-Global MCP servers are stored in the runtime MCP registry, not in
-`~/.chaos/config.toml`. Use `chaos mcp add`, `chaos mcp remove`, and
+Global MCP servers are stored in the runtime MCP registry. Use `chaos mcp add`, `chaos mcp remove`, and
 `chaos mcp get` to manage them.
 
 Project-local MCP servers still live in `.mcp.json`.
@@ -91,15 +90,12 @@ lease for this identity or create a new fenced generation after expiration.
 
 ### Persistent tool approvals
 
-Personal MCP trust decisions belong in `~/.chaos/config.toml`, separate from
+Personal MCP trust decisions are user settings in the database, separate from
 shared project server definitions:
 
-```toml
-[mcp_tool_approvals.browser]
-approval_mode = "approve"
-
-[mcp_tool_approvals.browser.tools]
-evaluate = "prompt"
+```sh
+chaos config set mcp_tool_approvals.browser.approval_mode '"auto"'
+chaos config set mcp_tool_approvals.browser.tools.evaluate '"prompt"'
 ```
 
 The modes are:
@@ -109,10 +105,11 @@ The modes are:
 - `approve` — skip the ordinary approval prompt. Safety monitoring can still
   interrupt or ask for confirmation when it detects unusual risk.
 
-Per-tool settings take precedence over the server default. Selecting **Allow
-and don't ask me again** in an approval prompt persists `approve` for that
-specific server and tool in `~/.chaos/config.toml`. Connector/app approvals use
-their existing `[apps]` entries in the same file.
+Per-tool settings take precedence over the server default. `approve` cannot be
+written with `chaos config set`; selecting **Allow and don't ask me again** in
+an approval prompt records the grant for that specific server and tool in the
+database (`chaos approvals list`). Connector/app approvals use the `apps`
+settings the same way.
 
 #### Stdio server options
 
@@ -313,7 +310,7 @@ verify the write, pause heavy/interruption-sensitive work, and notify the operat
 It must not assume suspend prevents data loss or automatically delete files.
 
 Global `machine_warnings` settings use the normal settings database and
-`chaos config set` / `chaos config unset` interface, not bootstrap `config.toml`.
+`chaos config set` / `chaos config unset` interface.
 Restart to apply changes. Project configuration cannot override this host policy.
 
 | Setting | Default | Meaning |
@@ -490,7 +487,7 @@ restarted if they crash.
 ## FILES
 
 - `.mcp.json` - project-local MCP server definitions
-- `~/.chaos/config.toml` - general user config
+- `~/.chaos/config.toml` - bootstrap: `storage_url` and `egress_url` only
 - runtime MCP registry - global MCP server storage used by `chaos mcp ...`
 
 ## SEE ALSO

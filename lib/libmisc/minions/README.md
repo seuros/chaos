@@ -23,7 +23,7 @@ better-articulated user — which is another agent — giving them instructions.
 
 ## Instruction scope
 
-Use two distinct settings in `config.toml`:
+Use two distinct user settings (`chaos config set`):
 
 ```toml
 # Applied to this session as a developer message.

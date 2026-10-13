@@ -7,7 +7,7 @@ use toml_edit::value;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 
-/// Save the default OSS provider preference to config.toml.
+/// Save the default OSS provider preference in user settings.
 pub fn set_default_oss_provider(chaos_home: &Path, provider: &str) -> std::io::Result<()> {
     // Any non-empty provider string is accepted and written to config.
     if provider.trim().is_empty() {
@@ -25,5 +25,5 @@ pub fn set_default_oss_provider(chaos_home: &Path, provider: &str) -> std::io::R
     ConfigEditsBuilder::new(chaos_home)
         .with_edits(edits)
         .apply_blocking()
-        .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
+        .map_err(|err| std::io::Error::other(format!("failed to persist user settings: {err}")))
 }

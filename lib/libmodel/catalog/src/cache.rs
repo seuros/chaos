@@ -18,32 +18,40 @@ const RAW_CATALOG_V1_FORMAT: &str = "raw_catalog_v1";
 /// Manages loading and saving of model catalogs in the shared runtime store.
 #[derive(Debug, Clone)]
 pub struct ModelsCacheManager {
-    sqlite_home: PathBuf,
+    storage_home: PathBuf,
     cache_ttl: Duration,
     backend: Option<Vfs>,
+    /// Backend description for logs: the SQLite directory or the PostgreSQL mount.
+    storage_hint: String,
 }
 
 impl ModelsCacheManager {
-    /// Create a new cache manager over the backend serving `sqlite_home`.
-    pub fn new(sqlite_home: PathBuf, cache_ttl: Duration) -> Self {
-        let backend = match chaos_vfs::pool_for(&sqlite_home) {
+    /// Create a new cache manager over the backend serving `storage_home`.
+    pub fn new(storage_home: PathBuf, cache_ttl: Duration) -> Self {
+        let backend = match chaos_vfs::pool_for(&storage_home) {
             Ok(pool) => Some(pool),
             Err(err) => {
                 error!("model cache is unavailable: {err}");
                 None
             }
         };
+        let storage_hint = match backend.as_ref().map(Vfs::kind) {
+            Some(chaos_vfs::VfsKind::Postgres) => "postgres".to_string(),
+            Some(chaos_vfs::VfsKind::Sqlite) => format!("sqlite:{}", storage_home.display()),
+            None => "unmounted".to_string(),
+        };
         Self {
-            sqlite_home,
+            storage_home,
             cache_ttl,
             backend,
+            storage_hint,
         }
     }
 
     /// Where this cache lives, so a caller can build a second manager over the
     /// same store without threading the path alongside it.
     pub fn home(&self) -> &std::path::Path {
-        self.sqlite_home.as_path()
+        self.storage_home.as_path()
     }
 
     /// Load a fresh, matching, format-marked cache entry.
@@ -53,7 +61,7 @@ impl ModelsCacheManager {
         expected_scope: &ModelsCacheScope,
     ) -> Option<ModelsCache> {
         info!(
-            storage_hint = %self.sqlite_home.display(),
+            storage_hint = %self.storage_hint,
             expected_version,
             "models cache: attempting load_fresh"
         );
@@ -65,14 +73,14 @@ impl ModelsCacheManager {
             }
         };
         info!(
-            storage_hint = %self.sqlite_home.display(),
+            storage_hint = %self.storage_hint,
             cached_version = ?cache.client_version,
             fetched_at = %cache.fetched_at,
             "models cache: loaded cache row"
         );
         if cache.client_version.as_deref() != Some(expected_version) {
             info!(
-                storage_hint = %self.sqlite_home.display(),
+                storage_hint = %self.storage_hint,
                 expected_version,
                 cached_version = ?cache.client_version,
                 "models cache: cache version mismatch"
@@ -81,7 +89,7 @@ impl ModelsCacheManager {
         }
         if !cache.is_fresh(self.cache_ttl) {
             info!(
-                storage_hint = %self.sqlite_home.display(),
+                storage_hint = %self.storage_hint,
                 cache_ttl_secs = self.cache_ttl.as_secs(),
                 fetched_at = %cache.fetched_at,
                 "models cache: cache is stale"
@@ -89,7 +97,7 @@ impl ModelsCacheManager {
             return None;
         }
         info!(
-            storage_hint = %self.sqlite_home.display(),
+            storage_hint = %self.storage_hint,
             cache_ttl_secs = self.cache_ttl.as_secs(),
             "models cache: cache hit"
         );

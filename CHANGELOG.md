@@ -9,6 +9,98 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Removed (MAJOR: read before upgrading)
+- TOML is no longer a configuration source. `/etc/chaos/config.toml` and
+  project `.chaos/config.toml` files are not read. `$CHAOS_HOME/config.toml`
+  is a strict two-key bootstrap file (`storage_url`, `egress_url`); any other
+  key stops startup with the `chaos config set` command that replaces it.
+- `chaos config migrate` and the TOML-to-database migration path. Settings
+  already in the database are unaffected.
+- The `sqlite_home` bootstrap key and the `CHAOS_SQLITE_HOME` environment
+  variable. Name the SQLite file in the storage URL instead
+  (`sqlite:///path/chaos.sqlite`); `CHAOS_STORAGE_URL` is the only storage
+  environment variable.
+- IPC: `ConfigLayerSource::{System, User, Bootstrap, Project}`, the `filePath`
+  fields on config write requests/responses, and the `configLayerReadonly`
+  error code.
+
+### Changed
+- Storage is never chosen silently. Every command requires `storage_url` or
+  `CHAOS_STORAGE_URL`; the console runs first-run setup when neither is set,
+  everything else exits with setup instructions.
+- `chaos config export` prints JSON and `chaos config import` reads JSON.
+- Administrator network constraints come only from
+  `/etc/chaos/requirements.toml` (`[experimental_network]`).
+- File-based `rules/*.decrees` and `agents/` come from two places only:
+  `/etc/chaos` (rules may grant) and trusted project `.chaos` folders
+  (restrictions only). The user's own rules and roles are database rows
+  (`chaos rules`, `chaos agents`); `$CHAOS_HOME/rules` and
+  `$CHAOS_HOME/agents` are not read.
+
+### Added
+- `docs/getting-started.md`: database provisioning (PostgreSQL recommended),
+  first run, headless bootstrap, first provider.
+- `chaos agents list|show|import|export|remove|enable|disable`: agent role
+  documents live in the runtime database. `$CHAOS_HOME/agents/` and
+  `/etc/chaos/agents/` are no longer read; trusted project `.chaos/agents/`
+  files still overlay stored roles.
+- `chaos rules list|show|import|remove`: your exec-policy rules live in the
+  runtime database as named documents and can only restrict; importing an
+  `allow` decision is refused. `$CHAOS_HOME/rules/` is no longer read.
+  Administrator `/etc/chaos/rules` and trusted project `.chaos/rules` are
+  unchanged.
+- `chaos modes` and `chaos prompts` (`list|show|import|export|remove|enable|
+  disable`): custom collaboration modes and `/prompts:<name>` documents live
+  in the runtime database. `$CHAOS_HOME/modes/` and `$CHAOS_HOME/prompts/`
+  are no longer read. A stored mode that fails to parse is skipped with a
+  warning instead of failing session start.
+- `chaos themes` and `chaos scripts`: custom `.tmTheme` syntax themes and
+  halluacinate Lua scripts live in the runtime database. `$CHAOS_HOME/themes/`
+  and `~/.config/chaos/scripts/` are no longer read. Project `.chaos/scripts/`
+  now load only when the project is trusted; previously any clone's scripts
+  ran at session start.
+
+### Fixed
+- `chaos rules import`/`remove` bind the write to the settings revision read
+  before the rules document, so two concurrent edits can no longer silently
+  drop one another's restriction; the loser gets a revision conflict.
+- `chaos themes import` validates with the tmTheme loader the console uses,
+  so an import that succeeds is a theme that appears; a bad replacement
+  leaves the stored theme untouched.
+- Applying a stored agent role no longer drops the other stored roles from
+  the resulting config, so nested agents can still select them.
+- The message-history generation token now reads the SQLite file name from
+  the open connection, so a storage URL outside ChaOS home still rejects
+  stale history after the file is recreated.
+- Compatible endpoints that accept one system block (self-hosted servers
+  with strict chat templates) now receive every `developer`/`system`
+  instruction hoisted into that block, in order, on both wire formats.
+  47.13.2 relabeled instructions that arrived after the first user turn as
+  `user` messages, so permission and mode changes reached the model as if
+  the human had typed them.
+- The workspace `rust-version` is 1.98 so FreeBSD's ports Rust (1.98.1)
+  builds it; development still pins 1.99 through `mise` and
+  `rust-toolchain.toml`.
+- PostgreSQL mounts now enforce the same per-partition log retention as
+  SQLite; previously only time-based cleanup ran.
+- The message-history log id on PostgreSQL changes when the table is
+  rewritten, matching the SQLite inode semantics, so a stale client cursor
+  cannot survive a reset.
+- `chaos_journald` (SQLite) heartbeats and releases a lease inside one
+  transaction; a stale owner can no longer extend or delete a lease another
+  owner acquired in between.
+- Machine status no longer probes free space on the SQLite directory when the
+  mounted backend is PostgreSQL, and the model catalog cache logs the real
+  backend instead of a filesystem path.
+
+### Removed
+- The evicted memory-consolidation and backfill tables' SQLite-only code in
+  `chaos-proc` (no caller on either backend) and the unused `chaos-daemon`
+  crate. Migration `0023` drops the orphaned `stage1_outputs`, `jobs`, and
+  `backfill_state` tables on both backends.
+- `Config.sqlite_home` is now `Config.storage_home`: a mount-registry key on
+  every backend, the SQLite directory only under SQLite.
+
 ## [47.13.2] - 2026-10-11
 
 ### Added

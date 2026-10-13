@@ -58,8 +58,8 @@ env -u GEMINI_API_KEY -u GOOGLE_API_KEY \
   "${CHAOS_AGY_PATH:-agy}" models
 ```
 
-Every knob is settable in `config.toml`, and each key has an environment
-override for one-off runs:
+Every knob is a user setting (`chaos config set <key> <json>`), and each key
+has an environment override for one-off runs:
 
 ```toml
 [antigravity]

@@ -254,17 +254,21 @@ pub(crate) fn build_request_body(
     Ok(body)
 }
 
-/// Strict chat templates (Qwen3.6/3.8 under vLLM) reject any
-/// `system` message that is not the first message. Merge the leading run of
-/// system messages into one and demote later ones to `user` so their position
-/// in the conversation is preserved.
+/// Strict chat templates (Qwen3.6/3.8 under vLLM) reject any `system`
+/// message that is not the first message. Merge every system message, in
+/// order, into one leading block. Instructions are never relabeled as `user`
+/// input; the chat format only carries their cumulative state, not when each
+/// one arrived.
 fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
-    let leading = messages
+    let misplaced = messages
         .iter()
-        .take_while(|message| message.role == "system")
-        .count();
-    if leading > 1 {
-        let merged: Vec<ChatMessage> = messages.drain(..leading).collect();
+        .skip(1)
+        .any(|message| message.role == "system");
+    if misplaced {
+        let (merged, rest): (Vec<ChatMessage>, Vec<ChatMessage>) = std::mem::take(messages)
+            .into_iter()
+            .partition(|message| message.role == "system");
+        *messages = rest;
         let all_text = merged
             .iter()
             .all(|message| matches!(message.content, Some(Value::String(_))));
@@ -299,11 +303,6 @@ fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
                 name: None,
             },
         );
-    }
-    for message in messages.iter_mut().skip(1) {
-        if message.role == "system" {
-            message.role = "user".to_string();
-        }
     }
 }
 
@@ -422,7 +421,10 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessage> {
                         tool_calls: Some(serde_json::json!([{
                             "id": id,
                             "type": "function",
-                            "function": { "name": "shell", "arguments": format!(r#"{{"command": {:?}}}"#, cmd) }
+                            "function": {
+                                "name": "shell",
+                                "arguments": format!(r#"{{"command": {:?}}}"#, cmd),
+                            }
                         }])),
                         tool_call_id: None,
                         name: None,
@@ -466,7 +468,10 @@ fn convert_tools(tools: &[chaos_abi::ToolDef]) -> Vec<ChatTool> {
                         "properties": {
                             "input": {
                                 "type": "string",
-                                "description": format!("Input in {} format: {}", f.format_type, f.syntax),
+                                "description": format!(
+                                    "Input in {} format: {}",
+                                    f.format_type, f.syntax
+                                ),
                             }
                         },
                         "required": ["input"],
@@ -499,7 +504,8 @@ struct TextAccumulator {
 /// The schema is:
 /// ```json
 /// {"id":"chatcmpl-...","object":"chat.completion.chunk","model":"example-model",
-///  "choices":[{"delta":{"role":"assistant","content":"...","tool_calls":[...]},"finish_reason":null}],
+///  "choices":[{"delta":{"role":"assistant","content":"...","tool_calls":[...]},
+///              "finish_reason":null}],
 ///  "usage":null}
 /// ```
 /// The final chunk carries `"finish_reason": "stop"` or similar, and when

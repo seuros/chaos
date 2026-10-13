@@ -4,6 +4,7 @@ use chaos_test_fixtures::TEST_MODEL;
 #[tokio::test]
 async fn test_set_default_oss_provider() -> anyhow::Result<()> {
     let temp_dir = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(temp_dir.path())?;
     let chaos_home = temp_dir.path();
     crate::user_settings::install_persistence();
 

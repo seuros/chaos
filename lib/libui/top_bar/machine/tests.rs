@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 #[tokio::test]
 async fn monitor_coalesces_slow_reads_discards_old_workspaces_and_clears_failures() {
     let home = tempfile::tempdir().unwrap();
+    chaos_kern::test_support::bootstrap_sqlite(home.path()).unwrap();
     let config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .fallback_cwd(Some(home.path().to_path_buf()))

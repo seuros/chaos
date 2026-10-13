@@ -145,7 +145,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         create_mock_responses_server(vec![create_final_assistant_message_sse_response("Enjoy!")?])
             .await;
 
-    // Run `chaos mcp` with a specific config.toml.
+    // Run `chaos mcp` with specific user settings.
     let chaos_home = TempDir::new()?;
     create_config_toml(chaos_home.path(), &server.uri())?;
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
@@ -219,13 +219,16 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
             )
         })
         .collect();
-    let instruction_contents: Vec<&str> = instruction_messages
+    // Compatible endpoints hoist developer items into `instructions`; the
+    // permissions text must be present in one of the two places.
+    let mut instruction_contents: Vec<&str> = instruction_messages
         .iter()
         .filter_map(|msg| msg.get("content").and_then(serde_json::Value::as_array))
         .flat_map(|content| content.iter())
         .filter(|span| span.get("type").and_then(serde_json::Value::as_str) == Some("input_text"))
         .filter_map(|span| span.get("text").and_then(serde_json::Value::as_str))
         .collect();
+    instruction_contents.push(instructions);
     assert!(
         instruction_contents
             .iter()
@@ -233,7 +236,9 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         "expected permissions instruction message, got {instruction_contents:?}"
     );
     assert!(
-        instruction_contents.contains(&"Foreshadow upcoming tool calls."),
+        instruction_contents
+            .iter()
+            .any(|content| content.contains("Foreshadow upcoming tool calls.")),
         "expected developer instructions in instruction messages, got {instruction_contents:?}"
     );
 
@@ -448,32 +453,39 @@ async fn chaos_tool_provider_override() -> anyhow::Result<()> {
 /// Default provider is deliberately unreachable so a `provider` override is the
 /// only way to get a successful turn.
 fn create_two_provider_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = chaos_home.join("config.toml");
+    write_settings(
+        chaos_home,
+        json!({
+            "model": "dead-model",
+            "approval_policy": "headless",
+            "sandbox_mode": "read-only",
+            "model_provider": "dead_provider",
+            "model_providers": {
+                "dead_provider": {
+                    "name": "Unreachable provider",
+                    "base_url": "http://127.0.0.1:1/v1",
+                    "wire_api": "responses",
+                    "request_max_retries": 0,
+                    "stream_max_retries": 0,
+                },
+                "mock_provider": {
+                    "name": "Mock provider for test",
+                    "base_url": format!("{server_uri}/v1"),
+                    "wire_api": "responses",
+                    "request_max_retries": 0,
+                    "stream_max_retries": 0,
+                }
+            }
+        }),
+    )
+}
+
+/// User settings are a database document; tests stage them as JSON and the
+/// MCP harness imports them with `chaos config import` before serving.
+fn write_settings(chaos_home: &Path, settings: serde_json::Value) -> std::io::Result<()> {
     std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "dead-model"
-approval_policy = "headless"
-sandbox_mode = "read-only"
-
-model_provider = "dead_provider"
-
-[model_providers.dead_provider]
-name = "Unreachable provider"
-base_url = "http://127.0.0.1:1/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
+        chaos_home.join(mcp_test_support::SETTINGS_FILE),
+        serde_json::to_vec_pretty(&settings)?,
     )
 }
 
@@ -506,25 +518,23 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
 /// It also uses `approval_policy = "supervised"` so that we exercise the
 /// elicitation code path for shell commands.
 fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = chaos_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "mock-model"
-approval_policy = "supervised"
-sandbox_mode = "workspace-write"
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "{server_uri}/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
+    write_settings(
+        chaos_home,
+        json!({
+            "model": "mock-model",
+            "approval_policy": "supervised",
+            "sandbox_mode": "workspace-write",
+            "model_provider": "mock_provider",
+            "model_providers": {
+                "mock_provider": {
+                    "name": "Mock provider for test",
+                    "base_url": format!("{server_uri}/v1"),
+                    "wire_api": "responses",
+                    "request_max_retries": 0,
+                    "stream_max_retries": 0,
+                }
+            }
+        }),
     )
 }
 

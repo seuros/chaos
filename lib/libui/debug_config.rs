@@ -180,12 +180,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
 fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
     match &layer.name {
         ConfigLayerSource::SessionFlags => render_session_flag_details(&layer.config),
-        ConfigLayerSource::System { .. }
-        | ConfigLayerSource::Bootstrap { .. }
-        | ConfigLayerSource::User { .. }
-        | ConfigLayerSource::UserDatabase { .. }
-        | ConfigLayerSource::ProjectMcp { .. }
-        | ConfigLayerSource::Project { .. } => Vec::new(),
+        ConfigLayerSource::UserDatabase { .. } | ConfigLayerSource::ProjectMcp { .. } => Vec::new(),
     }
 }
 
@@ -267,23 +262,8 @@ fn normalize_allowed_web_search_modes(
 
 fn format_config_layer_source(source: &ConfigLayerSource) -> String {
     match source {
-        ConfigLayerSource::System { file } => {
-            format!("system ({})", file.as_path().display())
-        }
-        ConfigLayerSource::Bootstrap { file } => {
-            format!("bootstrap ({})", file.as_path().display())
-        }
-        ConfigLayerSource::User { file } => {
-            format!("user ({})", file.as_path().display())
-        }
         ConfigLayerSource::UserDatabase { revision } => {
             format!("user database (revision {revision})")
-        }
-        ConfigLayerSource::Project { dot_codex_folder } => {
-            format!(
-                "project ({}/config.toml)",
-                dot_codex_folder.as_path().display()
-            )
         }
         ConfigLayerSource::ProjectMcp { file } => {
             format!("project ({})", file.as_path().display())

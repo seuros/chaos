@@ -76,91 +76,6 @@ ORDER BY created_at ASC, id ASC
             .collect()
     }
 
-    pub async fn get_process_memory_mode(&self, id: ProcessId) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query("SELECT memory_mode FROM processes WHERE id = ?")
-            .bind(id.to_string())
-            .fetch_optional(self.pool.as_ref())
-            .await?;
-        Ok(row.and_then(|row| row.try_get("memory_mode").ok()))
-    }
-
-    pub async fn get_process_name(&self, id: ProcessId) -> anyhow::Result<Option<String>> {
-        let row = sqlx::query(
-            "SELECT process_name FROM processes WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
-        )
-        .bind(id.to_string())
-        .fetch_optional(self.pool.as_ref())
-        .await?;
-        Ok(row.and_then(|row| row.try_get("process_name").ok()))
-    }
-
-    pub async fn get_process_names(
-        &self,
-        ids: &std::collections::HashSet<ProcessId>,
-    ) -> anyhow::Result<std::collections::HashMap<ProcessId, String>> {
-        if ids.is_empty() {
-            return Ok(std::collections::HashMap::new());
-        }
-
-        let mut builder = QueryBuilder::<Sqlite>::new(
-            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL AND trim(process_name) <> '' AND id IN (",
-        );
-        {
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(id.to_string());
-            }
-        }
-        builder.push(")");
-
-        let rows = builder.build().fetch_all(self.pool.as_ref()).await?;
-        let mut out = std::collections::HashMap::with_capacity(rows.len());
-        for row in rows {
-            let id: String = row.try_get("id")?;
-            let process_name: String = row.try_get("process_name")?;
-            out.insert(ProcessId::try_from(id)?, process_name);
-        }
-        Ok(out)
-    }
-
-    pub async fn find_process_id_by_name(&self, name: &str) -> anyhow::Result<Option<ProcessId>> {
-        if name.trim().is_empty() {
-            return Ok(None);
-        }
-        let row = sqlx::query(
-            r#"
-SELECT id
-FROM processes
-WHERE process_name = ?
-ORDER BY updated_at DESC, created_at DESC
-LIMIT 1
-            "#,
-        )
-        .bind(name)
-        .fetch_optional(self.pool.as_ref())
-        .await?;
-        row.map(|row| row.try_get::<String, _>("id"))
-            .transpose()?
-            .map(ProcessId::try_from)
-            .transpose()
-            .map_err(Into::into)
-    }
-
-    pub async fn set_process_name(
-        &self,
-        process_id: ProcessId,
-        process_name: Option<&str>,
-    ) -> anyhow::Result<bool> {
-        let result =
-            sqlx::query("UPDATE processes SET process_name = ?, updated_at = ? WHERE id = ?")
-                .bind(process_name)
-                .bind(datetime_to_epoch_seconds(jiff::Timestamp::now()))
-                .bind(process_id.to_string())
-                .execute(self.pool.as_ref())
-                .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
     /// Get dynamic tools for a thread, if present.
     pub async fn get_dynamic_tools(
         &self,
@@ -301,63 +216,22 @@ FROM processes
             .await
     }
 
-    pub async fn insert_process_if_absent(
+    /// Mark a thread as polluted; same contract as the PostgreSQL backend.
+    pub(crate) async fn mark_process_memory_mode_polluted(
         &self,
-        metadata: &crate::ProcessMetadata,
+        process_id: ProcessId,
     ) -> anyhow::Result<bool> {
         let result = sqlx::query(
-            r#"
-INSERT INTO processes (
-    id,
-    source_json,
-    created_at,
-    updated_at,
-    source,
-    agent_nickname,
-    agent_role,
-    model_provider,
-    cwd,
-    cli_version,
-    title,
-    sandbox_policy,
-    approval_mode,
-    tokens_used,
-    first_user_message,
-    archived_at,
-    git_sha,
-    git_branch,
-    git_origin_url,
-    memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(id) DO NOTHING
-            "#,
+            "UPDATE processes SET memory_mode = 'polluted' \
+             WHERE id = ? AND memory_mode != 'polluted'",
         )
-        .bind(metadata.id.to_string())
-        .bind(serialize_process_source_json(metadata.source.as_str()))
-        .bind(datetime_to_epoch_seconds(metadata.created_at))
-        .bind(datetime_to_epoch_seconds(metadata.updated_at))
-        .bind(metadata.source.as_str())
-        .bind(metadata.agent_nickname.as_deref())
-        .bind(metadata.agent_role.as_deref())
-        .bind(metadata.model_provider.as_str())
-        .bind(metadata.cwd.display().to_string())
-        .bind(metadata.cli_version.as_str())
-        .bind(metadata.title.as_str())
-        .bind(metadata.sandbox_policy.as_str())
-        .bind(metadata.approval_mode.as_str())
-        .bind(metadata.tokens_used)
-        .bind(metadata.first_user_message.as_deref().unwrap_or_default())
-        .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
-        .bind(metadata.git_sha.as_deref())
-        .bind(metadata.git_branch.as_deref())
-        .bind(metadata.git_origin_url.as_deref())
-        .bind("enabled")
+        .bind(process_id.to_string())
         .execute(self.pool.as_ref())
         .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn set_process_memory_mode(
+    pub(crate) async fn set_process_memory_mode(
         &self,
         process_id: ProcessId,
         memory_mode: &str,
@@ -380,35 +254,6 @@ ON CONFLICT(id) DO NOTHING
             .bind(process_id.to_string())
             .execute(self.pool.as_ref())
             .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
-    pub async fn update_process_git_info(
-        &self,
-        process_id: ProcessId,
-        git_sha: Option<Option<&str>>,
-        git_branch: Option<Option<&str>>,
-        git_origin_url: Option<Option<&str>>,
-    ) -> anyhow::Result<bool> {
-        let result = sqlx::query(
-            r#"
-UPDATE processes
-SET
-    git_sha = CASE WHEN ? THEN ? ELSE git_sha END,
-    git_branch = CASE WHEN ? THEN ? ELSE git_branch END,
-    git_origin_url = CASE WHEN ? THEN ? ELSE git_origin_url END
-WHERE id = ?
-            "#,
-        )
-        .bind(git_sha.is_some())
-        .bind(git_sha.flatten())
-        .bind(git_branch.is_some())
-        .bind(git_branch.flatten())
-        .bind(git_origin_url.is_some())
-        .bind(git_origin_url.flatten())
-        .bind(process_id.to_string())
-        .execute(self.pool.as_ref())
-        .await?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -586,51 +431,6 @@ ON CONFLICT(process_id, position) DO NOTHING
             return Err(err);
         }
         Ok(())
-    }
-
-    /// Mark a thread as archived using the underlying database.
-    pub async fn mark_archived(
-        &self,
-        process_id: ProcessId,
-        archived_at: jiff::Timestamp,
-    ) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_process(process_id).await? else {
-            return Ok(());
-        };
-        metadata.archived_at = Some(archived_at);
-        metadata.updated_at = archived_at;
-        if metadata.id != process_id {
-            warn!(
-                "thread id mismatch during archive: expected {process_id}, got {}",
-                metadata.id
-            );
-        }
-        self.upsert_process(&metadata).await
-    }
-
-    /// Mark a thread as unarchived using the underlying database.
-    pub async fn mark_unarchived(&self, process_id: ProcessId) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_process(process_id).await? else {
-            return Ok(());
-        };
-        metadata.archived_at = None;
-        metadata.updated_at = jiff::Timestamp::now();
-        if metadata.id != process_id {
-            warn!(
-                "thread id mismatch during unarchive: expected {process_id}, got {}",
-                metadata.id
-            );
-        }
-        self.upsert_process(&metadata).await
-    }
-
-    /// Delete a thread metadata row by id.
-    pub async fn delete_process(&self, process_id: ProcessId) -> anyhow::Result<u64> {
-        let result = sqlx::query("DELETE FROM processes WHERE id = ?")
-            .bind(process_id.to_string())
-            .execute(self.pool.as_ref())
-            .await?;
-        Ok(result.rows_affected())
     }
 }
 

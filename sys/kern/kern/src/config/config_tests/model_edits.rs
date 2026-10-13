@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn set_model_updates_defaults() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
     crate::user_settings::install_persistence();
 
     ConfigEditsBuilder::new(chaos_home.path())
@@ -25,10 +26,8 @@ async fn set_model_updates_defaults() -> anyhow::Result<()> {
 async fn set_model_overwrites_existing_model() -> anyhow::Result<()> {
     crate::user_settings::install_persistence();
     let chaos_home = TempDir::new()?;
-    let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
-
-    tokio::fs::write(
-        &config_path,
+    crate::test_support::seed_user_settings_toml(
+        chaos_home.path(),
         r#"
 model = "serpent"
 model_reasoning_effort = "medium"
@@ -38,8 +37,6 @@ model = "gordon"
 "#,
     )
     .await?;
-
-    crate::user_settings::migrate(chaos_home.path(), false).await?;
     ConfigEditsBuilder::new(chaos_home.path())
         .set_model(Some("o4-mini"), Some(ReasoningEffort::High))
         .apply()
@@ -66,6 +63,7 @@ model = "gordon"
 #[tokio::test]
 async fn set_model_updates_profile() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
     crate::user_settings::install_persistence();
 
     ConfigEditsBuilder::new(chaos_home.path())
@@ -96,10 +94,8 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
 async fn set_model_updates_existing_profile() -> anyhow::Result<()> {
     crate::user_settings::install_persistence();
     let chaos_home = TempDir::new()?;
-    let config_path = chaos_home.path().join(CONFIG_TOML_FILE);
-
-    tokio::fs::write(
-        &config_path,
+    crate::test_support::seed_user_settings_toml(
+        chaos_home.path(),
         r#"
 [profiles.dev]
 model = "gordon"
@@ -110,8 +106,6 @@ model = "sherlock"
 "#,
     )
     .await?;
-
-    crate::user_settings::migrate(chaos_home.path(), false).await?;
     ConfigEditsBuilder::new(chaos_home.path())
         .with_profile(Some("dev"))
         .set_model(Some("o4-high"), Some(ReasoningEffort::Medium))

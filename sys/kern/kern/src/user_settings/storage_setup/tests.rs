@@ -1,5 +1,4 @@
 use super::*;
-use crate::user_settings::BootstrapConfig;
 
 #[test]
 fn fresh_home_needs_setup_without_creating_state() -> anyhow::Result<()> {
@@ -10,19 +9,39 @@ fn fresh_home_needs_setup_without_creating_state() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Only meaningful under `CHAOS_STORAGE_URL`; the subprocess test below sets it.
 #[test]
-fn environment_does_not_replace_toml_storage_choice() -> anyhow::Result<()> {
+fn environment_storage_url_skips_setup_without_creating_state() -> anyhow::Result<()> {
+    let Some(url) = std::env::var("CHAOS_STORAGE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    assert!(url.starts_with("postgresql://"));
+    let parent = tempfile::tempdir()?;
+    let home = parent.path().join("new-machine");
+    assert!(!is_needed(&home)?);
+    assert!(!home.exists());
+    Ok(())
+}
+
+#[test]
+fn environment_storage_url_counts_as_an_explicit_choice() -> anyhow::Result<()> {
     // Set environment only in a subprocess, not in this parallel test harness.
-    let home = tempfile::tempdir()?;
-    for url in ["", "postgresql://localhost/environment-only"] {
+    for (url, test) in [
+        ("", "fresh_home_needs_setup_without_creating_state"),
+        (
+            "postgresql://localhost/environment-only",
+            "environment_storage_url_skips_setup_without_creating_state",
+        ),
+    ] {
         let output = std::process::Command::new(std::env::current_exe()?)
             .args([
                 "--exact",
-                "user_settings::storage_setup::tests::fresh_home_needs_setup_without_creating_state",
+                &format!("user_settings::storage_setup::tests::{test}"),
             ])
             .env("CHAOS_STORAGE_URL", url)
-            .env("CHAOS_DATABASE_URL", url)
-            .env("CHAOS_SQLITE_HOME", home.path())
             .output()?;
         assert!(
             output.status.success(),
@@ -35,7 +54,7 @@ fn environment_does_not_replace_toml_storage_choice() -> anyhow::Result<()> {
 }
 
 #[test]
-fn explicit_toml_storage_choices_skip_setup_without_resolving_references() -> anyhow::Result<()> {
+fn explicit_bootstrap_choices_skip_setup_without_resolving_references() -> anyhow::Result<()> {
     for config in [
         "storage_url = 'postgresql://localhost/chaos'",
         "storage_url = 'postgres://user:password@localhost/chaos'",
@@ -53,7 +72,7 @@ fn explicit_toml_storage_choices_skip_setup_without_resolving_references() -> an
 }
 
 #[test]
-fn local_database_without_toml_storage_choice_still_needs_setup() -> anyhow::Result<()> {
+fn local_database_without_bootstrap_storage_choice_still_needs_setup() -> anyhow::Result<()> {
     let home = tempfile::tempdir()?;
     let database = home.path().join("chaos.sqlite");
     std::fs::write(&database, b"existing database must not be touched")?;
@@ -66,7 +85,7 @@ fn local_database_without_toml_storage_choice_still_needs_setup() -> anyhow::Res
 }
 
 #[test]
-fn empty_toml_storage_choice_needs_setup() -> anyhow::Result<()> {
+fn empty_bootstrap_storage_choice_needs_setup() -> anyhow::Result<()> {
     for config in ["", "storage_url = ''", "storage_url = '   '"] {
         let home = tempfile::tempdir()?;
         std::fs::write(home.path().join("config.toml"), config)?;
@@ -97,9 +116,15 @@ fn unrelated_local_identity_and_egress_do_not_skip_setup() -> anyhow::Result<()>
 #[test]
 fn malformed_bootstrap_is_not_treated_as_a_fresh_installation() -> anyhow::Result<()> {
     let home = tempfile::tempdir()?;
-    for config in ["[invalid", "storage_url = 42", "storage_url = []"] {
+    for config in [
+        "[invalid",
+        "storage_url = 42",
+        "storage_url = []",
+        "model = 'legacy-user-setting'",
+        "sqlite_home = '/var/lib/chaos'",
+    ] {
         std::fs::write(home.path().join("config.toml"), config)?;
-        assert!(is_needed(home.path()).is_err());
+        assert!(is_needed(home.path()).is_err(), "{config}");
     }
     Ok(())
 }
@@ -144,7 +169,7 @@ fn unavailable_keyring_never_writes_plaintext() -> anyhow::Result<()> {
             )?;
             std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o644))?;
         }
-        let before = read_toml(home.path())?;
+        let before = BootstrapConfig::read(home.path())?;
         let url = "postgresql://user:private-password@localhost/chaos";
         let result = persist_choice(
             home.path(),
@@ -156,7 +181,7 @@ fn unavailable_keyring_never_writes_plaintext() -> anyhow::Result<()> {
         let error = result.unwrap_err();
         assert!(error.to_string().contains("env:VARIABLE"));
         assert!(!format!("{error:#}").contains("private"));
-        assert_eq!(read_toml(home.path())?, before);
+        assert_eq!(BootstrapConfig::read(home.path())?, before);
         assert!(!home.path().join("chaos.sqlite").exists());
     }
     Ok(())
@@ -169,7 +194,7 @@ fn available_keyring_is_preferred_to_literal_config() -> anyhow::Result<()> {
     let reference = format!("keyring:chaos-settings/{}", uuid::Uuid::new_v4());
     persist_choice(
         home.path(),
-        read_toml(home.path())?,
+        BootstrapConfig::read(home.path())?,
         url.into(),
         Some(url.into()),
         |value| {
@@ -196,7 +221,7 @@ fn existing_references_are_saved_without_accessing_keyring() -> anyhow::Result<(
         let home = tempfile::tempdir()?;
         persist_choice(
             home.path(),
-            read_toml(home.path())?,
+            BootstrapConfig::read(home.path())?,
             "postgresql://user:private-password@localhost/chaos".into(),
             Some(reference.clone()),
             |_| panic!("references must not be re-saved as literals"),

@@ -113,6 +113,7 @@ pub async fn run_main(
         ephemeral: serve_cli.ephemeral.then_some(true),
         mcp_servers: None,
         active_project_trust: None,
+        database_agent_roles: None,
         additional_writable_roots: Vec::new(),
     };
 

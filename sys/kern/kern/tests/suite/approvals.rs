@@ -1676,8 +1676,8 @@ async fn denying_network_policy_amendment_persists_policy_and_skips_future_netwo
 
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);
-    fs::write(
-        home.path().join("config.toml"),
+    core_test_support::seed_settings(
+        &home,
         r#"default_permissions = "workspace"
 
 [permissions.workspace.filesystem]
@@ -1688,7 +1688,8 @@ enabled = true
 mode = "limited"
 allow_local_binding = true
 "#,
-    )?;
+    )
+    .await;
     let approval_policy = ApprovalPolicy::Interactive;
     let sandbox_policy = SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],

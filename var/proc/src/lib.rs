@@ -1,12 +1,10 @@
 //! Runtime data for persisted session metadata.
 //!
-//! This crate owns process metadata, memories, log indexes, and the database
-//! schema used by session journals. SQLite journal access is mediated by
+//! This crate owns process metadata, log indexes, and the database schema
+//! used by session journals. SQLite journal access is mediated by
 //! journald; PostgreSQL journal access uses the mounted database directly.
 
-pub mod backfill;
 mod extract;
-pub mod memories;
 mod migrations;
 pub mod minion_jobs;
 mod model;
@@ -19,11 +17,13 @@ pub use model::LogQuery;
 pub use model::LogRow;
 pub use model::LogTailBatch;
 pub use model::LogTailCursor;
+pub use runtime::AgentRoleRecord;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::ClampExchangeRecord;
 pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
+pub use runtime::{DocumentKind, StoredDocument};
 
 /// Low-level storage engine: useful for focused tests.
 ///
@@ -31,9 +31,7 @@ pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
 pub use extract::apply_rollout_item;
 pub use extract::rollout_item_affects_process_metadata;
 pub use model::Anchor;
-pub use model::BackfillState;
 pub use model::BackfillStats;
-pub use model::BackfillStatus;
 pub use model::ExtractionOutcome;
 pub use model::MinionJob;
 pub use model::MinionJobCreateParams;
@@ -58,16 +56,3 @@ pub use runtime::open_runtime_db_postgres_url;
 pub use runtime::open_runtime_db_url;
 pub use runtime::runtime_db_filename;
 pub use runtime::runtime_db_path;
-
-/// Environment variable for overriding the SQLite runtime database home directory.
-pub const SQLITE_HOME_ENV: &str = "CHAOS_SQLITE_HOME";
-
-pub fn sqlite_home_env_value() -> Option<String> {
-    if let Ok(value) = std::env::var(SQLITE_HOME_ENV) {
-        let trimmed = value.trim();
-        if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
-        }
-    }
-    None
-}

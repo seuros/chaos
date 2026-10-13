@@ -1134,10 +1134,8 @@ impl App {
                         // session.  The preview callback covers arrow-key
                         // navigation, but if the user presses Enter without
                         // navigating, the runtime theme must still be applied.
-                        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(
-                            &name,
-                            Some(&self.config.chaos_home),
-                        ) {
+                        if let Some(theme) = crate::render::highlight::resolve_theme_by_name(&name)
+                        {
                             crate::render::highlight::set_syntax_theme(theme);
                         }
                         self.sync_tui_theme_selection(name);

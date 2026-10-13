@@ -42,6 +42,7 @@ mod mcp_images;
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 async fn test_config() -> (tempfile::TempDir, Config) {
     let chaos_home = tempfile::tempdir().expect("create temp chaos home");
+    chaos_kern::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap sqlite");
     let config = ConfigBuilder::default()
         .chaos_home(chaos_home.path().to_path_buf())
         .build()

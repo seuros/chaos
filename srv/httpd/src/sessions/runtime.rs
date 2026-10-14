@@ -9,8 +9,8 @@ use tokio::time::Instant;
 use tracing::warn;
 
 use super::{
-    ApiError, CLEANUP_GRACE, Command, CreateRequest, Session, SessionStatus, TurnRequest,
-    TurnStatus,
+    ApiError, CLEANUP_GRACE, Command, CreateRequest, NoticeChange, Session, SessionStatus,
+    TurnRequest, TurnStatus,
 };
 use crate::ServerState;
 
@@ -25,8 +25,10 @@ pub(super) trait Backend: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), ()>> + Send;
     fn steer(&self, id: String, text: String) -> impl Future<Output = Result<(), ApiError>> + Send;
     fn interrupt(&self) -> impl Future<Output = Result<(), ()>> + Send;
-    /// Replace or withdraw the session's host notice. Never blocks on the model.
-    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>);
+    /// Offer a host notice; an id already seen is ignored. Never blocks on the model.
+    fn post_notice(&self, notice: chaos_kern::host_notice::HostNotice) -> bool;
+    /// Withdraw the pending host notice, optionally only if it has this id.
+    fn withdraw_notice(&self, id: Option<String>) -> bool;
     fn shutdown(&self) -> impl Future<Output = Result<(), ()>> + Send;
     fn is_quiescent(&self) -> bool {
         true
@@ -121,8 +123,12 @@ impl Backend for KernelBackend {
             .map_err(|_| ApiError::conflict("expected turn is no longer active"))
     }
 
-    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>) {
-        self.process.set_host_notice(notice);
+    fn post_notice(&self, notice: chaos_kern::host_notice::HostNotice) -> bool {
+        self.process.post_host_notice(notice)
+    }
+
+    fn withdraw_notice(&self, id: Option<String>) -> bool {
+        self.process.withdraw_host_notice(id.as_deref())
     }
 
     async fn interrupt(&self) -> Result<(), ()> {
@@ -217,6 +223,8 @@ pub(super) async fn supervise<B: Backend>(
     expires: Instant,
 ) {
     let _owner = SupervisorGuard(session.clone());
+    // Which HTTP turn posted the pending host notice, if any.
+    let mut notice_owner: Option<String> = None;
     loop {
         let deadline = {
             let data = session.data.lock().unwrap();
@@ -237,6 +245,9 @@ pub(super) async fn supervise<B: Backend>(
             command = commands.recv() => {
                 match command {
                     Some(Command::Turn(id)) => {
+                        // The backend clears any undelivered notice when it
+                        // admits the turn; forget the previous owner too.
+                        notice_owner = None;
                         let (request, turn_deadline, interrupted) = {
                             let mut data = session.data.lock().unwrap();
                             let turn_deadline = data.active.as_ref().unwrap().deadline.min(expires);
@@ -270,16 +281,29 @@ pub(super) async fn supervise<B: Backend>(
                         };
                         let _ = reply.send(result);
                     }
-                    Some(Command::Notice { turn_id, notice, reply }) => {
-                        // Withdrawal is always honoured; setting needs the turn
-                        // to still be the active foreground one.
-                        let result = match &notice {
-                            Some(_) => session.data.lock().unwrap().require_steerable(&turn_id),
-                            None => Ok(()),
+                    Some(Command::Notice { turn_id, change, reply }) => {
+                        // The pending notice belongs to the turn that posted
+                        // it: only that turn may withdraw it, so a late DELETE
+                        // for an earlier turn cannot clear a newer turn's notice.
+                        let result = match change {
+                            NoticeChange::Post(notice) => {
+                                session.data.lock().unwrap().require_steerable(&turn_id).map(|()| {
+                                    let posted = backend.post_notice(notice);
+                                    if posted {
+                                        notice_owner = Some(turn_id);
+                                    }
+                                    posted
+                                })
+                            }
+                            NoticeChange::Withdraw(id) => {
+                                let withdrawn = notice_owner.as_deref() == Some(turn_id.as_str())
+                                    && backend.withdraw_notice(id);
+                                if withdrawn {
+                                    notice_owner = None;
+                                }
+                                Ok(withdrawn)
+                            }
                         };
-                        if result.is_ok() {
-                            backend.notice(notice);
-                        }
                         let _ = reply.send(result);
                     }
                     Some(Command::Interrupt(id)) => {
@@ -365,7 +389,10 @@ async fn unknown_loop<B: Backend>(
     while let Some(command) = commands.recv().await {
         match command {
             Command::Close if stop(session, backend, TurnStatus::Unknown).await => break,
-            Command::Steer { reply, .. } | Command::Notice { reply, .. } => {
+            Command::Steer { reply, .. } => {
+                let _ = reply.send(Err(ApiError::conflict("session outcome is unknown")));
+            }
+            Command::Notice { reply, .. } => {
                 let _ = reply.send(Err(ApiError::conflict("session outcome is unknown")));
             }
             _ => {}

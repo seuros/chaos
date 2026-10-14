@@ -174,8 +174,9 @@ pub(crate) struct SteerRequest {
 
 /// A host notice for the active turn: unlike steering, it is held in the
 /// session's single notice slot until the next delivery boundary, where its
-/// expiry is checked. Posting a new `id` replaces it; DELETE withdraws it.
-/// Re-posting the same notice is safe, and a delivered id is never re-armed.
+/// expiry is checked. Posting a new `id` replaces it. Re-posting an id the
+/// session has already seen (posted or delivered) is a no-op, so a retried or
+/// reordered request cannot re-deliver an old notice or displace a newer one.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NoticeRequest {
@@ -279,6 +280,12 @@ struct EventBatch {
     next_cursor: u64,
 }
 
+enum NoticeChange {
+    Post(chaos_kern::host_notice::HostNotice),
+    /// Withdraw, optionally only if this id is the one pending.
+    Withdraw(Option<String>),
+}
+
 enum Command {
     Turn(String),
     Steer {
@@ -289,8 +296,8 @@ enum Command {
     Interrupt(String),
     Notice {
         turn_id: String,
-        notice: Option<chaos_kern::host_notice::HostNotice>,
-        reply: oneshot::Sender<Result<(), ApiError>>,
+        change: NoticeChange,
+        reply: oneshot::Sender<Result<bool, ApiError>>,
     },
     Close,
 }
@@ -440,9 +447,15 @@ impl Session {
             .map_err(|_| ApiError::conflict("session stopped before steering"))?
     }
 
-    /// Replace (`Some`) or withdraw (`None`) the host notice for turn `id`.
-    async fn notice(&self, id: String, request: Option<NoticeRequest>) -> Result<(), ApiError> {
-        let notice = match request {
+    /// Post (`Some`) or withdraw (`None`, optionally only `withdraw_id`) the
+    /// host notice for turn `id`. Returns whether the slot changed.
+    async fn notice(
+        &self,
+        id: String,
+        request: Option<NoticeRequest>,
+        withdraw_id: Option<String>,
+    ) -> Result<bool, ApiError> {
+        let change = match request {
             Some(request) => {
                 if request.id.trim().is_empty() || request.text.trim().is_empty() {
                     return Err(ApiError::bad_request(
@@ -455,19 +468,19 @@ impl Session {
                     ));
                 }
                 self.data.lock().unwrap().require_steerable(&id)?;
-                Some(chaos_kern::host_notice::HostNotice {
+                NoticeChange::Post(chaos_kern::host_notice::HostNotice {
                     id: request.id,
                     text: request.text,
                     expires_at: request.expires_at,
                 })
             }
-            None => None,
+            None => NoticeChange::Withdraw(withdraw_id),
         };
         let (reply, response) = oneshot::channel();
         self.commands
             .try_send(Command::Notice {
                 turn_id: id,
-                notice,
+                change,
                 reply,
             })
             .map_err(|_| ApiError::capacity("session command queue unavailable"))?;

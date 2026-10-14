@@ -193,10 +193,15 @@ terminal processes; session shutdown is the stronger operation.
 A host notice is for time-sensitive reminders that must not outlive their
 moment: `{"id":"n-42","text":"You have not posted for two minutes","expires_at":1760000000}`
 (`expires_at` is optional Unix seconds). Unlike steering it is not queued as
-input: the session holds one notice, a new `id` replaces it, `DELETE` withdraws
-it, expiry is checked again at the delivery boundary, and an `id` is delivered
-at most once, so retrying a lost acknowledgement is safe. A newly admitted turn
-clears any undelivered notice. `chaos exec --steer-file` feeds the same slot.
+input: the session holds one notice, expiry is checked again at the delivery
+boundary, and a newly admitted turn clears any undelivered notice. Use a fresh
+`id` for every notice. A POST whose `id` the session has already seen (among
+its last 64 posted or delivered ids) is a no-op (`notice_already_seen`), so a
+retried or reordered POST can neither re-deliver an old notice nor displace a
+newer one. Only the turn that posted the pending notice can withdraw it.
+`DELETE …/notice?id=<id>` withdraws only that notice and is safe to retry;
+a bare `DELETE` withdraws whatever that turn has pending. `chaos exec
+--steer-file` feeds the same slot.
 
 Turn states include `accepted`, `running`, `waiting_background`, `interrupting`,
 `completed`, `failed`, `interrupted`, `timed_out` and `unknown`. Execution capacity

@@ -261,7 +261,8 @@ fn resume_cannot_create_two_consumers_for_the_same_process() {
 enum Operation {
     Execute(String, TurnRequest),
     Steer(String, String),
-    Notice(Option<chaos_kern::host_notice::HostNotice>),
+    PostNotice(chaos_kern::host_notice::HostNotice),
+    WithdrawNotice(Option<String>),
     Interrupt,
     Shutdown,
 }
@@ -286,8 +287,13 @@ impl Backend for FakeBackend {
         self.operations.send(Operation::Steer(id, text)).unwrap();
         Ok(())
     }
-    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>) {
-        self.operations.send(Operation::Notice(notice)).unwrap();
+    fn post_notice(&self, notice: chaos_kern::host_notice::HostNotice) -> bool {
+        self.operations.send(Operation::PostNotice(notice)).unwrap();
+        true
+    }
+    fn withdraw_notice(&self, id: Option<String>) -> bool {
+        self.operations.send(Operation::WithdrawNotice(id)).unwrap();
+        true
     }
     async fn interrupt(&self) -> Result<(), ()> {
         self.operations.send(Operation::Interrupt).unwrap();
@@ -488,52 +494,52 @@ async fn idle_session_ttl_closes_backend() {
 }
 
 #[tokio::test]
-async fn host_notices_reach_the_slot_only_for_the_active_turn_and_can_be_withdrawn() {
+async fn host_notices_are_bound_to_the_turn_that_posted_them() {
     use super::NoticeRequest;
     let (session, commands) = ready_session();
     let capacity = Arc::new(Semaphore::new(1));
     let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
-    submit_turn(&session, "first", "hello", &capacity);
-    assert!(matches!(
-        supervisor.operations.recv().await,
-        Some(Operation::Execute(..))
-    ));
     let notice = |id: &str| NoticeRequest {
         id: id.into(),
         text: "post a line".into(),
         expires_at: Some(2.0e9),
     };
-    session
-        .notice("first".into(), Some(notice("n1")))
-        .await
-        .unwrap();
+    submit_turn(&session, "first", "hello", &capacity);
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Notice(Some(n))) if n.id == "n1" && n.expires_at == Some(2.0e9)
+        Some(Operation::Execute(..))
     ));
-    // Re-posting is a replacement, not a second queued input.
-    session
-        .notice("first".into(), Some(notice("n1")))
-        .await
-        .unwrap();
+    assert!(
+        session
+            .notice("first".into(), Some(notice("n1")), None)
+            .await
+            .unwrap()
+    );
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Notice(Some(_)))
+        Some(Operation::PostNotice(n)) if n.id == "n1" && n.expires_at == Some(2.0e9)
     ));
-    session.notice("first".into(), None).await.unwrap();
+    // Withdrawal by the owning turn reaches the slot, with its id filter.
+    assert!(
+        session
+            .notice("first".into(), None, Some("n1".into()))
+            .await
+            .unwrap()
+    );
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Notice(None))
+        Some(Operation::WithdrawNotice(Some(id))) if id == "n1"
     ));
-    // Another turn's id cannot set a notice.
+    // Another turn's id can neither set nor withdraw.
     assert_eq!(
         session
-            .notice("other".into(), Some(notice("n2")))
+            .notice("other".into(), Some(notice("n2")), None)
             .await
             .unwrap_err()
             .code,
         StatusCode::CONFLICT
     );
+    assert!(!session.notice("other".into(), None, None).await.unwrap());
     assert_eq!(
         session
             .notice(
@@ -542,7 +548,8 @@ async fn host_notices_reach_the_slot_only_for_the_active_turn_and_can_be_withdra
                     id: "x".into(),
                     text: " ".into(),
                     expires_at: None
-                })
+                }),
+                None,
             )
             .await
             .unwrap_err()
@@ -551,17 +558,35 @@ async fn host_notices_reach_the_slot_only_for_the_active_turn_and_can_be_withdra
     );
     supervisor.events.send(complete("first")).unwrap();
     wait_until(&session, |data| data.status == SessionStatus::Idle).await;
-    // A finished turn cannot be given a notice, but withdrawal is still accepted.
     assert!(
         session
-            .notice("first".into(), Some(notice("n3")))
+            .notice("first".into(), Some(notice("n3")), None)
             .await
             .is_err()
     );
-    session.notice("first".into(), None).await.unwrap();
+
+    // Mira's A->B regression: B posts, then a delayed DELETE for A arrives.
+    submit_turn(&session, "second", "continue", &capacity);
+    assert!(
+        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, _)) if id == "second")
+    );
+    assert!(
+        session
+            .notice("second".into(), Some(notice("n4")), None)
+            .await
+            .unwrap()
+    );
+    assert!(
+        matches!(supervisor.operations.recv().await, Some(Operation::PostNotice(n)) if n.id == "n4")
+    );
+    assert!(
+        !session.notice("first".into(), None, None).await.unwrap(),
+        "a late withdrawal for the first turn must not touch the second turn's notice"
+    );
+    assert!(session.notice("second".into(), None, None).await.unwrap());
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Notice(None))
+        Some(Operation::WithdrawNotice(None))
     ));
     session.close().unwrap();
     assert!(matches!(

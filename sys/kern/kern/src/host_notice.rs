@@ -11,13 +11,18 @@
 //! A notice is delivered at most once; mirroring the same notice again after
 //! delivery does not re-arm it.
 
+use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
+/// How many recent ids the slot remembers, so a retried or reordered
+/// request for an older notice cannot re-deliver it or displace a newer one.
+const REMEMBERED_IDS: usize = 64;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct HostNotice {
-    /// Identity of this notice; re-setting a delivered id is ignored.
+    /// Identity of this notice; a delivered id is never delivered again.
     pub id: String,
     pub text: String,
     /// Unix seconds after which the notice must not be delivered.
@@ -32,26 +37,71 @@ pub(crate) struct HostNoticeSlot {
 #[derive(Debug, Default)]
 struct SlotState {
     pending: Option<HostNotice>,
-    delivered_id: Option<String>,
+    /// Recently delivered ids, newest last, bounded.
+    delivered: VecDeque<String>,
+    /// Recently posted ids (see `post`), newest last, bounded.
+    posted: VecDeque<String>,
+}
+
+fn remember(ids: &mut VecDeque<String>, id: &str) {
+    if ids.iter().any(|seen| seen == id) {
+        return;
+    }
+    if ids.len() == REMEMBERED_IDS {
+        ids.pop_front();
+    }
+    ids.push_back(id.to_string());
 }
 
 impl HostNoticeSlot {
-    /// Replace (Some) or withdraw (None) the pending notice.
-    pub(crate) fn set(&self, notice: Option<HostNotice>) {
-        let mut state = self
-            .inner
+    fn state(&self) -> std::sync::MutexGuard<'_, SlotState> {
+        self.inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        state.pending =
-            notice.filter(|notice| state.delivered_id.as_deref() != Some(notice.id.as_str()));
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Make the slot hold exactly what the host's source of truth says now:
+    /// `Some` replaces the pending notice (or clears it if that id was already
+    /// delivered), `None` withdraws it. Used by the serial `--steer-file`
+    /// mirror, where the file is the single, ordered source of truth.
+    pub(crate) fn set(&self, notice: Option<HostNotice>) {
+        let mut state = self.state();
+        state.pending = notice.filter(|notice| !state.delivered.contains(&notice.id));
+    }
+
+    /// Offer a notice from a request that may be retried or reordered (HTTP).
+    /// An id already posted or delivered is ignored entirely, so a late retry
+    /// can neither re-deliver an old notice nor displace a newer one. Returns
+    /// whether the notice is now pending.
+    pub(crate) fn post(&self, notice: HostNotice) -> bool {
+        let mut state = self.state();
+        if state.delivered.contains(&notice.id) || state.posted.contains(&notice.id) {
+            return false;
+        }
+        remember(&mut state.posted, &notice.id);
+        state.pending = Some(notice);
+        true
+    }
+
+    /// Withdraw the pending notice. With `Some(id)`, only if that id is the
+    /// one pending, so a late withdrawal cannot clear a newer notice. Returns
+    /// whether a notice was withdrawn.
+    pub(crate) fn withdraw(&self, id: Option<&str>) -> bool {
+        let mut state = self.state();
+        let matches = match (&state.pending, id) {
+            (None, _) => false,
+            (Some(_), None) => true,
+            (Some(pending), Some(id)) => pending.id == id,
+        };
+        if matches {
+            state.pending = None;
+        }
+        matches
     }
 
     /// Take the pending notice for delivery, if it is still valid at `now_unix`.
     pub(crate) fn take(&self, now_unix: f64) -> Option<String> {
-        let mut state = self
-            .inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.state();
         let notice = state.pending.take()?;
         if notice
             .expires_at
@@ -59,7 +109,7 @@ impl HostNoticeSlot {
         {
             return None;
         }
-        state.delivered_id = Some(notice.id);
+        remember(&mut state.delivered, &notice.id);
         Some(notice.text)
     }
 }
@@ -122,5 +172,72 @@ mod tests {
         assert_eq!(slot.take(0.0), None);
         slot.set(Some(notice("b", "still quiet", None)));
         assert_eq!(slot.take(0.0), Some("still quiet".to_string()));
+    }
+
+    #[test]
+    fn a_retried_older_post_neither_redelivers_nor_displaces_a_newer_notice() {
+        // Mira's witnesses against 07891a31.
+        let slot = HostNoticeSlot::default();
+        assert!(slot.post(notice("a", "first", None)));
+        assert_eq!(slot.take(0.0), Some("first".to_string()));
+        assert!(slot.post(notice("b", "second", None)));
+        assert_eq!(slot.take(0.0), Some("second".to_string()));
+        assert!(
+            !slot.post(notice("a", "first", None)),
+            "retry of delivered a"
+        );
+        assert_eq!(slot.take(0.0), None);
+
+        let slot = HostNoticeSlot::default();
+        assert!(slot.post(notice("a", "first", None)));
+        assert_eq!(slot.take(0.0), Some("first".to_string()));
+        assert!(slot.post(notice("b", "second", None)));
+        assert!(
+            !slot.post(notice("a", "first", None)),
+            "retry of delivered a"
+        );
+        assert_eq!(slot.take(0.0), Some("second".to_string()), "b survives");
+
+        // An undelivered older id retried after a newer one also loses.
+        let slot = HostNoticeSlot::default();
+        assert!(slot.post(notice("a", "first", None)));
+        assert!(slot.post(notice("b", "second", None)));
+        assert!(!slot.post(notice("a", "first", None)));
+        assert_eq!(slot.take(0.0), Some("second".to_string()));
+    }
+
+    #[test]
+    fn a_withdrawal_naming_an_id_only_clears_that_notice() {
+        let slot = HostNoticeSlot::default();
+        assert!(slot.post(notice("a", "first", None)));
+        assert!(slot.post(notice("b", "second", None)));
+        assert!(!slot.withdraw(Some("a")), "late withdrawal of a");
+        assert_eq!(slot.take(0.0), Some("second".to_string()));
+        assert!(slot.post(notice("c", "third", None)));
+        assert!(slot.withdraw(Some("c")));
+        assert_eq!(slot.take(0.0), None);
+    }
+
+    #[test]
+    fn remembered_ids_are_bounded() {
+        let slot = HostNoticeSlot::default();
+        for i in 0..(REMEMBERED_IDS + 5) {
+            assert!(slot.post(notice(&i.to_string(), "x", None)));
+            assert!(slot.take(0.0).is_some());
+        }
+        let state = slot.state();
+        assert_eq!(state.delivered.len(), REMEMBERED_IDS);
+        assert_eq!(state.posted.len(), REMEMBERED_IDS);
+    }
+
+    #[test]
+    fn the_file_mirror_does_not_redeliver_an_older_delivered_id() {
+        let slot = HostNoticeSlot::default();
+        slot.set(Some(notice("a", "first", None)));
+        assert_eq!(slot.take(0.0), Some("first".to_string()));
+        slot.set(Some(notice("b", "second", None)));
+        assert_eq!(slot.take(0.0), Some("second".to_string()));
+        slot.set(Some(notice("a", "first", None)));
+        assert_eq!(slot.take(0.0), None);
     }
 }

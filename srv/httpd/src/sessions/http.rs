@@ -190,26 +190,43 @@ async fn route(
         [_, _, _, "turns", turn_id, action] => {
             validate_id(turn_id)?;
             if *action == "notice" {
-                let notice = match method {
-                    Method::POST => Some(read_json::<NoticeRequest>(&state, request).await?),
-                    Method::DELETE => None,
+                let (notice, withdraw_id) = match method {
+                    Method::POST => (
+                        Some(read_json::<NoticeRequest>(&state, request).await?),
+                        None,
+                    ),
+                    Method::DELETE if query.is_empty() => (None, None),
+                    Method::DELETE => {
+                        let id = query
+                            .strip_prefix("id=")
+                            .filter(|id| !id.is_empty() && !id.contains(['&', '%', '+']))
+                            .ok_or(ApiError::bad_request("expected ?id=<notice id>"))?;
+                        (None, Some(id.to_string()))
+                    }
                     _ => return Ok(method_not_allowed("POST, DELETE")),
                 };
-                let status = if notice.is_some() {
-                    "notice_set"
-                } else {
-                    "notice_withdrawn"
+                let posting = notice.is_some();
+                // A retried POST is a no-op for an id the session has already
+                // seen; a DELETE with ?id= clears only that notice. Neither can
+                // disturb a newer notice, so both may be retried after a lost
+                // acknowledgement.
+                let changed = tokio::time::timeout(
+                    state.timeout,
+                    session.notice(turn_id.to_string(), notice, withdraw_id),
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::new(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "notice acknowledgement unavailable; reconcile before retrying",
+                    )
+                })??;
+                let status = match (posting, changed) {
+                    (true, true) => "notice_set",
+                    (true, false) => "notice_already_seen",
+                    (false, true) => "notice_withdrawn",
+                    (false, false) => "notice_not_pending",
                 };
-                // Replacement semantics make this safe to retry: the slot holds
-                // one notice, keyed by id, and a delivered id is never re-armed.
-                tokio::time::timeout(state.timeout, session.notice(turn_id.to_string(), notice))
-                    .await
-                    .map_err(|_| {
-                        ApiError::new(
-                            StatusCode::GATEWAY_TIMEOUT,
-                            "notice acknowledgement unavailable; retry is safe",
-                        )
-                    })??;
                 return Ok(response(
                     StatusCode::OK,
                     json!({"daemon_id": manager.daemon_id, "turn_id": turn_id, "status": status}),

@@ -362,10 +362,48 @@ impl ProcessTable {
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
+        Box::pin(self.start_process_with_auth_and_tools(
+            config,
+            Arc::clone(&self.state.auth_manager),
+            dynamic_tools,
+            persist_extended_history,
+            metrics_service_name,
+            parent_trace,
+        ))
+        .await
+    }
+
+    /// Start with a caller-pinned credential manager rather than re-resolving a
+    /// provider account from mutable preferences during process construction.
+    pub async fn start_process_with_auth(
+        &self,
+        config: Config,
+        auth_manager: Arc<AuthManager>,
+    ) -> ChaosResult<NewProcess> {
+        Box::pin(self.start_process_with_auth_and_tools(
+            config,
+            auth_manager,
+            Vec::new(),
+            false,
+            None,
+            None,
+        ))
+        .await
+    }
+
+    async fn start_process_with_auth_and_tools(
+        &self,
+        config: Config,
+        auth_manager: Arc<AuthManager>,
+        dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
+        persist_extended_history: bool,
+        metrics_service_name: Option<String>,
+        parent_trace: Option<W3cTraceContext>,
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.state.spawn_process(
             config,
             InitialHistory::New,
-            Arc::clone(&self.state.auth_manager),
+            auth_manager,
             self.agent_control(),
             dynamic_tools,
             persist_extended_history,

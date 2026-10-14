@@ -42,6 +42,11 @@ pub struct ServeCli {
     #[usage(long = "recovery-token", env = "CHAOS_RECOVERY_TOKEN")]
     pub recovery_token: Option<String>,
 
+    /// Inspect/drain retained records without booting or admitting execution.
+    /// Requires --session-scope and a separate --recovery-token.
+    #[usage(long = "session-recovery-only")]
+    pub session_recovery_only: bool,
+
     /// Maximum retained session records (including closed-session tombstones).
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,

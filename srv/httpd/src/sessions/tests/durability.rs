@@ -4,6 +4,7 @@ use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
 use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
 
+mod isolation;
 mod recovery;
 mod storage;
 use storage::Database;
@@ -20,11 +21,24 @@ struct Fixture {
 
 impl Fixture {
     async fn new() -> Self {
+        Self::with_policy(None).await
+    }
+
+    async fn with_policy(
+        policy: Option<Arc<crate::sessions::durable::policy::PinnedPolicy>>,
+    ) -> Self {
         let home = tempfile::tempdir().unwrap();
         let (db, client) = Database::open(home.path()).await;
         let store = Arc::new(Store {
             client,
             scope: "test".into(),
+            policy_digest: Some(
+                policy
+                    .as_ref()
+                    .map_or_else(|| "a".repeat(64), |pin| pin.digest().to_owned()),
+            ),
+            policy,
+            recovery_only: false,
         });
         let capacity = Arc::new(Semaphore::new(1));
         let (manager, recovered) =
@@ -42,7 +56,7 @@ impl Fixture {
         )
         .await
         .unwrap();
-        owner.bind(process_id).await.unwrap();
+        owner.bind_new(process_id).await.unwrap();
         session.ledger.set(owner).ok().unwrap();
         session.data.lock().unwrap().status = SessionStatus::Idle;
         Self {
@@ -368,11 +382,11 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
     let fixture = Fixture::new().await;
     for booted in [false, true] {
         let store = Arc::new(Store {
-            client: match &fixture.store.client {
-                Client::Sqlite(db) => Client::Sqlite(db.clone()),
-                Client::Journal(client) => Client::Journal(client.clone()),
-            },
+            client: fixture.store.client.clone(),
             scope: format!("startup-{booted}"),
+            policy_digest: Some("a".repeat(64)),
+            policy: None,
+            recovery_only: false,
         });
         let id = Uuid::new_v4();
         let (owner, _) = Owner::claim(store.clone(), id, "boot-owner".into())
@@ -381,7 +395,7 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
         if booted {
             owner.quarantine().await.unwrap();
             // Binding an allocated ID must not erase the boot quarantine.
-            owner.bind(ProcessId::new()).await.unwrap();
+            owner.bind_new(ProcessId::new()).await.unwrap();
         }
         fixture.db.expire(&id.to_string()).await;
         let capacity = Arc::new(Semaphore::new(1));

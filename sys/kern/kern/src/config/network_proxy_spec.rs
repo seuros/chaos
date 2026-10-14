@@ -76,6 +76,25 @@ impl ConfigReloader for StaticNetworkProxyReloader {
 }
 
 impl NetworkProxySpec {
+    /// Stable effective policy material for private, in-memory identity hashing.
+    pub fn policy_snapshot(&self) -> serde_json::Value {
+        let c = &self.constraints;
+        serde_json::json!({
+            "config": self.config,
+            "hard_deny": self.hard_deny_allowlist_misses,
+            "constraints": {
+                "enabled": c.enabled, "mode": c.mode,
+                "allow_upstream_proxy": c.allow_upstream_proxy,
+                "non_loopback_proxy": c.dangerously_allow_non_loopback_proxy,
+                "all_unix_sockets": c.dangerously_allow_all_unix_sockets,
+                "allowed_domains": c.allowed_domains, "denied_domains": c.denied_domains,
+                "allowlist_expansion": c.allowlist_expansion_enabled,
+                "denylist_expansion": c.denylist_expansion_enabled,
+                "unix_sockets": c.allow_unix_sockets, "local_binding": c.allow_local_binding,
+            },
+        })
+    }
+
     pub(crate) fn enabled(&self) -> bool {
         self.config.network.enabled
     }

@@ -37,6 +37,14 @@ async fn route(
     let uri = request.uri().to_string();
     let (path, query) = uri.split_once('?').unwrap_or((&uri, ""));
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+    if manager.recovery_only()
+        && method != Method::GET
+        && !(parts.len() == 4 && parts[3] == "recovery" && method == Method::POST)
+    {
+        return Err(ApiError::conflict(
+            "recovery-only mode cannot mutate execution",
+        ));
+    }
 
     // Every mutation is conditional on the daemon generation. An application
     // that loses an accepted response cannot silently replay it after restart.

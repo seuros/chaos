@@ -126,6 +126,51 @@ macro_rules! impl_storage {
                 request: ExecutionRequest,
             ) -> Result<ExecutionResponse, JournalError> {
                 request.validate()?;
+                let mut claim_policy = None;
+                let mut new_process = false;
+                let request = match request {
+                    ExecutionRequest::GetScope { scope } => {
+                        let digest = sqlx::query_scalar::<_, Option<String>>(
+                            "SELECT policy_digest FROM execution_scopes WHERE scope = $1",
+                        ).bind(scope).fetch_optional(self.pool()).await?.flatten();
+                        return Ok(ExecutionResponse::Scope(digest));
+                    }
+                    ExecutionRequest::BindScope { scope, policy_digest } => {
+                        let mut tx = self.pool().begin_with($begin).await?;
+                        sqlx::query(
+                            "INSERT INTO execution_scopes (scope, policy_digest) VALUES ($1, NULL)
+                             ON CONFLICT(scope) DO NOTHING",
+                        ).bind(&scope).execute(&mut *tx).await?;
+                        let existing = sqlx::query_scalar::<_, Option<String>>(concat!(
+                            "SELECT policy_digest FROM execution_scopes WHERE scope = $1", $lock
+                        )).bind(&scope).fetch_one(&mut *tx).await?;
+                        if let Some(existing) = existing {
+                            if existing != policy_digest {
+                                return Err(conflict("execution scope policy is immutable"));
+                            }
+                        } else {
+                            let count: i64 = sqlx::query_scalar(
+                                "SELECT COUNT(*) FROM execution_sessions WHERE scope = $1",
+                            ).bind(&scope).fetch_one(&mut *tx).await?;
+                            if count != 0 {
+                                return Err(conflict("legacy scope cannot adopt an unverified policy"));
+                            }
+                            sqlx::query("UPDATE execution_scopes SET policy_digest = $1 WHERE scope = $2")
+                                .bind(&policy_digest).bind(&scope).execute(&mut *tx).await?;
+                        }
+                        tx.commit().await?;
+                        return Ok(ExecutionResponse::Scope(Some(policy_digest)));
+                    }
+                    ExecutionRequest::ClaimBound { session_id, scope, policy_digest, owner_id, ttl_ms } => {
+                        claim_policy = Some(policy_digest);
+                        ExecutionRequest::Claim { session_id, scope, owner_id, ttl_ms }
+                    }
+                    ExecutionRequest::BindNewProcess { lease, process_id } => {
+                        new_process = true;
+                        ExecutionRequest::BindProcess { lease, process_id }
+                    }
+                    request => request,
+                };
                 match &request {
                     ExecutionRequest::GetResolution { session_id } => {
                         let record = sqlx::query_as::<_, (String, i64)>(SELECT_RESOLUTION)
@@ -176,6 +221,18 @@ macro_rules! impl_storage {
                     .to_string();
                 let mut tx = self.pool().begin_with($begin).await?;
                 if let ExecutionRequest::Claim { scope, .. } = &request {
+                    // Serialize policy bootstrap with ALL claims, including
+                    // legacy clients. No claim can bypass a bound namespace.
+                    sqlx::query(
+                        "INSERT INTO execution_scopes (scope, policy_digest) VALUES ($1, NULL)
+                         ON CONFLICT(scope) DO NOTHING",
+                    ).bind(scope).execute(&mut *tx).await?;
+                    let binding = sqlx::query_scalar::<_, Option<String>>(concat!(
+                        "SELECT policy_digest FROM execution_scopes WHERE scope = $1", $lock
+                    )).bind(scope).fetch_one(&mut *tx).await?;
+                    if binding != claim_policy {
+                        return Err(conflict("execution scope policy does not match"));
+                    }
                     // ON CONFLICT waits for a competing creator on PostgreSQL.
                     // Lease acquisition still happens only under the row lock.
                     sqlx::query(
@@ -268,6 +325,25 @@ macro_rules! impl_storage {
                     }
                     ExecutionRequest::BindProcess { lease: expected, process_id } => {
                         check_lease(&row, &expected, now)?;
+                        let policy = sqlx::query_scalar::<_, Option<String>>(
+                            "SELECT policy_digest FROM execution_scopes WHERE scope = $1",
+                        ).bind(&current.scope).fetch_one(&mut *tx).await?;
+                        // A process's tenant/policy ownership survives closure.
+                        // Caller-supplied or legacy history cannot manufacture it.
+                        if new_process || policy.is_none() {
+                            sqlx::query(
+                                "INSERT INTO execution_process_bindings (process_id, scope, policy_digest)
+                                 VALUES ($1, $2, $3) ON CONFLICT(process_id) DO NOTHING",
+                            ).bind(process_id.to_string()).bind(&current.scope).bind(&policy)
+                                .execute(&mut *tx).await?;
+                        }
+                        let binding = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+                            "SELECT scope, policy_digest FROM execution_process_bindings WHERE process_id = $1",
+                        ).bind(process_id.to_string()).fetch_optional(&mut *tx).await?
+                            .ok_or_else(|| conflict("unverified process history cannot be resumed"))?;
+                        if binding.0.as_deref() != Some(current.scope.as_str()) || binding.1 != policy {
+                            return Err(conflict("process history belongs to a different tenant or policy"));
+                        }
                         if let Some(previous) = current.process_id {
                             if previous != process_id {
                                 return Err(conflict("execution process mapping is immutable"));

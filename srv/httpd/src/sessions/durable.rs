@@ -1,5 +1,6 @@
 //! Opt-in journal ownership and commit boundaries. No HTTP future owns a write
 //! or an executor; losing a response is reconciliation, never redispatch.
+pub(crate) mod policy;
 pub(crate) mod recovery;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,6 +23,7 @@ const LEASE_MS: u64 = 90_000;
 const STORE_TIMEOUT: Duration = Duration::from_secs(5);
 const HEARTBEAT: Duration = Duration::from_secs(15);
 
+#[derive(Clone)]
 pub(super) enum Client {
     Journal(JournalClient),
     #[cfg(test)]
@@ -31,9 +33,42 @@ pub(super) enum Client {
 pub(super) struct Store {
     pub(super) client: Client,
     pub(super) scope: String,
+    pub(super) policy_digest: Option<String>,
+    pub(super) policy: Option<Arc<policy::PinnedPolicy>>,
+    pub(super) recovery_only: bool,
 }
 
 impl Store {
+    async fn bind_scope(&self) -> Result<(), ApiError> {
+        if self.recovery_only {
+            return Ok(());
+        }
+        let digest = self.policy_digest.clone().ok_or_else(unavailable)?;
+        match self
+            .call(Request::BindScope {
+                scope: self.scope.clone(),
+                policy_digest: digest.clone(),
+            })
+            .await?
+        {
+            Response::Scope(Some(bound)) if bound == digest => Ok(()),
+            _ => Err(unavailable()),
+        }
+    }
+
+    fn check_execution(&self) -> Result<(), ApiError> {
+        if self.recovery_only {
+            return Err(ApiError::conflict("recovery-only mode cannot execute work"));
+        }
+        if let Some(policy) = &self.policy {
+            policy.check()?;
+        } else {
+            #[cfg(not(test))]
+            return Err(unavailable());
+        }
+        Ok(())
+    }
+
     pub(super) async fn call(&self, request: Request) -> Result<Response, ApiError> {
         let result = tokio::time::timeout(STORE_TIMEOUT, async {
             match &self.client {
@@ -121,15 +156,24 @@ impl Owner {
         id: Uuid,
         owner_id: String,
     ) -> Result<(Arc<Self>, chaos_journald::ExecutionSession), ApiError> {
-        match store
-            .call(Request::Claim {
+        store.bind_scope().await?;
+        let request = match &store.policy_digest {
+            Some(digest) => Request::ClaimBound {
+                session_id: id,
+                scope: store.scope.clone(),
+                policy_digest: digest.clone(),
+                owner_id,
+                ttl_ms: LEASE_MS,
+            },
+            None if store.recovery_only => Request::Claim {
                 session_id: id,
                 scope: store.scope.clone(),
                 owner_id,
                 ttl_ms: LEASE_MS,
-            })
-            .await?
-        {
+            },
+            None => return Err(unavailable()),
+        };
+        match store.call(request).await? {
             Response::Claimed { session, lease } => {
                 Ok((Self::new(store, id, Some(lease)), session))
             }
@@ -193,6 +237,23 @@ impl Owner {
         Ok(())
     }
 
+    pub(super) async fn bind_new(&self, id: chaos_ipc::ProcessId) -> Result<(), ApiError> {
+        self.write(Request::BindNewProcess {
+            lease: self.lease()?,
+            process_id: id,
+        })
+        .await?;
+        Ok(())
+    }
+
+    pub(super) fn check_execution(&self) -> Result<(), ApiError> {
+        let result = self.store.check_execution();
+        if result.is_err() {
+            self.abandon();
+        }
+        result
+    }
+
     pub(super) async fn reconcile_idle(&self) -> Result<(), ApiError> {
         self.write(Request::ReconcileIdle {
             lease: self.lease()?,
@@ -202,6 +263,7 @@ impl Owner {
     }
 
     pub(super) async fn dispatch(&self, id: &str) -> Result<(), ApiError> {
+        self.check_execution()?;
         let response = self
             .write(Request::Dispatch {
                 lease: self.lease()?,
@@ -347,23 +409,60 @@ fn snapshot(turn: &ExecutionTurn) -> Result<TurnSnapshot, ApiError> {
 pub(crate) type Recovered = (Arc<Session>, mpsc::Receiver<Command>, CreateRequest);
 
 impl SessionManager {
+    pub(crate) fn recovery_only(&self) -> bool {
+        self.store.as_ref().is_some_and(|store| store.recovery_only)
+    }
+
+    pub(crate) fn check_execution(&self) -> Result<(), ApiError> {
+        match &self.store {
+            Some(store) => store.check_execution(),
+            None => Ok(()),
+        }
+    }
+
+    pub(crate) fn pinned_auth(&self) -> Option<Arc<chaos_kern::AuthManager>> {
+        self.store
+            .as_ref()?
+            .policy
+            .as_ref()
+            .map(|policy| policy.auth())
+    }
+    pub(crate) fn pinned_config(&self) -> Option<Arc<chaos_kern::config::Config>> {
+        self.store
+            .as_ref()?
+            .policy
+            .as_ref()
+            .map(|policy| policy.config())
+    }
+
     pub(crate) async fn persistent(
         limit: usize,
         ttl: Duration,
         client: JournalClient,
         scope: String,
         capacity: &Arc<Semaphore>,
+        policy: Option<Arc<policy::PinnedPolicy>>,
+        recovery_only: bool,
     ) -> Result<(Self, Vec<Recovered>), ApiError> {
-        Self::restore(
-            limit,
-            ttl,
-            Arc::new(Store {
-                client: Client::Journal(client),
-                scope,
-            }),
-            capacity,
-        )
-        .await
+        let mut store = Store {
+            client: Client::Journal(client),
+            scope,
+            policy_digest: policy.as_ref().map(|pin| pin.digest().to_owned()),
+            policy,
+            recovery_only,
+        };
+        if recovery_only {
+            match store
+                .call(Request::GetScope {
+                    scope: store.scope.clone(),
+                })
+                .await?
+            {
+                Response::Scope(digest) => store.policy_digest = digest,
+                _ => return Err(unavailable()),
+            }
+        }
+        Self::restore(limit, ttl, Arc::new(store), capacity).await
     }
 
     pub(super) async fn restore(
@@ -372,6 +471,7 @@ impl SessionManager {
         store: Arc<Store>,
         capacity: &Arc<Semaphore>,
     ) -> Result<(Self, Vec<Recovered>), ApiError> {
+        store.bind_scope().await?;
         let mut manager = Self::new(limit, ttl);
         manager.store = Some(store.clone());
         let mut after = None;
@@ -405,6 +505,10 @@ impl SessionManager {
                 if record.state == ExecutionSessionState::Idle && record.process_id.is_none() {
                     owner.retire(false).await?;
                     record.state = ExecutionSessionState::Closed;
+                }
+                if store.recovery_only && record.state == ExecutionSessionState::Idle {
+                    owner.quarantine().await?;
+                    record.state = ExecutionSessionState::Unknown;
                 }
                 session.ledger.set(owner).map_err(|_| unavailable())?;
                 {
@@ -464,6 +568,9 @@ impl SessionManager {
     ) -> Result<Arc<Session>, ApiError> {
         let _creation = self.creation.lock().await;
         self.ensure_running()?;
+        if let Some(store) = &self.store {
+            store.check_execution()?;
+        }
         if let Some(id) = request.session_id
             && let Ok(previous) = self.get(&id.to_string())
         {
@@ -548,6 +655,13 @@ impl Session {
                     break;
                 }
                 let result = owner.renew().await;
+                let result = result.and_then(|()| {
+                    if owner.store.recovery_only {
+                        Ok(())
+                    } else {
+                        owner.check_execution()
+                    }
+                });
                 if result.is_err() {
                     if owner.lease.lock().unwrap().is_none() {
                         break;
@@ -620,6 +734,7 @@ impl Session {
         let Some(owner) = self.ledger.get() else {
             return self.submit(id, request, capacity, timeout);
         };
+        owner.check_execution()?;
         request.validate()?;
         let fingerprint = fingerprint(&request);
         let _admission = self.admission.lock().await;

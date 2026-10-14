@@ -70,6 +70,65 @@ fn unauthorized_recovery_supports_external_chatgpt_and_managed_xai_auth() {
 }
 
 #[tokio::test]
+async fn pinned_external_refresh_rotates_tokens_but_rejects_another_identity() {
+    struct Refresher(ExternalAuthTokens);
+    impl ExternalAuthRefresher for Refresher {
+        fn refresh(
+            &self,
+            _: ExternalAuthRefreshContext,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = std::io::Result<ExternalAuthTokens>> + Send + '_>,
+        > {
+            Box::pin(async { Ok(self.0.clone()) })
+        }
+    }
+
+    let home = tempdir().unwrap();
+    let original = build_fake_jwt(Some("pro"), Some("workspace-original"));
+    login_with_chatgpt_auth_tokens(home.path(), &original, "workspace-original", Some("pro"))
+        .unwrap();
+    let root = AuthManager::shared(
+        home.path().into(),
+        false,
+        AuthCredentialsStoreMode::Ephemeral,
+    );
+    let pinned = root.pinned_for_providers(DEFAULT_AUTH_PROVIDER_ID, &[]);
+    let subject = pinned
+        .credential_subject_fingerprint_for_provider(DEFAULT_AUTH_PROVIDER_ID, "httpd-policy/v1");
+    let rotated = build_fake_jwt(Some("plus"), Some("workspace-original"));
+    for (account, succeeds) in [("workspace-original", true), ("workspace-other", false)] {
+        pinned.set_external_auth_refresher(Arc::new(Refresher(ExternalAuthTokens {
+            access_token: rotated.clone(),
+            chatgpt_account_id: account.into(),
+            chatgpt_plan_type: Some("plus".into()),
+        })));
+        assert_eq!(
+            pinned.refresh_token_from_authority().await.is_ok(),
+            succeeds
+        );
+        let cached = pinned.auth_cached().unwrap();
+        assert_eq!(
+            cached.get_account_id().as_deref(),
+            Some("workspace-original")
+        );
+        assert_eq!(cached.get_token().unwrap(), rotated);
+        assert_eq!(
+            pinned.credential_subject_fingerprint_for_provider(
+                DEFAULT_AUTH_PROVIDER_ID,
+                "httpd-policy/v1"
+            ),
+            subject,
+        );
+        // A rejected refresh cannot change even the shared backing selection.
+        root.reload();
+        assert_eq!(
+            root.auth_cached().unwrap().get_account_id().as_deref(),
+            Some("workspace-original")
+        );
+    }
+}
+
+#[tokio::test]
 async fn refresh_without_id_token() {
     let chaos_home = tempdir().unwrap();
     let fake_jwt = write_auth_file(

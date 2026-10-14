@@ -3,6 +3,7 @@
 //! This module owns the `AuthManager` type and the low-level helpers for
 //! persisting and refreshing managed provider OAuth tokens.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -323,6 +324,17 @@ pub struct AuthManager {
     pub(super) forced_chatgpt_workspace_id: RwLock<Option<String>>,
     /// Single-flights `refresh_token_from_authority`.
     pub(super) refresh_lock: Arc<tokio::sync::Mutex<()>>,
+    pinned_sources: Option<Arc<PinnedSources>>,
+}
+
+struct PinnedSources(BTreeMap<String, Option<ChaosAuth>>);
+
+impl std::fmt::Debug for PinnedSources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PinnedSources")
+            .field("providers", &self.0.len())
+            .finish()
+    }
 }
 
 impl AuthManager {
@@ -358,6 +370,7 @@ impl AuthManager {
             auth_credentials_store_mode,
             forced_chatgpt_workspace_id: RwLock::new(None),
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            pinned_sources: None,
         }
     }
 
@@ -377,6 +390,7 @@ impl AuthManager {
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            pinned_sources: None,
         })
     }
 
@@ -398,6 +412,7 @@ impl AuthManager {
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             forced_chatgpt_workspace_id: RwLock::new(None),
             refresh_lock: Arc::new(tokio::sync::Mutex::new(())),
+            pinned_sources: None,
         })
     }
 
@@ -440,6 +455,9 @@ impl AuthManager {
         let new_auth = self.load_auth_from_storage();
         let new_account_id = new_auth.as_ref().and_then(ChaosAuth::get_account_id);
 
+        if !self.pinned_identity_matches(new_auth.as_ref()) {
+            return ReloadOutcome::Skipped;
+        }
         if new_account_id.as_deref() != Some(expected_account_id) {
             let found_account_id = new_account_id.as_deref().unwrap_or("unknown");
             tracing::info!(
@@ -510,6 +528,9 @@ impl AuthManager {
         if provider_id == self.provider_id {
             return self.auth_cached();
         }
+        if let Some(sources) = &self.pinned_sources {
+            return sources.0.get(provider_id).cloned().flatten();
+        }
 
         load_auth_for_provider(
             &self.chaos_home,
@@ -545,14 +566,7 @@ impl AuthManager {
         if provider_id == self.provider_id {
             return Arc::clone(self);
         }
-        let managed_auth = load_auth_for_provider(
-            &self.chaos_home,
-            provider_id,
-            /*enable_codex_api_key_env*/ false,
-            self.auth_credentials_store_mode,
-        )
-        .ok()
-        .flatten();
+        let managed_auth = self.auth_for_provider(provider_id);
         Arc::new(Self {
             chaos_home: self.chaos_home.clone(),
             provider_id: provider_id.to_string(),
@@ -564,10 +578,69 @@ impl AuthManager {
             auth_credentials_store_mode: self.auth_credentials_store_mode,
             forced_chatgpt_workspace_id: RwLock::new(None),
             refresh_lock: Arc::clone(&self.refresh_lock),
+            pinned_sources: self.pinned_sources.clone(),
         })
     }
 
+    /// Independent cached identity for a retained executor. Changes to the
+    /// caller's selected account cannot replace this cache; OAuth refresh still
+    /// uses the existing guarded same-account recovery path.
+    pub fn pinned_for_providers(
+        self: &Arc<Self>,
+        provider_id: &str,
+        provider_ids: &[String],
+    ) -> Arc<Self> {
+        let scoped = self.for_provider(provider_id);
+        let mut ids: std::collections::BTreeSet<_> = provider_ids.iter().cloned().collect();
+        ids.insert(provider_id.to_owned());
+        let sources = Arc::new(PinnedSources(
+            ids.into_iter()
+                .map(|id| {
+                    let auth = self.auth_for_provider(&id);
+                    (id, auth)
+                })
+                .collect(),
+        ));
+        let cached = scoped.inner.read().expect("auth cache poisoned");
+        Arc::new(Self {
+            chaos_home: scoped.chaos_home.clone(),
+            provider_id: scoped.provider_id.clone(),
+            inner: RwLock::new(CachedAuth {
+                auth: sources.0.get(provider_id).cloned().flatten(),
+                external_refresher: cached.external_refresher.clone(),
+            }),
+            enable_codex_api_key_env: scoped.enable_codex_api_key_env,
+            auth_credentials_store_mode: scoped.auth_credentials_store_mode,
+            forced_chatgpt_workspace_id: RwLock::new(scoped.forced_chatgpt_workspace_id()),
+            refresh_lock: Arc::clone(&scoped.refresh_lock),
+            pinned_sources: Some(sources),
+        })
+    }
+
+    fn pinned_identity_matches(&self, candidate: Option<&ChaosAuth>) -> bool {
+        let Some(sources) = &self.pinned_sources else {
+            return true;
+        };
+        let original = sources.0.get(&self.provider_id).and_then(Option::as_ref);
+        match (original, candidate) {
+            (None, None) => true,
+            (Some(original), Some(candidate)) => {
+                original.api_auth_mode() == candidate.api_auth_mode()
+                    && original.api_key() == candidate.api_key()
+                    && original.credential_subject_fingerprint("pinned-auth/v1")
+                        == candidate.credential_subject_fingerprint("pinned-auth/v1")
+                    && original.get_account_id() == candidate.get_account_id()
+                    && original.get_chatgpt_user_id() == candidate.get_chatgpt_user_id()
+            }
+            _ => false,
+        }
+    }
+
     fn set_cached_auth(&self, new_auth: Option<ChaosAuth>) -> bool {
+        if !self.pinned_identity_matches(new_auth.as_ref()) {
+            tracing::warn!("Rejected credential identity change for pinned executor");
+            return false;
+        }
         if let Ok(mut guard) = self.inner.write() {
             let previous = guard.auth.as_ref();
             let changed = !AuthManager::auths_equal(previous, new_auth.as_ref());
@@ -847,8 +920,43 @@ impl AuthManager {
                 ),
             )));
         }
-        let auth_dot_json =
+        let mut auth_dot_json =
             AuthDotJson::from_external_tokens(&refreshed).map_err(RefreshTokenError::Transient)?;
+        if self.pinned_sources.is_some() {
+            let record = auth_dot_json
+                .provider_record(&self.provider_id)
+                .ok_or_else(|| {
+                    RefreshTokenError::Transient(std::io::Error::other(
+                        "external refresh omitted the pinned provider",
+                    ))
+                })?;
+            // Refresh rotates tokens, not the local credential subject.
+            if let Some(mut previous) = self
+                .auth_cached()
+                .and_then(|auth| auth.get_current_auth_json())
+            {
+                previous.set_provider_record(&self.provider_id, record);
+                auth_dot_json = previous;
+            }
+            let record = auth_dot_json
+                .provider_record(&self.provider_id)
+                .expect("pinned provider preserved above");
+            let candidate = ChaosAuth::from_provider_record(
+                &self.provider_id,
+                &self.chaos_home,
+                auth_dot_json.clone(),
+                record,
+                AuthCredentialsStoreMode::Ephemeral,
+                crate::default_client::create_client(),
+            )
+            .map_err(RefreshTokenError::Transient)?;
+            if !self.pinned_identity_matches(Some(&candidate)) {
+                return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
+                    RefreshTokenFailedReason::Other,
+                    "external refresh changed the pinned credential identity".to_string(),
+                )));
+            }
+        }
         save_auth(
             &self.chaos_home,
             &auth_dot_json,

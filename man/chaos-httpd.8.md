@@ -38,6 +38,7 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
 | `--recovery-token` | env `CHAOS_RECOVERY_TOKEN` | Enable operator recovery mutations. Requires `--session-scope` and a nonempty token different from the ordinary bearer. |
+| `--session-recovery-only` | `false` | Drain legacy/changed-policy history without execution. Requires `--session-scope` and `--recovery-token`; every protected route also requires the operator header. |
 | `--max-sessions` | `32` | Maximum retained records, including closed-session tombstones. |
 | `--session-ttl` | `3600` | Maximum session lifetime in seconds, including active execution. |
 | `-m, --model` | config default | Server default. `/api/trigger` still rejects per-request overrides. |
@@ -136,7 +137,7 @@ a full-access credential: it also permits triggering agent runs.
 This is a validation API, **not yet a production execution service**.
 Provider, credentials, working directory, tool
 environment and sandbox are server-owned. Clamp transports are rejected at
-startup when this API is enabled. Per-turn environment isolation and invocation
+startup when execution through this API is enabled. Per-turn environment isolation and invocation
 billing telemetry are not implemented. Host notices (below) expire and can be
 withdrawn, but reach the model only at native sample boundaries until clamp is
 supported here.
@@ -251,9 +252,23 @@ record also forgets its in-memory turn tombstones.
 chaos serve --sessions --session-scope project-worker -C /path/to/project
 ```
 
-Choose a distinct, stable namespace for each tenant/configuration. Reusing one
-with changed credentials, provider, working directory, sandbox or tools is not
-supported. The namespace is server configuration, never an HTTP override.
+Choose a distinct, stable namespace for each tenant/configuration. Journald
+immutably binds it to a digest of provider/credential identity, cwd/home,
+effective permissions/environment policy, configured tools, roles and instructions.
+Changed policy is rejected before ownership changes, even after all records
+close. Use a new namespace for intentional changes. The namespace is server
+configuration, never an HTTP override; one daemon serves one such scope.
+
+Executors use independent credential snapshots for configured providers and
+frozen file-backed role configurations. Drift checks before boot/admission/dispatch
+and every 15 seconds contain work without authorizing replay. OAuth token rotation
+is allowed only under the pinned identity. Only digests, not raw keys/tokens,
+are persisted. Enabled HTTP MCP needs an explicit present bearer/authorization
+source; anonymous HTTP MCP and implicit MCP OAuth are not supported here.
+
+Process-history ownership survives closure. Explicit resume requires an existing
+matching tenant/policy binding before loading history; arbitrary CLI or legacy
+history cannot be imported. Legacy namespaces cannot silently adopt a policy.
 
 Journald commits acceptance before dispatch and terminal outcomes before
 execution capacity is released. A disconnected client cannot cancel those
@@ -308,6 +323,20 @@ decisions return `409`. Disconnect cannot cancel the daemon-owned write.
 Resolution closes permanently and preserves deduplication; it never resumes
 history or replays input. Continuing requires an explicit new session.
 
+To drain a legacy scope or one whose original policy is no longer available:
+
+```sh
+chaos serve --sessions --session-scope old-worker --session-recovery-only
+```
+
+Supply both bearer/recovery credentials through their environment variables.
+All protected reads as well as recovery POST require the operator header.
+Triggers and all other session mutations are rejected before reading the body.
+No kernel is booted or resumed; released bound history is quarantined for
+independent containment. Execution login, clamp and git-trust checks are skipped;
+the original journal backend/home and sufficient capacity are still required.
+Closing old records never permits overwriting their namespace's policy.
+
 After a generation change, read saved state before refreshing the mutation
 header. Same-payload retries return the saved outcome; changed payloads conflict.
 Replay/SSE buffers remain memory-only: discard old event cursors after restart,
@@ -346,6 +375,13 @@ Forward `X-Chaos-Recovery-Authorization` only on trusted recovery routes and
 redact it in proxy/access logs.
 Apply proxy connection/header timeouts and rate limits as well: the trigger
 semaphore is not a limit on idle connections or monitor subscriptions.
+
+Scope bindings are control-plane protections, **not an OS tenant sandbox**.
+Fingerprints do not freeze executable tools, arbitrary files or remote server
+implementations, nor fence external effects already started. Mutually untrusted
+tenants need separate OS users/containers, restricted mounts, separate homes and
+credential stores, and restrictive VFS/environment/network policies. The ordinary
+bearer still grants powerful server-owned tools.
 
 ## FILES
 

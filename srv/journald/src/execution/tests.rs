@@ -5,6 +5,7 @@ use uuid::Uuid;
 use super::*;
 use crate::{JournalStore, SqliteJournalStore};
 
+mod isolation;
 mod recovery;
 
 fn claim_request(id: Uuid, owner: &str) -> ExecutionRequest {

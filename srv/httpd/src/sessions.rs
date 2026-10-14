@@ -1,6 +1,6 @@
 //! Experimental daemon-owned sessions. HTTP requests never own execution or
 //! consume the kernel event queue. A single supervisor owns each queue.
-mod durable;
+pub(crate) mod durable;
 pub(crate) mod http;
 pub(crate) mod runtime;
 mod stream;

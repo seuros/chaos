@@ -209,15 +209,36 @@ pub(crate) fn spawn(
             }
             None
         };
-        let config = state.config.as_ref().clone();
+        if let Some(owner) = session.ledger.get()
+            && owner.check_execution().is_err()
+        {
+            return;
+        }
+        let config = state
+            .sessions
+            .as_ref()
+            .and_then(|manager| manager.pinned_config())
+            .unwrap_or_else(|| state.config.clone())
+            .as_ref()
+            .clone();
+        let auth = state
+            .sessions
+            .as_ref()
+            .and_then(|manager| manager.pinned_auth())
+            .unwrap_or_else(|| state.auth_manager.clone());
         let started = match request.resume_process_id {
             Some(id) => {
                 state
                     .process_table
-                    .resume_process(config, id, state.auth_manager.clone(), None)
+                    .resume_process(config, id, auth, None)
                     .await
             }
-            None => state.process_table.start_process(config).await,
+            None => {
+                state
+                    .process_table
+                    .start_process_with_auth(config, auth)
+                    .await
+            }
         };
         let started = match started {
             Ok(started) => started,
@@ -242,7 +263,11 @@ pub(crate) fn spawn(
         if let Some(owner) = session.ledger.get() {
             let ready = async {
                 if !lazy {
-                    owner.bind(process_id).await?;
+                    if request.resume_process_id.is_some() {
+                        owner.bind(process_id).await?;
+                    } else {
+                        owner.bind_new(process_id).await?;
+                    }
                     if !backend.is_quiescent() {
                         return Err(ApiError::conflict(
                             "autonomous startup requires containment",

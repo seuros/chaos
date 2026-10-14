@@ -113,6 +113,21 @@ pub struct ExecutionResolutionRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionRequest {
+    /// Bind only an empty namespace. Legacy history is never auto-adopted.
+    BindScope {
+        scope: String,
+        policy_digest: String,
+    },
+    GetScope {
+        scope: String,
+    },
+    ClaimBound {
+        session_id: Uuid,
+        scope: String,
+        policy_digest: String,
+        owner_id: String,
+        ttl_ms: u64,
+    },
     /// Create or acquire an expired/unowned session. Retrying a live claim by the
     /// same owner returns the existing token; it does not renew or rotate it.
     Claim {
@@ -127,6 +142,12 @@ pub enum ExecutionRequest {
     },
     /// Bind once, before admission. Live/unknown process mappings are unique.
     BindProcess {
+        lease: ExecutionLease,
+        process_id: ProcessId,
+    },
+    /// Register a freshly allocated kernel identity, not caller-supplied resume
+    /// history. Resuming in a bound scope requires an existing matching binding.
+    BindNewProcess {
         lease: ExecutionLease,
         process_id: ProcessId,
     },
@@ -194,11 +215,13 @@ impl ExecutionRequest {
     pub(crate) fn session_id(&self) -> Option<Uuid> {
         match self {
             Self::Claim { session_id, .. }
+            | Self::ClaimBound { session_id, .. }
             | Self::GetSession { session_id }
             | Self::GetResolution { session_id }
             | Self::GetTurn { session_id, .. } => Some(*session_id),
             Self::Heartbeat { lease, .. }
             | Self::BindProcess { lease, .. }
+            | Self::BindNewProcess { lease, .. }
             | Self::Accept { lease, .. }
             | Self::Dispatch { lease, .. }
             | Self::Finish { lease, .. }
@@ -207,12 +230,32 @@ impl ExecutionRequest {
             | Self::Close { lease }
             | Self::Release { lease } => Some(lease.session_id),
             Self::Resolve { lease, .. } => Some(lease.session_id),
-            Self::ListSessions { .. } => None,
+            Self::ListSessions { .. } | Self::BindScope { .. } | Self::GetScope { .. } => None,
         }
     }
 
     pub(crate) fn validate(&self) -> Result<(), JournalError> {
         match self {
+            Self::BindScope {
+                scope,
+                policy_digest,
+            } => {
+                validate_name(scope)?;
+                validate_digest(policy_digest)?;
+            }
+            Self::GetScope { scope } => validate_name(scope)?,
+            Self::ClaimBound {
+                scope,
+                owner_id,
+                ttl_ms,
+                policy_digest,
+                ..
+            } => {
+                validate_name(scope)?;
+                validate_name(owner_id)?;
+                validate_ttl(*ttl_ms)?;
+                validate_digest(policy_digest)?;
+            }
             Self::Claim {
                 scope,
                 owner_id,
@@ -259,6 +302,17 @@ impl ExecutionRequest {
         }
         Ok(())
     }
+}
+
+fn validate_digest(value: &str) -> Result<(), JournalError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(invalid("policy digest must be lowercase SHA-256 hex"));
+    }
+    Ok(())
 }
 
 impl ExecutionResolution {
@@ -314,6 +368,7 @@ pub enum ExecutionResponse {
     Released,
     Resolved(ExecutionResolutionRecord),
     Resolution(Option<ExecutionResolutionRecord>),
+    Scope(Option<String>),
 }
 
 fn validate_name(value: &str) -> Result<(), JournalError> {

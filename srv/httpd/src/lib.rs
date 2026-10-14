@@ -100,6 +100,11 @@ pub async fn run_main(
         }
         None => None,
     };
+    if serve_cli.session_recovery_only
+        && (serve_cli.session_scope.is_none() || recovery_token.is_none())
+    {
+        bail!("--session-recovery-only requires --session-scope and --recovery-token");
+    }
     if serve_cli.max_concurrent == 0 {
         bail!("--max-concurrent must be at least 1");
     }
@@ -166,7 +171,7 @@ pub async fn run_main(
         .harness_overrides(overrides)
         .build()
         .await?;
-    if serve_cli.sessions && config.clamp {
+    if serve_cli.sessions && config.clamp && !serve_cli.session_recovery_only {
         bail!("retained HTTP sessions do not yet support clamp transports");
     }
     if serve_cli.session_scope.is_some() && config.ephemeral {
@@ -177,10 +182,13 @@ pub async fn run_main(
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
 
     // 8. Enforce login restrictions.
-    chaos_kern::auth::enforce_login_restrictions(&config)?;
+    if !serve_cli.session_recovery_only {
+        chaos_kern::auth::enforce_login_restrictions(&config)?;
+    }
 
     // 8. Git/trust check.
-    if !serve_cli.skip_git_repo_check
+    if !serve_cli.session_recovery_only
+        && !serve_cli.skip_git_repo_check
         && chaos_kern::git_info::get_git_repo_root(&config.cwd).is_none()
     {
         bail!("not inside a git repository (use --skip-git-repo-check to override)");
@@ -218,6 +226,14 @@ pub async fn run_main(
     );
 
     let config = Arc::new(config);
+    let policy = if serve_cli.session_scope.is_some() && !serve_cli.session_recovery_only {
+        Some(Arc::new(
+            sessions::durable::policy::PinnedPolicy::new(config.clone(), core.auth_manager.clone())
+                .map_err(|error| anyhow::anyhow!("pin HTTP session policy: {error:?}"))?,
+        ))
+    } else {
+        None
+    };
     let semaphore = Arc::new(Semaphore::new(serve_cli.max_concurrent));
     let (sessions, recovered) = if let Some(scope) = serve_cli.session_scope {
         let client = chaos_kern::journal_client_for_mounted_backend()
@@ -229,6 +245,8 @@ pub async fn run_main(
             client,
             scope,
             &semaphore,
+            policy,
+            serve_cli.session_recovery_only,
         )
         .await
         .map_err(|error| anyhow::anyhow!("restore HTTP sessions: {error:?}"))?;

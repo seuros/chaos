@@ -10,8 +10,10 @@ generation precondition: after restart, read saved state before retrying any tur
 `JournalClient::execution` exposes the same typed control-plane operations over
 the SQLite journald Unix socket and the direct PostgreSQL backend. Migration 26
 adds session and turn tables to the existing runtime database. Migration 27 adds
-immutable operator resolutions and monotonic quarantine epochs. Journald protocol
-8 prevents accidentally talking to a sidecar that predates recovery controls.
+immutable operator resolutions and monotonic quarantine epochs. Migration 28
+adds immutable scope-policy bindings and permanent process-history ownership.
+Journald protocol 9 prevents accidentally talking to a sidecar that predates
+these isolation controls.
 Conversation transcripts remain in the existing append-only journal.
 
 A server selects a stable configuration/tenant `scope` and a unique owner ID for
@@ -19,8 +21,12 @@ each daemon incarnation. Neither value is permission to switch provider,
 credentials, billing, tools, cwd or sandbox. Applications must not pass lease
 tokens through the public HTTP API.
 
-1. **Claim** a caller-stable session UUID and obtain a fenced lease.
-2. **BindProcess** persists an immutable process mapping before admission.
+1. **BindScope** pins a policy digest to an empty namespace; **ClaimBound**
+   obtains a fenced lease only under that policy. Legacy claims cannot bypass
+   a bound namespace. A namespace with legacy records cannot adopt a policy.
+2. **BindNewProcess** registers a server-generated fresh process ID.
+   **BindProcess** accepts existing history only with matching scope and policy,
+   before loading it into a kernel. Ownership survives session closure.
    Live and unknown sessions cannot map to the same process.
    A quarantined startup without an active turn may bind its newly allocated ID;
    it remains non-executable until independently reconciled idle.
@@ -103,9 +109,37 @@ includes them; startup refuses live ownership conflicts or uncontained work that
 cannot fit the configured capacity. Session lifetime restarts with each daemon
 incarnation, not a persisted wall-clock deadline.
 
-Scope selection is an operator contract: use a separate stable name for each
-configuration/tenant and do not change credentials/provider/cwd/sandbox/tools
-under a retained name. No per-request policy overrides are added.
+## Scope-policy isolation
+
+Each daemon serves one server-selected tenant/configuration namespace. Its
+immutable digest binds provider configuration, pinned credential identity,
+working directory, home, effective permissions/environment policy, configured
+tools, role material and instructions. A different policy fails before claiming
+history, even if every session is closed. Use a new namespace for legitimate
+policy or credential changes; there is no policy-overwrite endpoint.
+
+Credential snapshots cover configured providers, including delegated roles.
+API keys and configured credential-source values are hashed in private memory;
+only the digest is persisted, never the raw material. Managed/external OAuth
+binds stable subject/account/user identity, not rotating access/refresh tokens.
+Existing executors cannot follow another account selected in the daemon's auth
+cache. File-backed roles are frozen into the execution configuration; edits are
+checked against the original sources before boot, admission and dispatch, and
+on the 15-second heartbeat. Detected drift contains execution and retains
+uncertain reservations; it does not authorize replay.
+
+Enabled HTTP MCP connections require an explicit, present bearer or authorization
+header source. Anonymous HTTP MCP and implicit MCP OAuth are unsupported in
+durable scopes until their identities can be pinned.
+
+This is a **control-plane boundary, not OS tenant isolation**. The fingerprint
+does not freeze tool binaries, arbitrary files or remote server implementations,
+and checks do not fence already-running external effects. Use separate OS
+users/containers and restricted mounts, homes/credential stores, environment,
+VFS and network policies for mutually untrusted tenants. A bearer still grants
+powerful server-owned tools. No per-request tenant, policy, credential, cwd,
+environment or sandbox overrides are added.
+
 Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
 per-turn environment, billing telemetry and clamp support remain separate work.
 
@@ -162,6 +196,23 @@ resolution UUID is not permission to overwrite a committed decision. The local
 permit is released only after observing durable closure. Resolution never resumes
 history or replays input; continuing work requires an explicit new session.
 
+### Draining legacy or changed-policy scopes
+
+Start with `--sessions --session-scope <old namespace> --session-recovery-only`
+and both bearer/recovery credentials. This mode reads the stored policy instead
+of adopting the current one, requires the operator header on **all protected
+routes**, and rejects triggers and every session mutation except recovery.
+It never boots or resumes a kernel; orderly released bound history is quarantined
+for explicit containment/resolution. Execution-only login, clamp and git-trust
+checks are skipped, so obsolete model credentials need not be restored.
+The correct journal backend/home must still be selected, and live ownership or
+capacity conflicts still fail startup.
+
+Legacy history has no verified policy and remains non-executable. Closing it
+does not erase its tombstones or let that namespace adopt a new policy.
+Arbitrary CLI history cannot be imported into a bound scope; only previously
+registered matching process history can resume.
+
 ## Backend validation
 
 The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
@@ -169,7 +220,8 @@ The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
 production PostgreSQL journal client: acceptance/terminal commit failures,
 restart quarantine, orderly handoff, writer fencing, dispatch cancellation and
 HTTP disconnects, plus operator authorization, resolution failures, stale
-quarantines and audit-bound recovery. Each HTTP fixture creates an isolated schema, runs the runtime
+quarantines, audit-bound recovery, policy drift, legacy rejection and
+operator-only draining. Each HTTP fixture creates an isolated schema, runs the runtime
 migrations and drops that schema on success; the test role needs schema-creation
 permission. A failed test may leave its schema for diagnosis.
 
@@ -181,6 +233,8 @@ env -u TEST_DATABASE_URL cargo test -p chaos-httpd --lib sessions::tests::durabi
 
 The journald PostgreSQL suite also verifies that competing claims/admissions
 have one winner and simultaneous dispatches authorize exactly one submission.
+It also races policy bootstrap against legacy claims and verifies that closed
+history cannot cross tenant/policy boundaries.
 It writes to the test database's default schema, so never use a production URL.
 Linux CI runs both PostgreSQL suites against a disposable PostgreSQL 18 container,
 in addition to the default SQLite coverage.

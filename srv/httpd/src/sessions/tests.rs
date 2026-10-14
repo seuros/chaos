@@ -261,6 +261,7 @@ fn resume_cannot_create_two_consumers_for_the_same_process() {
 enum Operation {
     Execute(String, TurnRequest),
     Steer(String, String),
+    Notice(Option<chaos_kern::host_notice::HostNotice>),
     Interrupt,
     Shutdown,
 }
@@ -284,6 +285,9 @@ impl Backend for FakeBackend {
     async fn steer(&self, id: String, text: String) -> Result<(), ApiError> {
         self.operations.send(Operation::Steer(id, text)).unwrap();
         Ok(())
+    }
+    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>) {
+        self.operations.send(Operation::Notice(notice)).unwrap();
     }
     async fn interrupt(&self) -> Result<(), ()> {
         self.operations.send(Operation::Interrupt).unwrap();
@@ -481,4 +485,88 @@ async fn idle_session_ttl_closes_backend() {
     ));
     supervisor.task.await.unwrap();
     assert_eq!(session.snapshot().status, SessionStatus::Closed);
+}
+
+#[tokio::test]
+async fn host_notices_reach_the_slot_only_for_the_active_turn_and_can_be_withdrawn() {
+    use super::NoticeRequest;
+    let (session, commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
+    submit_turn(&session, "first", "hello", &capacity);
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(..))
+    ));
+    let notice = |id: &str| NoticeRequest {
+        id: id.into(),
+        text: "post a line".into(),
+        expires_at: Some(2.0e9),
+    };
+    session
+        .notice("first".into(), Some(notice("n1")))
+        .await
+        .unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Notice(Some(n))) if n.id == "n1" && n.expires_at == Some(2.0e9)
+    ));
+    // Re-posting is a replacement, not a second queued input.
+    session
+        .notice("first".into(), Some(notice("n1")))
+        .await
+        .unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Notice(Some(_)))
+    ));
+    session.notice("first".into(), None).await.unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Notice(None))
+    ));
+    // Another turn's id cannot set a notice.
+    assert_eq!(
+        session
+            .notice("other".into(), Some(notice("n2")))
+            .await
+            .unwrap_err()
+            .code,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        session
+            .notice(
+                "first".into(),
+                Some(NoticeRequest {
+                    id: "x".into(),
+                    text: " ".into(),
+                    expires_at: None
+                })
+            )
+            .await
+            .unwrap_err()
+            .code,
+        StatusCode::BAD_REQUEST
+    );
+    supervisor.events.send(complete("first")).unwrap();
+    wait_until(&session, |data| data.status == SessionStatus::Idle).await;
+    // A finished turn cannot be given a notice, but withdrawal is still accepted.
+    assert!(
+        session
+            .notice("first".into(), Some(notice("n3")))
+            .await
+            .is_err()
+    );
+    session.notice("first".into(), None).await.unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Notice(None))
+    ));
+    session.close().unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Shutdown)
+    ));
+    supervisor.task.await.unwrap();
 }

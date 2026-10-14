@@ -134,8 +134,10 @@ a full-access credential: it also permits triggering agent runs.
 This is a validation API, **not yet a production replacement for souls.house's
 durable execution ledger**. Provider, credentials, working directory, tool
 environment and sandbox are server-owned. Clamp transports are rejected at
-startup when this API is enabled. Per-turn environment isolation, invocation
-billing telemetry and expiring/withdrawable steering notices are not implemented.
+startup when this API is enabled. Per-turn environment isolation and invocation
+billing telemetry are not implemented. Host notices (below) expire and can be
+withdrawn, but reach the model only at native sample boundaries until clamp is
+supported here.
 
 ```sh
 chaos serve --sessions -C /path/to/project
@@ -156,6 +158,8 @@ durable ledger first.
 | POST | `/api/sessions/{session}/turns/{turn}` | Accept a caller-generated turn UUID; return `202` without waiting for inference |
 | GET | `/api/sessions/{session}/turns/{turn}` | Read execution state, bounded result and usage snapshot |
 | POST | `/api/sessions/{session}/turns/{turn}/steer` | Inject input only into that active foreground turn |
+| POST | `/api/sessions/{session}/turns/{turn}/notice` | Replace the host notice for that active foreground turn |
+| DELETE | `/api/sessions/{session}/turns/{turn}/notice` | Withdraw the host notice |
 | POST | `/api/sessions/{session}/turns/{turn}/interrupt` | Request interruption; `202` is not proof of termination |
 | GET | `/api/sessions/{session}/events?after=0` | Bounded, sequence-numbered kernel event replay |
 | DELETE | `/api/sessions/{session}` | Request shutdown; delete a closed/failed record on a subsequent call |
@@ -185,6 +189,14 @@ Steering accepts `{"request":"Focus on the failing parser test"}`. It returns
 turn returns `409`. Steering is **not idempotent**: after a lost acknowledgement,
 do not automatically retry. Interrupting does not itself terminate background
 terminal processes; session shutdown is the stronger operation.
+
+A host notice is for time-sensitive reminders that must not outlive their
+moment: `{"id":"n-42","text":"You have not posted for two minutes","expires_at":1760000000}`
+(`expires_at` is optional Unix seconds). Unlike steering it is not queued as
+input: the session holds one notice, a new `id` replaces it, `DELETE` withdraws
+it, expiry is checked again at the delivery boundary, and an `id` is delivered
+at most once, so retrying a lost acknowledgement is safe. A newly admitted turn
+clears any undelivered notice. `chaos exec --steer-file` feeds the same slot.
 
 Turn states include `accepted`, `running`, `waiting_background`, `interrupting`,
 `completed`, `failed`, `interrupted`, `timed_out` and `unknown`. Execution capacity

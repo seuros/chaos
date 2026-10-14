@@ -6,7 +6,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::{
-    ApiError, CreateRequest, Session, SessionManager, SessionStatus, SteerRequest, TurnRequest,
+    ApiError, CreateRequest, NoticeRequest, Session, SessionManager, SessionStatus, SteerRequest,
+    TurnRequest,
 };
 use crate::ServerState;
 use crate::ingress;
@@ -188,6 +189,32 @@ async fn route(
         }
         [_, _, _, "turns", turn_id, action] => {
             validate_id(turn_id)?;
+            if *action == "notice" {
+                let notice = match method {
+                    Method::POST => Some(read_json::<NoticeRequest>(&state, request).await?),
+                    Method::DELETE => None,
+                    _ => return Ok(method_not_allowed("POST, DELETE")),
+                };
+                let status = if notice.is_some() {
+                    "notice_set"
+                } else {
+                    "notice_withdrawn"
+                };
+                // Replacement semantics make this safe to retry: the slot holds
+                // one notice, keyed by id, and a delivered id is never re-armed.
+                tokio::time::timeout(state.timeout, session.notice(turn_id.to_string(), notice))
+                    .await
+                    .map_err(|_| {
+                        ApiError::new(
+                            StatusCode::GATEWAY_TIMEOUT,
+                            "notice acknowledgement unavailable; retry is safe",
+                        )
+                    })??;
+                return Ok(response(
+                    StatusCode::OK,
+                    json!({"daemon_id": manager.daemon_id, "turn_id": turn_id, "status": status}),
+                ));
+            }
             if method != Method::POST {
                 return Ok(method_not_allowed("POST"));
             }

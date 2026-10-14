@@ -25,6 +25,8 @@ pub(super) trait Backend: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(), ()>> + Send;
     fn steer(&self, id: String, text: String) -> impl Future<Output = Result<(), ApiError>> + Send;
     fn interrupt(&self) -> impl Future<Output = Result<(), ()>> + Send;
+    /// Replace or withdraw the session's host notice. Never blocks on the model.
+    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>);
     fn shutdown(&self) -> impl Future<Output = Result<(), ()>> + Send;
     fn is_quiescent(&self) -> bool {
         true
@@ -77,6 +79,9 @@ impl Backend for KernelBackend {
             // that raced admission. There has been no prompt submission yet.
             return Err(());
         }
+        // A notice belongs to the turn it was posted for; never carry an
+        // undelivered one into the next turn.
+        self.process.set_host_notice(None);
         let mut op = self.process.user_turn(input(request.request), None).await;
         if let Op::UserTurn {
             model,
@@ -114,6 +119,10 @@ impl Backend for KernelBackend {
             .await
             .map(|_| ())
             .map_err(|_| ApiError::conflict("expected turn is no longer active"))
+    }
+
+    fn notice(&self, notice: Option<chaos_kern::host_notice::HostNotice>) {
+        self.process.set_host_notice(notice);
     }
 
     async fn interrupt(&self) -> Result<(), ()> {
@@ -261,6 +270,18 @@ pub(super) async fn supervise<B: Backend>(
                         };
                         let _ = reply.send(result);
                     }
+                    Some(Command::Notice { turn_id, notice, reply }) => {
+                        // Withdrawal is always honoured; setting needs the turn
+                        // to still be the active foreground one.
+                        let result = match &notice {
+                            Some(_) => session.data.lock().unwrap().require_steerable(&turn_id),
+                            None => Ok(()),
+                        };
+                        if result.is_ok() {
+                            backend.notice(notice);
+                        }
+                        let _ = reply.send(result);
+                    }
                     Some(Command::Interrupt(id)) => {
                         // A queued interrupt cannot hit a later HTTP turn: that
                         // turn cannot be admitted before we consume its predecessor's
@@ -344,7 +365,7 @@ async fn unknown_loop<B: Backend>(
     while let Some(command) = commands.recv().await {
         match command {
             Command::Close if stop(session, backend, TurnStatus::Unknown).await => break,
-            Command::Steer { reply, .. } => {
+            Command::Steer { reply, .. } | Command::Notice { reply, .. } => {
                 let _ = reply.send(Err(ApiError::conflict("session outcome is unknown")));
             }
             _ => {}

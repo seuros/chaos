@@ -172,6 +172,20 @@ pub(crate) struct SteerRequest {
     pub request: String,
 }
 
+/// A host notice for the active turn: unlike steering, it is held in the
+/// session's single notice slot until the next delivery boundary, where its
+/// expiry is checked. Posting a new `id` replaces it; DELETE withdraws it.
+/// Re-posting the same notice is safe, and a delivered id is never re-armed.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NoticeRequest {
+    pub id: String,
+    pub text: String,
+    /// Unix seconds after which the notice must not be delivered.
+    #[serde(default)]
+    pub expires_at: Option<f64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum SessionStatus {
@@ -273,6 +287,11 @@ enum Command {
         reply: oneshot::Sender<Result<(), ApiError>>,
     },
     Interrupt(String),
+    Notice {
+        turn_id: String,
+        notice: Option<chaos_kern::host_notice::HostNotice>,
+        reply: oneshot::Sender<Result<(), ApiError>>,
+    },
     Close,
 }
 
@@ -419,6 +438,42 @@ impl Session {
         response
             .await
             .map_err(|_| ApiError::conflict("session stopped before steering"))?
+    }
+
+    /// Replace (`Some`) or withdraw (`None`) the host notice for turn `id`.
+    async fn notice(&self, id: String, request: Option<NoticeRequest>) -> Result<(), ApiError> {
+        let notice = match request {
+            Some(request) => {
+                if request.id.trim().is_empty() || request.text.trim().is_empty() {
+                    return Err(ApiError::bad_request(
+                        "notice id and text must not be empty",
+                    ));
+                }
+                if request.expires_at.is_some_and(|at| !at.is_finite()) {
+                    return Err(ApiError::bad_request(
+                        "expires_at must be finite unix seconds",
+                    ));
+                }
+                self.data.lock().unwrap().require_steerable(&id)?;
+                Some(chaos_kern::host_notice::HostNotice {
+                    id: request.id,
+                    text: request.text,
+                    expires_at: request.expires_at,
+                })
+            }
+            None => None,
+        };
+        let (reply, response) = oneshot::channel();
+        self.commands
+            .try_send(Command::Notice {
+                turn_id: id,
+                notice,
+                reply,
+            })
+            .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+        response
+            .await
+            .map_err(|_| ApiError::conflict("session stopped before the notice was recorded"))?
     }
 
     fn interrupt(&self, id: String) -> Result<TurnSnapshot, ApiError> {

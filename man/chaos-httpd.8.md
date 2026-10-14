@@ -37,6 +37,7 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
+| `--recovery-token` | env `CHAOS_RECOVERY_TOKEN` | Enable operator recovery mutations. Requires `--session-scope` and a nonempty token different from the ordinary bearer. |
 | `--max-sessions` | `32` | Maximum retained records, including closed-session tombstones. |
 | `--session-ttl` | `3600` | Maximum session lifetime in seconds, including active execution. |
 | `-m, --model` | config default | Server default. `/api/trigger` still rejects per-request overrides. |
@@ -275,9 +276,37 @@ uncontained reservations exceed `--max-concurrent`. Wait for lease expiry after
 an unclean exit; expiry itself does not prove tools stopped.
 
 Recovered unknown work is never automatically resumed. DELETE cannot establish
-containment of a previous daemon's external processes; resolve it independently
-through the journal control plane before restarting the HTTP daemon. Autonomous
+containment of a previous daemon's external processes; use operator recovery
+after independent containment. Autonomous
 kernel work without a tracked HTTP turn triggers containment in this preview.
+
+#### Operator recovery
+
+`GET /api/sessions/<session_id>/recovery` returns persisted state, quarantine
+`recovery_epoch`, an immutable resolution audit if present, and a supervisor-stop
+hint. It requires the ordinary bearer; hints do not prove external work stopped.
+
+`POST` on the same endpoint requires `--recovery-token` (or `CHAOS_RECOVERY_TOKEN`),
+the ordinary bearer, current `X-Chaos-Daemon-ID`, and a separate
+`X-Chaos-Recovery-Authorization: Bearer <operator token>`.
+The body contains a caller-stable `resolution_id`, `expected_process_id`,
+`expected_turn_id` (null when absent), `expected_recovery_epoch`,
+`containment_confirmed: true`, and bounded `actor`/`reason` evidence.
+
+Only assert containment after independently stopping the executor and its
+external subprocesses/remote tools. A live local supervisor returns `409`: stop
+the daemon, contain work, wait for ownership expiry if necessary, restart into
+quarantine, then inspect. New quarantines/takeovers invalidate old epochs; do not
+automatically refresh a stale assertion. The server records operator assertions,
+not proof of containment or verified actor identity. Keep the recovery credential
+out of application/tool environments; it is not a sandbox boundary.
+
+The audit, interrupted turn outcome, session closure and lease release commit
+atomically before local capacity is released. Failed/ambiguous commits retain
+capacity. Read the audit and retry only the identical resolution; changed
+decisions return `409`. Disconnect cannot cancel the daemon-owned write.
+Resolution closes permanently and preserves deduplication; it never resumes
+history or replays input. Continuing requires an explicit new session.
 
 After a generation change, read saved state before refreshing the mutation
 header. Same-payload retries return the saved outcome; changed payloads conflict.
@@ -313,6 +342,8 @@ cannot obtain it through HTTP.
 Expected behind a reverse proxy (nginx, Caddy, k8s ingress). No TLS, no rate limiting beyond the semaphore.
 Use TLS for non-loopback access, forward `Authorization` to the SSE endpoint,
 disable proxy buffering/caching for it, and do not log authorization headers.
+Forward `X-Chaos-Recovery-Authorization` only on trusted recovery routes and
+redact it in proxy/access logs.
 Apply proxy connection/header timeouts and rate limits as well: the trigger
 semaphore is not a limit on idle connections or monitor subscriptions.
 

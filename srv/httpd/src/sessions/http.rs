@@ -176,6 +176,59 @@ async fn route(
                 }),
             )
         }
+        [_, _, _, "recovery"] => match method {
+            Method::GET => response(
+                StatusCode::OK,
+                json!({
+                    "daemon_id": manager.daemon_id,
+                    "session_id": id,
+                    "recovery_enabled": state.recovery_token.is_some(),
+                    "recovery": session.recovery_view().await?,
+                }),
+            ),
+            Method::POST => {
+                let token = state.recovery_token.as_deref().ok_or_else(|| {
+                    ApiError::new(StatusCode::NOT_FOUND, "recovery mutations disabled")
+                })?;
+                crate::auth::validate_bearer(
+                    request
+                        .headers()
+                        .get("x-chaos-recovery-authorization")
+                        .and_then(|value| value.to_str().ok()),
+                    token,
+                )
+                .map_err(|_| {
+                    ApiError::new(
+                        StatusCode::FORBIDDEN,
+                        "operator recovery credential required",
+                    )
+                })?;
+                let resolution: super::durable::recovery::ResolveRequest =
+                    read_json(&state, request).await?;
+                let resolving = session.clone();
+                let admission_permit = _ingress;
+                let resolution = tokio::spawn(async move {
+                    let _permit = admission_permit;
+                    resolving.resolve(resolution).await
+                })
+                .await
+                .map_err(|_| {
+                    ApiError::new(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "resolution acknowledgement unavailable; reconcile state",
+                    )
+                })??;
+                response(
+                    StatusCode::OK,
+                    json!({
+                        "daemon_id": manager.daemon_id,
+                        "session": session.snapshot(),
+                        "resolution": resolution,
+                    }),
+                )
+            }
+            _ => method_not_allowed("GET, POST"),
+        },
         [_, _, _, "turns", turn_id] => {
             validate_id(turn_id)?;
             let turn = match method {

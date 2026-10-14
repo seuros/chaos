@@ -37,6 +37,11 @@ pub struct ServeCli {
     #[usage(long = "session-scope")]
     pub session_scope: Option<String>,
 
+    /// Enable operator recovery mutations with a separate token.
+    /// Requires --session-scope; also accepts CHAOS_RECOVERY_TOKEN.
+    #[usage(long = "recovery-token", env = "CHAOS_RECOVERY_TOKEN")]
+    pub recovery_token: Option<String>,
+
     /// Maximum retained session records (including closed-session tombstones).
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,

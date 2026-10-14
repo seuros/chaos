@@ -103,7 +103,7 @@ impl Database {
 
     pub(super) async fn fail_transition(&self, state: &str) {
         // Fixed fault-injection transitions, never caller-controlled SQL.
-        assert!(matches!(state, "active" | "idle"));
+        assert!(matches!(state, "active" | "idle" | "closed"));
         match self {
             Self::Sqlite(db) => {
                 sqlx::raw_sql(AssertSqlSafe(format!(
@@ -131,6 +131,22 @@ impl Database {
                 .execute(pool)
                 .await
                 .unwrap();
+            }
+        }
+    }
+
+    pub(super) async fn clear_transition_fault(&self) {
+        match self {
+            Self::Sqlite(db) => {
+                sqlx::raw_sql("DROP TRIGGER fail_transition")
+                    .execute(db.pool())
+                    .await
+                    .unwrap();
+            }
+            Self::Postgres { pool, .. } => {
+                sqlx::raw_sql(
+                    "DROP TRIGGER fail_transition ON execution_sessions; DROP FUNCTION fail_transition();"
+                ).execute(pool).await.unwrap();
             }
         }
     }

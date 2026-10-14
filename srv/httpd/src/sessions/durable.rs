@@ -1,5 +1,6 @@
 //! Opt-in journal ownership and commit boundaries. No HTTP future owns a write
 //! or an executor; losing a response is reconciliation, never redispatch.
+pub(crate) mod recovery;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -221,21 +222,9 @@ impl Owner {
         }
     }
 
-    pub(super) async fn finish(
-        &self,
-        mut snapshot: TurnSnapshot,
-    ) -> Result<TurnSnapshot, ApiError> {
+    pub(super) async fn finish(&self, snapshot: TurnSnapshot) -> Result<TurnSnapshot, ApiError> {
         let state = persisted_state(snapshot.status)?;
-        // JSON escaping can make a 16 KiB text exceed the ledger's 32 KiB bound.
-        while serde_json::to_vec(&snapshot).unwrap().len()
-            > chaos_journald::MAX_EXECUTION_OUTCOME_BYTES
-        {
-            let Some(text) = &snapshot.result else {
-                return Err(unavailable());
-            };
-            snapshot.result = Some(bounded_text(text, text.len() / 2).0);
-            snapshot.result_truncated = true;
-        }
+        let snapshot = bounded_snapshot(snapshot)?;
         self.write(Request::Finish {
             lease: self.lease()?,
             turn_id: parse_id(&snapshot.turn_id)?,
@@ -290,6 +279,22 @@ impl Owner {
             _ => Err(unavailable()),
         }
     }
+}
+
+fn bounded_snapshot(mut snapshot: TurnSnapshot) -> Result<TurnSnapshot, ApiError> {
+    // JSON escaping can make a 16 KiB text exceed the ledger's 32 KiB bound.
+    while serde_json::to_vec(&snapshot).unwrap().len() > chaos_journald::MAX_EXECUTION_OUTCOME_BYTES
+    {
+        let Some(text) = &snapshot.result else {
+            return Err(unavailable());
+        };
+        if text.is_empty() {
+            return Err(unavailable());
+        }
+        snapshot.result = Some(bounded_text(text, text.len() / 2).0);
+        snapshot.result_truncated = true;
+    }
+    Ok(snapshot)
 }
 
 fn parse_id(id: &str) -> Result<Uuid, ApiError> {

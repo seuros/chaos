@@ -1,7 +1,7 @@
 use super::{
-    ExecutionLease, ExecutionRequest, ExecutionResponse, ExecutionSession, ExecutionSessionState,
-    ExecutionTurn, ExecutionTurnState, MAX_EXECUTION_TURNS, conflict, decode, decode_state,
-    invalid, parse_uuid,
+    ExecutionLease, ExecutionRequest, ExecutionResolutionRecord, ExecutionResponse,
+    ExecutionSession, ExecutionSessionState, ExecutionTurn, ExecutionTurnState,
+    MAX_EXECUTION_TURNS, conflict, decode, decode_state, invalid, parse_uuid,
 };
 use crate::JournalError;
 
@@ -15,6 +15,7 @@ type SessionRow = (
     String,
     i64,
     i64,
+    i64,
 );
 type TurnRow = (String, String, String, Option<String>);
 
@@ -24,7 +25,7 @@ macro_rules! session_select_sql {
             "SELECT session_id, scope, process_id, state, active_turn_id,
              owner_id, lease_token, expires_at_ms,
              (SELECT COUNT(*) FROM execution_turns t
-              WHERE t.session_id = execution_sessions.session_id)
+              WHERE t.session_id = execution_sessions.session_id), recovery_epoch
              FROM execution_sessions ",
             $predicate,
             $lock
@@ -34,6 +35,15 @@ macro_rules! session_select_sql {
 
 const SELECT_TURN: &str = "SELECT turn_id, fingerprint, state, outcome_json FROM execution_turns
      WHERE session_id = $1 AND turn_id = $2";
+const SELECT_RESOLUTION: &str =
+    "SELECT request_json, resolved_at_ms FROM execution_resolutions WHERE session_id = $1";
+
+fn resolution(row: (String, i64)) -> Result<ExecutionResolutionRecord, JournalError> {
+    Ok(ExecutionResolutionRecord {
+        request: decode(&row.0)?,
+        resolved_at_ms: row.1,
+    })
+}
 
 fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError> {
     Ok(ExecutionSession {
@@ -54,7 +64,15 @@ fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError> {
         state: decode_state(row.3.clone())?,
         active_turn_id: row.4.clone().map(parse_uuid).transpose()?,
         turn_count: u64::try_from(row.8).map_err(|_| invalid("negative execution turn count"))?,
+        recovery_epoch: u64::try_from(row.9)
+            .map_err(|_| invalid("negative execution recovery epoch"))?,
     })
+}
+
+fn next_epoch(row: &SessionRow) -> Result<i64, JournalError> {
+    row.9
+        .checked_add(1)
+        .ok_or_else(|| invalid("execution recovery epoch exhausted"))
 }
 
 fn lease(row: &SessionRow) -> Result<ExecutionLease, JournalError> {
@@ -91,11 +109,11 @@ fn not_found() -> JournalError {
     JournalError::ExecutionNotFound
 }
 
-fn bind_error(error: sqlx::Error) -> JournalError {
+fn unique_error(error: sqlx::Error, message: &str) -> JournalError {
     if let sqlx::Error::Database(db) = &error
         && db.is_unique_violation()
     {
-        return conflict("process already belongs to a live or unknown execution session");
+        return conflict(message);
     }
     error.into()
 }
@@ -109,6 +127,15 @@ macro_rules! impl_storage {
             ) -> Result<ExecutionResponse, JournalError> {
                 request.validate()?;
                 match &request {
+                    ExecutionRequest::GetResolution { session_id } => {
+                        let record = sqlx::query_as::<_, (String, i64)>(SELECT_RESOLUTION)
+                            .bind(session_id.to_string())
+                            .fetch_optional(self.pool())
+                            .await?
+                            .map(resolution)
+                            .transpose()?;
+                        return Ok(ExecutionResponse::Resolution(record));
+                    }
                     ExecutionRequest::GetSession { session_id } => {
                         let row = sqlx::query_as::<_, SessionRow>(session_select_sql!(
                             "WHERE session_id = $1", ""
@@ -208,14 +235,18 @@ macro_rules! impl_storage {
                             {
                                 row.3 = "unknown".into();
                             }
+                            if row.3 == "unknown" {
+                                row.9 = next_epoch(&row)?;
+                            }
                             sqlx::query(
                                 "UPDATE execution_sessions SET owner_id = $1, lease_token = $2,
-                                 expires_at_ms = $3, state = $4 WHERE session_id = $5",
+                                 expires_at_ms = $3, state = $4, recovery_epoch = $5 WHERE session_id = $6",
                             )
                             .bind(&owner_id)
                             .bind(token.to_string())
                             .bind(expires)
                             .bind(&row.3)
+                            .bind(row.9)
                             .bind(&id)
                             .execute(&mut *tx)
                             .await?;
@@ -254,7 +285,8 @@ macro_rules! impl_storage {
                                 .bind(&id)
                                 .execute(&mut *tx)
                                 .await
-                                .map_err(bind_error)?;
+                                .map_err(|error| unique_error(error,
+                                    "process already belongs to a live or unknown execution session"))?;
                         }
                         ExecutionResponse::Session(session(&row)?)
                     }
@@ -370,10 +402,12 @@ macro_rules! impl_storage {
                             .execute(&mut *tx)
                             .await?;
                             sqlx::query(
-                                "UPDATE execution_sessions SET state = $1, active_turn_id = $2 WHERE session_id = $3",
+                                "UPDATE execution_sessions SET state = $1, active_turn_id = $2,
+                                 recovery_epoch = $3 WHERE session_id = $4",
                             )
                             .bind(if state.is_terminal() { "idle" } else { "unknown" })
                             .bind(if state.is_terminal() { None } else { Some(turn_id.to_string()) })
+                            .bind(if state == ExecutionTurnState::Unknown { next_epoch(&row)? } else { row.9 })
                             .bind(&id)
                             .execute(&mut *tx)
                             .await?;
@@ -396,7 +430,9 @@ macro_rules! impl_storage {
                             .execute(&mut *tx)
                             .await?;
                         }
-                        sqlx::query("UPDATE execution_sessions SET state = 'unknown' WHERE session_id = $1")
+                        row.9 = next_epoch(&row)?;
+                        sqlx::query("UPDATE execution_sessions SET state = 'unknown', recovery_epoch = $1 WHERE session_id = $2")
+                            .bind(row.9)
                             .bind(&id)
                             .execute(&mut *tx)
                             .await?;
@@ -437,6 +473,77 @@ macro_rules! impl_storage {
                             .execute(&mut *tx)
                             .await?;
                         ExecutionResponse::Released
+                    }
+                    ExecutionRequest::Resolve { lease: expected, resolution: requested } => {
+                        let previous = sqlx::query_as::<_, (String, i64)>(SELECT_RESOLUTION)
+                            .bind(&id)
+                            .fetch_optional(&mut *tx)
+                            .await?;
+                        if let Some(previous) = previous {
+                            let previous = resolution(previous)?;
+                            if previous.request != requested {
+                                return Err(conflict("execution resolution is immutable"));
+                            }
+                            // No writes: a lost acknowledgement can reconcile
+                            // even though resolution atomically released the lease.
+                            ExecutionResponse::Resolved(previous)
+                        } else {
+                            check_lease(&row, &expected, now)?;
+                            if current.state != ExecutionSessionState::Unknown
+                                || current.process_id != requested.expected_process_id
+                                || current.active_turn_id != requested.expected_turn_id
+                                || current.recovery_epoch != requested.expected_recovery_epoch
+                            {
+                                return Err(conflict("resolution target changed or is not quarantined"));
+                            }
+                            if let Some(turn_id) = current.active_turn_id {
+                                let outcome = requested.outcome.as_ref()
+                                    .map(serde_json::to_string).transpose()
+                                    .map_err(|source| JournalError::Serialize {
+                                        field: "execution resolution outcome", source
+                                    })?;
+                                let changed = sqlx::query(
+                                    "UPDATE execution_turns SET state = 'interrupted', outcome_json = $1
+                                     WHERE session_id = $2 AND turn_id = $3 AND state = 'unknown'",
+                                )
+                                .bind(outcome)
+                                .bind(&id)
+                                .bind(turn_id.to_string())
+                                .execute(&mut *tx)
+                                .await?;
+                                if changed.rows_affected() != 1 {
+                                    return Err(conflict("resolution turn is not quarantined"));
+                                }
+                            }
+                            sqlx::query(
+                                "UPDATE execution_sessions SET state = 'closed',
+                                 active_turn_id = NULL, expires_at_ms = 0 WHERE session_id = $1",
+                            )
+                            .bind(&id)
+                            .execute(&mut *tx)
+                            .await?;
+                            let request_json = serde_json::to_string(&requested)
+                                .map_err(|source| JournalError::Serialize {
+                                    field: "execution resolution", source
+                                })?;
+                            sqlx::query(
+                                "INSERT INTO execution_resolutions
+                                 (session_id, resolution_id, request_json, resolved_at_ms)
+                                 VALUES ($1, $2, $3, $4)",
+                            )
+                            .bind(&id)
+                            .bind(requested.resolution_id.to_string())
+                            .bind(request_json)
+                            .bind(now)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|error| unique_error(error,
+                                "resolution id already belongs to another session"))?;
+                            ExecutionResponse::Resolved(ExecutionResolutionRecord {
+                                request: requested,
+                                resolved_at_ms: now,
+                            })
+                        }
                     }
                     _ => unreachable!("read requests returned before transaction"),
                 };

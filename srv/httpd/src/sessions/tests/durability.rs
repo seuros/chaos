@@ -4,6 +4,7 @@ use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
 use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
 
+mod recovery;
 mod storage;
 use storage::Database;
 

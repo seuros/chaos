@@ -9,8 +9,9 @@ generation precondition: after restart, read saved state before retrying any tur
 
 `JournalClient::execution` exposes the same typed control-plane operations over
 the SQLite journald Unix socket and the direct PostgreSQL backend. Migration 26
-adds session and turn tables to the existing runtime database. Journald protocol
-7 prevents accidentally talking to a sidecar that predates HTTP integration.
+adds session and turn tables to the existing runtime database. Migration 27 adds
+immutable operator resolutions and monotonic quarantine epochs. Journald protocol
+8 prevents accidentally talking to a sidecar that predates recovery controls.
 Conversation transcripts remain in the existing append-only journal.
 
 A server selects a stable configuration/tenant `scope` and a unique owner ID for
@@ -37,6 +38,11 @@ tokens through the public HTTP API.
 6. Independently contained idle/closed owners may **Release** their lease.
    Unfinished/unknown sessions cannot release ownership or close. Closed records
    retain their deduplication history.
+7. **Resolve** atomically records an operator's containment assertion, interrupts
+   an active unknown turn, closes the session and releases its lease. The
+   expected process, turn and quarantine epoch must still match under the writer
+   lock. Changed resolutions conflict; identical retries only read the committed
+   audit, including after lease expiry/release. No execution is authorized.
 
 Leases use the storage clock and are validated while holding the session writer
 lock. SQLite uses `BEGIN IMMEDIATE`; PostgreSQL uses `FOR UPDATE`. A live claim
@@ -103,13 +109,67 @@ under a retained name. No per-request policy overrides are added.
 Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
 per-turn environment, billing telemetry and clamp support remain separate work.
 
+## Operator recovery
+
+`GET /api/sessions/<session_id>/recovery` inspects the persisted session, its
+quarantine `recovery_epoch`, any committed resolution, and whether the local
+supervisor has stopped. Normal bearer authentication is required; lease tokens
+are never returned. `can_resolve` is a hint, not containment evidence or authority.
+
+Resolution is disabled unless a separate nonempty `--recovery-token` (or
+`CHAOS_RECOVERY_TOKEN`) is configured with `--session-scope`. It must differ from
+the ordinary bearer token. POST also requires both the ordinary bearer and
+`X-Chaos-Recovery-Authorization: Bearer <operator token>`, plus the current
+`X-Chaos-Daemon-ID`. Authorization precedes body reading.
+
+After independently containing the executor **and external subprocesses/remote
+tools**, POST `/api/sessions/<session_id>/recovery` with:
+
+```json
+{
+  "resolution_id": "caller-generated canonical UUID",
+  "expected_process_id": "process UUID from inspection, or null",
+  "expected_turn_id": "active turn UUID from inspection, or null",
+  "expected_recovery_epoch": 1,
+  "containment_confirmed": true,
+  "actor": "operator identity",
+  "reason": "How executor and external effects were independently contained"
+}
+```
+
+Storage records an operator-supplied actor (1..256 bytes), reason (1..4096 bytes)
+and its own timestamp;
+it **cannot verify the containment assertion or claimed actor identity**. Do not
+include secrets in evidence or expose the operator credential to callers/tools.
+This HTTP guard is not a replacement for tool environment/sandbox isolation.
+
+A live supervisor is always rejected. Stop the daemon, contain its external work,
+wait for lease expiry if needed, restart into quarantine, then inspect and resolve.
+New quarantines and ownership takeovers increment the epoch, so stale assertions
+conflict even when process/turn IDs are unchanged. Reinspect and reconfirm after
+such changes; never mechanically refresh a stale assertion.
+
+Success permanently closes the session and marks its active turn `interrupted`
+without claiming successful completion. Bounded partial result/usage is retained
+when possible; an oversized snapshot is explicitly marked omitted. Turn
+tombstones and the resolution audit remain immutable. No-turn startup/autonomous
+quarantine releases its orphan reservation without manufacturing a turn.
+
+Daemon tasks own resolution writes and ingress reservations through HTTP
+disconnects. Failed/ambiguous commits retain execution capacity. Read the audit
+and retry only the identical decision with the same resolution UUID; a new
+resolution UUID is not permission to overwrite a committed decision. The local
+permit is released only after observing durable closure. Resolution never resumes
+history or replays input; continuing work requires an explicit new session.
+
 ## Backend validation
 
 The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
-**disposable PostgreSQL database** to run the same seven scenarios through the
+**disposable PostgreSQL database** to run the same scenarios through the
 production PostgreSQL journal client: acceptance/terminal commit failures,
 restart quarantine, orderly handoff, writer fencing, dispatch cancellation and
-HTTP disconnects. Each HTTP fixture creates an isolated schema, runs the runtime
+HTTP disconnects, plus operator authorization, resolution failures, stale
+quarantines and audit-bound recovery. Each HTTP fixture creates an isolated schema, runs the runtime
 migrations and drops that schema on success; the test role needs schema-creation
 permission. A failed test may leave its schema for diagnosis.
 

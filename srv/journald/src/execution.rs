@@ -67,6 +67,8 @@ pub struct ExecutionSession {
     pub state: ExecutionSessionState,
     pub active_turn_id: Option<Uuid>,
     pub turn_count: u64,
+    /// Monotonic quarantine incarnation; stale containment assertions conflict.
+    pub recovery_epoch: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +87,27 @@ pub struct ExecutionTurn {
     pub fingerprint: String,
     pub state: ExecutionTurnState,
     pub outcome: Option<Value>,
+}
+
+/// Operator assertion, not a storage proof that external effects stopped.
+/// Resolution always closes the session and marks its active turn interrupted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionResolution {
+    pub resolution_id: Uuid,
+    pub expected_process_id: Option<ProcessId>,
+    pub expected_turn_id: Option<Uuid>,
+    pub expected_recovery_epoch: u64,
+    pub containment_confirmed: bool,
+    pub actor: String,
+    pub reason: String,
+    pub outcome: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionResolutionRecord {
+    pub request: ExecutionResolution,
+    pub resolved_at_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +167,15 @@ pub enum ExecutionRequest {
     Release {
         lease: ExecutionLease,
     },
+    /// Atomic audited closure after independent containment. Identical retries
+    /// are read-only even after lease release; changed resolutions conflict.
+    Resolve {
+        lease: ExecutionLease,
+        resolution: ExecutionResolution,
+    },
+    GetResolution {
+        session_id: Uuid,
+    },
     GetSession {
         session_id: Uuid,
     },
@@ -163,6 +195,7 @@ impl ExecutionRequest {
         match self {
             Self::Claim { session_id, .. }
             | Self::GetSession { session_id }
+            | Self::GetResolution { session_id }
             | Self::GetTurn { session_id, .. } => Some(*session_id),
             Self::Heartbeat { lease, .. }
             | Self::BindProcess { lease, .. }
@@ -173,6 +206,7 @@ impl ExecutionRequest {
             | Self::ReconcileIdle { lease }
             | Self::Close { lease }
             | Self::Release { lease } => Some(lease.session_id),
+            Self::Resolve { lease, .. } => Some(lease.session_id),
             Self::ListSessions { .. } => None,
         }
     }
@@ -220,7 +254,37 @@ impl ExecutionRequest {
                     return Err(invalid("execution page limit must be 1..256"));
                 }
             }
+            Self::Resolve { resolution, .. } => resolution.validate()?,
             _ => {}
+        }
+        Ok(())
+    }
+}
+
+impl ExecutionResolution {
+    pub fn validate(&self) -> Result<(), JournalError> {
+        if !self.containment_confirmed {
+            return Err(invalid("independent containment confirmation is required"));
+        }
+        validate_name(&self.actor)?;
+        if self.reason.trim().is_empty() || self.reason.len() > 4096 {
+            return Err(invalid("resolution reason must contain 1..4096 bytes"));
+        }
+        if self.expected_turn_id.is_none() && self.outcome.is_some() {
+            return Err(invalid(
+                "a no-turn resolution cannot contain a turn outcome",
+            ));
+        }
+        if let Some(outcome) = &self.outcome
+            && serde_json::to_vec(outcome)
+                .map_err(|source| JournalError::Serialize {
+                    field: "execution resolution outcome",
+                    source,
+                })?
+                .len()
+                > MAX_EXECUTION_OUTCOME_BYTES
+        {
+            return Err(invalid("execution resolution outcome exceeds size limit"));
         }
         Ok(())
     }
@@ -248,6 +312,8 @@ pub enum ExecutionResponse {
     Turn(ExecutionTurn),
     Sessions(Vec<ExecutionSession>),
     Released,
+    Resolved(ExecutionResolutionRecord),
+    Resolution(Option<ExecutionResolutionRecord>),
 }
 
 fn validate_name(value: &str) -> Result<(), JournalError> {

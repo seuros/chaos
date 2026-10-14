@@ -54,6 +54,7 @@ pub(crate) struct ServerState {
     #[allow(dead_code)]
     auth_manager: Arc<AuthManager>,
     bearer_token: Arc<str>,
+    recovery_token: Option<Arc<str>>,
     semaphore: Arc<Semaphore>,
     max_concurrent: usize,
     timeout: Duration,
@@ -86,6 +87,18 @@ pub async fn run_main(
     let bearer_token: Arc<str> = match serve_cli.bearer_token.as_deref() {
         Some(t) if !t.is_empty() => Arc::from(t),
         _ => bail!("bearer token is required: set --bearer-token or CHAOS_BEARER_TOKEN"),
+    };
+    let recovery_token: Option<Arc<str>> = match serve_cli.recovery_token.as_deref() {
+        Some(token) => {
+            if token.trim().is_empty() || token == bearer_token.as_ref() {
+                bail!("recovery token must be nonempty and different from the bearer token");
+            }
+            if serve_cli.session_scope.is_none() {
+                bail!("--recovery-token requires --session-scope");
+            }
+            Some(Arc::from(token))
+        }
+        None => None,
     };
     if serve_cli.max_concurrent == 0 {
         bail!("--max-concurrent must be at least 1");
@@ -238,6 +251,7 @@ pub async fn run_main(
         process_table: core.process_table,
         auth_manager: core.auth_manager,
         bearer_token,
+        recovery_token,
         semaphore,
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),

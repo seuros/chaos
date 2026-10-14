@@ -23,7 +23,9 @@ use crate::common::{
 };
 use crate::error::ApiError;
 use crate::rate_limits::{parse_all_rate_limits, parse_rate_limit_event};
-use crate::sse::responses::{ResponsesStreamEvent, process_responses_event};
+use crate::sse::responses::{
+    ResponsesStreamEvent, is_invalid_encrypted_content_code, process_responses_event,
+};
 
 const CONNECT_TIMEOUT: SignedDuration = SignedDuration::from_secs(5);
 const WARM_TTL: SignedDuration = SignedDuration::from_secs(30);
@@ -241,7 +243,13 @@ impl ResponsesWebSocket {
                         .as_str()
                         .unwrap_or("websocket API error")
                         .to_owned();
-                    let _ = tx.send(Err(ApiError::Api { status, message })).await;
+                    let error =
+                        if is_invalid_encrypted_content_code(value["error"]["code"].as_str()) {
+                            ApiError::InvalidEncryptedContent { message }
+                        } else {
+                            ApiError::Api { status, message }
+                        };
+                    let _ = tx.send(Err(error)).await;
                     return;
                 }
                 if let Some(snapshot) = parse_rate_limit_event(text.as_str())

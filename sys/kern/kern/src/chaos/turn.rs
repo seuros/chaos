@@ -809,6 +809,16 @@ pub(crate) async fn run_turn(
                 sess.send_event(&turn_context, event).await;
                 break;
             }
+            Err(ChaosErr::InvalidEncryptedContent(message))
+                if sess.drop_encrypted_reasoning().await =>
+            {
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    %message,
+                    "provider rejected encrypted reasoning; dropped it from history and retrying"
+                );
+                continue;
+            }
             Err(e) => {
                 info!("Turn error: {e:#}");
                 let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));

@@ -161,6 +161,12 @@ impl ContextManager {
         self.items = items;
     }
 
+    /// Removes reasoning items that carry encrypted content.
+    /// Returns true when at least one item was removed.
+    pub(crate) fn drop_encrypted_reasoning(&mut self) -> bool {
+        drop_encrypted_reasoning(&mut self.items)
+    }
+
     /// Replaces the item at `index` in place, preserving ordering and
     /// call/output pairing. Returns false when the index is out of bounds.
     pub(crate) fn rewrite_item(&mut self, index: usize, item: ResponseItem) -> bool {
@@ -460,6 +466,22 @@ const ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE: NonZeroUsize =
 
 static ORIGINAL_IMAGE_ESTIMATE_CACHE: LazyLock<BlockingLruCache<[u8; 20], Option<i64>>> =
     LazyLock::new(|| BlockingLruCache::new(ORIGINAL_IMAGE_ESTIMATE_CACHE_SIZE));
+
+/// Removes reasoning items that carry encrypted content from `items`.
+/// Returns true when at least one item was removed.
+pub(crate) fn drop_encrypted_reasoning(items: &mut Vec<ResponseItem>) -> bool {
+    let before = items.len();
+    items.retain(|item| {
+        !matches!(
+            item,
+            ResponseItem::Reasoning {
+                encrypted_content: Some(_),
+                ..
+            }
+        )
+    });
+    items.len() != before
+}
 
 pub(crate) fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
     match item {

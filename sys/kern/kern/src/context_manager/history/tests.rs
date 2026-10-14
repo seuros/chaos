@@ -1685,3 +1685,25 @@ fn text_only_items_unchanged() {
 
     assert_eq!(estimated, raw_len);
 }
+
+#[test]
+fn drop_encrypted_reasoning_removes_only_encrypted_items() {
+    let mut history = create_history_with_items(vec![
+        user_input_text_msg("hi"),
+        reasoning_with_encrypted_content(8),
+        reasoning_msg("plain"),
+        user_input_text_msg("again"),
+        reasoning_with_encrypted_content(4),
+    ]);
+
+    assert!(history.drop_encrypted_reasoning());
+    assert_eq!(
+        history.raw_items(),
+        &[
+            user_input_text_msg("hi"),
+            reasoning_msg("plain"),
+            user_input_text_msg("again"),
+        ]
+    );
+    assert!(!history.drop_encrypted_reasoning());
+}

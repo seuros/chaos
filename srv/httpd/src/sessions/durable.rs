@@ -33,7 +33,7 @@ pub(super) struct Store {
 }
 
 impl Store {
-    async fn call(&self, request: Request) -> Result<Response, ApiError> {
+    pub(super) async fn call(&self, request: Request) -> Result<Response, ApiError> {
         let result = tokio::time::timeout(STORE_TIMEOUT, async {
             match &self.client {
                 Client::Journal(client) => client.execution(request).await.map_err(store_error),

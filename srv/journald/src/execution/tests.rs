@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chaos_ipc::ProcessId;
 use serde_json::json;
 use uuid::Uuid;
@@ -186,6 +184,7 @@ async fn postgres_execution_retries_never_redispatch_or_replace_terminal_outcome
         .unwrap();
     let store = crate::PostgresJournalStore::new(pool);
     assert_execution_idempotency(&store).await;
+    assert_concurrent_ownership(&store).await;
 }
 
 #[tokio::test]
@@ -443,11 +442,13 @@ async fn terminal_commit_survives_restart_and_idle_process_mapping_is_retained()
 #[tokio::test]
 async fn concurrent_claim_and_admission_have_one_winner() {
     let home = tempfile::tempdir().unwrap();
-    let store = Arc::new(
-        SqliteJournalStore::open(&home.path().join("journal.sqlite"))
-            .await
-            .unwrap(),
-    );
+    let store = SqliteJournalStore::open(&home.path().join("journal.sqlite"))
+        .await
+        .unwrap();
+    assert_concurrent_ownership(&store).await;
+}
+
+async fn assert_concurrent_ownership<S: JournalStore>(store: &S) {
     let id = Uuid::new_v4();
     let (a, b) = tokio::join!(
         store.execution(claim_request(id, "a")),
@@ -474,6 +475,28 @@ async fn concurrent_claim_and_admission_have_one_winner() {
         store.execution(accept(&lease, Uuid::new_v4())),
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+    let ExecutionResponse::Accepted { turn, .. } = a.or(b).unwrap() else {
+        panic!("expected accepted turn");
+    };
+    let dispatch = ExecutionRequest::Dispatch {
+        lease,
+        turn_id: turn.turn_id,
+    };
+    let (a, b) = tokio::join!(store.execution(dispatch.clone()), store.execution(dispatch),);
+    let newly_dispatched = |response: ExecutionResponse| {
+        matches!(
+            response,
+            ExecutionResponse::Dispatched {
+                newly_dispatched: true,
+                ..
+            }
+        )
+    };
+    assert_eq!(
+        usize::from(newly_dispatched(a.unwrap())) + usize::from(newly_dispatched(b.unwrap())),
+        1,
+        "two dispatch callers must authorize only one executor submission"
+    );
 }
 
 #[tokio::test]

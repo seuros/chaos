@@ -1509,6 +1509,7 @@ dependencies = [
  "chaos-getopt",
  "chaos-ipc",
  "chaos-kern",
+ "chaos-proc",
  "chaos-session",
  "chaos-test-fixtures",
  "chaos_journald",
@@ -1521,6 +1522,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "usage-rs",
  "uuid",
 ]

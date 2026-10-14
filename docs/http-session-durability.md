@@ -102,3 +102,25 @@ configuration/tenant and do not change credentials/provider/cwd/sandbox/tools
 under a retained name. No per-request policy overrides are added.
 Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
 per-turn environment, billing telemetry and clamp support remain separate work.
+
+## Backend validation
+
+The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
+**disposable PostgreSQL database** to run the same seven scenarios through the
+production PostgreSQL journal client: acceptance/terminal commit failures,
+restart quarantine, orderly handoff, writer fencing, dispatch cancellation and
+HTTP disconnects. Each HTTP fixture creates an isolated schema, runs the runtime
+migrations and drops that schema on success; the test role needs schema-creation
+permission. A failed test may leave its schema for diagnosis.
+
+```sh
+TEST_DATABASE_URL="$PG_TEST_URL" cargo test -p chaos-httpd --lib sessions::tests::durability
+TEST_DATABASE_URL="$PG_TEST_URL" cargo test -p chaos_journald --lib postgres
+env -u TEST_DATABASE_URL cargo test -p chaos-httpd --lib sessions::tests::durability
+```
+
+The journald PostgreSQL suite also verifies that competing claims/admissions
+have one winner and simultaneous dispatches authorize exactly one submission.
+It writes to the test database's default schema, so never use a production URL.
+Linux CI runs both PostgreSQL suites against a disposable PostgreSQL 18 container,
+in addition to the default SQLite coverage.

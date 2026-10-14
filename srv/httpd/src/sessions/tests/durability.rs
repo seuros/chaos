@@ -2,11 +2,14 @@
 //! ownership, crash boundaries and duplicate side effects belong here.
 use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
-use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState, JournalStore};
+use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
+
+mod storage;
+use storage::Database;
 
 struct Fixture {
     _home: tempfile::TempDir,
-    db: Arc<chaos_journald::SqliteJournalStore>,
+    db: Database,
     store: Arc<Store>,
     manager: Arc<SessionManager>,
     session: Arc<Session>,
@@ -17,13 +20,9 @@ struct Fixture {
 impl Fixture {
     async fn new() -> Self {
         let home = tempfile::tempdir().unwrap();
-        let db = Arc::new(
-            chaos_journald::SqliteJournalStore::open(&home.path().join("journal.sqlite"))
-                .await
-                .unwrap(),
-        );
+        let (db, client) = Database::open(home.path()).await;
         let store = Arc::new(Store {
-            client: Client::Sqlite(db.clone()),
+            client,
             scope: "test".into(),
         });
         let capacity = Arc::new(Semaphore::new(1));
@@ -78,8 +77,8 @@ impl Fixture {
 
     async fn persisted_turn(&self, id: &str) -> chaos_journald::ExecutionTurn {
         let ExecutionResponse::Turn(turn) = self
-            .db
-            .execution(ExecutionRequest::GetTurn {
+            .store
+            .call(ExecutionRequest::GetTurn {
                 session_id: Uuid::parse_str(&self.session.id).unwrap(),
                 turn_id: Uuid::parse_str(id).unwrap(),
             })
@@ -112,9 +111,22 @@ async fn status(session: &Session, expected: SessionStatus) {
 async fn failed_acceptance_never_dispatches_and_retains_the_reservation() {
     let mut fixture = Fixture::new().await;
     let mut supervisor = fixture.start();
-    sqlx_trigger(&fixture, "fail_accept", "active").await;
+    fixture.db.fail_transition("active").await;
     let id = Uuid::new_v4().to_string();
     assert!(fixture.admit(&id).await.is_err());
+    assert_eq!(
+        fixture
+            .store
+            .call(ExecutionRequest::GetTurn {
+                session_id: Uuid::parse_str(&fixture.session.id).unwrap(),
+                turn_id: Uuid::parse_str(&id).unwrap(),
+            })
+            .await
+            .unwrap_err()
+            .code,
+        StatusCode::NOT_FOUND,
+        "a failed acceptance must roll back its turn insert"
+    );
     assert!(matches!(
         operation(&mut supervisor).await,
         Operation::Shutdown
@@ -131,24 +143,7 @@ async fn failed_acceptance_never_dispatches_and_retains_the_reservation() {
     );
     supervisor.task.abort();
     let _ = supervisor.task.await;
-}
-
-async fn sqlx_trigger(fixture: &Fixture, name: &str, state: &str) {
-    // Two fixed fault-injection statements; no generated SQL or production hook.
-    let sql = match (name, state) {
-        ("fail_accept", "active") => {
-            "CREATE TRIGGER fail_accept BEFORE UPDATE OF state ON execution_sessions
-             WHEN NEW.state = 'active'
-             BEGIN SELECT RAISE(ABORT, 'acceptance failure'); END;"
-        }
-        ("fail_finish", "idle") => {
-            "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON execution_sessions
-             WHEN NEW.state = 'idle'
-             BEGIN SELECT RAISE(ABORT, 'terminal failure'); END;"
-        }
-        _ => unreachable!(),
-    };
-    sqlx::raw_sql(sql).execute(fixture.db.pool()).await.unwrap();
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -156,12 +151,7 @@ async fn cancellation_during_dispatch_commit_never_submits_or_interrupts_another
     let mut fixture = Fixture::new().await;
     let id = Uuid::new_v4().to_string();
     fixture.admit(&id).await.unwrap();
-    let write_lock = fixture
-        .db
-        .pool()
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .unwrap();
+    let write_lock = fixture.db.lock(&fixture.session.id).await;
     let mut supervisor = fixture.start();
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -170,7 +160,7 @@ async fn cancellation_during_dispatch_commit_never_submits_or_interrupts_another
     .await
     .unwrap();
     fixture.session.interrupt(id).unwrap();
-    write_lock.rollback().await.unwrap();
+    write_lock.release().await;
     status(&fixture.session, SessionStatus::Idle).await;
     assert_eq!(fixture.capacity.available_permits(), 1);
     assert!(
@@ -183,6 +173,7 @@ async fn cancellation_during_dispatch_commit_never_submits_or_interrupts_another
         Operation::Shutdown
     ));
     supervisor.task.await.unwrap();
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -196,7 +187,7 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
         fixture.persisted_turn(&id).await.state,
         ExecutionTurnState::Running
     );
-    sqlx_trigger(&fixture, "fail_finish", "idle").await;
+    fixture.db.fail_transition("idle").await;
     supervisor.events.send(complete(&id)).unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
@@ -210,10 +201,7 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
     );
     supervisor.task.abort();
     let _ = supervisor.task.await;
-    sqlx::query("UPDATE execution_sessions SET expires_at_ms = 0")
-        .execute(fixture.db.pool())
-        .await
-        .unwrap();
+    fixture.db.expire(&fixture.session.id).await;
 
     let capacity = Arc::new(Semaphore::new(1));
     let (manager, recovered) = SessionManager::restore(
@@ -265,6 +253,7 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
         StatusCode::CONFLICT
     );
     assert!(session.close().is_err(), "restart cannot prove containment");
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -334,6 +323,7 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
     session.close().unwrap();
     assert!(matches!(operation(&mut resumed).await, Operation::Shutdown));
     resumed.task.await.unwrap();
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -346,10 +336,7 @@ async fn a_fenced_supervisor_contains_work_without_releasing_unknown_capacity() 
         operation(&mut supervisor).await,
         Operation::Execute(_, _)
     ));
-    sqlx::query("UPDATE execution_sessions SET expires_at_ms = 0")
-        .execute(fixture.db.pool())
-        .await
-        .unwrap();
+    fixture.db.expire(&fixture.session.id).await;
     let (_, successor) = Owner::claim(
         fixture.store.clone(),
         Uuid::parse_str(&fixture.session.id).unwrap(),
@@ -372,6 +359,7 @@ async fn a_fenced_supervisor_contains_work_without_releasing_unknown_capacity() 
     assert!(supervisor.operations.try_recv().is_err());
     supervisor.task.abort();
     let _ = supervisor.task.await;
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -379,7 +367,10 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
     let fixture = Fixture::new().await;
     for booted in [false, true] {
         let store = Arc::new(Store {
-            client: Client::Sqlite(fixture.db.clone()),
+            client: match &fixture.store.client {
+                Client::Sqlite(db) => Client::Sqlite(db.clone()),
+                Client::Journal(client) => Client::Journal(client.clone()),
+            },
             scope: format!("startup-{booted}"),
         });
         let id = Uuid::new_v4();
@@ -391,11 +382,7 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
             // Binding an allocated ID must not erase the boot quarantine.
             owner.bind(ProcessId::new()).await.unwrap();
         }
-        sqlx::query("UPDATE execution_sessions SET expires_at_ms = 1 WHERE session_id = $1")
-            .bind(id.to_string())
-            .execute(fixture.db.pool())
-            .await
-            .unwrap();
+        fixture.db.expire(&id.to_string()).await;
         let capacity = Arc::new(Semaphore::new(1));
         let (manager, recovered) =
             SessionManager::restore(8, Duration::from_secs(3600), store, &capacity)
@@ -427,6 +414,7 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
                 .is_err()
         );
     }
+    fixture.db.close().await;
 }
 
 #[tokio::test]
@@ -440,12 +428,7 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
     unique.sessions = Some(fixture.manager.clone());
     unique.semaphore = fixture.capacity.clone();
     unique.timeout = Duration::from_secs(60);
-    let write_lock = fixture
-        .db
-        .pool()
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .unwrap();
+    let write_lock = fixture.db.lock(&fixture.session.id).await;
     let id = Uuid::new_v4().to_string();
     let request = Request::builder()
         .method("POST")
@@ -467,7 +450,7 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
     caller.abort();
     let _ = caller.await;
     assert_eq!(fixture.manager.ingress.available_permits(), 15);
-    write_lock.rollback().await.unwrap();
+    write_lock.release().await;
     assert!(matches!(operation(&mut supervisor).await, Operation::Execute(turn, _) if turn == id));
     supervisor.events.send(complete(&id)).unwrap();
     status(&fixture.session, SessionStatus::Idle).await;
@@ -477,4 +460,5 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
         Operation::Shutdown
     ));
     supervisor.task.await.unwrap();
+    fixture.db.close().await;
 }

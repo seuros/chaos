@@ -127,6 +127,27 @@ jobs:
           RUST_BACKTRACE: 1
           NEXTEST_STATUS_LEVEL: leak
 
+      - name: PostgreSQL durability
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name chaos-pg-test \
+            -e POSTGRES_USER=chaos_test -e POSTGRES_PASSWORD=chaos_test \
+            -e POSTGRES_DB=chaos_test --tmpfs /var/lib/postgresql \
+            -p 127.0.0.1::5432 postgres:18
+          trap 'docker rm -f chaos-pg-test >/dev/null' EXIT
+          for attempt in {1..30}; do
+            if docker exec chaos-pg-test pg_isready -U chaos_test -d chaos_test; then break; fi
+            sleep 1
+          done
+          docker exec chaos-pg-test pg_isready -U chaos_test -d chaos_test
+          address="$(docker port chaos-pg-test 5432)"
+          export TEST_DATABASE_URL="postgres://chaos_test:chaos_test@127.0.0.1:${address##*:}/chaos_test"
+          mbx nextest run --locked --all-features -p chaos-httpd -p chaos_journald --lib \
+            -E 'test(sessions::tests::durability::) | test(postgres)' \
+            --target ${{ matrix.target }} --cargo-profile ci-test
+
       - name: Upload Cargo timings (nextest)
         if: always()
         uses: actions/upload-artifact@v7

@@ -1,5 +1,6 @@
 //! Opt-in journal ownership and commit boundaries. No HTTP future owns a write
 //! or an executor; losing a response is reconciliation, never redispatch.
+mod invocations;
 pub(crate) mod policy;
 pub(crate) mod recovery;
 use std::sync::{Arc, Mutex};
@@ -30,9 +31,9 @@ pub(super) enum Client {
     Sqlite(Arc<chaos_journald::SqliteJournalStore>),
 }
 
-pub(super) struct Store {
+pub(crate) struct Store {
     pub(super) client: Client,
-    pub(super) scope: String,
+    pub(crate) scope: String,
     pub(super) policy_digest: Option<String>,
     pub(super) policy: Option<Arc<policy::PinnedPolicy>>,
     pub(super) recovery_only: bool,
@@ -69,7 +70,7 @@ impl Store {
         Ok(())
     }
 
-    pub(super) async fn call(&self, request: Request) -> Result<Response, ApiError> {
+    pub(crate) async fn call(&self, request: Request) -> Result<Response, ApiError> {
         let result = tokio::time::timeout(STORE_TIMEOUT, async {
             match &self.client {
                 Client::Journal(client) => client.execution(request).await.map_err(store_error),
@@ -799,7 +800,7 @@ impl Session {
         // cannot cancel this write or orphan a committed acceptance.
         let accepted = async {
             owner
-                .write(Request::Accept {
+                .write(Request::AcceptMetered {
                     lease: owner.lease()?,
                     turn_id: parse_id(&id)?,
                     fingerprint,

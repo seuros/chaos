@@ -32,10 +32,10 @@ pub(crate) struct SessionManager {
     pub daemon_id: String,
     pub ttl: Duration,
     ingress: Arc<Semaphore>,
-    shutdown: watch::Sender<bool>,
+    pub(crate) shutdown: watch::Sender<bool>,
     limit: usize,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
-    store: Option<Arc<durable::Store>>,
+    pub(crate) store: Option<Arc<durable::Store>>,
     creation: tokio::sync::Mutex<()>,
 }
 

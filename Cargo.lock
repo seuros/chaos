@@ -1513,6 +1513,7 @@ dependencies = [
  "chaos-session",
  "chaos-test-fixtures",
  "chaos_journald",
+ "hmac 0.13.0",
  "rama",
  "serde",
  "serde_json",

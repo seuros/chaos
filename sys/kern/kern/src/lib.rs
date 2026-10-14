@@ -57,6 +57,7 @@ mod flags;
 pub mod git_info;
 mod goal;
 pub mod host_notice;
+pub mod invocation;
 mod machine_recovery;
 pub mod machine_status;
 mod machine_warnings;

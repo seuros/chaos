@@ -31,9 +31,13 @@ pub use client::JournalClientError;
 pub use client::JournalRpcClient;
 pub use error::JournalError;
 pub use execution::{
+    ExecutionAccounting, ExecutionDelivery, ExecutionDeliveryLease, ExecutionDeliveryRequest,
+    ExecutionDeliveryStatus, ExecutionEvent, ExecutionInvocation, ExecutionInvocationRequest,
     ExecutionLease, ExecutionRequest, ExecutionResolution, ExecutionResolutionRecord,
     ExecutionResponse, ExecutionSession, ExecutionSessionState, ExecutionTurn, ExecutionTurnState,
-    MAX_EXECUTION_OUTCOME_BYTES, MAX_EXECUTION_TURNS,
+    InvocationPurpose, InvocationReceipt, InvocationStart, InvocationState, InvocationSummary,
+    InvocationTokenUsage, MAX_EXECUTION_INVOCATIONS, MAX_EXECUTION_OUTCOME_BYTES,
+    MAX_EXECUTION_TURNS,
 };
 pub use model::AppendBatchInput;
 pub use model::AppendBatchResult;

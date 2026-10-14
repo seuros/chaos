@@ -113,6 +113,12 @@ pub struct ExecutionResolutionRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionRequest {
+    Invocation {
+        request: ExecutionInvocationRequest,
+    },
+    Delivery {
+        request: ExecutionDeliveryRequest,
+    },
     /// Bind only an empty namespace. Legacy history is never auto-adopted.
     BindScope {
         scope: String,
@@ -154,6 +160,11 @@ pub enum ExecutionRequest {
     /// Persist fingerprint and accepted state. A same-payload retry returns the
     /// old record even when closed or unknown; it never authorizes redispatch.
     Accept {
+        lease: ExecutionLease,
+        turn_id: Uuid,
+        fingerprint: String,
+    },
+    AcceptMetered {
         lease: ExecutionLease,
         turn_id: Uuid,
         fingerprint: String,
@@ -223,6 +234,7 @@ impl ExecutionRequest {
             | Self::BindProcess { lease, .. }
             | Self::BindNewProcess { lease, .. }
             | Self::Accept { lease, .. }
+            | Self::AcceptMetered { lease, .. }
             | Self::Dispatch { lease, .. }
             | Self::Finish { lease, .. }
             | Self::Quarantine { lease }
@@ -230,12 +242,18 @@ impl ExecutionRequest {
             | Self::Close { lease }
             | Self::Release { lease } => Some(lease.session_id),
             Self::Resolve { lease, .. } => Some(lease.session_id),
-            Self::ListSessions { .. } | Self::BindScope { .. } | Self::GetScope { .. } => None,
+            Self::ListSessions { .. }
+            | Self::BindScope { .. }
+            | Self::GetScope { .. }
+            | Self::Delivery { .. } => None,
+            Self::Invocation { .. } => None,
         }
     }
 
     pub(crate) fn validate(&self) -> Result<(), JournalError> {
         match self {
+            Self::Invocation { request } => request.validate()?,
+            Self::Delivery { request } => request.validate()?,
             Self::BindScope {
                 scope,
                 policy_digest,
@@ -267,7 +285,7 @@ impl ExecutionRequest {
                 validate_ttl(*ttl_ms)?;
             }
             Self::Heartbeat { ttl_ms, .. } => validate_ttl(*ttl_ms)?,
-            Self::Accept { fingerprint, .. }
+            Self::Accept { fingerprint, .. } | Self::AcceptMetered { fingerprint, .. }
                 if fingerprint.len() != 64
                     || !fingerprint
                         .bytes()
@@ -347,6 +365,15 @@ impl ExecutionResolution {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
 pub enum ExecutionResponse {
+    InvocationBegan {
+        invocation: ExecutionInvocation,
+        newly_recorded: bool,
+    },
+    Invocation(ExecutionInvocation),
+    Accounting(ExecutionAccounting),
+    DeliveryRecorded,
+    Delivery(Option<ExecutionDelivery>),
+    Deliveries(Vec<ExecutionDeliveryStatus>),
     Claimed {
         session: ExecutionSession,
         lease: ExecutionLease,
@@ -416,7 +443,18 @@ pub(crate) fn parse_uuid(value: String) -> Result<Uuid, JournalError> {
 // Both backends run the same state machine and parameterized SQL. Only writer
 // locking and the authoritative storage-clock expression differ. SQLite holds
 // BEGIN IMMEDIATE; PostgreSQL locks the session row FOR UPDATE.
+mod invocations;
+mod outbox;
+pub use invocations::{
+    ExecutionAccounting, ExecutionInvocation, ExecutionInvocationRequest, InvocationPurpose,
+    InvocationReceipt, InvocationStart, InvocationState, InvocationSummary, InvocationTokenUsage,
+    MAX_EXECUTION_INVOCATIONS,
+};
 mod storage;
+pub use outbox::{
+    ExecutionDelivery, ExecutionDeliveryLease, ExecutionDeliveryRequest, ExecutionDeliveryStatus,
+    ExecutionEvent,
+};
 
 #[cfg(test)]
 mod tests;

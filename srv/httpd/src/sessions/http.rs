@@ -108,6 +108,46 @@ async fn route(
             _ => Ok(method_not_allowed("GET, POST")),
         };
     }
+    if parts.as_slice() == ["api", "sessions", "deliveries"] {
+        if method != Method::GET {
+            return Ok(method_not_allowed("GET"));
+        }
+        let store = manager
+            .store
+            .as_ref()
+            .ok_or_else(|| ApiError::conflict("deliveries require durable sessions"))?;
+        let after = if query.is_empty() {
+            None
+        } else {
+            Some(
+                query
+                    .strip_prefix("after=")
+                    .ok_or_else(|| ApiError::bad_request("expected after UUID"))?
+                    .parse::<Uuid>()
+                    .map_err(|_| ApiError::bad_request("expected after UUID"))?,
+            )
+        };
+        let deliveries = match store
+            .call(chaos_journald::ExecutionRequest::Delivery {
+                request: chaos_journald::ExecutionDeliveryRequest::List {
+                    scope: store.scope.clone(),
+                    after,
+                    limit: 256,
+                },
+            })
+            .await?
+        {
+            chaos_journald::ExecutionResponse::Deliveries(deliveries) => deliveries,
+            _ => return Err(ApiError::conflict("delivery records unavailable")),
+        };
+        return Ok(response(
+            StatusCode::OK,
+            json!({
+                "daemon_id": manager.daemon_id, "next_cursor": deliveries.last().map(|d| d.event_id),
+                "deliveries": deliveries,
+            }),
+        ));
+    }
     let Some(id) = parts.get(2) else {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "not found"));
     };
@@ -181,6 +221,29 @@ async fn route(
                 json!({
                     "daemon_id": manager.daemon_id, "session_id": id,
                     "replay": session.events(after)?,
+                }),
+            )
+        }
+        [_, _, _, "turns", turn_id, "accounting"] => {
+            if method != Method::GET {
+                return Ok(method_not_allowed("GET"));
+            }
+            validate_id(turn_id)?;
+            let owner = session
+                .ledger
+                .get()
+                .ok_or_else(|| ApiError::conflict("accounting requires durable sessions"))?;
+            let accounting = owner
+                .accounting(
+                    Uuid::parse_str(turn_id)
+                        .map_err(|_| ApiError::bad_request("invalid turn UUID"))?,
+                )
+                .await?;
+            response(
+                StatusCode::OK,
+                json!({
+                    "daemon_id": manager.daemon_id, "session_id": id, "turn_id": turn_id,
+                    "accounting": accounting,
                 }),
             )
         }

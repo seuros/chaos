@@ -515,23 +515,36 @@ struct TextAccumulator {
 fn completed_event_from_usage(response_id: &str, usage: &Value) -> TurnEvent {
     let input_tokens = usage
         .get("prompt_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .and_then(Value::as_i64)
+        .filter(|count| *count >= 0);
     let output_tokens = usage
         .get("completion_tokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .and_then(Value::as_i64)
+        .filter(|count| *count >= 0);
+    let token_usage = input_tokens
+        .zip(output_tokens)
+        .and_then(|(input_tokens, output_tokens)| {
+            Some(TokenUsage {
+                input_tokens,
+                output_tokens,
+                cached_input_tokens: usage
+                    .pointer("/prompt_tokens_details/cached_tokens")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0),
+                reasoning_output_tokens: usage
+                    .pointer("/completion_tokens_details/reasoning_tokens")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0),
+                total_tokens: match usage.get("total_tokens").and_then(Value::as_i64) {
+                    Some(total) => total,
+                    None => input_tokens.checked_add(output_tokens)?,
+                },
+                ..Default::default()
+            })
+        });
     TurnEvent::Completed {
         response_id: response_id.to_string(),
-        token_usage: Some(TokenUsage {
-            input_tokens: input_tokens as i64,
-            output_tokens: output_tokens as i64,
-            total_tokens: usage
-                .get("total_tokens")
-                .and_then(Value::as_i64)
-                .unwrap_or_else(|| (input_tokens as i64).saturating_add(output_tokens as i64)),
-            ..Default::default()
-        }),
+        token_usage,
     }
 }
 

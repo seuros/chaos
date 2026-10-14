@@ -399,3 +399,29 @@ fn parse_chunk_finalization_with_empty_usage() {
             .any(|e| matches!(e, TurnEvent::OutputItemDone(..)))
     );
 }
+
+#[test]
+fn partial_usage_is_not_reported_as_known_zero() {
+    for usage in [
+        serde_json::json!({}),
+        serde_json::json!({"input_tokens": 12}),
+        serde_json::json!({"output_tokens": 0}),
+        serde_json::json!({"input_tokens": -1, "output_tokens": 0}),
+    ] {
+        let mut tools = BTreeMap::new();
+        let mut text = None;
+        let mut thoughts = None;
+        let mut id = String::new();
+        let mut model = None;
+        let events = parse_chunk(&serde_json::json!({
+            "inference_id": "partial-usage", "content": [], "finish_reason": "stop", "usage": usage,
+        }), &mut tools, &mut text, &mut thoughts, &mut id, &mut model).unwrap();
+        assert!(events.iter().any(|event| matches!(
+            event,
+            TurnEvent::Completed {
+                token_usage: None,
+                ..
+            }
+        )));
+    }
+}

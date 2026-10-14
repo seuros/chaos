@@ -275,6 +275,11 @@ pub(crate) fn spawn(
                     }
                     owner.reconcile_idle().await?;
                 }
+                process
+                    .set_provider_invocation_sink(owner.invocation_sink())
+                    .map_err(|_| {
+                        ApiError::conflict("provider accounting could not be installed")
+                    })?;
                 Ok::<_, ApiError>(())
             }
             .await;

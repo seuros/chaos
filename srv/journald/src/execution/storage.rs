@@ -5,7 +5,7 @@ use super::{
 };
 use crate::JournalError;
 
-type SessionRow = (
+pub(super) type SessionRow = (
     String,
     String,
     Option<String>,
@@ -45,7 +45,7 @@ fn resolution(row: (String, i64)) -> Result<ExecutionResolutionRecord, JournalEr
     })
 }
 
-fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError> {
+pub(super) fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError> {
     Ok(ExecutionSession {
         session_id: parse_uuid(row.0.clone())?,
         scope: row.1.clone(),
@@ -93,7 +93,11 @@ fn turn(row: TurnRow) -> Result<ExecutionTurn, JournalError> {
     })
 }
 
-fn check_lease(row: &SessionRow, expected: &ExecutionLease, now: i64) -> Result<(), JournalError> {
+pub(super) fn check_lease(
+    row: &SessionRow,
+    expected: &ExecutionLease,
+    now: i64,
+) -> Result<(), JournalError> {
     let actual = lease(row)?;
     // Caller-provided expires_at_ms is informational, never an authority.
     if actual.owner_id != expected.owner_id
@@ -128,7 +132,14 @@ macro_rules! impl_storage {
                 request.validate()?;
                 let mut claim_policy = None;
                 let mut new_process = false;
+                let mut metered = false;
                 let request = match request {
+                    ExecutionRequest::Invocation { request } => return self.execute_invocation(request).await,
+                    ExecutionRequest::AcceptMetered { lease, turn_id, fingerprint } => {
+                        metered = true;
+                        ExecutionRequest::Accept { lease, turn_id, fingerprint }
+                    }
+                    ExecutionRequest::Delivery { request } => return self.execute_delivery(request).await,
                     ExecutionRequest::GetScope { scope } => {
                         let digest = sqlx::query_scalar::<_, Option<String>>(
                             "SELECT policy_digest FROM execution_scopes WHERE scope = $1",
@@ -272,6 +283,7 @@ macro_rules! impl_storage {
                             let token = uuid::Uuid::new_v4();
                             let expires = now + ttl_ms as i64;
                             if let Some(turn_id) = current.active_turn_id {
+                                super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
                                 sqlx::query(
                                     "UPDATE execution_turns SET state = 'unknown'
                                      WHERE session_id = $1 AND turn_id = $2",
@@ -393,12 +405,13 @@ macro_rules! impl_storage {
                                 return Err(conflict("execution session turn limit reached"));
                             }
                             sqlx::query(
-                                "INSERT INTO execution_turns (session_id, turn_id, fingerprint, state)
-                                 VALUES ($1, $2, $3, 'accepted')",
+                                "INSERT INTO execution_turns (session_id, turn_id, fingerprint, state, accounting_enabled)
+                                 VALUES ($1, $2, $3, 'accepted', $4)",
                             )
                             .bind(&id)
                             .bind(turn_id.to_string())
                             .bind(&fingerprint)
+                            .bind(i32::from(metered))
                             .execute(&mut *tx)
                             .await?;
                             sqlx::query(
@@ -489,6 +502,10 @@ macro_rules! impl_storage {
                             .await?;
                             previous.state = state;
                             previous.outcome = outcome;
+                            super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
+                            if state.is_terminal() {
+                                super::outbox::enqueue!(tx, &current, Some(previous.clone()), None, now);
+                            }
                         }
                         ExecutionResponse::Turn(previous)
                     }
@@ -498,6 +515,7 @@ macro_rules! impl_storage {
                             return Err(conflict("closed execution cannot be quarantined"));
                         }
                         if let Some(turn_id) = current.active_turn_id {
+                            super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
                             sqlx::query(
                                 "UPDATE execution_turns SET state = 'unknown' WHERE session_id = $1 AND turn_id = $2",
                             )
@@ -573,6 +591,7 @@ macro_rules! impl_storage {
                                 return Err(conflict("resolution target changed or is not quarantined"));
                             }
                             if let Some(turn_id) = current.active_turn_id {
+                                super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
                                 let outcome = requested.outcome.as_ref()
                                     .map(serde_json::to_string).transpose()
                                     .map_err(|source| JournalError::Serialize {
@@ -591,6 +610,11 @@ macro_rules! impl_storage {
                                     return Err(conflict("resolution turn is not quarantined"));
                                 }
                             }
+                            let resolved_turn = if let Some(turn_id) = current.active_turn_id {
+                                Some(turn(sqlx::query_as::<_, TurnRow>(SELECT_TURN)
+                                    .bind(&id).bind(turn_id.to_string()).fetch_one(&mut *tx).await?)?)
+                            } else { None };
+                            super::outbox::enqueue!(tx, &current, resolved_turn, Some(requested.resolution_id), now);
                             sqlx::query(
                                 "UPDATE execution_sessions SET state = 'closed',
                                  active_turn_id = NULL, expires_at_ms = 0 WHERE session_id = $1",

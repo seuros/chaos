@@ -6,7 +6,7 @@ use rama::http::{Body, Request};
 use serde_json::{Value, json};
 
 impl Fixture {
-    async fn quarantined(turn: bool) -> (Self, Value) {
+    pub(super) async fn quarantined(turn: bool) -> (Self, Value) {
         let mut fixture = Self::new().await;
         let turn_id = if turn {
             let id = Uuid::new_v4().to_string();
@@ -39,7 +39,7 @@ impl Fixture {
         (fixture, body)
     }
 
-    async fn epoch(&self) -> u64 {
+    pub(super) async fn epoch(&self) -> u64 {
         let ExecutionResponse::Session(record) = self
             .store
             .call(ExecutionRequest::GetSession {
@@ -53,7 +53,7 @@ impl Fixture {
         record.recovery_epoch
     }
 
-    async fn restored(&self) -> (Arc<SessionManager>, Arc<Session>, Arc<Semaphore>) {
+    pub(super) async fn restored(&self) -> (Arc<SessionManager>, Arc<Session>, Arc<Semaphore>) {
         let capacity = Arc::new(Semaphore::new(1));
         let (manager, recovered) =
             SessionManager::restore(8, Duration::from_secs(3600), self.store.clone(), &capacity)

@@ -184,6 +184,7 @@ fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() 
         "message_start",
         &json!({
             "message": {
+                "id": "msg-usage-receipt",
                 "model": "claude-test",
                 "usage": {
                     "input_tokens": 11,
@@ -225,7 +226,7 @@ fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() 
     else {
         panic!("expected one completed event with token usage");
     };
-    assert!(response_id.is_empty());
+    assert_eq!(response_id, "msg-usage-receipt");
     assert_eq!(usage.input_tokens, 41);
     assert_eq!(usage.cache_creation_input_tokens, 13);
     assert_eq!(usage.cached_input_tokens, 17);
@@ -243,6 +244,38 @@ async fn process_sse_data_stream_times_out_when_idle() {
         .expect_err("idle stream should time out");
 
     std::assert_matches!(err, AbiError::Stream(message) if message == "idle timeout waiting for SSE");
+}
+
+#[test]
+fn missing_or_partial_streamed_usage_is_not_a_fabricated_zero_receipt() {
+    for start_usage in [json!(null), json!({"input_tokens": 12})] {
+        let mut tools = None;
+        let mut text = None;
+        let mut usage = UsageAccumulator::default();
+        parse_sse_event(
+            "message_start",
+            &json!({"message": {"usage": start_usage}}),
+            &mut tools,
+            &mut text,
+            &mut usage,
+        )
+        .unwrap();
+        let events = parse_sse_event(
+            "message_delta",
+            &json!({"delta": {"stop_reason": "end_turn"}}),
+            &mut tools,
+            &mut text,
+            &mut usage,
+        )
+        .unwrap();
+        assert!(matches!(
+            &events[0],
+            TurnEvent::Completed {
+                token_usage: None,
+                ..
+            }
+        ));
+    }
 }
 
 #[test]

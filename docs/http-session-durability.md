@@ -12,8 +12,9 @@ the SQLite journald Unix socket and the direct PostgreSQL backend. Migration 26
 adds session and turn tables to the existing runtime database. Migration 27 adds
 immutable operator resolutions and monotonic quarantine epochs. Migration 28
 adds immutable scope-policy bindings and permanent process-history ownership.
-Journald protocol 9 prevents accidentally talking to a sidecar that predates
-these isolation controls.
+Migration 29 adds the terminal-event outbox and destination bindings.
+Migration 30 adds bounded invocation records and explicit metering provenance.
+Journald protocol 11 prevents accidentally talking to an older sidecar.
 Conversation transcripts remain in the existing append-only journal.
 
 A server selects a stable configuration/tenant `scope` and a unique owner ID for
@@ -141,7 +142,154 @@ powerful server-owned tools. No per-request tenant, policy, credential, cwd,
 environment or sandbox overrides are added.
 
 Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
-per-turn environment, billing telemetry and clamp support remain separate work.
+per-turn environment, complete billing and clamp support remain separate work.
+
+## Invocation-local accounting
+
+New durable HTTP turns explicitly enable accounting at admission. Before each
+direct native sampling/compaction call, the kernel must commit a fresh invocation
+UUID under the current fenced session lease, dispatched turn UUID and bound
+process ID. An identical begin is read-only and **never authorizes another
+provider call**. Metadata records the provider ID, requested model/service tier
+and sampling/compaction purpose; no prompt, URL, credentials or caller billing
+override is stored. The process's sink is installed before retained input is
+submitted. Plain streaming cannot bypass an installed sink.
+
+A completed provider response's receipt commits before completion is forwarded
+to the kernel. Its observed response ID, optional server model and normalized
+input/cache-write/cache-read/output/reasoning/total counters are immutable.
+Identical receipt retries do not add usage; changed receipts conflict.
+Malformed negative/cache-inconsistent counters are rejected from the subtotal;
+that rejection does not prove the provider did not charge.
+Provider-adapter normalization may derive a total from reported input/output;
+it never substitutes history estimates or cumulative deltas.
+
+Completed responses without usage retain `usage: null`. Interrupted, failed or
+unobserved calls remain `unknown`, never a zero-cost assertion. Execution loss,
+quarantine, finish and operator resolution atomically fence outstanding starts
+to unknown while preserving committed receipts. Failed accounting writes stop
+further provider dispatch and retain uncertain execution capacity. Recovery
+closes execution; it cannot manufacture, replace or erase usage.
+
+Nonempty response IDs are deduplicated by scope/provider/response ID. A later
+invocation retains its observed receipt with `duplicate_receipt_of` and is
+excluded from the reported subtotal. This is an ambiguity marker, **not proof
+that the duplicate was free**. Missing IDs cannot support cross-invocation
+deduplication. Checked subtotal overflow returns `known_usage: null` and
+`totals_overflowed: true`, never a wrapped/saturated amount.
+
+`GET /api/sessions/<session>/turns/<turn>/accounting` returns the bounded records
+and a summary, under ordinary session authentication (plus the operator header
+in recovery-only mode). At most 128 logical invocations may be recorded per
+turn; exceeding the limit stops before another provider-client call. Records
+survive closure/restart and are not implicitly evicted. Legacy/pre-metering turns
+return `enabled: false` and `summary: null`: missing history is not zero usage.
+
+The summary separates unique reported invocations, completed-without-usage,
+pending, unknown and duplicate receipts, along with a **partial reported
+subtotal**. If no unique reported usage exists, `known_usage` is null, not a
+synthetic zero. Cumulative `turn.usage`/context-window counters retain their
+existing meaning and are not billing inputs. New terminal webhooks carry this
+accounting summary in the same transaction as their outcome; full receipts remain on the
+authenticated accounting endpoint. Existing stored webhook bytes are unchanged.
+
+### Coverage is not a provider invoice
+
+Every summary explicitly says `billing_complete: false` and
+`coverage: "direct_logical_sampling_and_compaction"`. The boundary is a logical
+client request, not each hidden SDK HTTP/auth/wire-format retry. It excludes
+delegated/review processes, planning/reflex work, startup/autonomous calls,
+catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`.
+Cancellation can race a provider charge or an unobserved receipt. Even when all
+recorded calls have usage, excluded work/retries may incur additional costs.
+
+Requested model/service tier are not proof of the charged SKU/tier. There is no
+currency amount, tariff/pricing-version engine, credit reservation, invoice
+import or receipt reconciliation/overwrite endpoint. An adapter must establish
+coverage, reconcile provider evidence and apply its own explicit pricing policy.
+Do not price a full provider bill from this subtotal or treat any missing,
+unknown, duplicate or overflowed data as a refund/free request. Private receipt
+metadata also needs authorization/redaction before frontend projection.
+
+## Durable terminal webhooks
+
+Terminal **Finish** and operator **Resolve** insert immutable outbox events in
+the same transaction as their outcomes/audits. If the insert fails, the whole
+transition rolls back and execution capacity stays reserved. Identical retries
+produce no additional event. `unknown` is not terminal and produces no callback.
+No historical events are backfilled from before migration 29.
+
+Events are recorded even with delivery disabled. To deliver all pending events
+in this scope, configure a trusted server-owned target:
+
+```sh
+# Supply a random, server-only key of at least 32 bytes via this variable.
+chaos serve --sessions --session-scope project-worker \
+  --session-webhook-url https://adapter.example/internal/chaos
+```
+
+The default signing variable is `CHAOS_SESSION_WEBHOOK_SECRET`; select another
+with `--session-webhook-secret-env`. Do not put secrets in CLI arguments or
+callback URL userinfo. The signing key must differ from bearer/recovery tokens.
+HTTPS is required except literal loopback HTTP for local
+development. The URL and signing identity are immutably bound to the scope by a
+private digest; changing either fails startup, including after delivery. Only
+the digest is stored, not the URL/key. Omit the URL to pause delivery without
+forgetting events. Recovery-only mode may deliver/resolve with the original
+target/key without restoring model credentials.
+
+One bounded worker claims due events with independent 60-second fenced leases.
+HTTP attempts time out after 10 seconds; only 2xx response headers authorize a
+delivery acknowledgement. Redirects are never followed, response bodies are not
+collected/logged, and model credentials/cookies are never attached. Non-2xx and
+transport failures retry with storage-clock exponential backoff (2 seconds to
+1 hour). Retries continue indefinitely; there is no implicit eviction, dead-letter
+discard or forced re-drive endpoint. Storage/acknowledgement loss retains the
+event. Graceful shutdown or a crash can leave a lease to expire before retry.
+Delivery does not consume execution permits or authorize kernel submission.
+
+### Wire contract
+
+POST carries the exact stored JSON bytes and these headers:
+
+- `X-Chaos-Event-ID`: stable event UUID, also present in the body.
+- `X-Chaos-Timestamp`: signing time as Unix seconds; fresh on each attempt.
+- `X-Chaos-Signature`: `v1=<lowercase HMAC-SHA256 hex>`.
+- `X-Chaos-Delivery-Attempt`: storage-counted claim attempt (not a signed authority).
+
+The MAC input is the byte concatenation
+`timestamp + "." + event_id + "." + raw_body`. Verify the MAC in constant time,
+check a bounded timestamp skew (for example 5 minutes), and require header/body
+event IDs to match. Keep daemon/receiver clocks synchronized.
+
+The version-1 body contains `event_id`, `type`, `occurred_at_ms`, `scope`,
+`session_id`, `process_id`, `turn`, and `resolution_id`. `turn.terminal` carries
+the immutable terminal turn (including its bounded outcome); recovery includes
+its resolution UUID. A no-turn resolution emits `session.resolved` with a null
+turn. Operator actor/reason evidence, lease tokens and credentials are omitted.
+These remain **private runtime outcomes**, not public narration or
+complete billing telemetry. The trusted adapter must authorize and redact
+any frontend projection.
+
+Delivery is **at least once, not exactly once or ordered**. A receiver may commit
+and then lose its HTTP response or the daemon may lose its storage acknowledgement.
+Persist/deduplicate `event_id` atomically with receiver effects before returning
+2xx. Multiple attempts can overlap after lease expiry; duplicate payload bytes
+are identical. Never resubmit a model turn because delivery is absent or duplicated.
+
+`GET /api/sessions/deliveries` returns at most 256 delivery-status records with
+attempt counts, deadlines and acknowledgement timestamps, without payloads or
+lease tokens. `?after=<event UUID>` pages the UUID-sorted metadata snapshot; it
+is **not an append-only replay cursor**. Refresh the listing to find new events.
+Normal bearer authentication applies; recovery-only mode also requires the
+operator header on this read. Kernel SSE/replay buffers remain memory-only.
+
+Callback networking is daemon control-plane I/O, not mediated by a model's tool
+sandbox or execution semaphore. Restrict daemon egress/proxy access and use only
+trusted operator-configured destinations. Startup rejects a signing variable
+exposed by the base command environment or explicitly selected by MCP tools.
+Keep it excluded from delegated roles, shell profiles, hooks and all other tool
+environments as well. This check is not an OS secret-isolation boundary.
 
 ## Operator recovery
 
@@ -215,14 +363,88 @@ registered matching process history can resume.
 
 ## Backend validation
 
+### Deployment and restart drills
+
+This remains an experimental control plane, not a production containment or
+billing guarantee. Run drills with disposable homes, scopes, provider credentials
+and tools that cannot mutate production. Keep the same server-owned policy and
+working directory across an orderly restart. Use one daemon owner per scope;
+do not configure a restart loop to invent namespaces or overwrite policy.
+
+Before deployment:
+
+- Keep the runtime database and transcript history on durable storage. Update
+  the CLI and journald together (protocol 11, migrations through 30); migrations
+  are forward-only here, not a supported old-binary rollback.
+- Isolate tools with OS users/containers, restricted mounts/environment and
+  egress. Protect the bearer, operator and signing credentials independently;
+  keep them unavailable to tools. Do not expose plaintext HTTP outside a
+  trusted loopback/proxy boundary.
+- Budget `--max-concurrent` for *all* outstanding unknown work at restart.
+  `--max-sessions` includes closed tombstones; a larger limit does not remove
+  them. There is no safe automatic retention/purge mechanism yet.
+- Receiver deduplication must commit the event UUID with its effects before
+  returning 2xx. Persist its deduplication history independently of daemon
+  restarts. Monitor delivery attempts/deadlines via the authenticated listing;
+  refresh all pages, not just the last UUID cursor.
+- `/api/health` is listener health, not proof of storage availability,
+  containment, accounting completeness or callback delivery.
+
+Drill these boundaries before using an adapter:
+
+1. **Orderly idle restart:** record the daemon/session/turn IDs and completed
+   outcome; gracefully stop and wait for exit. Restart with the same policy and
+   database. Confirm a new generation and unchanged outcome. Retrying that
+   turn UUID must return saved state, not execute it. Only an explicit fresh
+   turn may resume orderly released history.
+2. **Active crash:** kill the daemon during a harmless long-running invocation.
+   Independently stop/reap the executor's process group/container and inspect
+   any remote tools; daemon death alone is insufficient. A restart before lease
+   expiry may conflict. After expiry (up to 90 seconds after the last renewal),
+   inspect in recovery-only mode: active work must be unknown, its reservation
+   held, and missing receipts unknown rather than zero. Neither a retry nor a
+   fresh turn may execute in that session.
+3. **Explicit recovery:** inspect the current process/turn/epoch and independently
+   reconfirm containment. Submit the audited operator decision described above.
+   Closure should release capacity while retaining turn/receipt history. It
+   must not resume the process. Continue only through a new session.
+4. **Receiver outage/lost acknowledgement:** have a disposable receiver persist
+   an event and deliberately withhold its response. Restart the daemon during
+   delivery. After the delivery lease expires, the same event UUID and exact
+   body must retry; receiver effects remain single through deduplication.
+   This must not create a model invocation or release unknown execution capacity.
+
+On incidents, stop ingress and independently contain external execution before
+resolution. Do not edit lease timestamps, drop tombstones or resubmit unknown
+turns. Omit the webhook URL to pause delivery; restoring delivery requires its
+original URL/key, not a new destination bound to old events.
+
+Use backend-native consistent backups, including SQLite WAL where applicable,
+and preserve the home/history and credential identities needed for recovery.
+**Restoring an older database can lose deduplication and recreate execution
+authority**; a backup is not a replay-safe rollback. Restore into an isolated,
+recovery-only environment without tools/normal ingress, reconcile external
+effects and receiver history independently, and never silently return stale
+history to service.
+
+The automated crash drill SIGKILLs a real child test process holding a fake
+executor, pending invocation and leased event, then reopens SQLite. It verifies
+unknown/no-replay recovery, receipt preservation, independent delivery fencing
+and audited capacity release. It does **not** prove real subprocess/container or
+remote-tool containment; the deployment drills above still require that evidence.
+
 The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
 **disposable PostgreSQL database** to run the same scenarios through the
 production PostgreSQL journal client: acceptance/terminal commit failures,
 restart quarantine, orderly handoff, writer fencing, dispatch cancellation and
 HTTP disconnects, plus operator authorization, resolution failures, stale
 quarantines, audit-bound recovery, policy drift, legacy rejection and
-operator-only draining. Each HTTP fixture creates an isolated schema, runs the runtime
-migrations and drops that schema on success; the test role needs schema-creation
+operator-only draining, outbox rollback, delivery fencing and signed HTTP
+retries after lost acknowledgements. Invocation barriers, immutable receipts,
+pending-call takeover, duplicate provider response IDs and explicit
+missing/overflowed usage are covered as well.
+Each HTTP fixture creates an isolated schema, runs the runtime migrations and
+drops that schema on success; the test role needs schema-creation
 permission. A failed test may leave its schema for diagnosis.
 
 ```sh

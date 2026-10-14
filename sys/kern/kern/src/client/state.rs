@@ -69,6 +69,7 @@ impl ModelClient {
         );
         Self {
             state: Arc::new(ModelClientState {
+                invocation_sink: std::sync::Mutex::new(None),
                 auth_manager,
                 conversation_id,
                 provider_id,

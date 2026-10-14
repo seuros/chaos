@@ -104,51 +104,18 @@ impl Database {
     pub(super) async fn fail_transition(&self, state: &str) {
         // Fixed fault-injection transitions, never caller-controlled SQL.
         assert!(matches!(state, "active" | "idle" | "closed"));
-        match self {
-            Self::Sqlite(db) => {
-                sqlx::raw_sql(AssertSqlSafe(format!(
-                    "CREATE TRIGGER fail_transition BEFORE UPDATE OF state ON execution_sessions
-                     WHEN NEW.state = '{state}'
-                     BEGIN SELECT RAISE(ABORT, 'injected transition failure'); END;"
-                )))
-                .execute(db.pool())
-                .await
-                .unwrap();
-            }
-            Self::Postgres { pool, .. } => {
-                sqlx::raw_sql(AssertSqlSafe(format!(
-                    "CREATE FUNCTION fail_transition() RETURNS trigger LANGUAGE plpgsql AS $$
-                     BEGIN
-                       IF NEW.state = '{state}' THEN
-                         RAISE EXCEPTION 'injected transition failure';
-                       END IF;
-                       RETURN NEW;
-                     END;
-                     $$;
-                     CREATE TRIGGER fail_transition BEFORE UPDATE OF state ON execution_sessions
-                     FOR EACH ROW EXECUTE FUNCTION fail_transition();"
-                )))
-                .execute(pool)
-                .await
-                .unwrap();
-            }
-        }
+        self.inject_fault(
+            "fail_transition",
+            "execution_sessions",
+            "UPDATE OF state",
+            &format!("NEW.state = '{state}'"),
+        )
+        .await;
     }
 
     pub(super) async fn clear_transition_fault(&self) {
-        match self {
-            Self::Sqlite(db) => {
-                sqlx::raw_sql("DROP TRIGGER fail_transition")
-                    .execute(db.pool())
-                    .await
-                    .unwrap();
-            }
-            Self::Postgres { pool, .. } => {
-                sqlx::raw_sql(
-                    "DROP TRIGGER fail_transition ON execution_sessions; DROP FUNCTION fail_transition();"
-                ).execute(pool).await.unwrap();
-            }
-        }
+        self.drop_fault("fail_transition", "execution_sessions")
+            .await;
     }
 
     pub(super) async fn close(&self) {
@@ -165,6 +132,103 @@ impl Database {
                     .await
                     .unwrap();
                 admin.close().await;
+            }
+        }
+    }
+
+    pub(super) async fn make_delivery_due(&self, event_id: Uuid) {
+        let sql = "UPDATE execution_outbox SET expires_at_ms = 1, next_attempt_at_ms = 1 WHERE event_id = $1";
+        match self {
+            Self::Sqlite(db) => {
+                sqlx::query(sql)
+                    .bind(event_id.to_string())
+                    .execute(db.pool())
+                    .await
+                    .unwrap();
+            }
+            Self::Postgres { pool, .. } => {
+                sqlx::query(sql)
+                    .bind(event_id.to_string())
+                    .execute(pool)
+                    .await
+                    .unwrap();
+            }
+        }
+    }
+
+    pub(super) async fn fail_outbox(&self, acknowledgement: bool) {
+        let operation = if acknowledgement { "UPDATE" } else { "INSERT" };
+        let predicate = if acknowledgement {
+            "NEW.delivered_at_ms IS NOT NULL"
+        } else {
+            "TRUE"
+        };
+        self.inject_fault("fail_outbox", "execution_outbox", operation, predicate)
+            .await;
+    }
+
+    pub(super) async fn fail_invocation(&self, receipt: bool) {
+        self.inject_fault(
+            "fail_invocation",
+            "execution_invocations",
+            if receipt { "UPDATE" } else { "INSERT" },
+            if receipt {
+                "NEW.state = 'completed'"
+            } else {
+                "TRUE"
+            },
+        )
+        .await;
+    }
+
+    pub(super) async fn clear_invocation_fault(&self) {
+        self.drop_fault("fail_invocation", "execution_invocations")
+            .await;
+    }
+
+    async fn inject_fault(
+        &self,
+        name: &'static str,
+        table: &'static str,
+        operation: &'static str,
+        predicate: &str,
+    ) {
+        // Identifiers/operations come only from the fixed fault helpers above.
+        self.fault_sql(
+            format!("CREATE TRIGGER {name} BEFORE {operation} ON {table}
+                WHEN {predicate} BEGIN SELECT RAISE(ABORT, 'injected write failure'); END;"),
+            format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN IF {predicate} THEN RAISE EXCEPTION 'injected write failure'; END IF; RETURN NEW; END;
+                $$; CREATE TRIGGER {name} BEFORE {operation} ON {table}
+                FOR EACH ROW EXECUTE FUNCTION {name}();"),
+        ).await;
+    }
+
+    pub(super) async fn clear_outbox_fault(&self) {
+        self.drop_fault("fail_outbox", "execution_outbox").await;
+    }
+
+    async fn drop_fault(&self, name: &'static str, table: &'static str) {
+        self.fault_sql(
+            format!("DROP TRIGGER {name}"),
+            format!("DROP TRIGGER {name} ON {table}; DROP FUNCTION {name}();"),
+        )
+        .await;
+    }
+
+    async fn fault_sql(&self, sqlite: String, postgres: String) {
+        match self {
+            Self::Sqlite(db) => {
+                sqlx::raw_sql(AssertSqlSafe(sqlite))
+                    .execute(db.pool())
+                    .await
+                    .unwrap();
+            }
+            Self::Postgres { pool, .. } => {
+                sqlx::raw_sql(AssertSqlSafe(postgres))
+                    .execute(pool)
+                    .await
+                    .unwrap();
             }
         }
     }

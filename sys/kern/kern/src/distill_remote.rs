@@ -241,7 +241,9 @@ async fn request_remote_compaction_v2_attempt(
     let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
     sess.record_provider_request_started(turn_context).await;
     let stream = client_session
-        .stream(
+        .stream_accounted(
+            &turn_context.sub_id,
+            chaos_journald::InvocationPurpose::Compaction,
             prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,

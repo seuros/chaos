@@ -233,7 +233,9 @@ async fn drain_to_completed(
 ) -> ChaosResult<()> {
     sess.record_provider_request_started(turn_context).await;
     let mut stream = client_session
-        .stream(
+        .stream_accounted(
+            &turn_context.sub_id,
+            chaos_journald::InvocationPurpose::Compaction,
             prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,

@@ -16,6 +16,7 @@ mod runner;
 mod sessions;
 #[cfg(test)]
 mod test_support;
+mod webhooks;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -105,6 +106,20 @@ pub async fn run_main(
     {
         bail!("--session-recovery-only requires --session-scope and --recovery-token");
     }
+    let webhook = match serve_cli.session_webhook_url.as_deref() {
+        Some(url) => {
+            if serve_cli.session_scope.is_none() {
+                bail!("--session-webhook-url requires --session-scope");
+            }
+            Some(webhooks::WebhookConfig::from_env(
+                url,
+                &serve_cli.session_webhook_secret_env,
+                &bearer_token,
+                recovery_token.as_deref(),
+            )?)
+        }
+        None => None,
+    };
     if serve_cli.max_concurrent == 0 {
         bail!("--max-concurrent must be at least 1");
     }
@@ -180,6 +195,12 @@ pub async fn run_main(
 
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
+
+    if let Some(webhook) = &webhook
+        && !serve_cli.session_recovery_only
+    {
+        webhook.check_environment(&config, &serve_cli.session_webhook_secret_env)?;
+    }
 
     // 8. Enforce login restrictions.
     if !serve_cli.session_recovery_only {
@@ -263,6 +284,12 @@ pub async fn run_main(
         )
     };
 
+    if let Some(webhook) = &webhook {
+        webhook
+            .configure(sessions.as_ref().expect("durable scope validated"))
+            .await?;
+    }
+
     // 11. Build server state.
     let state = Arc::new(ServerState {
         config,
@@ -308,6 +335,15 @@ pub async fn run_main(
         .map_err(|err| anyhow::anyhow!("{err}"))
         .with_context(|| format!("bind chaos-httpd: {addr}"))?;
 
+    let _webhook_task = webhook.map(|webhook| {
+        webhook.spawn(
+            state
+                .sessions
+                .as_ref()
+                .expect("durable scope validated")
+                .clone(),
+        )
+    });
     let service = api::http_service(state.clone());
 
     info!(

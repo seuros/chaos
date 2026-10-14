@@ -39,6 +39,8 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
 | `--recovery-token` | env `CHAOS_RECOVERY_TOKEN` | Enable operator recovery mutations. Requires `--session-scope` and a nonempty token different from the ordinary bearer. |
 | `--session-recovery-only` | `false` | Drain legacy/changed-policy history without execution. Requires `--session-scope` and `--recovery-token`; every protected route also requires the operator header. |
+| `--session-webhook-url` | unset | Deliver durable terminal events to a trusted server-owned HTTPS URL (literal loopback HTTP allowed for development). Requires `--session-scope`. |
+| `--session-webhook-secret-env` | `CHAOS_SESSION_WEBHOOK_SECRET` | Variable containing a random webhook HMAC key of at least 32 bytes. Keep it out of all tool environments. |
 | `--max-sessions` | `32` | Maximum retained records, including closed-session tombstones. |
 | `--session-ttl` | `3600` | Maximum session lifetime in seconds, including active execution. |
 | `-m, --model` | config default | Server default. `/api/trigger` still rejects per-request overrides. |
@@ -135,10 +137,14 @@ a full-access credential: it also permits triggering agent runs.
 ### Experimental retained sessions (`--sessions`)
 
 This is a validation API, **not yet a production execution service**.
+Deployment/restart drills and backup/retention limitations are documented in
+`docs/http-session-durability.md`. A successful health probe is not proof of
+storage availability, executor containment or webhook delivery.
 Provider, credentials, working directory, tool
 environment and sandbox are server-owned. Clamp transports are rejected at
-startup when execution through this API is enabled. Per-turn environment isolation and invocation
-billing telemetry are not implemented. Host notices (below) expire and can be
+startup when execution through this API is enabled. Per-turn environment isolation
+and complete billing are not implemented. Durable sessions expose bounded direct
+logical-request accounting, not provider invoices. Host notices (below) expire and can be
 withdrawn, but reach the model only at native sample boundaries until clamp is
 supported here.
 
@@ -160,6 +166,7 @@ durable ledger first.
 | GET | `/api/sessions/{session}` | Read state, process ID and active turn ID |
 | POST | `/api/sessions/{session}/turns/{turn}` | Accept a caller-generated turn UUID; return `202` without waiting for inference |
 | GET | `/api/sessions/{session}/turns/{turn}` | Read execution state, bounded result and usage snapshot |
+| GET | `/api/sessions/{session}/turns/{turn}/accounting` | Durable invocation records and partial reported-usage summary |
 | POST | `/api/sessions/{session}/turns/{turn}/steer` | Inject input only into that active foreground turn |
 | POST | `/api/sessions/{session}/turns/{turn}/notice` | Replace the host notice for that active foreground turn |
 | DELETE | `/api/sessions/{session}/turns/{turn}/notice` | Withdraw the host notice |
@@ -323,6 +330,50 @@ decisions return `409`. Disconnect cannot cancel the daemon-owned write.
 Resolution closes permanently and preserves deduplication; it never resumes
 history or replays input. Continuing requires an explicit new session.
 
+#### Invocation-local accounting
+
+New durable turns commit a bounded invocation UUID before each direct native
+sampling/compaction call. The record is bound to the current fenced owner,
+dispatched turn and process. Repeating a begin is read-only, never permission
+for another provider call. A completed response's immutable receipt commits
+before kernel completion is forwarded. Changed receipts conflict.
+
+`GET …/turns/{turn}/accounting` returns provider/requested-model/requested-tier
+metadata, purpose, storage timestamps, observed response/server-model metadata,
+normalized input/cache-write/cache-read/output/reasoning/total counters and
+explicit missing/pending/unknown states. No prompts or credentials are included.
+It uses normal session authentication and also the operator header in
+recovery-only mode. Pre-metering turns return `enabled: false, summary: null`;
+old cumulative/context counters are never reconstructed into receipts.
+
+Missing or interrupted usage is not zero/free. Ownership loss, quarantine,
+finish and operator resolution fence outstanding starts to unknown, preserving
+committed receipts. Failed accounting stops further dispatch and retains
+uncertain execution capacity. At most 128 logical calls may be recorded per
+turn; the next call is refused before reaching the provider client. Records
+survive closure/restart and cannot be implicitly discarded or overwritten.
+
+Repeated nonempty response IDs within a scope/provider retain a
+`duplicate_receipt_of` link and are excluded from the reported subtotal, without
+asserting that the duplicate was free. Missing IDs cannot support that deduplication.
+Subtotal overflow returns `known_usage: null, totals_overflowed: true`,
+not a wrapped/saturated amount. No unique reported usage also returns a null
+subtotal, not a fabricated zero. New terminal webhooks atomically include the
+accounting summary; full receipts remain on this authenticated endpoint.
+
+**Not a provider bill:** every summary says `billing_complete: false` and
+`coverage: direct_logical_sampling_and_compaction`. Hidden SDK HTTP/auth/fallback
+retries, delegated/review processes, planning/reflex work, startup/autonomous
+calls, catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`
+are outside this coverage. Requested model/tier are not proof of a charged SKU.
+Even when recorded receipts have usage, excluded work may incur more cost.
+There is no pricing/tariff version, currency amount, credit reservation, invoice
+import or reconciliation/overwrite API. A billing adapter must reconcile
+provider evidence and apply an explicit pricing policy; missing/unknown/duplicate
+data is never a refund. Authorize/redact private receipt metadata for frontends.
+
+#### Recovery-only draining
+
 To drain a legacy scope or one whose original policy is no longer available:
 
 ```sh
@@ -336,6 +387,54 @@ No kernel is booted or resumed; released bound history is quarantined for
 independent containment. Execution login, clamp and git-trust checks are skipped;
 the original journal backend/home and sufficient capacity are still required.
 Closing old records never permits overwriting their namespace's policy.
+
+#### Durable terminal webhooks
+
+```sh
+# Set CHAOS_SESSION_WEBHOOK_SECRET securely in the server environment.
+chaos serve --sessions --session-scope project-worker \
+  --session-webhook-url https://adapter.example/internal/chaos
+```
+
+Terminal outcomes and operator resolutions atomically create immutable outbox
+events before local capacity is released. Events are retained even without a
+target; enabling delivery sends all pending events created since migration 29.
+Unknown execution produces no terminal callback. `/api/trigger` and live kernel
+SSE are not part of this outbox.
+
+The destination/signing identity is immutable per scope; changed values fail
+startup. Signing keys must differ from bearer/recovery tokens. Only a private
+digest is persisted, never URL/key material. Omit the
+URL to pause, or use recovery-only mode with the original target/key to drain
+old events. No per-request callback override is accepted.
+
+POST carries `X-Chaos-Event-ID`, `X-Chaos-Timestamp` (Unix seconds),
+`X-Chaos-Delivery-Attempt`, and
+`X-Chaos-Signature: v1=<HMAC-SHA256 hex>`. Sign/verify exactly
+`timestamp + "." + event_id + "." + raw_body`, in bytes. Receivers must verify
+in constant time, bound timestamp skew and match header/body IDs.
+The version-1 body identifies scope/session/process, terminal turn/outcome and
+optional recovery resolution UUID. No-turn recovery emits `session.resolved`;
+terminal turns emit `turn.terminal`. Outcomes are private: project/redact them
+before exposing a frontend. Actor/reason evidence and leases are not included.
+
+**At-least-once delivery:** persist/deduplicate the event UUID atomically with
+receiver effects, then return 2xx. A lost HTTP/storage acknowledgement may
+deliver the same immutable bytes again, possibly concurrently or out of order.
+Delivery failure is never permission to replay execution.
+
+One independent worker uses 60-second fenced delivery leases, a 10-second HTTP
+timeout, and exponential retries from 2 seconds to 1 hour. Redirects are not
+followed; response bodies are neither collected nor logged. Only 2xx headers
+acknowledge delivery. Retries continue without silently discarding events.
+Delivery does not occupy execution capacity; shutdown/crashes retain uncertain
+deliveries for lease-expiry retry.
+
+`GET /api/sessions/deliveries[?after=<event UUID>]` lists up to 256 UUID-sorted
+status records (attempts/deadlines/delivery timestamps), without bodies or leases.
+This is metadata pagination, not an append-only event cursor. Refresh the list
+for new events. Authentication follows other session reads, including the
+operator header in recovery-only mode.
 
 After a generation change, read saved state before refreshing the mutation
 header. Same-payload retries return the saved outcome; changed payloads conflict.
@@ -383,9 +482,16 @@ tenants need separate OS users/containers, restricted mounts, separate homes and
 credential stores, and restrictive VFS/environment/network policies. The ordinary
 bearer still grants powerful server-owned tools.
 
+Webhook I/O is daemon control-plane traffic, outside the model tool sandbox.
+Restrict daemon egress and callback destinations. Startup rejects signing-variable
+exposure through the base shell policy or explicit MCP environment selections;
+also exclude it from role overrides, shell profiles, hooks and other tool
+environments. No model credentials or infrastructure cookies accompany callbacks.
+
 ## FILES
 
 - `CHAOS_BEARER_TOKEN` - bearer token environment variable
+- `CHAOS_SESSION_WEBHOOK_SECRET` - default webhook signing-key variable
 - `~/.chaos/log/` - runtime logs for diagnosing server failures
 
 ## SEE ALSO

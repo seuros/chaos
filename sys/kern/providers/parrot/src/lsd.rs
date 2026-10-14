@@ -604,22 +604,25 @@ fn parse_chunk(
         }
 
         // Usage.
-        let token_usage = json.get("usage").filter(|u| !u.is_null()).map(|usage| {
-            let input_tokens = usage
-                .get("input_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            let output_tokens = usage
-                .get("output_tokens")
-                .and_then(Value::as_u64)
-                .unwrap_or(0);
-            TokenUsage {
-                input_tokens: input_tokens as i64,
-                output_tokens: output_tokens as i64,
-                total_tokens: (input_tokens + output_tokens) as i64,
-                ..Default::default()
-            }
-        });
+        let token_usage = json
+            .get("usage")
+            .filter(|u| !u.is_null())
+            .and_then(|usage| {
+                let input_tokens = usage
+                    .get("input_tokens")
+                    .and_then(Value::as_i64)
+                    .filter(|count| *count >= 0)?;
+                let output_tokens = usage
+                    .get("output_tokens")
+                    .and_then(Value::as_i64)
+                    .filter(|count| *count >= 0)?;
+                Some(TokenUsage {
+                    input_tokens,
+                    output_tokens,
+                    total_tokens: input_tokens.checked_add(output_tokens)?,
+                    ..Default::default()
+                })
+            });
 
         events.push(TurnEvent::Completed {
             response_id: response_id.clone(),

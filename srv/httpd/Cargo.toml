@@ -18,6 +18,8 @@ rama = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+hmac = { workspace = true }
+url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
 toml = { workspace = true }
@@ -31,4 +33,3 @@ sqlx = { workspace = true }
 chaos-test-fixtures = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-url = { workspace = true }

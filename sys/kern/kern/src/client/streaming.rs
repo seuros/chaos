@@ -1446,7 +1446,7 @@ impl ModelClientSession {
 
     /// Streams a single model request within the current turn.
     #[allow(clippy::too_many_arguments)]
-    pub async fn stream(
+    pub(super) async fn stream_unmetered(
         &mut self,
         prompt: &Prompt,
         model_info: &ModelInfo,

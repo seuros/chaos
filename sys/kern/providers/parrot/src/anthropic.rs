@@ -470,6 +470,9 @@ struct TextAccumulator {
 
 #[derive(Default)]
 struct UsageAccumulator {
+    response_id: Option<String>,
+    input_reported: bool,
+    output_reported: bool,
     input_tokens: u64,
     cache_creation_input_tokens: u64,
     cache_read_input_tokens: u64,
@@ -479,6 +482,7 @@ struct UsageAccumulator {
 impl UsageAccumulator {
     fn update(&mut self, usage: &Value) {
         if let Some(value) = usage.get("input_tokens").and_then(Value::as_u64) {
+            self.input_reported = true;
             self.input_tokens = value;
         }
         if let Some(value) = usage
@@ -491,11 +495,15 @@ impl UsageAccumulator {
             self.cache_read_input_tokens = value;
         }
         if let Some(value) = usage.get("output_tokens").and_then(Value::as_u64) {
+            self.output_reported = true;
             self.output_tokens = value;
         }
     }
 
-    fn token_usage(&self) -> TokenUsage {
+    fn token_usage(&self) -> Option<TokenUsage> {
+        if !self.input_reported || !self.output_reported {
+            return None;
+        }
         // Anthropic reports uncached, cache-write, and cache-read input as
         // separate counters. Chaos's TokenUsage expects input_tokens to be
         // the full prompt count, with cached_input_tokens as a subset.
@@ -503,14 +511,14 @@ impl UsageAccumulator {
             .input_tokens
             .saturating_add(self.cache_creation_input_tokens)
             .saturating_add(self.cache_read_input_tokens);
-        TokenUsage {
+        Some(TokenUsage {
             input_tokens: prompt_tokens as i64,
             cache_creation_input_tokens: self.cache_creation_input_tokens as i64,
             cached_input_tokens: self.cache_read_input_tokens as i64,
             output_tokens: self.output_tokens as i64,
             total_tokens: prompt_tokens.saturating_add(self.output_tokens) as i64,
             ..Default::default()
-        }
+        })
     }
 }
 
@@ -539,6 +547,10 @@ fn parse_sse_event(
 ) -> Result<Vec<TurnEvent>, AbiError> {
     match event_type {
         "message_start" => {
+            usage_acc.response_id = json
+                .pointer("/message/id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             if let Some(usage) = json.pointer("/message/usage") {
                 usage_acc.update(usage);
             }
@@ -666,8 +678,8 @@ fn parse_sse_event(
                     usage_acc.update(usage);
                 }
                 Ok(vec![TurnEvent::Completed {
-                    response_id: String::new(),
-                    token_usage: Some(usage_acc.token_usage()),
+                    response_id: usage_acc.response_id.clone().unwrap_or_default(),
+                    token_usage: usage_acc.token_usage(),
                 }])
             } else {
                 Ok(vec![])

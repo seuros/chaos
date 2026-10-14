@@ -4,8 +4,12 @@ use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
 use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
 
+mod invocations;
 mod isolation;
+mod outbox;
 mod recovery;
+#[cfg(unix)]
+mod restart;
 mod storage;
 use storage::Database;
 
@@ -29,6 +33,15 @@ impl Fixture {
     ) -> Self {
         let home = tempfile::tempdir().unwrap();
         let (db, client) = Database::open(home.path()).await;
+        Self::with_storage(home, db, client, policy).await
+    }
+
+    async fn with_storage(
+        home: tempfile::TempDir,
+        db: Database,
+        client: Client,
+        policy: Option<Arc<crate::sessions::durable::policy::PinnedPolicy>>,
+    ) -> Self {
         let store = Arc::new(Store {
             client,
             scope: "test".into(),

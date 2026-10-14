@@ -47,6 +47,18 @@ pub struct ServeCli {
     #[usage(long = "session-recovery-only")]
     pub session_recovery_only: bool,
 
+    /// Deliver durable terminal events to this trusted, server-owned URL.
+    /// HTTPS required, except literal loopback HTTP for local development.
+    #[usage(long = "session-webhook-url")]
+    pub session_webhook_url: Option<String>,
+
+    /// Environment variable containing the webhook HMAC key (at least 32 bytes).
+    #[usage(
+        long = "session-webhook-secret-env",
+        default = "CHAOS_SESSION_WEBHOOK_SECRET"
+    )]
+    pub session_webhook_secret_env: String,
+
     /// Maximum retained session records (including closed-session tombstones).
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,

@@ -601,13 +601,17 @@ impl AuthManager {
                 })
                 .collect(),
         ));
-        let cached = scoped.inner.read().expect("auth cache poisoned");
+        let external_refresher = scoped
+            .inner
+            .read()
+            .ok()
+            .and_then(|cached| cached.external_refresher.clone());
         Arc::new(Self {
             chaos_home: scoped.chaos_home.clone(),
             provider_id: scoped.provider_id.clone(),
             inner: RwLock::new(CachedAuth {
                 auth: sources.0.get(provider_id).cloned().flatten(),
-                external_refresher: cached.external_refresher.clone(),
+                external_refresher,
             }),
             enable_codex_api_key_env: scoped.enable_codex_api_key_env,
             auth_credentials_store_mode: scoped.auth_credentials_store_mode,
@@ -940,7 +944,11 @@ impl AuthManager {
             }
             let record = auth_dot_json
                 .provider_record(&self.provider_id)
-                .expect("pinned provider preserved above");
+                .ok_or_else(|| {
+                    RefreshTokenError::Transient(std::io::Error::other(
+                        "external refresh omitted the pinned provider",
+                    ))
+                })?;
             let candidate = ChaosAuth::from_provider_record(
                 &self.provider_id,
                 &self.chaos_home,

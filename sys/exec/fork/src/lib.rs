@@ -717,6 +717,7 @@ fn exec_event_decision(
 
 /// Core event loop: reads events from the process and dispatches them
 /// to the event processor, handling interrupts and shutdown.
+#[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     thread: &Arc<Process>,
     event_processor: &mut dyn EventProcessor,

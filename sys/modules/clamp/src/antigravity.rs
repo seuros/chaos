@@ -300,6 +300,9 @@ impl AntigravityTransport {
         // following `--input-format` as its prompt.
         command.args(["--input-format", "stream-json"]);
 
+        // Logs that exist before this child starts cannot be its own; the
+        // snapshot is how a failed run's diagnostic is attributed to it.
+        let logs_before = self.config.home.as_deref().map(agy_log_files);
         let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
         let mut stdin = child.stdin.take().ok_or_else(|| {
             AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
@@ -342,6 +345,7 @@ impl AntigravityTransport {
         };
 
         if !invocation.status.success() {
+            // Classification is driven by this child's own stderr only.
             if text_indicates_auth_failure(&invocation.stderr_tail) {
                 return Err(AntigravityError::AuthenticationUnavailable);
             }
@@ -353,10 +357,28 @@ impl AntigravityTransport {
                 |code| code.to_string(),
             );
             let tail = invocation.stderr_tail.trim();
-            return Err(AntigravityError::InvocationFailed(if tail.is_empty() {
-                status
-            } else {
-                format!("{status}: {tail}")
+            if !tail.is_empty() {
+                return Err(AntigravityError::InvocationFailed(format!(
+                    "{status}: {tail}"
+                )));
+            }
+            // In print mode agy writes its diagnostics to a log file under the
+            // managed home, not to stderr, so a silent tail used to surface as a
+            // bare "status 1" even when agy had said why (e.g. an unknown model
+            // and the list of available ones). The log cannot be tied to this
+            // child with certainty, so it is offered as a labelled candidate,
+            // never fed to classification.
+            let candidate = self
+                .config
+                .home
+                .as_deref()
+                .zip(logs_before.as_ref())
+                .and_then(|(home, before)| candidate_agy_log_diagnostic(home, before));
+            return Err(AntigravityError::InvocationFailed(match candidate {
+                Some(candidate) => {
+                    format!("{status}; candidate recent agy log diagnostic: {candidate}")
+                }
+                None => status,
             }));
         }
 
@@ -854,6 +876,120 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(_path: &Path) -> bool {
     true
+}
+
+/// Prefix glog adds when agy logs before its logger is initialised.
+const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
+/// Upper bound on the diagnostic text lifted from an agy log.
+const AGY_LOG_ERROR_LIMIT: usize = 2 * 1024;
+/// Upper bound on how much of an agy log is read from disk.
+const AGY_LOG_READ_LIMIT: u64 = 64 * 1024;
+
+/// The regular `cli-*.log` files currently in the managed agy log directory.
+fn agy_log_files(home: &Path) -> std::collections::BTreeSet<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(home.join(".gemini/antigravity-cli/log")) else {
+        return std::collections::BTreeSet::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("cli-")
+                && name.ends_with(".log")
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+
+/// Returns the last error group from the single agy log created since
+/// `before` was taken, or `None` when there is no new log or more than one.
+/// This narrows the choice but does not prove ownership: if this child wrote
+/// no log while an overlapping invocation in the same home wrote exactly one,
+/// that one is returned. Callers must present the result as a candidate and
+/// must not classify on it.
+fn candidate_agy_log_diagnostic(
+    home: &Path,
+    before: &std::collections::BTreeSet<PathBuf>,
+) -> Option<String> {
+    let mut created = agy_log_files(home)
+        .into_iter()
+        .filter(|path| !before.contains(path));
+    let log = created.next()?;
+    if created.next().is_some() {
+        return None;
+    }
+    agy_log_error_lines(&read_bounded_tail(&log, AGY_LOG_READ_LIMIT)?)
+}
+
+/// Reads at most the last `limit` bytes of a regular file without loading the
+/// rest, and never more than `limit` even if the file grows meanwhile.
+fn read_bounded_tail(path: &Path, limit: u64) -> Option<String> {
+    use std::io::Read;
+    use std::io::Seek;
+    use std::io::SeekFrom;
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    file.seek(SeekFrom::Start(metadata.len().saturating_sub(limit)))
+        .ok()?;
+    let mut bytes = Vec::new();
+    file.take(limit).read_to_end(&mut bytes).ok()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Whether `line` opens a glog record: severity, MMDD, a space and hh:mm:ss
+/// ("E1013 19:41:07.548929 1 file.go:265] ..."). Checking the clock too keeps
+/// a continuation line such as "E12345: ..." from being read as a header.
+fn is_glog_header(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.len() >= 14
+        && matches!(bytes[0], b'I' | b'W' | b'E' | b'F')
+        && bytes[1..5].iter().all(u8::is_ascii_digit)
+        && bytes[5] == b' '
+        && bytes[6..8].iter().all(u8::is_ascii_digit)
+        && bytes[8] == b':'
+        && bytes[9..11].iter().all(u8::is_ascii_digit)
+        && bytes[11] == b':'
+        && bytes[12..14].iter().all(u8::is_ascii_digit)
+}
+
+fn agy_log_error_lines(text: &str) -> Option<String> {
+    // Each error-level line opens a group that also takes its unprefixed
+    // continuation lines. Only the last group is returned: agy logs harmless
+    // errors early on (e.g. "admin controls not applicable") and exits on the
+    // last one.
+    let mut last_group: Option<Vec<String>> = None;
+    let mut in_error = false;
+    for line in text.lines() {
+        let body = line.strip_prefix(AGY_EARLY_LOG_PREFIX).unwrap_or(line);
+        if is_glog_header(body) {
+            in_error = matches!(body.as_bytes()[0], b'E' | b'F');
+            if in_error {
+                // Drop the glog header ("E1013 19:41:07.548929 1 file.go:265]").
+                let message = body.split_once("] ").map_or(body, |(_, rest)| rest);
+                last_group = Some(vec![message.trim().to_string()]);
+            }
+        } else if in_error
+            && !line.trim().is_empty()
+            && let Some(group) = last_group.as_mut()
+        {
+            group.push(line.trim().to_string());
+        }
+    }
+    let joined = last_group?.join("\n");
+    if joined.len() <= AGY_LOG_ERROR_LIMIT {
+        return Some(joined);
+    }
+    let mut end = AGY_LOG_ERROR_LIMIT;
+    while !joined.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(joined[..end].to_string())
 }
 
 /// Classifies a failed invocation's stderr tail. Markers are phrases rather

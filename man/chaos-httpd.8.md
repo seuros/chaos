@@ -195,7 +195,8 @@ moment: `{"id":"n-42","text":"You have not posted for two minutes","expires_at":
 (`expires_at` is optional Unix seconds). Unlike steering it is not queued as
 input: the session holds one notice, expiry is checked again at the delivery
 boundary, and a newly admitted turn clears any undelivered notice. Use a fresh
-`id` for every notice. A POST whose `id` the session has already seen (among
+`id` for every notice: 1–128 characters of `A-Z a-z 0-9 - . _ ~`, so it can be
+named in a query string without encoding; anything else is `400`. A POST whose `id` the session has already seen (among
 its last 64 posted or delivered ids) is a no-op (`notice_already_seen`), so a
 retried or reordered POST can neither re-deliver an old notice nor displace a
 newer one. Only the turn that posted the pending notice can withdraw it.

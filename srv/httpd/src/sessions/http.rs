@@ -199,8 +199,10 @@ async fn route(
                     Method::DELETE => {
                         let id = query
                             .strip_prefix("id=")
-                            .filter(|id| !id.is_empty() && !id.contains(['&', '%', '+']))
-                            .ok_or(ApiError::bad_request("expected ?id=<notice id>"))?;
+                            .filter(|id| super::valid_notice_id(id))
+                            .ok_or(ApiError::bad_request(
+                                "expected ?id=<notice id> (A-Z a-z 0-9 - . _ ~)",
+                            ))?;
                         (None, Some(id.to_string()))
                     }
                     _ => return Ok(method_not_allowed("POST, DELETE")),

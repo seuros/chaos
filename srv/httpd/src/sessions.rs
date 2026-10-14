@@ -280,6 +280,15 @@ struct EventBatch {
     next_cursor: u64,
 }
 
+/// Notice ids travel in a DELETE query string, so they are restricted to the
+/// URL-safe unreserved alphabet and need no percent-encoding.
+pub(crate) fn valid_notice_id(id: &str) -> bool {
+    (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
+}
+
 enum NoticeChange {
     Post(chaos_kern::host_notice::HostNotice),
     /// Withdraw, optionally only if this id is the one pending.
@@ -457,10 +466,13 @@ impl Session {
     ) -> Result<bool, ApiError> {
         let change = match request {
             Some(request) => {
-                if request.id.trim().is_empty() || request.text.trim().is_empty() {
+                if !valid_notice_id(&request.id) {
                     return Err(ApiError::bad_request(
-                        "notice id and text must not be empty",
+                        "notice id must be 1-128 characters of A-Z a-z 0-9 - . _ ~",
                     ));
+                }
+                if request.text.trim().is_empty() {
+                    return Err(ApiError::bad_request("notice text must not be empty"));
                 }
                 if request.expires_at.is_some_and(|at| !at.is_finite()) {
                     return Err(ApiError::bad_request(

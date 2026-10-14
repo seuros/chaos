@@ -294,3 +294,87 @@ async fn daemon_shutdown_closes_unknown_streams_without_claiming_containment() {
     );
     assert!(manager.reserve(None).is_err());
 }
+
+#[tokio::test]
+async fn notice_ids_share_one_url_safe_alphabet_on_post_and_delete() {
+    // Mira's review: POST accepted `n+1`, which no DELETE ?id= could name.
+    let (_home, state) = fixture(1024).await;
+    let manager = state.sessions.as_ref().unwrap();
+    let (session, mut commands) = manager.reserve(None).unwrap();
+    session.data.lock().unwrap().status = SessionStatus::Idle;
+    let turn_id = Uuid::new_v4().to_string();
+    let path = format!("/api/sessions/{}/turns/{turn_id}", session.id);
+    let value = send(
+        &state,
+        request(
+            "POST",
+            &path,
+            Some(&manager.daemon_id),
+            Body::from(r#"{"request":"hello"}"#),
+        ),
+    )
+    .await;
+    assert_eq!(value.status(), StatusCode::ACCEPTED);
+    assert!(matches!(
+        commands.recv().await,
+        Some(super::super::Command::Turn(_))
+    ));
+    let notice = format!("{path}/notice");
+    for id in ["n+1", "n%2B1", "n 1", "", "n/1"] {
+        let body = serde_json::json!({"id": id, "text": "post a line"}).to_string();
+        assert_eq!(
+            send(
+                &state,
+                request("POST", &notice, Some(&manager.daemon_id), Body::from(body))
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST,
+            "POST id {id:?}"
+        );
+    }
+    for query in ["id=n+1", "id=n%2B1", "id=", "other=1", "id=a&id=b"] {
+        assert_eq!(
+            send(
+                &state,
+                request(
+                    "DELETE",
+                    &format!("{notice}?{query}"),
+                    Some(&manager.daemon_id),
+                    Body::empty()
+                )
+            )
+            .await
+            .status(),
+            StatusCode::BAD_REQUEST,
+            "DELETE ?{query}"
+        );
+    }
+    // Every id POST accepts can be named by DELETE ?id=.
+    let responder = tokio::spawn(async move {
+        match commands.recv().await {
+            Some(super::super::Command::Notice { change, reply, .. }) => {
+                let named = matches!(
+                    &change,
+                    super::super::NoticeChange::Withdraw(Some(id)) if id == "n-1.a_b~c"
+                );
+                let _ = reply.send(Ok(false));
+                named
+            }
+            _ => false,
+        }
+    });
+    let value = send(
+        &state,
+        request(
+            "DELETE",
+            &format!("{notice}?id=n-1.a_b~c"),
+            Some(&manager.daemon_id),
+            Body::empty(),
+        ),
+    )
+    .await;
+    assert_eq!(value.status(), StatusCode::OK);
+    assert_eq!(json(value).await["status"], "notice_not_pending");
+    assert!(responder.await.unwrap(), "DELETE named the URL-safe id");
+}

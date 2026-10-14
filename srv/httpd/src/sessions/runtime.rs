@@ -53,12 +53,16 @@ pub(super) struct SupervisorGuard(pub Arc<Session>);
 
 impl Drop for SupervisorGuard {
     fn drop(&mut self) {
+        self.0.done.send_replace(true);
         let mut data = self.0.data.lock().unwrap();
         if matches!(data.status, SessionStatus::Closed | SessionStatus::Failed) {
             return;
         }
         data.mark_unknown();
         drop(data);
+        if let Some(owner) = self.0.ledger.get() {
+            owner.abandon();
+        }
         self.0.notify();
     }
 }
@@ -154,11 +158,12 @@ impl Backend for KernelBackend {
     }
 }
 
-pub(super) fn spawn(
+pub(crate) fn spawn(
     state: Arc<ServerState>,
     session: Arc<Session>,
-    commands: mpsc::Receiver<Command>,
+    mut commands: mpsc::Receiver<Command>,
     request: CreateRequest,
+    lazy: bool,
 ) {
     let ttl = state.sessions.as_ref().unwrap().ttl;
     let expires = Instant::now() + ttl;
@@ -166,6 +171,44 @@ pub(super) fn spawn(
     // if the HTTP caller drops its response or disconnects.
     tokio::spawn(async move {
         let _owner = SupervisorGuard(session.clone());
+        let first = if lazy {
+            let command = tokio::select! {
+                _ = session.ownership_lost() => { return; }
+                _ = session.daemon_stopping() => Some(Command::Suspend),
+                _ = tokio::time::sleep_until(expires) => Some(Command::Close),
+                command = commands.recv() => command,
+            };
+            match command {
+                Some(command @ Command::Turn(_)) => Some(command),
+                command => {
+                    let suspend = matches!(command, Some(Command::Suspend));
+                    let result = if let Some(owner) = session.ledger.get() {
+                        owner.retire(suspend).await
+                    } else {
+                        Ok(())
+                    };
+                    if result.is_ok() {
+                        session.data.lock().unwrap().status = SessionStatus::Closed;
+                    }
+                    session.notify();
+                    return;
+                }
+            }
+        } else {
+            if let Some(owner) = session.ledger.get() {
+                // Record uncertainty BEFORE starting a kernel, even when its
+                // newly generated process ID is not yet known.
+                if let Some(id) = request.resume_process_id
+                    && owner.bind(id).await.is_err()
+                {
+                    return;
+                }
+                if owner.quarantine().await.is_err() {
+                    return;
+                }
+            }
+            None
+        };
         let config = state.config.as_ref().clone();
         let started = match request.resume_process_id {
             Some(id) => {
@@ -180,15 +223,52 @@ pub(super) fn spawn(
             Ok(started) => started,
             Err(error) => {
                 warn!(session_id = %session.id, %error, "HTTP session startup failed");
-                session.data.lock().unwrap().status = SessionStatus::Failed;
+                session.data.lock().unwrap().status = if session.ledger.get().is_some() {
+                    SessionStatus::Unknown
+                } else {
+                    SessionStatus::Failed
+                };
                 session.notify();
                 return;
             }
         };
         let (process_id, process, configured) = started.into_parts();
+        let backend = KernelBackend {
+            activity: tokio::sync::Mutex::new(process.subscribe_activity()),
+            process: process.clone(),
+            table: state.process_table.clone(),
+            process_id,
+        };
+        if let Some(owner) = session.ledger.get() {
+            let ready = async {
+                if !lazy {
+                    owner.bind(process_id).await?;
+                    if !backend.is_quiescent() {
+                        return Err(ApiError::conflict(
+                            "autonomous startup requires containment",
+                        ));
+                    }
+                    owner.reconcile_idle().await?;
+                }
+                Ok::<_, ApiError>(())
+            }
+            .await;
+            if ready.is_err() {
+                terminate(
+                    &session,
+                    &mut commands,
+                    &backend,
+                    TurnStatus::Unknown,
+                    false,
+                )
+                .await;
+                return;
+            }
+        }
         {
             let mut data = session.data.lock().unwrap();
             data.process_id = Some(process_id.to_string());
+            data.orphan_permit = None;
             data.observe(
                 &Event {
                     id: String::new(),
@@ -206,21 +286,26 @@ pub(super) fn spawn(
             }
         }
         session.notify();
-        let backend = KernelBackend {
-            activity: tokio::sync::Mutex::new(process.subscribe_activity()),
-            process,
-            table: state.process_table.clone(),
-            process_id,
-        };
-        supervise(session, commands, backend, expires).await;
+        supervise_inner(session, commands, backend, expires, first).await;
     });
 }
 
+#[cfg(test)]
 pub(super) async fn supervise<B: Backend>(
+    session: Arc<Session>,
+    commands: mpsc::Receiver<Command>,
+    backend: B,
+    expires: Instant,
+) {
+    supervise_inner(session, commands, backend, expires, None).await;
+}
+
+async fn supervise_inner<B: Backend>(
     session: Arc<Session>,
     mut commands: mpsc::Receiver<Command>,
     backend: B,
     expires: Instant,
+    mut first: Option<Command>,
 ) {
     let _owner = SupervisorGuard(session.clone());
     // Which HTTP turn posted the pending host notice, if any.
@@ -236,13 +321,23 @@ pub(super) async fn supervise<B: Backend>(
         tokio::select! {
             // Deadlines must not be starved by an always-ready event stream.
             biased;
+            _ = session.ownership_lost() => {
+                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                break;
+            }
+            _ = session.daemon_stopping() => {
+                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, session.ledger.get().is_some()).await;
+                break;
+            }
             _ = tokio::time::sleep_until(deadline) => {
                 // Failed containment never releases execution capacity. Continue
                 // accepting explicit close retries; don't replay the old turn.
-                terminate(&session, &mut commands, &backend, TurnStatus::TimedOut).await;
+                terminate(&session, &mut commands, &backend, TurnStatus::TimedOut, false).await;
                 break;
             }
-            command = commands.recv() => {
+            command = async {
+                if first.is_some() { first.take() } else { commands.recv().await }
+            } => {
                 match command {
                     Some(Command::Turn(id)) => {
                         // The backend clears any undelivered notice when it
@@ -255,28 +350,66 @@ pub(super) async fn supervise<B: Backend>(
                             let interrupted = turn.snapshot.status == TurnStatus::Interrupting;
                             (turn.request.take().unwrap(), turn_deadline, interrupted)
                         };
+                        session.notify();
                         if session.data.lock().unwrap().status == SessionStatus::Closing {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Interrupted).await;
+                            terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
                             break;
                         }
                         if interrupted {
-                            session.data.lock().unwrap().finish_turn(&id, TurnStatus::Interrupted);
+                            if !backend.is_quiescent() {
+                                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
+                                break;
+                            }
+                            session.data.lock().unwrap().active.as_mut().unwrap().completion_outcome = Some(TurnStatus::Interrupted);
+                            if session.commit_completion(true).await.is_err() {
+                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                break;
+                            }
                             session.notify();
                             continue;
                         }
-                        let executed = tokio::time::timeout_at(turn_deadline, backend.execute(id, request)).await;
-                        if !matches!(executed, Ok(Ok(()))) {
-                            let outcome = if executed.is_err() { TurnStatus::TimedOut } else { TurnStatus::Unknown };
-                            terminate(&session, &mut commands, &backend, outcome).await;
+                        let execution = async {
+                            if let Some(owner) = session.ledger.get() {
+                                owner.dispatch(&id).await.map_err(|_| ())?;
+                            }
+                            if session.data.lock().unwrap().turns[&id].snapshot.status == TurnStatus::Interrupting {
+                                return Ok(false);
+                            }
+                            backend.execute(id, request).await.map(|_| true)
+                        };
+                        let (executed, suspend) = tokio::select! {
+                            _ = session.ownership_lost() => (None, false),
+                            _ = session.daemon_stopping() => (None, true),
+                            result = tokio::time::timeout_at(turn_deadline, execution) => (Some(result), false),
+                        };
+                        if matches!(executed, Some(Ok(Ok(false)))) {
+                            if !backend.is_quiescent() {
+                                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
+                                break;
+                            }
+                            session.data.lock().unwrap().active.as_mut().unwrap().completion_outcome = Some(TurnStatus::Interrupted);
+                            if session.commit_completion(true).await.is_err() {
+                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                break;
+                            }
+                        } else if !matches!(executed, Some(Ok(Ok(true)))) {
+                            let outcome = if suspend { TurnStatus::Interrupted }
+                                else if matches!(executed, Some(Err(_))) { TurnStatus::TimedOut }
+                                else { TurnStatus::Unknown };
+                            terminate(&session, &mut commands, &backend, outcome, suspend).await;
                             break;
                         }
                     }
                     Some(Command::Steer { turn_id, text, reply }) => {
                         let active = session.data.lock().unwrap().require_steerable(&turn_id);
                         let result = match active {
-                            Ok(()) => tokio::time::timeout_at(deadline, backend.steer(turn_id, text))
-                                .await
-                                .unwrap_or(Err(ApiError::conflict("steering deadline exceeded; reconcile delivery"))),
+                            Ok(()) => tokio::select! {
+                                _ = session.ownership_lost() => Err(ApiError::conflict("ownership changed; reconcile steering delivery")),
+                                _ = session.daemon_stopping() => Err(ApiError::conflict("daemon stopping; reconcile steering delivery")),
+                                result = tokio::time::timeout_at(deadline, backend.steer(turn_id, text)) => {
+                                    result.unwrap_or(Err(ApiError::conflict("steering deadline exceeded; reconcile delivery")))
+                                }
+                            },
                             Err(error) => Err(error),
                         };
                         let _ = reply.send(result);
@@ -310,14 +443,28 @@ pub(super) async fn supervise<B: Backend>(
                         // A queued interrupt cannot hit a later HTTP turn: that
                         // turn cannot be admitted before we consume its predecessor's
                         // matching terminal event.
-                        let active = session.data.lock().unwrap().require_active(&id).is_ok();
-                        if active && !matches!(tokio::time::timeout_at(deadline, backend.interrupt()).await, Ok(Ok(()))) {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown).await;
-                            break;
+                        let active = {
+                            let data = session.data.lock().unwrap();
+                            data.require_active(&id).is_ok() && data.turns[&id].request.is_none()
+                        };
+                        if active {
+                            let interrupted = tokio::select! {
+                                _ = session.daemon_stopping() => {
+                                    terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, session.ledger.get().is_some()).await;
+                                    break;
+                                }
+                                _ = session.ownership_lost() => None,
+                                result = tokio::time::timeout_at(deadline, backend.interrupt()) => Some(result),
+                            };
+                            if !matches!(interrupted, Some(Ok(Ok(())))) {
+                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                break;
+                            }
                         }
                     }
-                    Some(Command::Close) | None => {
-                        terminate(&session, &mut commands, &backend, TurnStatus::Interrupted).await;
+                    command @ (Some(Command::Close) | Some(Command::Suspend) | None) => {
+                        let suspend = matches!(command, Some(Command::Suspend));
+                        terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, suspend).await;
                         break;
                     }
                 }
@@ -327,23 +474,32 @@ pub(super) async fn supervise<B: Backend>(
                     Ok(event) => {
                         let shutdown = matches!(event.msg, EventMsg::ShutdownComplete);
                         session.observe_with_activity(&event, backend.is_quiescent());
-                        if shutdown {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown).await;
+                        let autonomous = session.ledger.get().is_some()
+                            && session.data.lock().unwrap().active.is_none()
+                            && !backend.is_quiescent();
+                        if shutdown || autonomous || session.commit_completion(backend.is_quiescent()).await.is_err() {
+                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                             break;
                         }
                     }
                     Err(()) => {
-                        terminate(&session, &mut commands, &backend, TurnStatus::Unknown).await;
+                        terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                         break;
                     }
                 }
             }
             activity = backend.activity_changed() => {
                 if activity.is_err() {
-                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown).await;
+                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                     break;
                 }
-                session.data.lock().unwrap().maybe_finish(backend.is_quiescent());
+                let autonomous = session.ledger.get().is_some()
+                    && session.data.lock().unwrap().active.is_none()
+                    && !backend.is_quiescent();
+                if autonomous || session.commit_completion(backend.is_quiescent()).await.is_err() {
+                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                    break;
+                }
                 session.notify();
             }
         }
@@ -355,30 +511,84 @@ async fn terminate<B: Backend>(
     commands: &mut mpsc::Receiver<Command>,
     backend: &B,
     outcome: TurnStatus,
+    suspend: bool,
 ) {
-    if !stop(session, backend, outcome).await {
+    if !stop(session, backend, outcome, suspend).await {
         unknown_loop(session, commands, backend).await;
     }
 }
 
-async fn stop<B: Backend>(session: &Session, backend: &B, outcome: TurnStatus) -> bool {
+async fn stop<B: Backend>(
+    session: &Session,
+    backend: &B,
+    outcome: TurnStatus,
+    suspend: bool,
+) -> bool {
     session.data.lock().unwrap().status = SessionStatus::Closing;
     let stopped = matches!(
         tokio::time::timeout(CLEANUP_GRACE, backend.shutdown()).await,
         Ok(Ok(()))
     );
+    let committed = if stopped {
+        if let Some(owner) = session.ledger.get() {
+            let active = {
+                let data = session.data.lock().unwrap();
+                data.active.as_ref().map(|active| {
+                    let mut snapshot = data.turns[&active.id].snapshot.clone();
+                    snapshot.status = outcome;
+                    snapshot
+                })
+            };
+            let commit = async {
+                if let Some(snapshot) = active {
+                    let snapshot = owner.finish(snapshot).await?;
+                    let id = snapshot.turn_id.clone();
+                    session
+                        .data
+                        .lock()
+                        .unwrap()
+                        .turns
+                        .get_mut(&id)
+                        .unwrap()
+                        .snapshot = snapshot;
+                    if outcome == TurnStatus::Unknown {
+                        return Err(ApiError::conflict(
+                            "unknown turn requires explicit resolution",
+                        ));
+                    }
+                } else {
+                    // Confirmed shutdown is independent containment of startup
+                    // or autonomous work with no foreground turn.
+                    owner.quarantine().await?;
+                    owner.reconcile_idle().await?;
+                }
+                owner.retire(suspend).await
+            }
+            .await;
+            commit.is_ok()
+        } else {
+            true
+        }
+    } else {
+        if let Some(owner) = session.ledger.get() {
+            let _ = owner.quarantine().await;
+        }
+        false
+    };
     let mut data = session.data.lock().unwrap();
-    if stopped {
+    if committed {
         if let Some(id) = data.active.as_ref().map(|active| active.id.clone()) {
             data.finish_turn(&id, outcome);
         }
         data.status = SessionStatus::Closed;
+        data.orphan_permit = None;
     } else {
         data.mark_unknown();
     }
     drop(data);
     session.notify();
-    stopped
+    session.done.send_replace(true);
+    committed
 }
 
 async fn unknown_loop<B: Backend>(
@@ -388,7 +598,7 @@ async fn unknown_loop<B: Backend>(
 ) {
     while let Some(command) = commands.recv().await {
         match command {
-            Command::Close if stop(session, backend, TurnStatus::Unknown).await => break,
+            Command::Close if stop(session, backend, TurnStatus::Interrupted, false).await => break,
             Command::Steer { reply, .. } => {
                 let _ = reply.send(Err(ApiError::conflict("session outcome is unknown")));
             }

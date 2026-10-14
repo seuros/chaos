@@ -3,6 +3,8 @@ use chaos_ipc::protocol::{TurnAbortReason, TurnAbortedEvent, TurnCompleteEvent};
 use runtime::{Backend, supervise};
 use tokio::sync::mpsc;
 
+mod durability;
+
 fn ready_session() -> (Arc<Session>, mpsc::Receiver<Command>) {
     let manager = SessionManager::new(1, Duration::from_secs(3600));
     let (session, commands) = manager.reserve(None).unwrap();
@@ -84,6 +86,16 @@ async fn controls_do_not_need_execution_capacity_and_stale_targets_are_rejected(
     submit_turn(&session, "first", "hello", &capacity);
     assert_eq!(capacity.available_permits(), 0);
     assert!(matches!(commands.recv().await, Some(Command::Turn(_))));
+    // Model the supervisor consuming the request before a backend interrupt.
+    session
+        .data
+        .lock()
+        .unwrap()
+        .turns
+        .get_mut("first")
+        .unwrap()
+        .request
+        .take();
     assert_eq!(
         session.interrupt("stale".into()).unwrap_err().code,
         StatusCode::CONFLICT

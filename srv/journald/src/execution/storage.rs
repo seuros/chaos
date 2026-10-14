@@ -14,6 +14,7 @@ type SessionRow = (
     String,
     String,
     i64,
+    i64,
 );
 type TurnRow = (String, String, String, Option<String>);
 
@@ -21,7 +22,10 @@ macro_rules! session_select_sql {
     ($predicate:literal, $lock:literal) => {
         concat!(
             "SELECT session_id, scope, process_id, state, active_turn_id,
-             owner_id, lease_token, expires_at_ms FROM execution_sessions ",
+             owner_id, lease_token, expires_at_ms,
+             (SELECT COUNT(*) FROM execution_turns t
+              WHERE t.session_id = execution_sessions.session_id)
+             FROM execution_sessions ",
             $predicate,
             $lock
         )
@@ -49,6 +53,7 @@ fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError> {
             .transpose()?,
         state: decode_state(row.3.clone())?,
         active_turn_id: row.4.clone().map(parse_uuid).transpose()?,
+        turn_count: u64::try_from(row.8).map_err(|_| invalid("negative execution turn count"))?,
     })
 }
 
@@ -237,8 +242,11 @@ macro_rules! impl_storage {
                                 return Err(conflict("execution process mapping is immutable"));
                             }
                         } else {
-                            if current.state != ExecutionSessionState::Idle {
-                                return Err(conflict("only an idle execution session can bind a process"));
+                            if current.state != ExecutionSessionState::Idle
+                                && !(current.state == ExecutionSessionState::Unknown
+                                    && current.active_turn_id.is_none())
+                            {
+                                return Err(conflict("only an idle or quarantined startup can bind a process"));
                             }
                             row.2 = Some(process_id.to_string());
                             sqlx::query("UPDATE execution_sessions SET process_id = $1 WHERE session_id = $2")

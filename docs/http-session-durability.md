@@ -1,16 +1,16 @@
-# HTTP session durability: storage foundation
+# HTTP session durability
 
-The experimental `chaos serve --sessions` API still retains its session/turn
-records in memory. This change introduces the **journald ledger prerequisite**;
-HTTP admission and recovery are not yet wired to it. Keep the existing daemon
-generation precondition and do not retry a lost HTTP turn across daemon restarts.
+The experimental `chaos serve --sessions --session-scope <namespace>` API uses
+journald for admission, dispatch identity, terminal outcomes and ownership.
+Without a scope the existing memory-only behavior is unchanged. Keep the daemon
+generation precondition: after restart, read saved state before retrying any turn.
 
 ## Storage contract
 
 `JournalClient::execution` exposes the same typed control-plane operations over
 the SQLite journald Unix socket and the direct PostgreSQL backend. Migration 26
 adds session and turn tables to the existing runtime database. Journald protocol
-6 prevents accidentally talking to a sidecar that predates these operations.
+7 prevents accidentally talking to a sidecar that predates HTTP integration.
 Conversation transcripts remain in the existing append-only journal.
 
 A server selects a stable configuration/tenant `scope` and a unique owner ID for
@@ -21,6 +21,8 @@ tokens through the public HTTP API.
 1. **Claim** a caller-stable session UUID and obtain a fenced lease.
 2. **BindProcess** persists an immutable process mapping before admission.
    Live and unknown sessions cannot map to the same process.
+   A quarantined startup without an active turn may bind its newly allocated ID;
+   it remains non-executable until independently reconciled idle.
 3. **Accept** atomically stores a turn UUID, normalized SHA-256 fingerprint and
    active reservation. Same-payload retries return the original record;
    changed-payload retries conflict. No prompt is stored in the ledger.
@@ -62,19 +64,41 @@ After independent containment, **ReconcileIdle** may unblock that no-turn case.
 An active unknown turn must instead receive an explicit terminal **Finish**.
 
 The ledger fences storage writes, **not external side effects** already launched
-by a previous owner. The HTTP supervisor must stop on ownership/storage loss,
-retain its capacity reservation, and perform bounded containment. It must not
+by a previous owner. The HTTP supervisor stops on ownership/storage loss,
+retains its capacity reservation, and performs bounded containment. It must not
 treat a rejected heartbeat as proof of cancellation.
 
-## Bounds and follow-up
+## HTTP recovery and bounds
+
+Creation and admission run in daemon tasks that retain their ingress reservations
+even when HTTP disconnects. New kernels are quarantined before boot, so crashing
+between boot and recording a process ID cannot produce apparently healthy idle
+work. The ledger reports the persisted turn count, so unloaded tombstones cannot
+bypass the HTTP admission cap.
+
+Leases are renewed independently every 15 seconds with a 90-second TTL; storage
+calls time out after 5 seconds. Dispatch requires the unique successful
+`newly_dispatched` transition. Terminal event processing waits for kernel
+quiescence, commits its outcome, then releases the local execution permit.
+
+Graceful shutdown contains the backend and releases idle history; recovery keeps
+its stable session ID and lazily resumes the process on a fresh accepted turn.
+Expired ownership is quarantined, including idle processes not orderly released.
+Recovered unknown records have no executor and retain capacity until independent
+containment/reconciliation. An unbound idle creation is closed without boot.
+Explicit DELETE and TTL expiration close records, not the namespace's history.
 
 Each session keeps at most 256 turn tombstones. Outcomes are bounded to 32 KiB
 of serialized JSON; list pages to 256 sessions. There is no implicit tombstone
 eviction or deletion that could make an old turn UUID executable again.
 
-The next integration step is to wire daemon-owned HTTP admission/dispatch and
-terminal reconciliation to this contract, renew leases independently of HTTP
-requests, restore persisted IDs/outcomes, and lazily resume proven-idle history.
-Unfinished sessions must remain unknown until containment is established.
-Replay/SSE durability, scoped per-turn environment, billing telemetry and clamp
-support remain separate work.
+Closed records are not forgotten in durable mode. The namespace-wide session cap
+includes them; startup refuses live ownership conflicts or uncontained work that
+cannot fit the configured capacity. Session lifetime restarts with each daemon
+incarnation, not a persisted wall-clock deadline.
+
+Scope selection is an operator contract: use a separate stable name for each
+configuration/tenant and do not change credentials/provider/cwd/sandbox/tools
+under a retained name. No per-request policy overrides are added.
+Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
+per-turn environment, billing telemetry and clamp support remain separate work.

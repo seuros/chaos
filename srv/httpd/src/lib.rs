@@ -69,6 +69,9 @@ impl ServerState {
             self.process_table
                 .shutdown_all_processes_bounded(Duration::from_secs(30))
                 .await;
+            // Container shutdown is not a durable handoff acknowledgement.
+            // Let the supervisors commit outcomes/releases before HTTP exits.
+            sessions.wait_stopped().await;
         }
     }
 }
@@ -95,6 +98,14 @@ pub async fn run_main(
     }
     if serve_cli.max_sessions == 0 || serve_cli.session_ttl == 0 {
         bail!("--max-sessions and --session-ttl must be at least 1");
+    }
+    if let Some(scope) = &serve_cli.session_scope {
+        if !serve_cli.sessions || serve_cli.ephemeral {
+            bail!("--session-scope requires --sessions and forbids --ephemeral");
+        }
+        if scope.trim().is_empty() || scope.len() > 256 {
+            bail!("--session-scope must contain 1..256 bytes");
+        }
     }
 
     // 2. Parse CLI -c overrides.
@@ -145,6 +156,9 @@ pub async fn run_main(
     if serve_cli.sessions && config.clamp {
         bail!("retained HTTP sessions do not yet support clamp transports");
     }
+    if serve_cli.session_scope.is_some() && config.ephemeral {
+        bail!("durable retained sessions cannot use ephemeral history");
+    }
 
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
@@ -191,6 +205,32 @@ pub async fn run_main(
     );
 
     let config = Arc::new(config);
+    let semaphore = Arc::new(Semaphore::new(serve_cli.max_concurrent));
+    let (sessions, recovered) = if let Some(scope) = serve_cli.session_scope {
+        let client = chaos_kern::journal_client_for_mounted_backend()
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let (manager, recovered) = sessions::SessionManager::persistent(
+            serve_cli.max_sessions,
+            Duration::from_secs(serve_cli.session_ttl),
+            client,
+            scope,
+            &semaphore,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("restore HTTP sessions: {error:?}"))?;
+        (Some(Arc::new(manager)), recovered)
+    } else {
+        (
+            serve_cli.sessions.then(|| {
+                Arc::new(sessions::SessionManager::new(
+                    serve_cli.max_sessions,
+                    Duration::from_secs(serve_cli.session_ttl),
+                ))
+            }),
+            Vec::new(),
+        )
+    };
 
     // 11. Build server state.
     let state = Arc::new(ServerState {
@@ -198,18 +238,17 @@ pub async fn run_main(
         process_table: core.process_table,
         auth_manager: core.auth_manager,
         bearer_token,
-        semaphore: Arc::new(Semaphore::new(serve_cli.max_concurrent)),
+        semaphore,
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
         monitor: monitor::MonitorState::new(),
-        sessions: serve_cli.sessions.then(|| {
-            Arc::new(sessions::SessionManager::new(
-                serve_cli.max_sessions,
-                Duration::from_secs(serve_cli.session_ttl),
-            ))
-        }),
+        sessions,
     });
+    for (session, commands, request) in recovered {
+        let lazy = request.resume_process_id.is_some();
+        sessions::runtime::spawn(state.clone(), session, commands, request, lazy);
+    }
 
     // 12. Bind and serve.
     let ip: std::net::IpAddr = serve_cli.bind.parse().context("invalid bind address")?;

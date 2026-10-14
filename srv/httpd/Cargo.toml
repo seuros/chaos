@@ -12,6 +12,7 @@ chaos-argv = { workspace = true }
 chaos-coreboot = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-ipc = { workspace = true }
+chaos_journald = { workspace = true }
 chaos-kern = { workspace = true }
 rama = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -24,6 +25,7 @@ uuid = { workspace = true, features = ["v4"] }
 usage = { workspace = true }
 
 [dev-dependencies]
+sqlx = { workspace = true }
 chaos-test-fixtures = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

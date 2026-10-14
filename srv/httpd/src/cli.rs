@@ -32,6 +32,11 @@ pub struct ServeCli {
     #[usage(long = "sessions")]
     pub sessions: bool,
 
+    /// Persist retained-session identity/outcomes in journald under this namespace.
+    /// Requires --sessions and forbids --ephemeral.
+    #[usage(long = "session-scope")]
+    pub session_scope: Option<String>,
+
     /// Maximum retained session records (including closed-session tombstones).
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,

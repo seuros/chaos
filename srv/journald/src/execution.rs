@@ -66,6 +66,7 @@ pub struct ExecutionSession {
     pub process_id: Option<ProcessId>,
     pub state: ExecutionSessionState,
     pub active_turn_id: Option<Uuid>,
+    pub turn_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

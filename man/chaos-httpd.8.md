@@ -36,6 +36,7 @@ Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env va
 | `--max-concurrent` | `4` | Bounds triggers from body reading through cleanup, and active retained turns through background quiescence. |
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
+| `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
 | `--max-sessions` | `32` | Maximum retained records, including closed-session tombstones. |
 | `--session-ttl` | `3600` | Maximum session lifetime in seconds, including active execution. |
 | `-m, --model` | config default | Server default. `/api/trigger` still rejects per-request overrides. |
@@ -131,8 +132,8 @@ a full-access credential: it also permits triggering agent runs.
 
 ### Experimental retained sessions (`--sessions`)
 
-This is a validation API, **not yet a production replacement for souls.house's
-durable execution ledger**. Provider, credentials, working directory, tool
+This is a validation API, **not yet a production execution service**.
+Provider, credentials, working directory, tool
 environment and sandbox are server-owned. Clamp transports are rejected at
 startup when this API is enabled. Per-turn environment isolation and invocation
 billing telemetry are not implemented. Host notices (below) expire and can be
@@ -165,6 +166,8 @@ durable ledger first.
 | DELETE | `/api/sessions/{session}` | Request shutdown; delete a closed/failed record on a subsequent call |
 
 Creation accepts `{}` or `{"resume_process_id":"saved-process-uuid"}`.
+An optional canonical UUID `session_id` makes creation retryable within the
+retained namespace; a different requested process for an existing ID conflicts.
 Poll the session until its status is `idle` before submitting a turn. A process
 already running in this daemon cannot be resumed into a second event consumer.
 Explicit resume restores saved history, not an in-flight model request, tool or
@@ -204,7 +207,7 @@ newer one. Only the turn that posted the pending notice can withdraw it.
 a bare `DELETE` withdraws whatever that turn has pending. `chaos exec
 --steer-file` feeds the same slot.
 
-Turn states include `accepted`, `running`, `waiting_background`, `interrupting`,
+Turn states include `persisting`, `accepted`, `running`, `waiting_background`, `interrupting`,
 `completed`, `failed`, `interrupted`, `timed_out` and `unknown`. Execution capacity
 is retained until matching completion and kernel background quiescence, or
 confirmed session shutdown. An error event or cancellation request alone does
@@ -234,12 +237,52 @@ arguments/results and reasoning. A frontend adapter must implement its own
 authorization, redaction and narration-consent projection. Do not expose this
 stream directly to public browsers.
 
-Session records and deduplication are memory-only and scoped to the daemon
+Without `--session-scope`, records and deduplication are memory-only and scoped to the daemon
 generation. History persistence follows normal kernel configuration. On daemon
 restart, missing sessions/turns mean **unknown outcome**, not permission to
 re-execute. Session TTL closes execution but retains its record; DELETE the
 closed record only after durably accounting for its outcomes. Forgetting a
 record also forgets its in-memory turn tombstones.
+
+#### Durable retained sessions
+
+```sh
+chaos serve --sessions --session-scope project-worker -C /path/to/project
+```
+
+Choose a distinct, stable namespace for each tenant/configuration. Reusing one
+with changed credentials, provider, working directory, sandbox or tools is not
+supported. The namespace is server configuration, never an HTTP override.
+
+Journald commits acceptance before dispatch and terminal outcomes before
+execution capacity is released. A disconnected client cannot cancel those
+writes. Ownership uses 90-second fenced leases, renewed every 15 seconds;
+storage calls have a 5-second deadline. Lost storage/ownership triggers bounded
+containment and retains uncertain capacity. No lease token is exposed over HTTP.
+
+Graceful daemon shutdown contains processes and releases idle history. On the
+next start, its session UUID, process mapping and saved turn outcomes are restored.
+An idle process resumes lazily on a **fresh** turn, never by replaying an old
+prompt. Explicit DELETE or session TTL closes the record instead of suspending it.
+Closed durable records retain their deduplication tombstones; DELETE cannot erase
+them. `--max-sessions` therefore bounds all records in the durable namespace.
+
+Expired ownership with unfinished work, or even a bound idle process that was
+not orderly released, recovers as `unknown` and consumes execution capacity.
+An interrupted, unbound creation is closed without starting a kernel. Startup
+fails if a live owner conflicts, retained records exceed `--max-sessions`, or
+uncontained reservations exceed `--max-concurrent`. Wait for lease expiry after
+an unclean exit; expiry itself does not prove tools stopped.
+
+Recovered unknown work is never automatically resumed. DELETE cannot establish
+containment of a previous daemon's external processes; resolve it independently
+through the journal control plane before restarting the HTTP daemon. Autonomous
+kernel work without a tracked HTTP turn triggers containment in this preview.
+
+After a generation change, read saved state before refreshing the mutation
+header. Same-payload retries return the saved outcome; changed payloads conflict.
+Replay/SSE buffers remain memory-only: discard old event cursors after restart,
+and use persisted turn state rather than event absence to reconcile.
 
 ## ARCHITECTURE
 

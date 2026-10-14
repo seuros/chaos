@@ -1460,7 +1460,9 @@ fn rollout_items_match(left: &RolloutItem, right: &RolloutItem) -> bool {
     }
 }
 
-async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {
+/// Connect to the journal selected by the mounted runtime backend. Consumers
+/// must not silently bootstrap SQLite when PostgreSQL was selected.
+pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {
     let vfs = chaos_vfs::pool().map_err(|err| {
         format!(
             "journal backend is unavailable because runtime storage was not mounted: {err}; \

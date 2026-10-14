@@ -85,13 +85,16 @@ async fn route(
                 if state.config.ephemeral && create.resume_process_id.is_some() {
                     return Err(ApiError::bad_request("cannot resume with --ephemeral"));
                 }
-                if let Some(id) = create.resume_process_id
-                    && state.process_table.get_process(id).await.is_ok()
-                {
-                    return Err(ApiError::conflict("process is already running"));
-                }
-                let (session, commands) = manager.reserve(create.resume_process_id)?;
-                super::runtime::spawn(state, session.clone(), commands, create);
+                let create_manager = manager.clone();
+                let admission_permit = _ingress;
+                let session = tokio::spawn(async move {
+                    let _permit = admission_permit;
+                    create_manager.create(state, create).await
+                })
+                .await
+                .map_err(|_| {
+                    ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "session owner unavailable")
+                })??;
                 Ok(session_response(StatusCode::ACCEPTED, manager, &session))
             }
             _ => Ok(method_not_allowed("GET, POST")),
@@ -107,13 +110,18 @@ async fn route(
             Method::GET => session_response(StatusCode::OK, manager, &session),
             Method::DELETE => {
                 let status = session.data.lock().unwrap().status;
-                if matches!(status, SessionStatus::Closed | SessionStatus::Failed) {
+                if matches!(status, SessionStatus::Closed | SessionStatus::Failed)
+                    && manager.store.is_none()
+                {
                     manager.forget(id)?;
                     response(
                         StatusCode::OK,
                         json!({"daemon_id": manager.daemon_id, "status": "forgotten"}),
                     )
                 } else {
+                    if status == SessionStatus::Closed && manager.store.is_some() {
+                        return Ok(session_response(StatusCode::OK, manager, &session));
+                    }
                     session.close()?;
                     session_response(StatusCode::ACCEPTED, manager, &session)
                 }
@@ -171,10 +179,25 @@ async fn route(
         [_, _, _, "turns", turn_id] => {
             validate_id(turn_id)?;
             let turn = match method {
-                Method::GET => session.turn(turn_id)?,
+                Method::GET => session.read_turn(turn_id).await?,
                 Method::POST => {
                     let turn: TurnRequest = read_json(&state, request).await?;
-                    session.submit(turn_id.to_string(), turn, &state.semaphore, state.timeout)?
+                    let session = session.clone();
+                    let id = turn_id.to_string();
+                    let admission_permit = _ingress;
+                    tokio::spawn(async move {
+                        let _permit = admission_permit;
+                        session
+                            .admit(id, turn, &state.semaphore, state.timeout)
+                            .await
+                    })
+                    .await
+                    .map_err(|_| {
+                        ApiError::new(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "turn owner unavailable; reconcile state",
+                        )
+                    })??
                 }
                 _ => return Ok(method_not_allowed("GET, POST")),
             };

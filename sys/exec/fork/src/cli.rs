@@ -76,6 +76,13 @@ pub struct Cli {
     #[usage(long = "output-last-message", short = 'o', value_name = "FILE", global)]
     pub last_message_file: Option<PathBuf>,
 
+    /// File holding at most one host notice (`{"id": ..., "text": ..., "expires_at": unix_secs}`)
+    /// while the turn runs. Replace it to update the notice, delete it to withdraw it.
+    /// Exec mirrors it into the session; the notice is delivered once, without
+    /// interrupting the turn, at the next boundary where it is still valid.
+    #[usage(long = "steer-file", value_name = "FILE", global)]
+    pub steer_file: Option<PathBuf>,
+
     /// Initial instructions for the agent. If not provided as an argument (or
     /// if `-` is used), instructions are read from stdin.
     #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]

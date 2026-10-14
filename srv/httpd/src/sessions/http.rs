@@ -6,7 +6,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::{
-    ApiError, CreateRequest, Session, SessionManager, SessionStatus, SteerRequest, TurnRequest,
+    ApiError, CreateRequest, NoticeRequest, Session, SessionManager, SessionStatus, SteerRequest,
+    TurnRequest,
 };
 use crate::ServerState;
 use crate::ingress;
@@ -188,6 +189,51 @@ async fn route(
         }
         [_, _, _, "turns", turn_id, action] => {
             validate_id(turn_id)?;
+            if *action == "notice" {
+                let (notice, withdraw_id) = match method {
+                    Method::POST => (
+                        Some(read_json::<NoticeRequest>(&state, request).await?),
+                        None,
+                    ),
+                    Method::DELETE if query.is_empty() => (None, None),
+                    Method::DELETE => {
+                        let id = query
+                            .strip_prefix("id=")
+                            .filter(|id| super::valid_notice_id(id))
+                            .ok_or(ApiError::bad_request(
+                                "expected ?id=<notice id> (A-Z a-z 0-9 - . _ ~)",
+                            ))?;
+                        (None, Some(id.to_string()))
+                    }
+                    _ => return Ok(method_not_allowed("POST, DELETE")),
+                };
+                let posting = notice.is_some();
+                // A retried POST is a no-op for an id the session has already
+                // seen; a DELETE with ?id= clears only that notice. Neither can
+                // disturb a newer notice, so both may be retried after a lost
+                // acknowledgement.
+                let changed = tokio::time::timeout(
+                    state.timeout,
+                    session.notice(turn_id.to_string(), notice, withdraw_id),
+                )
+                .await
+                .map_err(|_| {
+                    ApiError::new(
+                        StatusCode::GATEWAY_TIMEOUT,
+                        "notice acknowledgement unavailable; reconcile before retrying",
+                    )
+                })??;
+                let status = match (posting, changed) {
+                    (true, true) => "notice_set",
+                    (true, false) => "notice_already_seen",
+                    (false, true) => "notice_withdrawn",
+                    (false, false) => "notice_not_pending",
+                };
+                return Ok(response(
+                    StatusCode::OK,
+                    json!({"daemon_id": manager.daemon_id, "turn_id": turn_id, "status": status}),
+                ));
+            }
             if method != Method::POST {
                 return Ok(method_not_allowed("POST"));
             }

@@ -172,6 +172,21 @@ pub(crate) struct SteerRequest {
     pub request: String,
 }
 
+/// A host notice for the active turn: unlike steering, it is held in the
+/// session's single notice slot until the next delivery boundary, where its
+/// expiry is checked. Posting a new `id` replaces it. Re-posting an id the
+/// session has already seen (posted or delivered) is a no-op, so a retried or
+/// reordered request cannot re-deliver an old notice or displace a newer one.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NoticeRequest {
+    pub id: String,
+    pub text: String,
+    /// Unix seconds after which the notice must not be delivered.
+    #[serde(default)]
+    pub expires_at: Option<f64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum SessionStatus {
@@ -265,6 +280,21 @@ struct EventBatch {
     next_cursor: u64,
 }
 
+/// Notice ids travel in a DELETE query string, so they are restricted to the
+/// URL-safe unreserved alphabet and need no percent-encoding.
+pub(crate) fn valid_notice_id(id: &str) -> bool {
+    (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
+}
+
+enum NoticeChange {
+    Post(chaos_kern::host_notice::HostNotice),
+    /// Withdraw, optionally only if this id is the one pending.
+    Withdraw(Option<String>),
+}
+
 enum Command {
     Turn(String),
     Steer {
@@ -273,6 +303,11 @@ enum Command {
         reply: oneshot::Sender<Result<(), ApiError>>,
     },
     Interrupt(String),
+    Notice {
+        turn_id: String,
+        change: NoticeChange,
+        reply: oneshot::Sender<Result<bool, ApiError>>,
+    },
     Close,
 }
 
@@ -419,6 +454,51 @@ impl Session {
         response
             .await
             .map_err(|_| ApiError::conflict("session stopped before steering"))?
+    }
+
+    /// Post (`Some`) or withdraw (`None`, optionally only `withdraw_id`) the
+    /// host notice for turn `id`. Returns whether the slot changed.
+    async fn notice(
+        &self,
+        id: String,
+        request: Option<NoticeRequest>,
+        withdraw_id: Option<String>,
+    ) -> Result<bool, ApiError> {
+        let change = match request {
+            Some(request) => {
+                if !valid_notice_id(&request.id) {
+                    return Err(ApiError::bad_request(
+                        "notice id must be 1-128 characters of A-Z a-z 0-9 - . _ ~",
+                    ));
+                }
+                if request.text.trim().is_empty() {
+                    return Err(ApiError::bad_request("notice text must not be empty"));
+                }
+                if request.expires_at.is_some_and(|at| !at.is_finite()) {
+                    return Err(ApiError::bad_request(
+                        "expires_at must be finite unix seconds",
+                    ));
+                }
+                self.data.lock().unwrap().require_steerable(&id)?;
+                NoticeChange::Post(chaos_kern::host_notice::HostNotice {
+                    id: request.id,
+                    text: request.text,
+                    expires_at: request.expires_at,
+                })
+            }
+            None => NoticeChange::Withdraw(withdraw_id),
+        };
+        let (reply, response) = oneshot::channel();
+        self.commands
+            .try_send(Command::Notice {
+                turn_id: id,
+                change,
+                reply,
+            })
+            .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+        response
+            .await
+            .map_err(|_| ApiError::conflict("session stopped before the notice was recorded"))?
     }
 
     fn interrupt(&self, id: String) -> Result<TurnSnapshot, ApiError> {

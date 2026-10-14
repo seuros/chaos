@@ -608,6 +608,7 @@ pub(crate) async fn make_session_and_context_with_home(
         permission_actor: crate::chaos::permissions::PermissionActor::spawn(&session_configuration),
         services,
         next_internal_sub_id: AtomicU64::new(0),
+        host_notice: Default::default(),
     };
     session
         .permission_actor
@@ -694,6 +695,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         permission_actor: crate::chaos::permissions::PermissionActor::spawn(&session_configuration),
         services,
         next_internal_sub_id: AtomicU64::new(0),
+        host_notice: Default::default(),
     });
     session
         .permission_actor

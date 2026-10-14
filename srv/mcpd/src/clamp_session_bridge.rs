@@ -226,7 +226,7 @@ impl Tool for BridgeTool {
             .await
             .map_err(|err| ToolError::Execution(err.to_string()))?;
             match response {
-                ClampBridgeResponse::ToolResult { output } => {
+                ClampBridgeResponse::ToolResult { output, notices } => {
                     if matches!(self.spec.name.as_str(), "enable_tools" | "disable_tools") {
                         self.state.refresh(true).await.map_err(|err| {
                             ToolError::Execution(format!(
@@ -235,6 +235,7 @@ impl Tool for BridgeTool {
                         })?;
                     }
                     response_input_to_tool_output(output, self.spec.output_schema.is_some())
+                        .map(|tool_output| with_runtime_notices(tool_output, notices))
                 }
                 ClampBridgeResponse::Error { message } => Err(ToolError::Execution(message)),
                 ClampBridgeResponse::Tools { .. } => Err(ToolError::Internal(
@@ -242,6 +243,28 @@ impl Tool for BridgeTool {
                 )),
             }
         })
+    }
+}
+
+/// Attach text steered into the running turn to the tool result the external
+/// model is about to read. Structured results carry it as `runtime_notice`;
+/// content results get it as a trailing text block.
+fn with_runtime_notices(output: ToolOutput, notices: Vec<String>) -> ToolOutput {
+    if notices.is_empty() {
+        return output;
+    }
+    let notice = notices.join("\n\n");
+    match output {
+        ToolOutput::Structured(mut map) => {
+            map.insert("runtime_notice".to_string(), Value::String(notice));
+            ToolOutput::Structured(map)
+        }
+        ToolOutput::Content(mut items) => {
+            items.push(Box::new(TextContent::new(format!(
+                "[runtime notice]\n{notice}"
+            ))));
+            ToolOutput::Content(items)
+        }
     }
 }
 

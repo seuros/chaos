@@ -438,12 +438,23 @@ pub(crate) async fn run_turn(
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
         // may support this, the model might not.
-        let pending_response_items = sess
+        let mut pending_response_items = sess
             .get_pending_input()
             .await
             .into_iter()
             .map(ResponseItem::from)
             .collect::<Vec<ResponseItem>>();
+        // A host notice is checked for validity here, at the boundary itself,
+        // so one that expired or was withdrawn during the last sample or tool
+        // call never reaches the model.
+        if let Some(text) = sess.host_notice.take(crate::host_notice::now_unix()) {
+            pending_response_items.push(ResponseItem::from(response_input_item_from_user_input(
+                vec![UserInput::Text {
+                    text,
+                    text_elements: Vec::new(),
+                }],
+            )));
+        }
 
         if !pending_response_items.is_empty() {
             for response_item in pending_response_items {

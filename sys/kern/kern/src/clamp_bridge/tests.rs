@@ -80,3 +80,27 @@ fn antigravity_catalogue_projects_current_mcp_tools_not_native_tools() {
     assert!(empty.starts_with("Changed instructions\n\n"));
     assert!(empty.ends_with("[]"));
 }
+
+#[test]
+fn steered_user_text_becomes_notices_and_other_items_stay_pending() {
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ResponseInputItem;
+
+    let steer = ResponseInputItem::Message {
+        role: "user".into(),
+        content: vec![ContentItem::InputText {
+            text: "No update for 2m; post a line.".into(),
+        }],
+    };
+    let developer = ResponseInputItem::Message {
+        role: "developer".into(),
+        content: vec![ContentItem::InputText {
+            text: "kernel note".into(),
+        }],
+    };
+
+    let (notices, other) = split_steered_notices(vec![steer, developer.clone()]);
+
+    assert_eq!(notices, vec!["No update for 2m; post a line.".to_string()]);
+    assert_eq!(other, vec![developer]);
+}

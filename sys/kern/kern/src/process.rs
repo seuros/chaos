@@ -93,6 +93,23 @@ impl Process {
         self.chaos.steer_input(input, expected_turn_id).await
     }
 
+    /// Replace (Some) or withdraw (None) the host notice for this process.
+    /// It is delivered once, at the next delivery boundary, if still valid.
+    pub fn set_host_notice(&self, notice: Option<crate::host_notice::HostNotice>) {
+        self.chaos.set_host_notice(notice);
+    }
+
+    /// Offer a host notice from a request that may be retried or reordered:
+    /// an id already posted or delivered is ignored. Returns whether it is pending.
+    pub fn post_host_notice(&self, notice: crate::host_notice::HostNotice) -> bool {
+        self.chaos.post_host_notice(notice)
+    }
+
+    /// Withdraw the pending host notice; with `Some(id)`, only that notice.
+    pub fn withdraw_host_notice(&self, id: Option<&str>) -> bool {
+        self.chaos.withdraw_host_notice(id)
+    }
+
     pub async fn set_app_server_client_name(
         &self,
         app_server_client_name: Option<String>,

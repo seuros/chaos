@@ -46,4 +46,6 @@ pub(crate) struct Session {
 
     pub(crate) services: SessionServices,
     pub(super) next_internal_sub_id: AtomicU64,
+    /// Host-owned notice delivered at the next boundary (see `host_notice`).
+    pub(crate) host_notice: crate::host_notice::HostNoticeSlot,
 }

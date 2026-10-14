@@ -11,6 +11,7 @@ mod event_processor;
 mod event_processor_with_human_output;
 pub mod event_processor_with_jsonl_output;
 pub mod exec_events;
+mod steer_notice;
 
 use chaos_argv::Arg0DispatchPaths;
 use chaos_ipc::ProcessId;
@@ -126,6 +127,7 @@ struct ExecRunArgs {
     exec_span: tracing::Span,
     json_mode: bool,
     last_message_file: Option<PathBuf>,
+    steer_file: Option<PathBuf>,
     output_schema_path: Option<PathBuf>,
     fork_history: Option<Vec<RolloutItem>>,
     resume_process_id: Option<ProcessId>,
@@ -216,6 +218,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         fork_snapshot,
         color,
         last_message_file,
+        steer_file,
         json: json_mode,
         sandbox_mode: sandbox_mode_cli_arg,
         prompt,
@@ -432,6 +435,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         exec_span: exec_span.clone(),
         json_mode,
         last_message_file,
+        steer_file,
         output_schema_path,
         fork_history,
         resume_process_id,
@@ -456,6 +460,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         exec_span,
         json_mode,
         last_message_file,
+        steer_file,
         output_schema_path,
         fork_history,
         resume_process_id,
@@ -647,6 +652,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         &required_mcp_servers,
         &mut error_seen,
         &mut interrupt_rx,
+        steer_file.as_deref(),
         chaos_session::background::BackgroundWait::new(
             &thread,
             wait_background,
@@ -711,6 +717,7 @@ fn exec_event_decision(
 
 /// Core event loop: reads events from the process and dispatches them
 /// to the event processor, handling interrupts and shutdown.
+#[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     thread: &Arc<Process>,
     event_processor: &mut dyn EventProcessor,
@@ -718,11 +725,15 @@ async fn run_event_loop(
     required_mcp_servers: &HashSet<String>,
     error_seen: &mut bool,
     interrupt_rx: &mut mpsc::UnboundedReceiver<()>,
+    steer_file: Option<&std::path::Path>,
     mut wait: chaos_session::background::BackgroundWait,
 ) {
     use chaos_session::background::WaitEvent;
     let wait_background = wait.is_enabled();
     let mut interrupt_channel_open = true;
+    let mut steer_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    steer_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut steer_mirror = steer_notice::Mirror::default();
     loop {
         let event = tokio::select! {
             maybe_interrupt = interrupt_rx.recv(), if interrupt_channel_open => {
@@ -732,6 +743,15 @@ async fn run_event_loop(
                 }
                 if let Err(err) = thread.submit(Op::Interrupt).await {
                     warn!("interrupt submit failed: {err}");
+                }
+                continue;
+            }
+            _ = steer_tick.tick(), if steer_file.is_some() => {
+                if let Some(path) = steer_file
+                    && let Some(change) =
+                        steer_mirror.observe(steer_notice::read(path, steer_notice::now_unix()))
+                {
+                    thread.set_host_notice(change);
                 }
                 continue;
             }

@@ -261,6 +261,8 @@ fn resume_cannot_create_two_consumers_for_the_same_process() {
 enum Operation {
     Execute(String, TurnRequest),
     Steer(String, String),
+    PostNotice(chaos_kern::host_notice::HostNotice),
+    WithdrawNotice(Option<String>),
     Interrupt,
     Shutdown,
 }
@@ -284,6 +286,14 @@ impl Backend for FakeBackend {
     async fn steer(&self, id: String, text: String) -> Result<(), ApiError> {
         self.operations.send(Operation::Steer(id, text)).unwrap();
         Ok(())
+    }
+    fn post_notice(&self, notice: chaos_kern::host_notice::HostNotice) -> bool {
+        self.operations.send(Operation::PostNotice(notice)).unwrap();
+        true
+    }
+    fn withdraw_notice(&self, id: Option<String>) -> bool {
+        self.operations.send(Operation::WithdrawNotice(id)).unwrap();
+        true
     }
     async fn interrupt(&self) -> Result<(), ()> {
         self.operations.send(Operation::Interrupt).unwrap();
@@ -481,4 +491,107 @@ async fn idle_session_ttl_closes_backend() {
     ));
     supervisor.task.await.unwrap();
     assert_eq!(session.snapshot().status, SessionStatus::Closed);
+}
+
+#[tokio::test]
+async fn host_notices_are_bound_to_the_turn_that_posted_them() {
+    use super::NoticeRequest;
+    let (session, commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
+    let notice = |id: &str| NoticeRequest {
+        id: id.into(),
+        text: "post a line".into(),
+        expires_at: Some(2.0e9),
+    };
+    submit_turn(&session, "first", "hello", &capacity);
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(..))
+    ));
+    assert!(
+        session
+            .notice("first".into(), Some(notice("n1")), None)
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::PostNotice(n)) if n.id == "n1" && n.expires_at == Some(2.0e9)
+    ));
+    // Withdrawal by the owning turn reaches the slot, with its id filter.
+    assert!(
+        session
+            .notice("first".into(), None, Some("n1".into()))
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::WithdrawNotice(Some(id))) if id == "n1"
+    ));
+    // Another turn's id can neither set nor withdraw.
+    assert_eq!(
+        session
+            .notice("other".into(), Some(notice("n2")), None)
+            .await
+            .unwrap_err()
+            .code,
+        StatusCode::CONFLICT
+    );
+    assert!(!session.notice("other".into(), None, None).await.unwrap());
+    assert_eq!(
+        session
+            .notice(
+                "first".into(),
+                Some(NoticeRequest {
+                    id: "x".into(),
+                    text: " ".into(),
+                    expires_at: None
+                }),
+                None,
+            )
+            .await
+            .unwrap_err()
+            .code,
+        StatusCode::BAD_REQUEST
+    );
+    supervisor.events.send(complete("first")).unwrap();
+    wait_until(&session, |data| data.status == SessionStatus::Idle).await;
+    assert!(
+        session
+            .notice("first".into(), Some(notice("n3")), None)
+            .await
+            .is_err()
+    );
+
+    // Mira's A->B regression: B posts, then a delayed DELETE for A arrives.
+    submit_turn(&session, "second", "continue", &capacity);
+    assert!(
+        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, _)) if id == "second")
+    );
+    assert!(
+        session
+            .notice("second".into(), Some(notice("n4")), None)
+            .await
+            .unwrap()
+    );
+    assert!(
+        matches!(supervisor.operations.recv().await, Some(Operation::PostNotice(n)) if n.id == "n4")
+    );
+    assert!(
+        !session.notice("first".into(), None, None).await.unwrap(),
+        "a late withdrawal for the first turn must not touch the second turn's notice"
+    );
+    assert!(session.notice("second".into(), None, None).await.unwrap());
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::WithdrawNotice(None))
+    ));
+    session.close().unwrap();
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Shutdown)
+    ));
+    supervisor.task.await.unwrap();
 }

@@ -178,12 +178,68 @@ async fn handle_request(
                 .collect(),
         },
         ClampRequestKind::CallTool { name, arguments } => {
-            match dispatch_tool_call(session, turn_context, router, &name, arguments).await {
-                Ok(output) => ClampBridgeResponse::ToolResult { output },
+            match dispatch_tool_call(Arc::clone(&session), turn_context, router, &name, arguments)
+                .await
+            {
+                Ok(output) => ClampBridgeResponse::ToolResult {
+                    output,
+                    notices: take_steered_notices(&session).await,
+                },
                 Err(err) => ClampBridgeResponse::Error { message: err },
             }
         }
     }
+}
+
+/// Drain text steered into the active turn, and the host notice if it is still
+/// valid, so they reach the external model on
+/// this tool result. Anything that is not steered user text goes back on the
+/// turn's pending queue untouched.
+async fn take_steered_notices(session: &Arc<crate::chaos::Session>) -> Vec<String> {
+    let (mut notices, other) = split_steered_notices(session.get_pending_input().await);
+    if let Some(text) = session.host_notice.take(crate::host_notice::now_unix()) {
+        notices.push(text);
+    }
+    if !other.is_empty()
+        && let Err(items) = session.inject_response_items(other).await
+    {
+        warn!(
+            "dropped {} pending clamp items: turn ended during tool call",
+            items.len()
+        );
+    }
+    notices
+}
+
+pub(crate) fn split_steered_notices(
+    pending: Vec<chaos_ipc::models::ResponseInputItem>,
+) -> (Vec<String>, Vec<chaos_ipc::models::ResponseInputItem>) {
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ResponseInputItem;
+
+    let mut notices = Vec::new();
+    let mut other = Vec::new();
+    for item in pending {
+        match item {
+            ResponseInputItem::Message { role, content } if role == "user" => {
+                let text = content
+                    .iter()
+                    .filter_map(|part| match part {
+                        ContentItem::InputText { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if text.trim().is_empty() {
+                    other.push(ResponseInputItem::Message { role, content });
+                } else {
+                    notices.push(text);
+                }
+            }
+            item => other.push(item),
+        }
+    }
+    (notices, other)
 }
 
 enum ClampRequestKind {

@@ -400,6 +400,21 @@ impl Chaos {
         self.session.steer_input(input, expected_turn_id).await
     }
 
+    /// Replace (Some) or withdraw (None) the host notice for this session.
+    pub fn set_host_notice(&self, notice: Option<crate::host_notice::HostNotice>) {
+        self.session.host_notice.set(notice);
+    }
+
+    /// Offer a host notice from a retryable request (see `HostNoticeSlot::post`).
+    pub fn post_host_notice(&self, notice: crate::host_notice::HostNotice) -> bool {
+        self.session.host_notice.post(notice)
+    }
+
+    /// Withdraw the pending host notice, optionally only if it has this id.
+    pub fn withdraw_host_notice(&self, id: Option<&str>) -> bool {
+        self.session.host_notice.withdraw(id)
+    }
+
     pub(crate) async fn set_app_server_client_name(
         &self,
         app_server_client_name: Option<String>,

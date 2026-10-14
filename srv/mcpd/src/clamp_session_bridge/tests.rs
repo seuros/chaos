@@ -112,3 +112,33 @@ fn clamp_bridge_preserves_mixed_text_and_image_function_output() {
         })
     );
 }
+
+#[test]
+fn runtime_notices_ride_on_structured_and_content_results() {
+    let structured =
+        ToolOutput::structured(serde_json::json!({ "output": "ok" })).expect("structured output");
+    let with_notice = with_runtime_notices(structured, vec!["post a line".to_string()]);
+    assert_eq!(
+        with_notice.into_response_value()["structuredContent"]["runtime_notice"],
+        serde_json::json!("post a line")
+    );
+
+    let content = with_runtime_notices(
+        ToolOutput::text("done"),
+        vec!["first".to_string(), "second".to_string()],
+    );
+    let value = content.into_response_value();
+    assert_eq!(value["content"][0]["text"], serde_json::json!("done"));
+    assert_eq!(
+        value["content"][1]["text"],
+        serde_json::json!("[runtime notice]\nfirst\n\nsecond")
+    );
+
+    let untouched = with_runtime_notices(ToolOutput::text("plain"), Vec::new());
+    assert_eq!(
+        untouched.into_response_value()["content"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+}

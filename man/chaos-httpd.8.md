@@ -137,8 +137,7 @@ a full-access credential: it also permits triggering agent runs.
 ### Experimental retained sessions (`--sessions`)
 
 This is a validation API, **not yet a production execution service**.
-Deployment/restart drills and backup/retention limitations are documented in
-`docs/http-session-durability.md`. A successful health probe is not proof of
+A successful health probe is not proof of
 storage availability, executor containment or webhook delivery.
 Provider, credentials, working directory, tool
 environment and sandbox are server-owned. Clamp transports are rejected at
@@ -373,8 +372,7 @@ Planning/reflex work, root startup/autonomous
 calls, catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`
 are outside this coverage. Requested model/tier are not proof of a charged SKU.
 Even when recorded receipts have usage, excluded work may incur more cost.
-Operator-only immutable price schedules and receipt imports are described in
-`docs/http-session-financial-evidence.md`; these provide exact integer estimates,
+Operator-only immutable price schedules and receipt imports provide exact integer estimates,
 not credit reservations, invoice verification or native receipt overwrites.
 A billing adapter must verify provider evidence; missing/unknown/duplicate
 data is never a refund. Authorize/redact private receipt metadata for frontends.
@@ -461,8 +459,7 @@ GET. Mutations also require the current daemon generation:
 | GET, POST | `/api/sessions/{session}/turns/{turn}/billing` | Immutable external provider evidence, separate from native receipts |
 | GET, POST | `/api/sessions/{session}/archive` | Read/export a closed-session manifest or seal its verified digest |
 
-See `docs/http-session-financial-evidence.md` for wire schemas, rounding and
-authorization. Archival is non-destructive: original outcomes, receipts and
+Archival is non-destructive: original outcomes, receipts and
 tombstones remain, and no session-cap capacity is reclaimed.
 
 ## ARCHITECTURE

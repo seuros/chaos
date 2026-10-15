@@ -1156,6 +1156,7 @@ dependencies = [
  "chaos_journald",
  "core_test_support",
  "flate2",
+ "hmac 0.13.0",
  "libc",
  "mimalloc",
  "owo-colors",

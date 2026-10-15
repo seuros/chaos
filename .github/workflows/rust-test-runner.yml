@@ -1,0 +1,184 @@
+name: Rust test runner
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      target:
+        required: true
+        type: string
+      sqlite-checks:
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# CI builds in debug for faster signal.
+# fmt + clippy + shear run locally via pre-commit hooks.
+jobs:
+  tests:
+    name: Tests — ${{ inputs.target }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_INCREMENTAL: "0"
+      MBX_SUMMARY: full
+
+    services:
+      postgres:
+        # An empty image disables the service on macOS (native PostgreSQL below).
+        image: ${{ startsWith(inputs.runner, 'ubuntu-') && 'ghcr.io/seuros/postgis-with-extensions:18' || '' }}
+        env:
+          POSTGRES_USER: chaos_test
+          POSTGRES_PASSWORD: chaos_test
+          POSTGRES_DB: chaos_test
+        options: >-
+          --health-cmd "pg_isready -U chaos_test -d chaos_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/postgresql
+        ports:
+          - 5432/tcp
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: seuros/setup-upkg@master
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          upkg install llvm pkgconf postgresql@18
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix postgresql@18)/bin" >> "$GITHUB_PATH"
+
+      - name: Install DotSlash
+        uses: facebook/install-dotslash@v2
+
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: rust
+          cache: false
+
+      - name: Install Rust target
+        run: rustup target add ${{ inputs.target }}
+
+      # Restore Cargo's target tree and registry; do not layer another compiler
+      # or target cache over this. Only successful default-branch pushes save.
+      # Pull requests (including forks) and manual runs are restore-only.
+      - name: Set up mbx
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          version: "1.8.3"
+          backend: github
+          github-cache-mode: target
+          save-on-workflow-dispatch: "false"
+          # The action additionally keys on OS, architecture, and rustc identity.
+          cache-generation: chaos-ci-test-mbx-1.8.3-${{ inputs.target }}-${{ hashFiles('.mbx.toml') }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.103
+
+      - name: Enable unprivileged user namespaces (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Configure PostgreSQL URL (Linux)
+        if: runner.os == 'Linux'
+        env:
+          POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          echo "TEST_DATABASE_URL=postgres://chaos_test:chaos_test@127.0.0.1:${POSTGRES_PORT}/chaos_test" >> "$GITHUB_ENV"
+
+      # GitHub-hosted macOS runners cannot use Linux service containers.
+      - name: Start PostgreSQL (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          initdb -D "$RUNNER_TEMP/chaos-pg" -U chaos_test --auth=trust --encoding=UTF8 --locale=C
+          pg_ctl -D "$RUNNER_TEMP/chaos-pg" -l "$RUNNER_TEMP/chaos-pg.log" \
+            -o "-h 127.0.0.1 -p 55432 -k $RUNNER_TEMP" -w start
+          createdb -h 127.0.0.1 -p 55432 -U chaos_test chaos_test
+          echo "TEST_DATABASE_URL=postgres://chaos_test@127.0.0.1:55432/chaos_test" >> "$GITHUB_ENV"
+
+      - name: Test TUI-free CLI
+        run: |
+          set -euo pipefail
+          cargo tree --locked -p chaos-cli --no-default-features \
+            --target ${{ inputs.target }} --edges normal,build,dev --prefix none \
+            --format '{p}' > "$RUNNER_TEMP/headless-dependencies.txt"
+          if grep -E '^(chaos-console|libui|ratatui(-[^ ]*)?|crossterm|chaos-termcap|chaos-highlight) ' "$RUNNER_TEMP/headless-dependencies.txt"; then
+            echo "TUI dependency leaked into the headless build" >&2
+            exit 1
+          fi
+          mbx nextest run --locked -p chaos-cli --no-default-features \
+            --bin chaos --test cli_features --target ${{ inputs.target }} \
+            --cargo-profile ci-test
+
+      - name: Build and export runtime binaries for tests
+        run: |
+          PKGS="-p chaos_journald -p chaos-cli -p alcatraz"
+          mbx build --target ${{ inputs.target }} --profile ci-test $PKGS
+          TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ inputs.target }}/ci-test"
+          echo "$TARGET_DIR" >> "$GITHUB_PATH"
+          {
+            echo "CARGO_BIN_EXE_chaos_journald=${TARGET_DIR}/chaos_journald"
+            echo "CARGO_BIN_EXE_chaos=${TARGET_DIR}/chaos"
+          } >> "$GITHUB_ENV"
+          echo "CARGO_BIN_EXE_alcatraz=${TARGET_DIR}/alcatraz" >> "$GITHUB_ENV"
+
+      - name: Full test suite — PostgreSQL
+        run: mbx nextest run --locked --all-features --fail-fast --target ${{ inputs.target }} --cargo-profile ci-test --timings
+        env:
+          RUST_BACKTRACE: 1
+          NEXTEST_STATUS_LEVEL: leak
+
+      # Only these durability fixtures switch backends via TEST_DATABASE_URL.
+      # Fixed-backend unit tests already ran above; don't rerun the whole suite.
+      # Unset (not empty) is required to select SQLite.
+      - name: Additional SQLite durability tests
+        if: inputs.sqlite-checks
+        run: |
+          env -u TEST_DATABASE_URL mbx nextest run --locked --all-features \
+            -p chaos-httpd --lib -E 'test(sessions::tests::durability::)' \
+            --fail-fast --target ${{ inputs.target }} --cargo-profile ci-test
+        env:
+          RUST_BACKTRACE: 1
+          NEXTEST_STATUS_LEVEL: leak
+
+      - name: Stop PostgreSQL (macOS)
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [[ -s "$RUNNER_TEMP/chaos-pg/postmaster.pid" ]]; then
+            pg_ctl -D "$RUNNER_TEMP/chaos-pg" -m immediate -w stop
+          fi
+          if [[ -f "$RUNNER_TEMP/chaos-pg.log" ]]; then
+            cat "$RUNNER_TEMP/chaos-pg.log"
+          fi
+
+      - name: Upload Cargo timings (nextest)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timings-rust-ci-nextest-${{ inputs.target }}-dev
+          path: target/**/cargo-timings/cargo-timing.html
+          if-no-files-found: warn

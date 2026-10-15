@@ -9,168 +9,42 @@ on:
 permissions:
   contents: read
 
-# CI builds in debug (dev) for faster signal.
-# fmt + clippy + shear run locally via pre-commit hooks.
-# Test one architecture per OS: Linux x86_64 and macOS ARM64.
-# The release workflow still builds all supported release targets.
-
+# Fail on Linux before spending macOS runner time. SQLite is additive and
+# reuses the Linux build; the release workflow still builds all release targets.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # --- Tests -------------------------------------------------------------------
-  tests:
-    name: Tests — ${{ matrix.runner }} - ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    env:
-      CARGO_INCREMENTAL: "0"
-      MBX_SUMMARY: full
+  linux-tests:
+    name: Linux — PostgreSQL then SQLite
+    uses: ./.github/workflows/rust-test-runner.yml
+    with:
+      runner: ubuntu-24.04
+      target: x86_64-unknown-linux-gnu
+      sqlite-checks: true
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-26
-            target: aarch64-apple-darwin
-            profile: dev
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            profile: dev
-    steps:
-      - uses: actions/checkout@v7
+  macos-tests:
+    name: macOS — PostgreSQL
+    needs: [linux-tests]
+    uses: ./.github/workflows/rust-test-runner.yml
+    with:
+      runner: macos-26
+      target: aarch64-apple-darwin
 
-      - uses: seuros/setup-upkg@master
-
-      - name: Install Linux build dependencies
-        if: ${{ runner.os == 'Linux' }}
-        run: upkg install pkg-config libcap-dev libdbus-1-dev libclang-dev
-
-      - name: Install macOS build dependencies
-        if: ${{ runner.os == 'macOS' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          upkg install llvm pkgconf
-          LLVM_PREFIX="$(brew --prefix llvm)"
-          echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
-          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
-
-      - name: Install DotSlash
-        uses: facebook/install-dotslash@v2
-
-      - uses: jdx/mise-action@v4
-        with:
-          install_args: rust
-          cache: false
-
-      - name: Install Rust target
-        run: rustup target add ${{ matrix.target }}
-
-      # Restore Cargo's target tree and registry; do not layer another compiler
-      # or target cache over this. Only successful default-branch pushes save.
-      # Pull requests (including forks) and manual runs are restore-only.
-      - name: Set up mbx
-        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
-        with:
-          version: "1.8.3"
-          backend: github
-          github-cache-mode: target
-          save-on-workflow-dispatch: "false"
-          # The action additionally keys on OS, architecture, and rustc identity.
-          cache-generation: chaos-ci-test-mbx-1.8.3-${{ matrix.target }}-${{ hashFiles('.mbx.toml') }}
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest@0.9.103
-
-      - name: Enable unprivileged user namespaces (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo sysctl -w kernel.unprivileged_userns_clone=1
-          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-
-      - name: Test TUI-free CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo tree --locked -p chaos-cli --no-default-features \
-            --target ${{ matrix.target }} --edges normal,build,dev --prefix none \
-            --format '{p}' > "$RUNNER_TEMP/headless-dependencies.txt"
-          if grep -E '^(chaos-console|libui|ratatui(-[^ ]*)?|crossterm|chaos-termcap|chaos-highlight) ' "$RUNNER_TEMP/headless-dependencies.txt"; then
-            echo "TUI dependency leaked into the headless build" >&2
-            exit 1
-          fi
-          mbx nextest run --locked -p chaos-cli --no-default-features \
-            --bin chaos --test cli_features --target ${{ matrix.target }} \
-            --cargo-profile ci-test
-
-      - name: Build and export runtime binaries for tests
-        run: |
-          PKGS="-p chaos_journald -p chaos-cli -p alcatraz"
-          mbx build --target ${{ matrix.target }} --profile ci-test $PKGS
-          TARGET_DIR="${GITHUB_WORKSPACE}/target/${{ matrix.target }}/ci-test"
-          echo "$TARGET_DIR" >> "$GITHUB_PATH"
-          {
-            echo "CARGO_BIN_EXE_chaos_journald=${TARGET_DIR}/chaos_journald"
-            echo "CARGO_BIN_EXE_chaos=${TARGET_DIR}/chaos"
-          } >> "$GITHUB_ENV"
-          echo "CARGO_BIN_EXE_alcatraz=${TARGET_DIR}/alcatraz" >> "$GITHUB_ENV"
-
-      - name: tests
-        id: test
-        run: mbx nextest run --all-features --no-fail-fast --target ${{ matrix.target }} --cargo-profile ci-test --timings
-        env:
-          RUST_BACKTRACE: 1
-          NEXTEST_STATUS_LEVEL: leak
-
-      - name: PostgreSQL durability
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm -d --name chaos-pg-test \
-            -e POSTGRES_USER=chaos_test -e POSTGRES_PASSWORD=chaos_test \
-            -e POSTGRES_DB=chaos_test --tmpfs /var/lib/postgresql \
-            -p 127.0.0.1::5432 postgres:18
-          trap 'docker rm -f chaos-pg-test >/dev/null' EXIT
-          for attempt in {1..30}; do
-            if docker exec chaos-pg-test pg_isready -U chaos_test -d chaos_test; then break; fi
-            sleep 1
-          done
-          docker exec chaos-pg-test pg_isready -U chaos_test -d chaos_test
-          address="$(docker port chaos-pg-test 5432)"
-          export TEST_DATABASE_URL="postgres://chaos_test:chaos_test@127.0.0.1:${address##*:}/chaos_test"
-          mbx nextest run --locked --all-features -p chaos-httpd -p chaos_journald --lib \
-            -E 'test(sessions::tests::durability::) | test(postgres)' \
-            --target ${{ matrix.target }} --cargo-profile ci-test
-
-      - name: Upload Cargo timings (nextest)
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: cargo-timings-rust-ci-nextest-${{ matrix.target }}-${{ matrix.profile }}
-          path: target/**/cargo-timings/cargo-timing.html
-          if-no-files-found: warn
-
-      - name: verify tests passed
-        if: steps.test.outcome == 'failure'
-        run: |
-          echo "Tests failed. See logs for details."
-          exit 1
-
-  # --- Required status check ---------------------------------------------------
+  # Keep the required status name stable, and reject skipped downstream jobs.
   results:
     name: CI results (required)
-    needs: [tests]
+    needs: [linux-tests, macos-tests]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Summarize
         shell: bash
+        env:
+          LINUX_RESULT: ${{ needs.linux-tests.result }}
+          MACOS_RESULT: ${{ needs.macos-tests.result }}
         run: |
-          echo "tests: ${{ needs.tests.result }}"
-          [[ '${{ needs.tests.result }}' == 'success' ]] || { echo 'tests failed'; exit 1; }
+          echo "Linux PostgreSQL + SQLite: $LINUX_RESULT"
+          echo "macOS PostgreSQL: $MACOS_RESULT"
+          [[ "$LINUX_RESULT" == success && "$MACOS_RESULT" == success ]]

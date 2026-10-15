@@ -1,4 +1,4 @@
-//! Explicit operator evidence and versioned prices, never an inferred invoice.
+//! PostgreSQL-only operator evidence and versioned prices, never an inferred invoice.
 use super::*;
 
 pub const MAX_RECONCILIATIONS_PER_TURN: i64 = 512;
@@ -227,131 +227,310 @@ impl ExecutionBillingRequest {
     }
 }
 
-macro_rules! impl_billing {
-    ($store:ty, $begin:expr, $lock:literal, $clock:literal) => {
-        impl $store {
-            pub(crate) async fn execute_billing(&self, request: ExecutionBillingRequest)
-                -> Result<ExecutionBillingResponse, JournalError> {
-                request.validate()?;
-                let mut tx = self.pool().begin_with($begin).await?;
-                let now: i64 = sqlx::query_scalar($clock).fetch_one(&mut *tx).await?;
-                let response = match request {
-                    ExecutionBillingRequest::PutPrice { scope, schedule } => {
-                        let bound: Option<String> = sqlx::query_scalar(concat!(
-                            "SELECT scope FROM execution_scopes WHERE scope = $1", $lock
-                        )).bind(&scope).fetch_optional(&mut *tx).await?;
-                        if bound.is_none() { return Err(JournalError::ExecutionNotFound); }
-                        let json = serde_json::to_string(&schedule).map_err(|source|
-                            JournalError::Serialize { field: "price schedule", source })?;
-                        sqlx::query("INSERT INTO execution_price_schedules
+/// Called only by PostgreSQL archival under the session writer lock. Financial
+/// rows share the portable evidence budget, including before materialization.
+pub(super) async fn archive_evidence(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    scope: &str,
+    session_id: &str,
+    estimated: i64,
+) -> Result<serde_json::Map<String, Value>, JournalError> {
+    let bound = super::retention::MAX_EXECUTION_ARCHIVE_BYTES as i64 - 32 * 1024;
+    let financial_size: i64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(CAST(2048 AS BIGINT) + 6 *
+            (length(reconciliation_id) + length(turn_id) + length(invocation_id)
+             + length(receipt_key) + length(record_json))), 0) AS BIGINT)
+         FROM execution_reconciliations WHERE session_id = $1",
+    )
+    .bind(session_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let mut estimated = estimated
+        .checked_add(financial_size)
+        .filter(|size| *size <= bound)
+        .ok_or_else(|| conflict("archive evidence exceeds bounded manifest capacity"))?;
+    let reconciliations = sqlx::query_as::<_, (String, String, String, String, String, i64)>(
+        "SELECT reconciliation_id,turn_id,invocation_id,receipt_key,record_json,created_at_ms
+         FROM execution_reconciliations WHERE session_id = $1 ORDER BY reconciliation_id",
+    )
+    .bind(session_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut prices = std::collections::BTreeMap::new();
+    for (_, _, _, _, record_json, _) in &reconciliations {
+        let record: Value = decode(record_json)?;
+        if let Some(version) = record
+            .pointer("/request/price_version")
+            .and_then(Value::as_str)
+            && !prices.contains_key(version)
+        {
+            if prices.len() >= 512 {
+                return Err(conflict("archive price evidence exceeds version bound"));
+            }
+            let size: i64 = sqlx::query_scalar(
+                "SELECT CAST(length(schedule_json) AS BIGINT) FROM execution_price_schedules
+                 WHERE scope = $1 AND version = $2",
+            )
+            .bind(scope)
+            .bind(version)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| conflict("archive price evidence is missing"))?;
+            if size > 16 * 1024 {
+                return Err(conflict("archive price evidence exceeds size bound"));
+            }
+            estimated = estimated
+                .checked_add(2048 + 6 * (size + version.len() as i64))
+                .filter(|size| *size <= bound)
+                .ok_or_else(|| conflict("archive evidence exceeds bounded manifest capacity"))?;
+            let schedule = sqlx::query_as::<_, (String, i64)>(
+                "SELECT schedule_json,created_at_ms FROM execution_price_schedules
+                 WHERE scope = $1 AND version = $2",
+            )
+            .bind(scope)
+            .bind(version)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| conflict("archive price evidence is missing"))?;
+            prices.insert(
+                version.to_string(),
+                serde_json::json!({"schedule_json": schedule.0, "created_at_ms": schedule.1}),
+            );
+        }
+    }
+    Ok(serde_json::Map::from_iter([
+        (
+            "reconciliations".into(),
+            serde_json::json!(
+                reconciliations
+                    .into_iter()
+                    .map(
+                        |(
+                            reconciliation_id,
+                            turn_id,
+                            invocation_id,
+                            receipt_key,
+                            record_json,
+                            created_at_ms,
+                        )| serde_json::json!({
+                            "reconciliation_id": reconciliation_id, "turn_id": turn_id,
+                            "invocation_id": invocation_id, "receipt_key": receipt_key,
+                            "record_json": record_json, "created_at_ms": created_at_ms
+                        })
+                    )
+                    .collect::<Vec<_>>()
+            ),
+        ),
+        ("price_schedules".into(), serde_json::json!(prices)),
+    ]))
+}
+
+impl crate::PostgresJournalStore {
+    pub(crate) async fn execute_billing(
+        &self,
+        request: ExecutionBillingRequest,
+    ) -> Result<ExecutionBillingResponse, JournalError> {
+        request.validate()?;
+        let mut tx = self.pool().begin().await?;
+        let now: i64 = sqlx::query_scalar(
+            "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)",
+        )
+        .fetch_one(&mut *tx)
+        .await?;
+        let response = match request {
+            ExecutionBillingRequest::PutPrice { scope, schedule } => {
+                let bound: Option<String> = sqlx::query_scalar(
+                    "SELECT scope FROM execution_scopes WHERE scope = $1 FOR UPDATE",
+                )
+                .bind(&scope)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if bound.is_none() {
+                    return Err(JournalError::ExecutionNotFound);
+                }
+                let json =
+                    serde_json::to_string(&schedule).map_err(|source| JournalError::Serialize {
+                        field: "price schedule",
+                        source,
+                    })?;
+                sqlx::query(
+                    "INSERT INTO execution_price_schedules
                             (scope, version, schedule_json, created_at_ms) VALUES ($1,$2,$3,$4)
-                            ON CONFLICT(scope,version) DO NOTHING")
-                            .bind(&scope).bind(&schedule.version).bind(&json).bind(now)
-                            .execute(&mut *tx).await?;
-                        let saved: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
+                            ON CONFLICT(scope,version) DO NOTHING",
+                )
+                .bind(&scope)
+                .bind(&schedule.version)
+                .bind(&json)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
+                let saved: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
                             .bind(&scope).bind(&schedule.version).fetch_one(&mut *tx).await?;
-                        if decode::<ExecutionPriceSchedule>(&saved)? != schedule {
-                            return Err(conflict("price schedule version is immutable"));
-                        }
-                        ExecutionBillingResponse::Price(schedule)
-                    }
-                    ExecutionBillingRequest::GetPrice { scope, version } => {
-                        let saved: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
+                if decode::<ExecutionPriceSchedule>(&saved)? != schedule {
+                    return Err(conflict("price schedule version is immutable"));
+                }
+                ExecutionBillingResponse::Price(schedule)
+            }
+            ExecutionBillingRequest::GetPrice { scope, version } => {
+                let saved: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
                             .bind(&scope).bind(&version).fetch_optional(&mut *tx).await?
                             .ok_or(JournalError::ExecutionNotFound)?;
-                        ExecutionBillingResponse::Price(decode(&saved)?)
-                    }
-                    ExecutionBillingRequest::Read { scope, session_id, turn_id } => {
-                        let session_id = session_id.to_string();
-                        let turn_id = turn_id.to_string();
-                        let owner: Option<String> = sqlx::query_scalar(concat!(
-                            "SELECT scope FROM execution_sessions WHERE session_id = $1", $lock
-                        )).bind(&session_id).fetch_optional(&mut *tx).await?;
-                        if owner.as_deref() != Some(scope.as_str()) { return Err(JournalError::ExecutionNotFound); }
-                        let present: Option<String> = sqlx::query_scalar("SELECT turn_id FROM execution_turns WHERE session_id = $1 AND turn_id = $2")
-                            .bind(&session_id).bind(&turn_id).fetch_optional(&mut *tx).await?;
-                        if present.is_none() { return Err(JournalError::ExecutionNotFound); }
-                        let rows: Vec<String> = sqlx::query_scalar("SELECT record_json FROM execution_reconciliations
+                ExecutionBillingResponse::Price(decode(&saved)?)
+            }
+            ExecutionBillingRequest::Read {
+                scope,
+                session_id,
+                turn_id,
+            } => {
+                let session_id = session_id.to_string();
+                let turn_id = turn_id.to_string();
+                let owner: Option<String> = sqlx::query_scalar(
+                    "SELECT scope FROM execution_sessions WHERE session_id = $1 FOR UPDATE",
+                )
+                .bind(&session_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if owner.as_deref() != Some(scope.as_str()) {
+                    return Err(JournalError::ExecutionNotFound);
+                }
+                let present: Option<String> = sqlx::query_scalar(
+                    "SELECT turn_id FROM execution_turns WHERE session_id = $1 AND turn_id = $2",
+                )
+                .bind(&session_id)
+                .bind(&turn_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if present.is_none() {
+                    return Err(JournalError::ExecutionNotFound);
+                }
+                let rows: Vec<String> = sqlx::query_scalar("SELECT record_json FROM execution_reconciliations
                             WHERE session_id = $1 AND turn_id = $2 ORDER BY created_at_ms, reconciliation_id")
                             .bind(&session_id).bind(&turn_id).fetch_all(&mut *tx).await?;
-                        ExecutionBillingResponse::Report(ExecutionBillingReport {
-                            billing_complete: false,
-                            records: rows.iter().map(|row| decode(row)).collect::<Result<_,_>>()?,
-                        })
-                    }
-                    ExecutionBillingRequest::Reconcile { scope, session_id, turn_id, record } => {
-                        let session_id = session_id.to_string();
-                        let turn_id = turn_id.to_string();
-                        let owner: Option<String> = sqlx::query_scalar(concat!(
-                            "SELECT scope FROM execution_sessions WHERE session_id = $1", $lock
-                        )).bind(&session_id).fetch_optional(&mut *tx).await?;
-                        if owner.as_deref() != Some(scope.as_str()) { return Err(JournalError::ExecutionNotFound); }
-                        let original: Option<String> = sqlx::query_scalar("SELECT record_json FROM execution_reconciliations WHERE reconciliation_id = $1")
+                ExecutionBillingResponse::Report(ExecutionBillingReport {
+                    billing_complete: false,
+                    records: rows
+                        .iter()
+                        .map(|row| decode(row))
+                        .collect::<Result<_, _>>()?,
+                })
+            }
+            ExecutionBillingRequest::Reconcile {
+                scope,
+                session_id,
+                turn_id,
+                record,
+            } => {
+                let session_id = session_id.to_string();
+                let turn_id = turn_id.to_string();
+                let owner: Option<String> = sqlx::query_scalar(
+                    "SELECT scope FROM execution_sessions WHERE session_id = $1 FOR UPDATE",
+                )
+                .bind(&session_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                if owner.as_deref() != Some(scope.as_str()) {
+                    return Err(JournalError::ExecutionNotFound);
+                }
+                let original: Option<String> = sqlx::query_scalar("SELECT record_json FROM execution_reconciliations WHERE reconciliation_id = $1")
                             .bind(record.reconciliation_id.to_string()).fetch_optional(&mut *tx).await?;
-                        if let Some(original) = original {
-                            let saved: ExecutionReconciliationRecord = decode(&original)?;
-                            let identity: (String,String) = sqlx::query_as("SELECT session_id, turn_id FROM execution_reconciliations WHERE reconciliation_id = $1")
+                if let Some(original) = original {
+                    let saved: ExecutionReconciliationRecord = decode(&original)?;
+                    let identity: (String,String) = sqlx::query_as("SELECT session_id, turn_id FROM execution_reconciliations WHERE reconciliation_id = $1")
                                 .bind(record.reconciliation_id.to_string()).fetch_one(&mut *tx).await?;
-                            if saved.request != record || identity != (session_id, turn_id) {
-                                return Err(conflict("reconciliation identity is immutable"));
-                            }
-                            tx.commit().await?;
-                            return Ok(ExecutionBillingResponse::Reconciled(saved));
-                        }
-                        let sealed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_archives
-                            WHERE session_id = $1 AND sealed_at_ms IS NOT NULL")
-                            .bind(&session_id).fetch_one(&mut *tx).await?;
-                        if sealed != 0 {
-                            return Err(conflict("sealed archive cannot accept new financial evidence"));
-                        }
-                        let invocation_json: String = sqlx::query_scalar("SELECT request_json FROM execution_invocations
-                            WHERE invocation_id = $1 AND session_id = $2 AND turn_id = $3")
-                            .bind(record.invocation_id.to_string()).bind(&session_id).bind(&turn_id)
-                            .fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
-                        let invocation: InvocationStart = decode(&invocation_json)?;
-                        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_reconciliations WHERE session_id = $1 AND turn_id = $2")
+                    if saved.request != record || identity != (session_id, turn_id) {
+                        return Err(conflict("reconciliation identity is immutable"));
+                    }
+                    tx.commit().await?;
+                    return Ok(ExecutionBillingResponse::Reconciled(saved));
+                }
+                let sealed: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM execution_archives
+                            WHERE session_id = $1 AND sealed_at_ms IS NOT NULL",
+                )
+                .bind(&session_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                if sealed != 0 {
+                    return Err(conflict(
+                        "sealed archive cannot accept new financial evidence",
+                    ));
+                }
+                let invocation_json: String = sqlx::query_scalar(
+                    "SELECT request_json FROM execution_invocations
+                            WHERE invocation_id = $1 AND session_id = $2 AND turn_id = $3",
+                )
+                .bind(record.invocation_id.to_string())
+                .bind(&session_id)
+                .bind(&turn_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(JournalError::ExecutionNotFound)?;
+                let invocation: InvocationStart = decode(&invocation_json)?;
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_reconciliations WHERE session_id = $1 AND turn_id = $2")
                             .bind(&session_id).bind(&turn_id).fetch_one(&mut *tx).await?;
-                        if count >= MAX_RECONCILIATIONS_PER_TURN { return Err(conflict("reconciliation limit reached")); }
-                        let estimated = if let Some(version) = &record.price_version {
-                            let json: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
+                if count >= MAX_RECONCILIATIONS_PER_TURN {
+                    return Err(conflict("reconciliation limit reached"));
+                }
+                let estimated = if let Some(version) = &record.price_version {
+                    let json: String = sqlx::query_scalar("SELECT schedule_json FROM execution_price_schedules WHERE scope = $1 AND version = $2")
                                 .bind(&scope).bind(version).fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
-                            let schedule: ExecutionPriceSchedule = decode(&json)?;
-                            if schedule.provider_id != invocation.provider_id || schedule.model != record.model
-                                || schedule.service_tier != record.service_tier
-                                || record.charged.as_ref().is_some_and(|money| money.currency != schedule.currency)
-                            { return Err(conflict("price schedule does not match provider/model/tier/currency evidence")); }
-                            Some(schedule.estimate(record.usage.as_ref().ok_or_else(|| invalid("price usage missing"))?)?)
-                        } else { None };
-                        let key = serde_json::to_string(&("external-provider-receipt/v1", &scope, &invocation.provider_id, &record.provider_receipt_id))
-                            .map_err(|source| JournalError::Serialize { field: "external receipt identity", source })?;
-                        let saved = ExecutionReconciliationRecord { request: record, estimated, recorded_at_ms: now };
-                        let json = serde_json::to_string(&saved).map_err(|source|
-                            JournalError::Serialize { field: "reconciliation", source })?;
-                        let changed = sqlx::query("INSERT INTO execution_reconciliations
+                    let schedule: ExecutionPriceSchedule = decode(&json)?;
+                    if schedule.provider_id != invocation.provider_id
+                        || schedule.model != record.model
+                        || schedule.service_tier != record.service_tier
+                        || record
+                            .charged
+                            .as_ref()
+                            .is_some_and(|money| money.currency != schedule.currency)
+                    {
+                        return Err(conflict(
+                            "price schedule does not match provider/model/tier/currency evidence",
+                        ));
+                    }
+                    Some(
+                        schedule.estimate(
+                            record
+                                .usage
+                                .as_ref()
+                                .ok_or_else(|| invalid("price usage missing"))?,
+                        )?,
+                    )
+                } else {
+                    None
+                };
+                let key = serde_json::to_string(&(
+                    "external-provider-receipt/v1",
+                    &scope,
+                    &invocation.provider_id,
+                    &record.provider_receipt_id,
+                ))
+                .map_err(|source| JournalError::Serialize {
+                    field: "external receipt identity",
+                    source,
+                })?;
+                let saved = ExecutionReconciliationRecord {
+                    request: record,
+                    estimated,
+                    recorded_at_ms: now,
+                };
+                let json =
+                    serde_json::to_string(&saved).map_err(|source| JournalError::Serialize {
+                        field: "reconciliation",
+                        source,
+                    })?;
+                let changed = sqlx::query("INSERT INTO execution_reconciliations
                             (reconciliation_id, scope, session_id, turn_id, invocation_id, receipt_key, record_json, created_at_ms)
                             VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING")
                             .bind(saved.request.reconciliation_id.to_string()).bind(scope).bind(session_id)
                             .bind(turn_id).bind(saved.request.invocation_id.to_string()).bind(key).bind(json).bind(now)
                             .execute(&mut *tx).await?.rows_affected();
-                        if changed != 1 { return Err(conflict("external receipt already reconciled")); }
-                        ExecutionBillingResponse::Reconciled(saved)
-                    }
-                };
-                tx.commit().await?;
-                Ok(response)
+                if changed != 1 {
+                    return Err(conflict("external receipt already reconciled"));
+                }
+                ExecutionBillingResponse::Reconciled(saved)
             }
-        }
-    };
+        };
+        tx.commit().await?;
+        Ok(response)
+    }
 }
-impl_billing!(
-    crate::SqliteJournalStore,
-    "BEGIN IMMEDIATE",
-    "",
-    "SELECT CAST(strftime('%s', 'now') AS INTEGER) * 1000 + CAST(substr(strftime('%f', 'now'), 4, 3) AS INTEGER)"
-);
-impl_billing!(
-    crate::PostgresJournalStore,
-    "BEGIN",
-    " FOR UPDATE",
-    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)"
-);

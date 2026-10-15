@@ -3,7 +3,7 @@
 use super::*;
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Sqlite, Transaction};
 
-pub(super) enum Database {
+pub(in crate::sessions) enum Database {
     Sqlite(Arc<chaos_journald::SqliteJournalStore>),
     Postgres {
         pool: PgPool,
@@ -27,7 +27,7 @@ impl WriteLock {
 }
 
 impl Database {
-    pub(super) async fn open(home: &std::path::Path) -> (Self, Client) {
+    pub(in crate::sessions) async fn open(home: &std::path::Path) -> (Self, Client) {
         let Ok(database_url) = std::env::var("TEST_DATABASE_URL") else {
             let db = Arc::new(
                 chaos_journald::SqliteJournalStore::open(&home.join("journal.sqlite"))
@@ -118,7 +118,7 @@ impl Database {
             .await;
     }
 
-    pub(super) async fn close(&self) {
+    pub(in crate::sessions) async fn close(&self) {
         match self {
             Self::Sqlite(db) => db.pool().close().await,
             Self::Postgres {

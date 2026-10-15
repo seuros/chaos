@@ -372,7 +372,7 @@ Planning/reflex work, root startup/autonomous
 calls, catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`
 are outside this coverage. Requested model/tier are not proof of a charged SKU.
 Even when recorded receipts have usage, excluded work may incur more cost.
-Operator-only immutable price schedules and receipt imports provide exact integer estimates,
+PostgreSQL-only immutable price schedules and receipt imports provide exact integer estimates,
 not credit reservations, invoice verification or native receipt overwrites.
 A billing adapter must verify provider evidence; missing/unknown/duplicate
 data is never a refund. Authorize/redact private receipt metadata for frontends.
@@ -458,6 +458,14 @@ GET. Mutations also require the current daemon generation:
 | GET, PUT | `/api/sessions/prices/{version}` | Immutable versioned exact-integer token prices |
 | GET, POST | `/api/sessions/{session}/turns/{turn}/billing` | Immutable external provider evidence, separate from native receipts |
 | GET, POST | `/api/sessions/{session}/archive` | Read/export a closed-session manifest or seal its verified digest |
+
+Price and billing routes exist only when the retained-session store uses
+PostgreSQL. SQLite has no financial tables or routes; those paths return `404`.
+Raw invocation receipts and execution archival remain available on both backends.
+SQLite archives omit financial evidence sections.
+Existing SQLite migration history is preserved. A forward migration retires
+empty financial tables; populated tables require explicit evidence export or
+migration to PostgreSQL rather than automatic deletion.
 
 Archival is non-destructive: original outcomes, receipts and
 tombstones remain, and no session-cap capacity is reclaimed.

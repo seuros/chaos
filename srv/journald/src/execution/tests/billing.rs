@@ -461,17 +461,8 @@ async fn assert_native_receipts_and_limit<S: JournalStore>(store: &S) {
     assert_eq!(turn.accounting(store).await, before);
 }
 
-macro_rules! backend_cases {
-    ($sqlite:ident, $postgres:ident, $assertion:ident) => {
-        #[tokio::test]
-        async fn $sqlite() {
-            let home = tempfile::tempdir().unwrap();
-            let store = SqliteJournalStore::open(&home.path().join("journal.sqlite"))
-                .await
-                .unwrap();
-            $assertion(&store).await;
-        }
-
+macro_rules! postgres_case {
+    ($postgres:ident, $assertion:ident) => {
         #[tokio::test]
         async fn $postgres() {
             let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
@@ -487,18 +478,15 @@ macro_rules! backend_cases {
     };
 }
 
-backend_cases!(
-    sqlite_exact_prices_reject_unattested_or_invalid_evidence,
+postgres_case!(
     postgres_exact_prices_reject_unattested_or_invalid_evidence,
     assert_price_evidence
 );
-backend_cases!(
-    sqlite_external_receipts_have_one_scoped_owner,
+postgres_case!(
     postgres_external_receipts_have_one_scoped_owner,
     assert_receipt_fencing
 );
-backend_cases!(
-    sqlite_reconciliation_never_rewrites_native_receipts_or_bypasses_capacity,
+postgres_case!(
     postgres_reconciliation_never_rewrites_native_receipts_or_bypasses_capacity,
     assert_native_receipts_and_limit
 );

@@ -2,7 +2,7 @@ use super::*;
 
 // Run the same failure/ownership protocol against actual backend transactions.
 macro_rules! retention_scenario {
-    ($pool:ident, $execute:ident, $export_fault:literal, $export_clear:literal, $seal_fault:literal, $seal_clear:literal) => {{
+    ($financial:literal, $pool:ident, $execute:ident, $export_fault:literal, $export_clear:literal, $seal_fault:literal, $seal_clear:literal) => {{
         let session_id = Uuid::new_v4();
         let id = session_id.to_string();
         let scope = format!("archive-{session_id}");
@@ -95,15 +95,17 @@ macro_rules! retention_scenario {
         assert_eq!($execute(&$pool, &read).await.unwrap(), first, "failed seal must be atomic");
         // Late financial evidence invalidates the first unsealed snapshot,
         // rather than overwriting its bytes or silently claiming finality.
+        let reconciliation = Uuid::new_v4().to_string();
+        if $financial {
         sqlx::query(
             "INSERT INTO execution_price_schedules (scope,version,schedule_json,created_at_ms)
              VALUES ($1,'test-v1','{\"prices\":\"immutable\"}',2)"
         ).bind(&scope).execute(&$pool).await.unwrap();
-        let reconciliation = Uuid::new_v4().to_string();
         sqlx::query(
             "INSERT INTO execution_reconciliations (reconciliation_id,scope,session_id,turn_id,invocation_id,receipt_key,record_json,created_at_ms)
              VALUES ($1,$2,$3,$4,$5,$1,'{\"request\":{\"price_version\":\"test-v1\"},\"estimated\":null}',3)"
         ).bind(&reconciliation).bind(&scope).bind(&id).bind(&turn).bind(&invocation).execute(&$pool).await.unwrap();
+        }
         sqlx::query("INSERT INTO execution_replay (session_id,sequence) VALUES ($1,9)")
             .bind(&id).execute(&$pool).await.unwrap();
         sqlx::query(
@@ -113,6 +115,7 @@ macro_rules! retention_scenario {
         assert!(matches!($execute(&$pool, &seal).await, Err(JournalError::ExecutionConflict(_))));
         // The session-only estimate fits, but the separately loaded price
         // schedule would overrun its remaining escaping/materialization budget.
+        if $financial {
         let near_limit = format!("\"{}\"", "x".repeat(MAX_EXECUTION_ARCHIVE_BYTES / 6 - 16 * 1024));
         let price_json = format!("{{\"prices\":\"{}\"}}", "x".repeat(16 * 1024 - 64));
         sqlx::query("UPDATE execution_turns SET outcome_json = $1 WHERE session_id = $2 AND turn_id = $3")
@@ -127,13 +130,19 @@ macro_rules! retention_scenario {
             .bind(&id).bind(&turn).execute(&$pool).await.unwrap();
         sqlx::query("UPDATE execution_price_schedules SET schedule_json = '{\"prices\":\"immutable\"}' WHERE scope = $1 AND version = 'test-v1'")
             .bind(&scope).execute(&$pool).await.unwrap();
+        }
         let earlier = first;
         let first = $execute(&$pool, &export).await.unwrap();
         let manifest = first.manifest.as_ref().unwrap();
         assert_ne!(manifest.sha256, earlier.manifest.as_ref().unwrap().sha256);
         let contents: Value = serde_json::from_str(&manifest.json).unwrap();
-        assert_eq!(contents["reconciliations"][0]["reconciliation_id"], reconciliation);
-        assert_eq!(contents["price_schedules"]["test-v1"]["schedule_json"], "{\"prices\":\"immutable\"}");
+        if $financial {
+            assert_eq!(contents["reconciliations"][0]["reconciliation_id"], reconciliation);
+            assert_eq!(contents["price_schedules"]["test-v1"]["schedule_json"], "{\"prices\":\"immutable\"}");
+        } else {
+            assert!(contents.get("reconciliations").is_none());
+            assert!(contents.get("price_schedules").is_none());
+        }
         assert_eq!(contents["replay_cursor"], 9);
         assert_eq!(contents["replay_gap"], true, "bounded observations must never claim complete event history");
         assert_eq!(contents["replay_events"][0]["sequence"], 9);
@@ -200,6 +209,7 @@ async fn sqlite_archive_is_explicit_atomic_scoped_and_non_destructive() {
         .unwrap();
     let pool = store.pool().clone();
     retention_scenario!(
+        false,
         pool,
         execute_retention_sqlite,
         "CREATE TRIGGER retention_test_fail_export BEFORE INSERT ON execution_archives
@@ -220,6 +230,7 @@ async fn postgres_archive_is_explicit_atomic_scoped_and_non_destructive() {
         .await
         .unwrap();
     retention_scenario!(
+        true,
         pool,
         execute_retention_postgres,
         "CREATE FUNCTION retention_test_fail_export() RETURNS trigger LANGUAGE plpgsql AS

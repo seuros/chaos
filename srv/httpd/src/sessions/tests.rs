@@ -3,7 +3,7 @@ use chaos_ipc::protocol::{TurnAbortReason, TurnAbortedEvent, TurnCompleteEvent};
 use runtime::{Backend, supervise};
 use tokio::sync::mpsc;
 
-mod durability;
+pub(in crate::sessions) mod durability;
 
 fn ready_session() -> (Arc<Session>, mpsc::Receiver<Command>) {
     let manager = SessionManager::new(1, Duration::from_secs(3600));

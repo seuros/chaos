@@ -136,7 +136,9 @@ macro_rules! impl_storage {
                 let request = match request {
                     ExecutionRequest::Replay { request } => return super::replay::$replay(self.pool(), request).await.map(ExecutionResponse::Replay),
                     ExecutionRequest::Retention { request } => return super::retention::$retention(self.pool(), &request).await.map(ExecutionResponse::Retention),
-                    ExecutionRequest::Billing { request } => return self.execute_billing(request).await.map(ExecutionResponse::Billing),
+                    // PostgreSQL dispatches its optional financial subsystem
+                    // before entering the portable execution ledger.
+                    ExecutionRequest::Billing { .. } => return Err(not_found()),
                     ExecutionRequest::Invocation { request } => return self.execute_invocation(request).await,
                     ExecutionRequest::AcceptMetered { lease, turn_id, fingerprint } => {
                         metered = true;

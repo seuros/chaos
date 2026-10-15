@@ -26,6 +26,13 @@ pub(super) fn is_route(parts: &[&str]) -> bool {
     )
 }
 
+pub(super) fn is_billing_route(parts: &[&str]) -> bool {
+    matches!(
+        parts,
+        ["api", "sessions", "prices", _] | ["api", "sessions", _, "turns", _, "billing"]
+    )
+}
+
 pub(super) async fn handle(
     state: &Arc<ServerState>,
     manager: &Arc<SessionManager>,

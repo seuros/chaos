@@ -8,7 +8,6 @@ use super::*;
 use sha2::{Digest, Sha256};
 
 pub const MAX_EXECUTION_ARCHIVE_BYTES: usize = 32 * 1024 * 1024;
-const MAX_ARCHIVE_PRICE_VERSIONS: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -138,12 +137,21 @@ fn archive_response(session_id: Uuid, row: Option<ArchiveRow>) -> ExecutionReten
 
 /// All queries execute under the execution-session writer lock. Do not include
 /// renewable lease credentials or global mutable process transcripts in exports.
+macro_rules! financial_snapshot {
+    (sqlite, $tx:ident, $scope:ident, $session_id:ident, $estimated:ident) => {
+        serde_json::Map::new()
+    };
+    (postgres, $tx:ident, $scope:ident, $session_id:ident, $estimated:ident) => {
+        super::billing::archive_evidence(&mut $tx, $scope, &$session_id, $estimated).await?
+    };
+}
+
 macro_rules! snapshot {
-    ($tx:ident, $session_id:ident, $scope:ident, $process:expr, $epoch:expr) => {{
+    ($backend:ident, $tx:ident, $session_id:ident, $scope:ident, $process:expr, $epoch:expr) => {{
         // A JSON character takes at most six bytes after escaping. Conservative
         // overhead per row bounds materialization before fetch_all allocates.
         // Reject instead of silently dropping a turn, receipt or audit record.
-        let mut estimated: i64 = sqlx::query_scalar(
+        let estimated: i64 = sqlx::query_scalar(
             "SELECT CAST(COALESCE(SUM(estimated),0) AS BIGINT) FROM (
                 SELECT CAST(2048 AS BIGINT) + 6 * (length(turn_id) + length(fingerprint) + length(state) + COALESCE(length(outcome_json),0) + length(accounting_coverage)) AS estimated
                 FROM execution_turns WHERE session_id = $1
@@ -159,8 +167,6 @@ macro_rules! snapshot {
                 FROM execution_provider_receipts r JOIN execution_invocations i ON i.invocation_id = r.invocation_id WHERE i.session_id = $1
                 UNION ALL SELECT CAST(2048 AS BIGINT) + 6 * length(event_json)
                 FROM execution_replay_events WHERE session_id = $1
-                UNION ALL SELECT CAST(2048 AS BIGINT) + 6 * (length(reconciliation_id) + length(turn_id) + length(invocation_id) + length(receipt_key) + length(record_json))
-                FROM execution_reconciliations WHERE session_id = $1
             ) archive_sizes"
         ).bind(&$session_id).fetch_one(&mut *$tx).await?;
         if estimated > MAX_EXECUTION_ARCHIVE_BYTES as i64 - 32 * 1024 {
@@ -210,45 +216,8 @@ macro_rules! snapshot {
         ).bind(&$session_id).fetch_optional(&mut *$tx).await?;
         let replay_gap = replay_cursor.unwrap_or(0) > 0
             && replay.first().is_none_or(|event| event.0 != 1);
-        let reconciliations = sqlx::query_as::<_, (String, String, String, String, String, i64)>(
-            "SELECT reconciliation_id,turn_id,invocation_id,receipt_key,record_json,created_at_ms
-             FROM execution_reconciliations WHERE session_id = $1 ORDER BY reconciliation_id"
-        ).bind(&$session_id).fetch_all(&mut *$tx).await?;
-        let mut prices = std::collections::BTreeMap::new();
-        for (_, _, _, _, record_json, _) in &reconciliations {
-            let record: Value = decode(record_json)?;
-            if let Some(version) = record.pointer("/request/price_version").and_then(Value::as_str) {
-                if !prices.contains_key(version) {
-                    if prices.len() >= MAX_ARCHIVE_PRICE_VERSIONS {
-                        return Err(conflict("archive price evidence exceeds version bound"));
-                    }
-                    let size: i64 = sqlx::query_scalar(
-                        "SELECT CAST(length(schedule_json) AS BIGINT) FROM execution_price_schedules WHERE scope = $1 AND version = $2"
-                    ).bind($scope).bind(version).fetch_optional(&mut *$tx).await?
-                        .ok_or_else(|| conflict("archive price evidence is missing"))?;
-                    if size > 16 * 1024 {
-                        return Err(conflict("archive price evidence exceeds size bound"));
-                    }
-                    // Price schedules are materialized separately from the
-                    // session rows above, but share the same manifest budget.
-                    // Include JSON escaping and the map key before fetching
-                    // the schedule, not only after constructing the snapshot.
-                    estimated = estimated.checked_add(2048 + 6 * (size + version.len() as i64))
-                        .ok_or_else(|| conflict("archive size estimate overflow"))?;
-                    if estimated > MAX_EXECUTION_ARCHIVE_BYTES as i64 - 32 * 1024 {
-                        return Err(conflict("archive evidence exceeds bounded manifest capacity"));
-                    }
-                    let schedule = sqlx::query_as::<_, (String, i64)>(
-                        "SELECT schedule_json,created_at_ms FROM execution_price_schedules WHERE scope = $1 AND version = $2"
-                    ).bind($scope).bind(version).fetch_optional(&mut *$tx).await?
-                        .ok_or_else(|| conflict("archive price evidence is missing"))?;
-                    prices.insert(version.to_string(), serde_json::json!({
-                        "schedule_json": schedule.0, "created_at_ms": schedule.1
-                    }));
-                }
-            }
-        }
-        serde_json::json!({
+        let financial = financial_snapshot!($backend, $tx, $scope, $session_id, estimated);
+        let mut snapshot = serde_json::json!({
             "version": 1,
             "kind": "execution_archive",
             "point_in_time": true,
@@ -293,18 +262,15 @@ macro_rules! snapshot {
                 "sequence": sequence,"event_json": event_json,"event_bytes": event_bytes
             })).collect::<Vec<_>>(),
             "replay_cursor": replay_cursor,
-            "replay_gap": replay_gap,
-            "reconciliations": reconciliations.into_iter().map(|(reconciliation_id,turn_id,invocation_id,receipt_key,record_json,created_at_ms)| serde_json::json!({
-                "reconciliation_id": reconciliation_id,"turn_id": turn_id,"invocation_id": invocation_id,
-                "receipt_key": receipt_key,"record_json": record_json,"created_at_ms": created_at_ms
-            })).collect::<Vec<_>>(),
-            "price_schedules": prices
-        })
+            "replay_gap": replay_gap
+        });
+        snapshot.as_object_mut().expect("archive object").extend(financial);
+        snapshot
     }};
 }
 
 macro_rules! impl_retention {
-    ($name:ident, $pool:ty, $begin:literal, $lock:literal, $clock:literal) => {
+    ($backend:ident, $name:ident, $pool:ty, $begin:literal, $lock:literal, $clock:literal) => {
         pub(crate) async fn $name(
             pool: &$pool,
             request: &ExecutionRetentionRequest,
@@ -346,7 +312,7 @@ macro_rules! impl_retention {
                     (SELECT COUNT(*) FROM execution_turns WHERE session_id = $1 AND state NOT IN ('completed','failed','interrupted','timed_out'))"
             ).bind(&id).fetch_one(&mut *tx).await?;
             if unready != 0 { return Err(conflict("archive requires acknowledged deliveries and terminal known execution evidence")); }
-            let snapshot = snapshot!(tx, id, scope, row.1, row.3);
+            let snapshot = snapshot!($backend, tx, id, scope, row.1, row.3);
             let json = serde_json::to_string(&snapshot).map_err(|source| JournalError::Serialize { field: "archive manifest", source })?;
             if json.len() > MAX_EXECUTION_ARCHIVE_BYTES {
                 return Err(conflict("archive evidence exceeds bounded manifest capacity"));
@@ -411,6 +377,7 @@ macro_rules! impl_retention {
 }
 
 impl_retention!(
+    sqlite,
     execute_retention_sqlite,
     sqlx::SqlitePool,
     "BEGIN IMMEDIATE",
@@ -418,6 +385,7 @@ impl_retention!(
     "SELECT CAST(strftime('%s', 'now') AS INTEGER) * 1000 + CAST(substr(strftime('%f', 'now'), 4, 3) AS INTEGER)"
 );
 impl_retention!(
+    postgres,
     execute_retention_postgres,
     sqlx::PgPool,
     "BEGIN",

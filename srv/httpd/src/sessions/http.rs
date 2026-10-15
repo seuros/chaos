@@ -39,6 +39,19 @@ async fn route(
     let uri = request.uri().to_string();
     let (path, query) = uri.split_once('?').unwrap_or((&uri, ""));
     let parts: Vec<_> = path.trim_start_matches('/').split('/').collect();
+    // Financial routes are registered only for the direct PostgreSQL backend.
+    // Resolve absence before generation checks, capacity acquisition or bodies.
+    if operations::is_billing_route(&parts)
+        && !manager
+            .store
+            .as_ref()
+            .is_some_and(|store| store.billing_enabled())
+    {
+        return Ok(response(
+            StatusCode::NOT_FOUND,
+            json!({"error": "not found"}),
+        ));
+    }
     if manager.recovery_only()
         && method != Method::GET
         && !(parts.len() == 4 && parts[3] == "recovery" && method == Method::POST)

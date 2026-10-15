@@ -12,7 +12,7 @@ mod recovery;
 mod replay;
 #[cfg(unix)]
 mod restart;
-mod storage;
+pub(in crate::sessions) mod storage;
 use storage::Database;
 
 struct Fixture {

@@ -41,6 +41,10 @@ pub(crate) struct Store {
 }
 
 impl Store {
+    pub(crate) fn billing_enabled(&self) -> bool {
+        matches!(&self.client, Client::Journal(JournalClient::Postgres(_)))
+    }
+
     async fn bind_scope(&self) -> Result<(), ApiError> {
         if self.recovery_only {
             return Ok(());

@@ -278,6 +278,19 @@ struct LineageSink {
     reject_fork: bool,
     edges: Arc<Mutex<Vec<(uuid::Uuid, chaos_ipc::ProcessId, chaos_ipc::ProcessId)>>>,
     starts: Arc<Mutex<Vec<InvocationStart>>>,
+    started: Arc<Notify>,
+}
+
+impl LineageSink {
+    fn new(process_id: chaos_ipc::ProcessId, reject_fork: bool) -> Self {
+        Self {
+            process_id,
+            reject_fork,
+            edges: Arc::default(),
+            starts: Arc::default(),
+            started: Arc::default(),
+        }
+    }
 }
 
 impl ProviderInvocationSink for LineageSink {
@@ -302,6 +315,7 @@ impl ProviderInvocationSink for LineageSink {
                 reject_fork: false,
                 edges: self.edges.clone(),
                 starts: self.starts.clone(),
+                started: self.started.clone(),
             }) as Arc<dyn ProviderInvocationSink>)
         })
     }
@@ -313,6 +327,7 @@ impl ProviderInvocationSink for LineageSink {
         Box::pin(async move {
             assert_eq!(request.process_id, self.process_id);
             self.starts.lock().unwrap().push(request);
+            self.started.notify_one();
             Ok(false)
         })
     }
@@ -337,12 +352,7 @@ async fn review_delegate_cannot_start_unmetered_or_claim_its_parent_process_iden
             context.config.chaos_home.clone(),
         );
         parent.services.agent_control = manager.agent_control();
-        let sink = Arc::new(LineageSink {
-            process_id: parent.conversation_id,
-            reject_fork: reject,
-            edges: Arc::default(),
-            starts: Arc::default(),
-        });
+        let sink = Arc::new(LineageSink::new(parent.conversation_id, reject));
         parent
             .services
             .model_client
@@ -422,11 +432,12 @@ async fn review_delegate_cannot_start_unmetered_or_claim_its_parent_process_iden
                     .await
                     .is_err()
             );
-            let starts = sink.starts.lock().unwrap();
-            assert_eq!(starts.len(), 1);
-            assert_eq!(starts[0].process_id, edge.2);
-            assert_eq!(starts[0].turn_id, local_turn);
-            drop(starts);
+            {
+                let starts = sink.starts.lock().unwrap();
+                assert_eq!(starts.len(), 1);
+                assert_eq!(starts[0].process_id, edge.2);
+                assert_eq!(starts[0].turn_id, local_turn);
+            }
             delegate
                 .submit(chaos_ipc::protocol::Op::Shutdown {})
                 .await
@@ -473,12 +484,7 @@ async fn native_minions_require_live_lineage_and_cannot_adopt_persisted_child_hi
         context.config.chaos_home.clone(),
     );
     session.services.agent_control = manager.agent_control();
-    let sink = Arc::new(LineageSink {
-        process_id: session.conversation_id,
-        reject_fork: false,
-        edges: Arc::default(),
-        starts: Arc::default(),
-    });
+    let sink = Arc::new(LineageSink::new(session.conversation_id, false));
     session
         .services
         .model_client
@@ -562,12 +568,7 @@ async fn unregistered_descendant_never_dispatches_and_dropped_activation_discard
     for activate in [false, true] {
         let (parent, mut context) = crate::chaos::make_session_and_context().await;
         context.sub_id = uuid::Uuid::new_v4().to_string();
-        let sink = Arc::new(LineageSink {
-            process_id: parent.conversation_id,
-            reject_fork: false,
-            edges: Arc::default(),
-            starts: Arc::default(),
-        });
+        let sink = Arc::new(LineageSink::new(parent.conversation_id, false));
         parent
             .services
             .model_client
@@ -626,13 +627,13 @@ async fn unregistered_descendant_never_dispatches_and_dropped_activation_discard
         );
         if activate {
             activation.send(()).unwrap();
-            tokio::time::timeout(std::time::Duration::from_secs(2), async {
-                while sink.starts.lock().unwrap().is_empty() {
-                    tokio::task::yield_now().await;
-                }
-            })
-            .await
-            .unwrap();
+            // This crosses native turn preparation, not just channel delivery.
+            // Wait for the actual begin barrier without spinning the runtime;
+            // the outer nextest budget still catches a genuinely stuck child.
+            // notify_one retains a permit if begin wins the scheduling race.
+            tokio::time::timeout(std::time::Duration::from_secs(30), sink.started.notified())
+                .await
+                .expect("activated descendant did not reach the invocation begin barrier");
         } else {
             drop(activation);
         }
@@ -657,12 +658,7 @@ async fn authority_lookup_is_not_an_untracked_gap_before_pending_boot_registrati
         context.config.chaos_home.clone(),
     );
     session.services.agent_control = manager.agent_control();
-    let sink = Arc::new(LineageSink {
-        process_id: session.conversation_id,
-        reject_fork: true,
-        edges: Arc::default(),
-        starts: Arc::default(),
-    });
+    let sink = Arc::new(LineageSink::new(session.conversation_id, true));
     session
         .services
         .model_client

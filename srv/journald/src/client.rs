@@ -72,6 +72,19 @@ pub struct JournalRpcClient {
 }
 
 impl JournalRpcClient {
+    pub async fn execution(
+        &self,
+        request: crate::ExecutionRequest,
+    ) -> Result<crate::ExecutionResponse, JournalClientError> {
+        match self
+            .send_request(JournalRequest::Execution(request))
+            .await?
+        {
+            JournalResponse::Execution(response) => Ok(*response),
+            other => Err(unexpected_variant("execution", &other)),
+        }
+    }
+
     pub fn new(socket_path: PathBuf) -> Self {
         Self { socket_path }
     }
@@ -350,6 +363,7 @@ fn unexpected_variant(expected: &'static str, actual: &JournalResponse) -> Journ
 
 fn response_variant_name(response: &JournalResponse) -> &'static str {
     match response {
+        JournalResponse::Execution(_) => "execution",
         JournalResponse::Hello(_) => "hello",
         JournalResponse::CreateProcess(_) => "create_process",
         JournalResponse::InitializeProcess(_) => "initialize_process",

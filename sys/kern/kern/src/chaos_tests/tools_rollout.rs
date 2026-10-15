@@ -12,6 +12,7 @@ async fn shutdown_and_wait_allows_multiple_waiters() {
         tokio::time::sleep(StdDuration::from_millis(50)).await;
     });
     let chaos = Arc::new(Chaos {
+        tracks_submissions: true,
         tx_sub,
         rx_event,
         agent_status,
@@ -50,6 +51,7 @@ async fn shutdown_and_wait_waits_when_shutdown_is_already_in_progress() {
         let _ = shutdown_complete_rx.await;
     });
     let chaos = Arc::new(Chaos {
+        tracks_submissions: true,
         tx_sub,
         rx_event,
         agent_status,

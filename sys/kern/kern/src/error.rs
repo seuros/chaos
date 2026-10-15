@@ -111,6 +111,10 @@ pub enum ChaosErr {
     #[error("{0}")]
     InvalidRequest(String),
 
+    /// The provider rejected encrypted reasoning echoed back from history.
+    #[error("provider rejected encrypted reasoning content: {0}")]
+    InvalidEncryptedContent(String),
+
     /// Invalid image.
     #[error("Image poisoning")]
     InvalidImageRequest(),
@@ -202,6 +206,7 @@ impl ChaosErr {
             | ChaosErr::QuotaExceeded
             | ChaosErr::InvalidImageRequest()
             | ChaosErr::InvalidRequest(_)
+            | ChaosErr::InvalidEncryptedContent(_)
             | ChaosErr::RefreshTokenFailed(_)
             | ChaosErr::UnsupportedOperation(_)
             | ChaosErr::Sandbox(_)

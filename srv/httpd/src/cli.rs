@@ -32,6 +32,33 @@ pub struct ServeCli {
     #[usage(long = "sessions")]
     pub sessions: bool,
 
+    /// Persist retained-session identity/outcomes in journald under this namespace.
+    /// Requires --sessions and forbids --ephemeral.
+    #[usage(long = "session-scope")]
+    pub session_scope: Option<String>,
+
+    /// Enable operator recovery mutations with a separate token.
+    /// Requires --session-scope; also accepts CHAOS_RECOVERY_TOKEN.
+    #[usage(long = "recovery-token", env = "CHAOS_RECOVERY_TOKEN")]
+    pub recovery_token: Option<String>,
+
+    /// Inspect/drain retained records without booting or admitting execution.
+    /// Requires --session-scope and a separate --recovery-token.
+    #[usage(long = "session-recovery-only")]
+    pub session_recovery_only: bool,
+
+    /// Deliver durable terminal events to this trusted, server-owned URL.
+    /// HTTPS required, except literal loopback HTTP for local development.
+    #[usage(long = "session-webhook-url")]
+    pub session_webhook_url: Option<String>,
+
+    /// Environment variable containing the webhook HMAC key (at least 32 bytes).
+    #[usage(
+        long = "session-webhook-secret-env",
+        default = "CHAOS_SESSION_WEBHOOK_SECRET"
+    )]
+    pub session_webhook_secret_env: String,
+
     /// Maximum retained session records (including closed-session tombstones).
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,

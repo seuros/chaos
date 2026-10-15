@@ -208,6 +208,7 @@ pub(super) async fn submission_loop(
             sess.cancel_machine_recovery_wait().await;
         }
         debug!(?sub, "Submission");
+        let _pending_submission = sess.services.model_client.dispatch_submission(&sub.op);
         let dispatch_span = submission_dispatch_span(&sub);
         let should_exit = async {
             match sub.op.clone() {
@@ -434,6 +435,7 @@ pub(super) async fn submission_loop(
     }
 
     debug!("Agent loop exited");
+    sess.services.model_client.clear_pending_submissions();
 }
 
 async fn finalize_finished_tasks(sess: &Arc<Session>) {

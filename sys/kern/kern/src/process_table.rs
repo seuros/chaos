@@ -33,9 +33,9 @@ use chaos_ipc::protocol::ResumedHistory;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::W3cTraceContext;
-use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use std::collections::HashMap;
+use futures::{FutureExt, StreamExt};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -48,6 +48,8 @@ use tokio::sync::broadcast;
 use tracing::warn;
 
 const PROCESS_CREATED_CHANNEL_CAPACITY: usize = 1024;
+mod descendants;
+pub(crate) use descendants::PendingAdmission;
 /// Test-only override for enabling process-table behaviors used by integration
 /// tests.
 ///
@@ -144,6 +146,9 @@ pub struct ProcessTable {
 /// function to require an `Arc<&Self>`.
 pub(crate) struct ProcessTableState {
     processes: Arc<RwLock<HashMap<ProcessId, Arc<Process>>>>,
+    pending_descendants: Arc<std::sync::Mutex<HashMap<uuid::Uuid, ProcessId>>>,
+    admission_epoch: Arc<crate::invocation::AdmissionEpoch>,
+    descendant_parents: std::sync::Mutex<HashMap<ProcessId, ProcessId>>,
     closed_process_histories: Arc<RwLock<HashMap<ProcessId, Vec<RolloutItem>>>>,
     process_created_tx: broadcast::Sender<ProcessId>,
     auth_manager: Arc<AuthManager>,
@@ -192,6 +197,9 @@ impl ProcessTable {
         let file_watcher = build_file_watcher(chaos_home);
         let state = Arc::new(ProcessTableState {
             processes: Arc::new(RwLock::new(HashMap::new())),
+            pending_descendants: Arc::default(),
+            admission_epoch: Arc::default(),
+            descendant_parents: std::sync::Mutex::default(),
             closed_process_histories: Arc::new(RwLock::new(HashMap::new())),
             process_created_tx,
             models_manager,
@@ -362,10 +370,48 @@ impl ProcessTable {
         metrics_service_name: Option<String>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
+        Box::pin(self.start_process_with_auth_and_tools(
+            config,
+            Arc::clone(&self.state.auth_manager),
+            dynamic_tools,
+            persist_extended_history,
+            metrics_service_name,
+            parent_trace,
+        ))
+        .await
+    }
+
+    /// Start with a caller-pinned credential manager rather than re-resolving a
+    /// provider account from mutable preferences during process construction.
+    pub async fn start_process_with_auth(
+        &self,
+        config: Config,
+        auth_manager: Arc<AuthManager>,
+    ) -> ChaosResult<NewProcess> {
+        Box::pin(self.start_process_with_auth_and_tools(
+            config,
+            auth_manager,
+            Vec::new(),
+            false,
+            None,
+            None,
+        ))
+        .await
+    }
+
+    async fn start_process_with_auth_and_tools(
+        &self,
+        config: Config,
+        auth_manager: Arc<AuthManager>,
+        dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
+        persist_extended_history: bool,
+        metrics_service_name: Option<String>,
+        parent_trace: Option<W3cTraceContext>,
+    ) -> ChaosResult<NewProcess> {
         Box::pin(self.state.spawn_process(
             config,
             InitialHistory::New,
-            Arc::clone(&self.state.auth_manager),
+            auth_manager,
             self.agent_control(),
             dynamic_tools,
             persist_extended_history,
@@ -484,8 +530,14 @@ impl ProcessTable {
         turn: &crate::chaos::TurnContext,
         agent_status: tokio::sync::watch::Receiver<crate::minions::AgentStatus>,
     ) -> Arc<Process> {
+        session
+            .services
+            .model_client
+            .bind_admission_epoch(self.state.admission_epoch.clone())
+            .expect("test admission epoch");
         let process_id = session.conversation_id;
         let chaos = Chaos {
+            tracks_submissions: true,
             tx_sub: async_channel::bounded(1).0,
             rx_event: async_channel::bounded(1).1,
             agent_status,
@@ -579,6 +631,15 @@ impl ProcessTableState {
         session_source: SessionSource,
         inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     ) -> ChaosResult<NewProcess> {
+        if self
+            .descendant_invocation_parent(&session_source)
+            .await?
+            .is_some()
+        {
+            return Err(ChaosErr::InvalidRequest(
+                "metered descendants require a fresh process; history adoption is forbidden".into(),
+            ));
+        }
         let stashed_history = self
             .closed_process_histories
             .read()
@@ -688,6 +749,39 @@ impl ProcessTableState {
         .await
     }
 
+    async fn descendant_invocation_parent(
+        &self,
+        source: &SessionSource,
+    ) -> ChaosResult<Option<crate::invocation::InvocationParent>> {
+        let SessionSource::SubAgent(chaos_ipc::protocol::SubAgentSource::ProcessSpawn {
+            parent_process_id,
+            ..
+        }) = source
+        else {
+            return Ok(None);
+        };
+        let parent = match self.get_process(*parent_process_id).await {
+            Ok(parent) => parent,
+            Err(ChaosErr::ProcessNotFound(_))
+                if !self.admission_epoch.was_metered(*parent_process_id)? =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(error),
+        };
+        let client = &parent.chaos.session.services.model_client;
+        if !client.has_invocation_sink()? {
+            return Ok(None);
+        }
+        let active = parent.chaos.session.active_turn.lock().await;
+        let task = active
+            .as_ref()
+            .filter(|active| active.tasks.len() == 1)
+            .and_then(|active| active.tasks.values().next())
+            .ok_or_else(|| ChaosErr::Fatal("provider invocation parent turn unavailable".into()))?;
+        client.invocation_parent(&task.turn_context.sub_id)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn spawn_process_with_source(
         &self,
@@ -702,6 +796,24 @@ impl ProcessTableState {
         inherited_shell_environment: Option<Arc<ShellEnvironment>>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
+        let routing_admission = self.admission_epoch.mutate()?;
+        let invocation_parent = self.descendant_invocation_parent(&session_source).await?;
+        let (activation, submission_activation, pending_admission) = if invocation_parent.is_some()
+        {
+            let SessionSource::SubAgent(chaos_ipc::protocol::SubAgentSource::ProcessSpawn {
+                parent_process_id,
+                ..
+            }) = &session_source
+            else {
+                return Err(ChaosErr::Fatal("descendant parent unavailable".into()));
+            };
+            let pending = self.pending_admission(*parent_process_id)?;
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            (Some(tx), Some(rx), Some(pending))
+        } else {
+            (None, None, None)
+        };
+        drop(routing_admission);
         let watch_registration = self.file_watcher.register_config(&config);
         let ChaosSpawnOk {
             chaos, process_id, ..
@@ -719,10 +831,23 @@ impl ProcessTableState {
             metrics_service_name,
             inherited_shell_environment,
             parent_trace,
+            invocation_parent,
+            submission_activation,
         })
         .await?;
-        self.finalize_process_spawn(chaos, process_id, watch_registration)
-            .await
+        let started = self
+            .finalize_process_spawn(chaos, process_id, watch_registration)
+            .await?;
+        if let Some(pending) = pending_admission {
+            self.track_descendant(pending.parent(), process_id)?;
+            pending.registered()?;
+        }
+        if let Some(activation) = activation {
+            activation
+                .send(())
+                .map_err(|_| ChaosErr::InternalAgentDied)?;
+        }
+        Ok(started)
     }
 
     async fn finalize_process_spawn(
@@ -743,6 +868,13 @@ impl ProcessTableState {
         };
 
         let process = Arc::new(Process::new(chaos, watch_registration));
+        process
+            .chaos
+            .session
+            .services
+            .model_client
+            .bind_admission_epoch(self.admission_epoch.clone())?;
+        let _mutation = self.admission_epoch.mutate()?;
         {
             let mut processes = self.processes.write().await;
             processes.insert(process_id, process.clone());

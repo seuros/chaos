@@ -25,18 +25,18 @@ fn completed_reconnect_review_suppresses_duplicate_resume_reminder() {
 #[test]
 fn reconnect_title_decision_parses_plain_and_wrapped_json() {
     assert_eq!(
-        parse_reconnect_title_decision(r#"{"title":"Souls House Work"}"#)
+        parse_reconnect_title_decision(r#"{"title":"Project Work"}"#)
             .expect("plain JSON")
             .title,
-        "Souls House Work"
+        "Project Work"
     );
     assert_eq!(
         parse_reconnect_title_decision(
-            "Here is the decision:\n```json\n{\"title\":\"Souls House Work\"}\n```"
+            "Here is the decision:\n```json\n{\"title\":\"Project Work\"}\n```"
         )
         .expect("wrapped JSON")
         .title,
-        "Souls House Work"
+        "Project Work"
     );
 }
 

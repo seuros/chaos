@@ -39,7 +39,7 @@ use crate::protocol::SetDefaultProcessResponse;
 pub const JOURNAL_RPC_PATH: &str = "/rpc";
 pub const SERVER_NAME: &str = "chaos_journald";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 pub struct JournalRpcServer<S> {
     store: Arc<S>,
@@ -123,6 +123,11 @@ where
     async fn dispatch(&self, envelope: RequestEnvelope) -> ResponseEnvelope {
         let request_id = envelope.id;
         let outcome = match envelope.request {
+            JournalRequest::Execution(request) => self
+                .store
+                .execution(request)
+                .await
+                .map(|response| JournalResponse::Execution(Box::new(response))),
             JournalRequest::Hello(_request) => Ok(JournalResponse::Hello(HelloResponse {
                 server_name: SERVER_NAME.to_string(),
                 protocol_version: PROTOCOL_VERSION,
@@ -230,6 +235,16 @@ fn duration_from_millis(value: u64) -> Duration {
 
 pub(crate) fn error_payload_for(error: JournalError) -> ErrorPayload {
     match error {
+        JournalError::ExecutionNotFound => ErrorPayload {
+            code: ErrorCode::NotFound,
+            message: error.to_string(),
+            retryable: false,
+        },
+        JournalError::ExecutionConflict(_) => ErrorPayload {
+            code: ErrorCode::ExecutionConflict,
+            message: error.to_string(),
+            retryable: false,
+        },
         JournalError::ProcessNotFound(_) => ErrorPayload {
             code: ErrorCode::NotFound,
             message: error.to_string(),

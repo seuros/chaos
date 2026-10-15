@@ -4,5 +4,6 @@ pub(crate) mod updates;
 
 pub(crate) use history::ContextManager;
 pub(crate) use history::TotalTokenUsageBreakdown;
+pub(crate) use history::drop_encrypted_reasoning;
 pub(crate) use history::estimate_response_item_model_visible_bytes;
 pub(crate) use history::is_user_turn_boundary;

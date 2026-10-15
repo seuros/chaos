@@ -16,6 +16,7 @@ mod runner;
 mod sessions;
 #[cfg(test)]
 mod test_support;
+mod webhooks;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -54,6 +55,7 @@ pub(crate) struct ServerState {
     #[allow(dead_code)]
     auth_manager: Arc<AuthManager>,
     bearer_token: Arc<str>,
+    recovery_token: Option<Arc<str>>,
     semaphore: Arc<Semaphore>,
     max_concurrent: usize,
     timeout: Duration,
@@ -66,6 +68,10 @@ impl ServerState {
     async fn shutdown_sessions(&self) {
         if let Some(sessions) = &self.sessions {
             sessions.close_all();
+            // Supervisors need the complete process tree to attest descendant
+            // containment and commit handoff. Global cleanup removes registry
+            // entries, so it must not race that proof.
+            sessions.wait_stopped().await;
             self.process_table
                 .shutdown_all_processes_bounded(Duration::from_secs(30))
                 .await;
@@ -84,6 +90,37 @@ pub async fn run_main(
         Some(t) if !t.is_empty() => Arc::from(t),
         _ => bail!("bearer token is required: set --bearer-token or CHAOS_BEARER_TOKEN"),
     };
+    let recovery_token: Option<Arc<str>> = match serve_cli.recovery_token.as_deref() {
+        Some(token) => {
+            if token.trim().is_empty() || token == bearer_token.as_ref() {
+                bail!("recovery token must be nonempty and different from the bearer token");
+            }
+            if serve_cli.session_scope.is_none() {
+                bail!("--recovery-token requires --session-scope");
+            }
+            Some(Arc::from(token))
+        }
+        None => None,
+    };
+    if serve_cli.session_recovery_only
+        && (serve_cli.session_scope.is_none() || recovery_token.is_none())
+    {
+        bail!("--session-recovery-only requires --session-scope and --recovery-token");
+    }
+    let webhook = match serve_cli.session_webhook_url.as_deref() {
+        Some(url) => {
+            if serve_cli.session_scope.is_none() {
+                bail!("--session-webhook-url requires --session-scope");
+            }
+            Some(webhooks::WebhookConfig::from_env(
+                url,
+                &serve_cli.session_webhook_secret_env,
+                &bearer_token,
+                recovery_token.as_deref(),
+            )?)
+        }
+        None => None,
+    };
     if serve_cli.max_concurrent == 0 {
         bail!("--max-concurrent must be at least 1");
     }
@@ -95,6 +132,14 @@ pub async fn run_main(
     }
     if serve_cli.max_sessions == 0 || serve_cli.session_ttl == 0 {
         bail!("--max-sessions and --session-ttl must be at least 1");
+    }
+    if let Some(scope) = &serve_cli.session_scope {
+        if !serve_cli.sessions || serve_cli.ephemeral {
+            bail!("--session-scope requires --sessions and forbids --ephemeral");
+        }
+        if scope.trim().is_empty() || scope.len() > 256 {
+            bail!("--session-scope must contain 1..256 bytes");
+        }
     }
 
     // 2. Parse CLI -c overrides.
@@ -142,18 +187,30 @@ pub async fn run_main(
         .harness_overrides(overrides)
         .build()
         .await?;
-    if serve_cli.sessions && config.clamp {
+    if serve_cli.sessions && config.clamp && !serve_cli.session_recovery_only {
         bail!("retained HTTP sessions do not yet support clamp transports");
+    }
+    if serve_cli.session_scope.is_some() && config.ephemeral {
+        bail!("durable retained sessions cannot use ephemeral history");
     }
 
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
 
+    if let Some(webhook) = &webhook
+        && !serve_cli.session_recovery_only
+    {
+        webhook.check_environment(&config, &serve_cli.session_webhook_secret_env)?;
+    }
+
     // 8. Enforce login restrictions.
-    chaos_kern::auth::enforce_login_restrictions(&config)?;
+    if !serve_cli.session_recovery_only {
+        chaos_kern::auth::enforce_login_restrictions(&config)?;
+    }
 
     // 8. Git/trust check.
-    if !serve_cli.skip_git_repo_check
+    if !serve_cli.session_recovery_only
+        && !serve_cli.skip_git_repo_check
         && chaos_kern::git_info::get_git_repo_root(&config.cwd).is_none()
     {
         bail!("not inside a git repository (use --skip-git-repo-check to override)");
@@ -191,6 +248,48 @@ pub async fn run_main(
     );
 
     let config = Arc::new(config);
+    let policy = if serve_cli.session_scope.is_some() && !serve_cli.session_recovery_only {
+        Some(Arc::new(
+            sessions::durable::policy::PinnedPolicy::new(config.clone(), core.auth_manager.clone())
+                .map_err(|error| anyhow::anyhow!("pin HTTP session policy: {error:?}"))?,
+        ))
+    } else {
+        None
+    };
+    let semaphore = Arc::new(Semaphore::new(serve_cli.max_concurrent));
+    let (sessions, recovered) = if let Some(scope) = serve_cli.session_scope {
+        let client = chaos_kern::journal_client_for_mounted_backend()
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let (manager, recovered) = sessions::SessionManager::persistent(
+            serve_cli.max_sessions,
+            Duration::from_secs(serve_cli.session_ttl),
+            client,
+            scope,
+            &semaphore,
+            policy,
+            serve_cli.session_recovery_only,
+        )
+        .await
+        .map_err(|error| anyhow::anyhow!("restore HTTP sessions: {error:?}"))?;
+        (Some(Arc::new(manager)), recovered)
+    } else {
+        (
+            serve_cli.sessions.then(|| {
+                Arc::new(sessions::SessionManager::new(
+                    serve_cli.max_sessions,
+                    Duration::from_secs(serve_cli.session_ttl),
+                ))
+            }),
+            Vec::new(),
+        )
+    };
+
+    if let Some(webhook) = &webhook {
+        webhook
+            .configure(sessions.as_ref().expect("durable scope validated"))
+            .await?;
+    }
 
     // 11. Build server state.
     let state = Arc::new(ServerState {
@@ -198,18 +297,18 @@ pub async fn run_main(
         process_table: core.process_table,
         auth_manager: core.auth_manager,
         bearer_token,
-        semaphore: Arc::new(Semaphore::new(serve_cli.max_concurrent)),
+        recovery_token,
+        semaphore,
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
         monitor: monitor::MonitorState::new(),
-        sessions: serve_cli.sessions.then(|| {
-            Arc::new(sessions::SessionManager::new(
-                serve_cli.max_sessions,
-                Duration::from_secs(serve_cli.session_ttl),
-            ))
-        }),
+        sessions,
     });
+    for (session, commands, request) in recovered {
+        let lazy = request.resume_process_id.is_some();
+        sessions::runtime::spawn(state.clone(), session, commands, request, lazy);
+    }
 
     // 12. Bind and serve.
     let ip: std::net::IpAddr = serve_cli.bind.parse().context("invalid bind address")?;
@@ -237,6 +336,15 @@ pub async fn run_main(
         .map_err(|err| anyhow::anyhow!("{err}"))
         .with_context(|| format!("bind chaos-httpd: {addr}"))?;
 
+    let _webhook_task = webhook.map(|webhook| {
+        webhook.spawn(
+            state
+                .sessions
+                .as_ref()
+                .expect("durable scope validated")
+                .clone(),
+        )
+    });
     let service = api::http_service(state.clone());
 
     info!(

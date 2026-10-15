@@ -18,7 +18,19 @@ pub(super) fn response(
     let stream = stream_fn(async move |mut yielder| {
         loop {
             changed.borrow_and_update();
-            let batch = session.events(cursor).unwrap();
+            let batch = match session.read_events(cursor).await {
+                Ok(batch) => batch,
+                Err(_) => {
+                    // Never silently fall back to an in-memory prefix when
+                    // durable replay is unavailable. Reconnect at the same ID.
+                    yielder
+                        .yield_item(Ok::<_, Infallible>(
+                            "event: replay_unavailable\ndata: {\"reconnect\":true}\n\n".to_owned(),
+                        ))
+                        .await;
+                    break;
+                }
+            };
             if batch.gap {
                 yielder
                     .yield_item(Ok::<_, Infallible>(format!(

@@ -168,6 +168,7 @@ impl Session {
         mcp_manager: Arc<McpManager>,
         file_watcher: Arc<FileWatcher>,
         agent_control: AgentControl,
+        invocation_parent: Option<crate::invocation::InvocationParent>,
     ) -> anyhow::Result<Arc<Self>> {
         let startup = chaos_snitch::startup::StartupTimeline::new("kernel_session");
         startup.enable_logging();
@@ -185,6 +186,9 @@ impl Session {
         }
 
         let forked_from_id = initial_history.forked_from_id();
+        if invocation_parent.is_some() && matches!(&initial_history, InitialHistory::Resumed(_)) {
+            anyhow::bail!("metered descendants cannot adopt stored process history");
+        }
 
         let (conversation_id, rollout_params) = match &initial_history {
             InitialHistory::New | InitialHistory::Forked(_) => {
@@ -220,6 +224,13 @@ impl Session {
                 ),
             ),
         };
+        let invocation_sink =
+            match invocation_parent {
+                Some(parent) => Some(parent.admit(conversation_id).await.map_err(|_| {
+                    anyhow::anyhow!("provider invocation lineage admission failed")
+                })?),
+                None => None,
+            };
         let state_builder = match &initial_history {
             InitialHistory::Resumed(resumed) => {
                 crate::rollout::metadata::builder_from_items(&resumed.history)
@@ -590,6 +601,9 @@ impl Session {
             next_internal_sub_id: AtomicU64::new(0),
             host_notice: Default::default(),
         });
+        if let Some(sink) = invocation_sink {
+            sess.services.model_client.set_invocation_sink(sink)?;
+        }
         sess.services.model_client.bind_session(&sess);
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;

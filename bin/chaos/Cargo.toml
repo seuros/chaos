@@ -78,8 +78,10 @@ chaos-test-fixtures = { workspace = true }
 chaos-which = { workspace = true }
 chaos_journald = { workspace = true }
 core_test_support = { workspace = true }
+hmac = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
+sha2 = { workspace = true }
 sqlx = { workspace = true }
 vt100 = { workspace = true }
 

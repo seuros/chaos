@@ -12,6 +12,7 @@ mod backend_client;
 mod bootstrap;
 mod client;
 mod error;
+mod execution;
 mod model;
 mod postgres;
 mod protocol;
@@ -29,6 +30,19 @@ pub use bootstrap::runtime_socket_dir;
 pub use client::JournalClientError;
 pub use client::JournalRpcClient;
 pub use error::JournalError;
+pub use execution::{
+    ExecutionAccounting, ExecutionArchiveManifest, ExecutionArchiveRecord, ExecutionBillingReport,
+    ExecutionBillingRequest, ExecutionBillingResponse, ExecutionDelivery, ExecutionDeliveryLease,
+    ExecutionDeliveryRequest, ExecutionDeliveryStatus, ExecutionEvent, ExecutionInvocation,
+    ExecutionInvocationRequest, ExecutionLease, ExecutionMoney, ExecutionPriceSchedule,
+    ExecutionReconciliation, ExecutionReconciliationRecord, ExecutionReplayBatch,
+    ExecutionReplayEvent, ExecutionReplayRequest, ExecutionReplayResponse, ExecutionRequest,
+    ExecutionResolution, ExecutionResolutionRecord, ExecutionResponse, ExecutionRetentionRequest,
+    ExecutionRetentionResponse, ExecutionSession, ExecutionSessionState, ExecutionTokenPrices,
+    ExecutionTurn, ExecutionTurnState, InvocationPurpose, InvocationReceipt, InvocationStart,
+    InvocationState, InvocationSummary, InvocationTokenUsage, MAX_EXECUTION_INVOCATIONS,
+    MAX_EXECUTION_OUTCOME_BYTES, MAX_EXECUTION_TURNS,
+};
 pub use model::AppendBatchInput;
 pub use model::AppendBatchResult;
 pub use model::CreateProcessInput;

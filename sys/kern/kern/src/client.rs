@@ -13,6 +13,7 @@
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
 pub(crate) mod auth_breaker;
+mod invocation;
 mod native_resume;
 pub(crate) mod state;
 pub(crate) mod streaming;
@@ -78,6 +79,10 @@ pub(super) const RESPONSES_ENDPOINT: &str = "/responses";
 /// Session-scoped state shared by all [`ModelClient`] clones.
 #[derive(Debug)]
 pub(super) struct ModelClientState {
+    pub(super) pending_submissions: std::sync::atomic::AtomicUsize,
+    pub(super) admission_epoch: StdMutex<Option<Arc<crate::invocation::AdmissionEpoch>>>,
+    pub(super) invocation_sink:
+        StdMutex<Option<Arc<dyn crate::invocation::ProviderInvocationSink>>>,
     pub(super) auth_manager: Option<Arc<crate::AuthManager>>,
     pub(super) conversation_id: ProcessId,
     pub(super) provider_id: String,

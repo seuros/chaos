@@ -190,6 +190,7 @@ pub struct ResponsesStreamEvent {
     delta: Option<String>,
     summary_index: Option<i64>,
     content_index: Option<i64>,
+    error: Option<Value>,
 }
 
 impl ResponsesStreamEvent {
@@ -293,35 +294,34 @@ pub fn process_responses_event(
         }
         "response.failed" => {
             if let Some(resp_val) = event.response {
-                let mut response_error = ApiError::Stream("response.failed event received".into());
-                if let Some(error) = resp_val.get("error")
-                    && let Ok(error) = Error::deserialize(error)
-                {
-                    if is_context_window_error(&error) {
-                        response_error = ApiError::ContextWindowExceeded;
-                    } else if is_quota_exceeded_error(&error) {
-                        response_error = ApiError::QuotaExceeded;
-                    } else if is_usage_not_included(&error) {
-                        response_error = ApiError::UsageNotIncluded;
-                    } else if is_invalid_prompt_error(&error) {
-                        let message = error
-                            .message
-                            .unwrap_or_else(|| "Invalid request.".to_string());
-                        response_error = ApiError::InvalidRequest { message };
-                    } else if is_server_overloaded_error(&error) {
-                        response_error = ApiError::ServerOverloaded;
-                    } else {
-                        let delay = try_parse_retry_after(&error);
-                        let message = error.message.unwrap_or_default();
-                        response_error = ApiError::Retryable { message, delay };
-                    }
-                }
+                let response_error = resp_val
+                    .get("error")
+                    .and_then(|error| Error::deserialize(error).ok())
+                    .map_or_else(
+                        || ApiError::Stream("response.failed event received".into()),
+                        classify_error,
+                    );
                 return Err(ResponsesEventError::Api(response_error));
             }
 
             return Err(ResponsesEventError::Api(ApiError::Stream(
                 "response.failed event received".into(),
             )));
+        }
+        "error" => {
+            let Some(error) = event.error.and_then(|error| Error::deserialize(error).ok()) else {
+                return Err(ResponsesEventError::Api(ApiError::Stream(
+                    "error event received".into(),
+                )));
+            };
+            let invalid_request = error.r#type.as_deref() == Some("invalid_request_error");
+            let api_error = match classify_error(error) {
+                ApiError::Retryable { message, .. } if invalid_request => {
+                    ApiError::InvalidRequest { message }
+                }
+                other => other,
+            };
+            return Err(ResponsesEventError::Api(api_error));
         }
         "response.incomplete" => {
             let reason = event.response.as_ref().and_then(|response| {
@@ -501,6 +501,39 @@ fn try_parse_retry_after(err: &Error) -> Option<Duration> {
         }
     }
     None
+}
+
+fn classify_error(error: Error) -> ApiError {
+    if is_context_window_error(&error) {
+        ApiError::ContextWindowExceeded
+    } else if is_quota_exceeded_error(&error) {
+        ApiError::QuotaExceeded
+    } else if is_usage_not_included(&error) {
+        ApiError::UsageNotIncluded
+    } else if is_invalid_encrypted_content_error(&error) {
+        ApiError::InvalidEncryptedContent {
+            message: error.message.unwrap_or_default(),
+        }
+    } else if is_invalid_prompt_error(&error) {
+        let message = error
+            .message
+            .unwrap_or_else(|| "Invalid request.".to_string());
+        ApiError::InvalidRequest { message }
+    } else if is_server_overloaded_error(&error) {
+        ApiError::ServerOverloaded
+    } else {
+        let delay = try_parse_retry_after(&error);
+        let message = error.message.unwrap_or_default();
+        ApiError::Retryable { message, delay }
+    }
+}
+
+pub(crate) fn is_invalid_encrypted_content_code(code: Option<&str>) -> bool {
+    code == Some("invalid_encrypted_content")
+}
+
+fn is_invalid_encrypted_content_error(error: &Error) -> bool {
+    is_invalid_encrypted_content_code(error.code.as_deref())
 }
 
 fn is_context_window_error(error: &Error) -> bool {

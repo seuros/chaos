@@ -24,6 +24,7 @@ pub struct RequestEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "params", rename_all = "snake_case")]
 pub enum JournalRequest {
+    Execution(crate::ExecutionRequest),
     Hello(HelloRequest),
     CreateProcess(CreateProcessInput),
     InitializeProcess(InitializeProcessInput),
@@ -51,6 +52,7 @@ pub struct ResponseEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "result", rename_all = "snake_case")]
 pub enum JournalResponse {
+    Execution(Box<crate::ExecutionResponse>),
     Hello(HelloResponse),
     CreateProcess(CreateProcessResponse),
     InitializeProcess(Box<InitializeProcessResult>),
@@ -132,6 +134,7 @@ pub struct ErrorPayload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
+    ExecutionConflict,
     NotFound,
     AlreadyExists,
     LeaseConflict,

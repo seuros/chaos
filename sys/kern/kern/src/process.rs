@@ -65,6 +65,19 @@ impl Process {
         self.chaos.submit(op).await
     }
 
+    /// Install before submitting retained work. Native descendants must obtain
+    /// their own durably admitted sink; unsupported process families fail closed.
+    pub fn set_provider_invocation_sink(
+        &self,
+        sink: std::sync::Arc<dyn crate::invocation::ProviderInvocationSink>,
+    ) -> ChaosResult<()> {
+        self.chaos
+            .session
+            .services
+            .model_client
+            .set_invocation_sink(sink)
+    }
+
     pub async fn user_turn(
         &self,
         items: Vec<UserInput>,

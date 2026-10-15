@@ -44,6 +44,7 @@ pub(crate) fn map_api_error(err: ApiError) -> ChaosErr {
             identity_error_code: None,
         }),
         ApiError::InvalidRequest { message } => ChaosErr::InvalidRequest(message),
+        ApiError::InvalidEncryptedContent { message } => ChaosErr::InvalidEncryptedContent(message),
         ApiError::Transport(transport) => match transport {
             TransportError::Http {
                 status,
@@ -145,6 +146,9 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
         AbiError::ServerOverloaded => ApiError::ServerOverloaded,
         AbiError::ServiceUnavailable => ApiError::ServiceUnavailable,
         AbiError::InvalidRequest { message } => ApiError::InvalidRequest { message },
+        AbiError::InvalidEncryptedContent { message } => {
+            ApiError::InvalidEncryptedContent { message }
+        }
         AbiError::Stream(message) => ApiError::Stream(message),
         AbiError::Transport { status: 0, message } => {
             ApiError::Transport(TransportError::Network(message))

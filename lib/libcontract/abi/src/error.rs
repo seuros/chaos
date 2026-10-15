@@ -31,6 +31,10 @@ pub enum AbiError {
     #[error("invalid request: {message}")]
     InvalidRequest { message: String },
 
+    /// The provider could not decrypt reasoning content echoed back in the input.
+    #[error("invalid encrypted content: {message}")]
+    InvalidEncryptedContent { message: String },
+
     /// A streaming error occurred.
     #[error("stream error: {0}")]
     Stream(String),
@@ -58,6 +62,7 @@ impl WireFormatError for AbiError {
             | Self::QuotaExceeded
             | Self::UsageNotIncluded
             | Self::InvalidRequest { .. }
+            | Self::InvalidEncryptedContent { .. }
             | Self::Stream(_) => false,
         }
     }

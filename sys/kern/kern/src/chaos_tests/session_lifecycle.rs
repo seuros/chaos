@@ -504,6 +504,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
     let (_tx_event, rx_event) = async_channel::unbounded();
     let (_agent_status_tx, agent_status) = watch::channel(AgentStatus::PendingInit);
     let chaos = Chaos {
+        tracks_submissions: true,
         tx_sub,
         rx_event,
         agent_status,

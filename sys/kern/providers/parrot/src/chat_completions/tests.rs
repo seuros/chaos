@@ -96,6 +96,34 @@ fn complete_json_handles_absent_usage_and_missing_total() {
 }
 
 #[test]
+fn partial_usage_is_not_a_zero_receipt_and_cache_reasoning_categories_survive() {
+    let mut json = completion_fixture();
+    json["usage"] = serde_json::json!({
+        "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
+        "prompt_tokens_details": {"cached_tokens": 7},
+        "completion_tokens_details": {"reasoning_tokens": 2},
+    });
+    std::assert_matches!(parse_completion(&json).unwrap().last(),
+        Some(TurnEvent::Completed { token_usage: Some(usage), .. })
+            if usage.cached_input_tokens == 7 && usage.reasoning_output_tokens == 2);
+    for usage in [
+        serde_json::json!({}),
+        serde_json::json!({"prompt_tokens": 0}),
+        serde_json::json!({"completion_tokens": 5}),
+        serde_json::json!({"prompt_tokens": -1, "completion_tokens": 5}),
+    ] {
+        json["usage"] = usage;
+        std::assert_matches!(
+            parse_completion(&json).unwrap().last(),
+            Some(TurnEvent::Completed {
+                token_usage: None,
+                ..
+            })
+        );
+    }
+}
+
+#[test]
 fn complete_json_rejects_invalid_refused_and_incomplete_responses() {
     for value in [
         serde_json::json!({}),

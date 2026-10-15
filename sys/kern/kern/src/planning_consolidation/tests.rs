@@ -360,3 +360,47 @@ async fn consolidation_recovery_reconciles_publication_without_rewriting() -> an
     assert_eq!(f.db.planning_history(&f.request.plan, 0).await?, history);
     Ok(())
 }
+
+#[tokio::test]
+async fn metered_session_cannot_dispatch_through_an_independent_consolidation_client()
+-> anyhow::Result<()> {
+    use crate::invocation::{InvocationAccountingError, ProviderInvocationSink};
+    use chaos_journald::{InvocationReceipt, InvocationStart};
+    use futures::future::BoxFuture;
+
+    #[derive(Debug)]
+    struct Metered;
+    impl ProviderInvocationSink for Metered {
+        fn begin(
+            &self,
+            _: InvocationStart,
+        ) -> BoxFuture<'_, Result<bool, InvocationAccountingError>> {
+            Box::pin(async { panic!("unsupported consolidation cannot dispatch") })
+        }
+        fn complete(
+            &self,
+            _: uuid::Uuid,
+            _: InvocationReceipt,
+        ) -> BoxFuture<'_, Result<(), InvocationAccountingError>> {
+            Box::pin(async { panic!("unsupported consolidation cannot produce a receipt") })
+        }
+    }
+
+    let f = Fixture::new().await?;
+    f.session
+        .services
+        .model_client
+        .set_invocation_sink(Arc::new(Metered))?;
+    let job = f.start().await?;
+    assert_eq!(f.finished(&job).await?.state, ConsolidationState::Failed);
+    assert!(
+        f.server
+            .received_requests()
+            .await
+            .expect("requests")
+            .is_empty()
+    );
+    let plan = f.db.planning_detail(&f.request.plan).await?;
+    assert_eq!(plan.content.body, "# Original\n\nPreserve me.");
+    Ok(())
+}

@@ -54,6 +54,32 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
                 .insert("www-authenticate", "Bearer".parse().unwrap());
             return response;
         }
+        if state
+            .sessions
+            .as_ref()
+            .is_some_and(|manager| manager.recovery_only())
+        {
+            let operator = request
+                .headers()
+                .get("x-chaos-recovery-authorization")
+                .and_then(|v| v.to_str().ok());
+            if state
+                .recovery_token
+                .as_deref()
+                .is_none_or(|token| auth::validate_bearer(operator, token).is_err())
+            {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    &ApiErrorResponse::error("operator recovery credential required"),
+                );
+            }
+            if path == TRIGGER_PATH {
+                return json_response(
+                    StatusCode::CONFLICT,
+                    &ApiErrorResponse::error("recovery-only mode cannot execute work"),
+                );
+            }
+        }
     }
 
     if path == "/api/sessions" || path.starts_with("/api/sessions/") {
@@ -87,6 +113,14 @@ fn handle_health() -> Response {
 }
 
 async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
+    if let Some(manager) = &state.sessions
+        && manager.check_execution().is_err()
+    {
+        return json_response(
+            StatusCode::CONFLICT,
+            &ApiErrorResponse::error("session execution policy unavailable or changed"),
+        );
+    }
     let deadline = tokio::time::Instant::now() + state.timeout;
 
     if let Err(error) = ingress::validate_json_headers(&request, state.body_limit) {
@@ -169,14 +203,35 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         process_id = tracing::field::Empty,
     );
 
-    let config = state.config.as_ref().clone();
+    let config = state
+        .sessions
+        .as_ref()
+        .and_then(|manager| manager.pinned_config())
+        .unwrap_or_else(|| state.config.clone())
+        .as_ref()
+        .clone();
+    let auth = state
+        .sessions
+        .as_ref()
+        .and_then(|manager| manager.pinned_auth())
+        .unwrap_or_else(|| state.auth_manager.clone());
     let process_table = state.process_table.clone();
     let timeout = state.timeout;
 
     async move {
+        if let Some(manager) = &state.sessions
+            && manager.check_execution().is_err()
+        {
+            return json_response(
+                StatusCode::CONFLICT,
+                &ApiErrorResponse::error("session execution policy unavailable or changed"),
+            );
+        }
         // Body reading, process start, and execution share one deadline.
         let started =
-            match tokio::time::timeout_at(deadline, runner::start(&process_table, config)).await {
+            match tokio::time::timeout_at(deadline, runner::start(&process_table, config, auth))
+                .await
+            {
                 Ok(Ok(s)) => s,
                 Ok(Err(e)) => {
                     error!(error = %e, "failed to start trigger process");
@@ -213,10 +268,14 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         tracing::Span::current().record("process_id", started.process_id.to_string());
 
         // Execute under the same deadline (remaining time).
-        let response = match tokio::time::timeout_at(
-            deadline,
-            runner::execute(&started, &trigger_req, &conversation_id),
-        )
+        let response = match tokio::time::timeout_at(deadline, async {
+            if let Some(manager) = &state.sessions {
+                manager.check_execution().map_err(|_| {
+                    anyhow::anyhow!("session execution policy unavailable or changed")
+                })?;
+            }
+            runner::execute(&started, &trigger_req, &conversation_id).await
+        })
         .await
         {
             Ok(Ok(outcome)) => {

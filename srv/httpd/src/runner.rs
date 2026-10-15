@@ -30,8 +30,9 @@ pub(crate) struct StartedProcess {
 pub(crate) async fn start(
     process_table: &Arc<ProcessTable>,
     config: Config,
+    auth: Arc<chaos_kern::AuthManager>,
 ) -> Result<StartedProcess, anyhow::Error> {
-    let new_process = process_table.start_process(config).await?;
+    let new_process = process_table.start_process_with_auth(config, auth).await?;
     let (process_id, process, _session_configured) = new_process.into_parts();
     info!(%process_id, "trigger process started");
     Ok(StartedProcess {

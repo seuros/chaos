@@ -38,6 +38,7 @@ pub(crate) async fn server_state(
         process_table: Arc::new(table),
         auth_manager: auth_manager_from_auth_with_home(auth, home.path().to_path_buf()),
         bearer_token: Arc::from("test-token"),
+        recovery_token: None,
         semaphore: Arc::new(Semaphore::new(1)),
         max_concurrent: 1,
         timeout: Duration::from_secs(1),

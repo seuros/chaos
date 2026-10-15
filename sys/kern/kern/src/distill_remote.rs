@@ -9,6 +9,7 @@ use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
+use crate::context_manager::drop_encrypted_reasoning;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
 use crate::distill::InitialContextInjection;
 use crate::distill::insert_initial_context_before_last_real_user_or_summary;
@@ -120,10 +121,25 @@ async fn run_remote_distill_task_inner_impl(
         personality: turn_context.personality,
         output_schema: None,
     };
-    let replacement_input = prompt.input.clone();
+    let mut replacement_input = prompt.input.clone();
     prompt.input.push(ResponseItem::CompactionTrigger {});
 
     let compaction_output = match request_remote_compaction_v2(sess, turn_context, &prompt).await {
+        Err(ChaosErr::InvalidEncryptedContent(message))
+            if drop_encrypted_reasoning(&mut prompt.input) =>
+        {
+            warn!(
+                turn_id = %turn_context.sub_id,
+                %message,
+                "provider rejected encrypted reasoning; dropped it from history and retrying compaction"
+            );
+            drop_encrypted_reasoning(&mut replacement_input);
+            sess.drop_encrypted_reasoning().await;
+            request_remote_compaction_v2(sess, turn_context, &prompt).await
+        }
+        other => other,
+    };
+    let compaction_output = match compaction_output {
         Ok(output) => output,
         Err(err) => {
             let total_usage_breakdown = sess.get_total_token_usage_breakdown().await;
@@ -225,7 +241,9 @@ async fn request_remote_compaction_v2_attempt(
     let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
     sess.record_provider_request_started(turn_context).await;
     let stream = client_session
-        .stream(
+        .stream_accounted(
+            &turn_context.sub_id,
+            chaos_journald::InvocationPurpose::Compaction,
             prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,

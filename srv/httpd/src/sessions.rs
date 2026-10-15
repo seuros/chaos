@@ -1,11 +1,12 @@
 //! Experimental daemon-owned sessions. HTTP requests never own execution or
 //! consume the kernel event queue. A single supervisor owns each queue.
+pub(crate) mod durable;
 pub(crate) mod http;
-mod runtime;
+pub(crate) mod runtime;
 mod stream;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
@@ -31,9 +32,11 @@ pub(crate) struct SessionManager {
     pub daemon_id: String,
     pub ttl: Duration,
     ingress: Arc<Semaphore>,
-    shutdown: watch::Sender<bool>,
+    pub(crate) shutdown: watch::Sender<bool>,
     limit: usize,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
+    pub(crate) store: Option<Arc<durable::Store>>,
+    creation: tokio::sync::Mutex<()>,
 }
 
 impl SessionManager {
@@ -46,15 +49,29 @@ impl SessionManager {
             shutdown,
             limit,
             sessions: Mutex::new(HashMap::new()),
+            store: None,
+            creation: tokio::sync::Mutex::new(()),
         }
     }
 
+    #[cfg(test)]
     fn reserve(
         &self,
         resume: Option<ProcessId>,
     ) -> Result<(Arc<Session>, mpsc::Receiver<Command>), ApiError> {
+        self.reserve_id(resume, Uuid::new_v4())
+    }
+
+    fn reserve_id(
+        &self,
+        resume: Option<ProcessId>,
+        id: Uuid,
+    ) -> Result<(Arc<Session>, mpsc::Receiver<Command>), ApiError> {
         let mut sessions = self.sessions.lock().unwrap();
         self.ensure_running()?;
+        if sessions.contains_key(&id.to_string()) {
+            return Err(ApiError::conflict("session id already retained"));
+        }
         let resume = resume.map(|id| id.to_string());
         if let Some(resume) = &resume {
             for session in sessions.values() {
@@ -73,13 +90,18 @@ impl SessionManager {
         }
         let (tx, rx) = mpsc::channel(32);
         let (changed, _) = watch::channel(());
+        let (done, _) = watch::channel(false);
         let mut data = SessionData::new();
         data.process_id = resume;
         let session = Arc::new(Session {
-            id: Uuid::new_v4().to_string(),
+            id: id.to_string(),
             commands: tx,
             data: Mutex::new(data),
             changed,
+            ledger: OnceLock::new(),
+            admission: tokio::sync::Mutex::new(()),
+            stopping: self.shutdown.subscribe(),
+            done,
         });
         sessions.insert(session.id.clone(), session.clone());
         Ok((session, rx))
@@ -132,7 +154,45 @@ impl SessionManager {
         // died. Stream closure is not proof that execution has stopped.
         self.shutdown.send_replace(true);
         for session in self.sessions.lock().unwrap().values() {
-            let _ = session.close();
+            if session.ledger.get().is_some() {
+                let mut data = session.data.lock().unwrap();
+                if session.commands.is_closed()
+                    || matches!(data.status, SessionStatus::Closed | SessionStatus::Failed)
+                {
+                    continue;
+                }
+                data.status = SessionStatus::Closing;
+                drop(data);
+                let _ = session.commands.try_send(Command::Suspend);
+            } else {
+                let _ = session.close();
+            }
+        }
+    }
+
+    pub(crate) async fn wait_stopped(&self) {
+        let sessions: Vec<_> = self.sessions.lock().unwrap().values().cloned().collect();
+        let deadline = Instant::now() + CLEANUP_GRACE;
+        for session in sessions {
+            if session.commands.is_closed() {
+                continue;
+            }
+            let mut done = session.done.subscribe();
+            let finished = tokio::time::timeout_at(deadline, async {
+                while !*done.borrow_and_update() {
+                    if done.changed().await.is_err() {
+                        break;
+                    }
+                }
+            })
+            .await;
+            if finished.is_err() {
+                session.data.lock().unwrap().mark_unknown();
+                if let Some(owner) = session.ledger.get() {
+                    owner.abandon();
+                }
+                session.notify();
+            }
         }
     }
 }
@@ -140,6 +200,8 @@ impl SessionManager {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CreateRequest {
+    /// Optional caller-stable identity, so a lost creation response can reconcile.
+    pub session_id: Option<Uuid>,
     /// Explicitly restore saved history; never automatically retry an old turn.
     pub resume_process_id: Option<ProcessId>,
 }
@@ -187,7 +249,7 @@ pub(crate) struct NoticeRequest {
     pub expires_at: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum SessionStatus {
     Starting,
@@ -199,9 +261,10 @@ enum SessionStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum TurnStatus {
+    Persisting,
     Accepted,
     Running,
     Completed,
@@ -222,7 +285,7 @@ pub(crate) struct SessionSnapshot {
     last_event_id: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TurnSnapshot {
     pub turn_id: String,
     status: TurnStatus,
@@ -233,7 +296,7 @@ pub(crate) struct TurnSnapshot {
 }
 
 struct TurnRecord {
-    fingerprint: [u8; 32],
+    fingerprint: String,
     // Cleared as soon as the supervisor consumes it, rather than retaining
     // potentially megabyte-sized prompts with every deduplication tombstone.
     request: Option<TurnRequest>,
@@ -253,6 +316,10 @@ pub(crate) struct Session {
     commands: mpsc::Sender<Command>,
     data: Mutex<SessionData>,
     changed: watch::Sender<()>,
+    ledger: OnceLock<Arc<durable::Owner>>,
+    admission: tokio::sync::Mutex<()>,
+    stopping: watch::Receiver<bool>,
+    done: watch::Sender<bool>,
 }
 
 struct SessionData {
@@ -263,6 +330,8 @@ struct SessionData {
     events: VecDeque<ReplayEvent>,
     replay_bytes: usize,
     sequence: u64,
+    // Recovered unknown work may have no HTTP turn but still reserves capacity.
+    orphan_permit: Option<OwnedSemaphorePermit>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -278,6 +347,9 @@ struct EventBatch {
     events: Vec<ReplayEvent>,
     gap: bool,
     next_cursor: u64,
+    /// Captured observations cannot prove that no unobserved work occurred.
+    observation_only: bool,
+    durable: bool,
 }
 
 /// Notice ids travel in a DELETE query string, so they are restricted to the
@@ -289,13 +361,13 @@ pub(crate) fn valid_notice_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'))
 }
 
-enum NoticeChange {
+pub(crate) enum NoticeChange {
     Post(chaos_kern::host_notice::HostNotice),
     /// Withdraw, optionally only if this id is the one pending.
     Withdraw(Option<String>),
 }
 
-enum Command {
+pub(crate) enum Command {
     Turn(String),
     Steer {
         turn_id: String,
@@ -309,6 +381,7 @@ enum Command {
         reply: oneshot::Sender<Result<bool, ApiError>>,
     },
     Close,
+    Suspend,
 }
 
 #[derive(Debug)]
@@ -349,7 +422,10 @@ impl Session {
     }
 
     fn observe_with_activity(&self, event: &Event, quiescent: bool) {
-        self.data.lock().unwrap().observe(event, quiescent);
+        self.data
+            .lock()
+            .unwrap()
+            .observe(event, quiescent && self.ledger.get().is_none());
         self.notify();
     }
 
@@ -382,7 +458,7 @@ impl Session {
         timeout: Duration,
     ) -> Result<TurnSnapshot, ApiError> {
         request.validate()?;
-        let fingerprint: [u8; 32] = Sha256::digest(serde_json::to_vec(&request).unwrap()).into();
+        let fingerprint = fingerprint(&request);
         let mut data = self.data.lock().unwrap();
         // Test retry identity BEFORE admission: retries don't consume capacity,
         // even after the session has closed.
@@ -505,9 +581,14 @@ impl Session {
         let mut data = self.data.lock().unwrap();
         data.require_active(&id)?;
         if data.turns[&id].snapshot.status != TurnStatus::Interrupting {
-            self.commands
-                .try_send(Command::Interrupt(id.clone()))
-                .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+            // Before the supervisor takes the request, cancellation is local.
+            // In durable mode it may still be committing admission; queuing an
+            // interrupt then could precede Turn and wake a lazy recovery boot.
+            if data.turns[&id].request.is_none() {
+                self.commands
+                    .try_send(Command::Interrupt(id.clone()))
+                    .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+            }
             data.turns.get_mut(&id).unwrap().snapshot.status = TurnStatus::Interrupting;
         }
         let snapshot = data.turns[&id].snapshot.clone();
@@ -523,6 +604,11 @@ impl Session {
             SessionStatus::Closing | SessionStatus::Closed | SessionStatus::Failed
         ) {
             return Ok(());
+        }
+        if self.commands.is_closed() {
+            return Err(ApiError::conflict(
+                "recovered unknown work requires independent containment",
+            ));
         }
         self.commands
             .try_send(Command::Close)
@@ -550,6 +636,8 @@ impl Session {
                 .collect(),
             gap: oldest.is_some_and(|oldest| after < oldest - 1),
             next_cursor: data.sequence,
+            observation_only: true,
+            durable: false,
         })
     }
 }
@@ -571,6 +659,7 @@ impl SessionData {
             events: VecDeque::new(),
             replay_bytes: 0,
             sequence: 0,
+            orphan_permit: None,
         }
     }
 
@@ -671,18 +760,7 @@ impl SessionData {
         }
         self.maybe_finish(quiescent);
         self.sequence += 1;
-        let value = serde_json::to_value(event).expect("kernel Event is JSON serializable");
-        let bytes = serde_json::to_vec(&value).unwrap().len();
-        let (value, bytes) = if bytes > MAX_EVENT_BYTES {
-            let value = serde_json::json!({
-                "id": bounded_text(&event.id, 128).0,
-                "msg": {"type": "http_event_omitted", "reason": "event_size_limit"}
-            });
-            let bytes = serde_json::to_vec(&value).unwrap().len();
-            (value, bytes)
-        } else {
-            (value, bytes)
-        };
+        let (value, bytes) = replay_value(event);
         while self.events.len() >= MAX_EVENTS || self.replay_bytes + bytes > MAX_REPLAY_BYTES {
             self.replay_bytes -= self.events.pop_front().unwrap().bytes;
         }
@@ -695,12 +773,33 @@ impl SessionData {
     }
 }
 
+fn replay_value(event: &Event) -> (serde_json::Value, usize) {
+    let value = serde_json::to_value(event).expect("kernel Event is JSON serializable");
+    let bytes = serde_json::to_vec(&value).unwrap().len();
+    if bytes <= MAX_EVENT_BYTES {
+        return (value, bytes);
+    }
+    let value = serde_json::json!({
+        "id": bounded_text(&event.id, 128).0,
+        "msg": {"type": "http_event_omitted", "reason": "event_size_limit"}
+    });
+    let bytes = serde_json::to_vec(&value).unwrap().len();
+    (value, bytes)
+}
+
 fn bounded_text(text: &str, limit: usize) -> (String, bool) {
     let mut end = text.len().min(limit);
     while !text.is_char_boundary(end) {
         end -= 1;
     }
     (text[..end].to_owned(), end < text.len())
+}
+
+fn fingerprint(request: &TurnRequest) -> String {
+    Sha256::digest(serde_json::to_vec(request).unwrap())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn usage_entry(usage: &chaos_ipc::protocol::TokenUsage) -> TokenUsageEntry {

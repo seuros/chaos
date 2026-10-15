@@ -57,6 +57,7 @@ mod flags;
 pub mod git_info;
 mod goal;
 pub mod host_notice;
+pub mod invocation;
 mod machine_recovery;
 pub mod machine_status;
 mod machine_warnings;
@@ -157,6 +158,7 @@ pub use rollout::health::subscribe_persistence_status;
 pub use rollout::list::Cursor;
 pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;
+pub use rollout::recorder::journal_client_for_mounted_backend;
 /// Returns the built-in persona catalog (excludes operational roles like default/scout/task).
 pub fn list_personas() -> &'static std::collections::BTreeMap<String, config::AgentRoleConfig> {
     minions::role::built_in::personas()

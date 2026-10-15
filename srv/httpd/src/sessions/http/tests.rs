@@ -125,6 +125,16 @@ async fn turn_http_contract_is_retry_safe_and_controls_bypass_busy_execution_cap
     assert!(
         matches!(commands.recv().await, Some(super::super::Command::Turn(id)) if id == turn_id)
     );
+    // Model the supervisor consuming the request before a backend interrupt.
+    session
+        .data
+        .lock()
+        .unwrap()
+        .turns
+        .get_mut(&turn_id)
+        .unwrap()
+        .request
+        .take();
     assert!(commands.try_recv().is_err());
     assert_eq!(
         send(&state, submit(r#"{"request":"changed"}"#))

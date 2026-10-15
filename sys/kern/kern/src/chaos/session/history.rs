@@ -319,6 +319,13 @@ impl Session {
         }
     }
 
+    /// Removes encrypted reasoning items from the live history.
+    /// Returns true when at least one item was removed.
+    pub(crate) async fn drop_encrypted_reasoning(&self) -> bool {
+        let mut state = self.state.lock().await;
+        state.history.drop_encrypted_reasoning()
+    }
+
     pub(crate) async fn clone_history(&self) -> ContextManager {
         let state = self.state.lock().await;
         state.clone_history()

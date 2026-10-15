@@ -25,6 +25,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
 use futures::prelude::*;
 use tracing::error;
+use tracing::warn;
 
 pub use chaos_context::distill::InitialContextInjection;
 pub use chaos_context::distill::SUMMARIZATION_PROMPT;
@@ -139,6 +140,16 @@ async fn run_distill_task_inner(
             Err(ChaosErr::Interrupted) => {
                 return Err(ChaosErr::Interrupted);
             }
+            Err(ChaosErr::InvalidEncryptedContent(message))
+                if history.drop_encrypted_reasoning() =>
+            {
+                warn!(
+                    %message,
+                    "provider rejected encrypted reasoning; dropped it from history and retrying compaction"
+                );
+                sess.drop_encrypted_reasoning().await;
+                continue;
+            }
             Err(e @ ChaosErr::ContextWindowExceeded) => {
                 if turn_input_len > 1 {
                     // Trim from the beginning to preserve cache (prefix-based) and keep recent messages intact.
@@ -222,7 +233,9 @@ async fn drain_to_completed(
 ) -> ChaosResult<()> {
     sess.record_provider_request_started(turn_context).await;
     let mut stream = client_session
-        .stream(
+        .stream_accounted(
+            &turn_context.sub_id,
+            chaos_journald::InvocationPurpose::Compaction,
             prompt,
             &turn_context.model_info,
             &turn_context.session_telemetry,

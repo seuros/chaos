@@ -3,6 +3,8 @@ use chaos_ipc::protocol::{TurnAbortReason, TurnAbortedEvent, TurnCompleteEvent};
 use runtime::{Backend, supervise};
 use tokio::sync::mpsc;
 
+pub(in crate::sessions) mod durability;
+
 fn ready_session() -> (Arc<Session>, mpsc::Receiver<Command>) {
     let manager = SessionManager::new(1, Duration::from_secs(3600));
     let (session, commands) = manager.reserve(None).unwrap();
@@ -84,6 +86,16 @@ async fn controls_do_not_need_execution_capacity_and_stale_targets_are_rejected(
     submit_turn(&session, "first", "hello", &capacity);
     assert_eq!(capacity.available_permits(), 0);
     assert!(matches!(commands.recv().await, Some(Command::Turn(_))));
+    // Model the supervisor consuming the request before a backend interrupt.
+    session
+        .data
+        .lock()
+        .unwrap()
+        .turns
+        .get_mut("first")
+        .unwrap()
+        .request
+        .take();
     assert_eq!(
         session.interrupt("stale".into()).unwrap_err().code,
         StatusCode::CONFLICT
@@ -271,9 +283,13 @@ struct FakeBackend {
     events: tokio::sync::Mutex<mpsc::UnboundedReceiver<Event>>,
     operations: mpsc::UnboundedSender<Operation>,
     stalled_shutdown: bool,
+    tree_quiet: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Backend for FakeBackend {
+    async fn confirm_quiescent(&self) -> bool {
+        self.tree_quiet.load(std::sync::atomic::Ordering::SeqCst)
+    }
     async fn next_event(&self) -> Result<Event, ()> {
         self.events.lock().await.recv().await.ok_or(())
     }
@@ -313,6 +329,7 @@ struct SupervisorFixture {
     events: mpsc::UnboundedSender<Event>,
     operations: mpsc::UnboundedReceiver<Operation>,
     task: tokio::task::JoinHandle<()>,
+    tree_quiet: Arc<std::sync::atomic::AtomicBool>,
 }
 
 fn start_supervisor(
@@ -323,6 +340,7 @@ fn start_supervisor(
 ) -> SupervisorFixture {
     let (events, event_rx) = mpsc::unbounded_channel();
     let (operations, operation_rx) = mpsc::unbounded_channel();
+    let tree_quiet = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let task = tokio::spawn(supervise(
         session.clone(),
         commands,
@@ -330,6 +348,7 @@ fn start_supervisor(
             events: tokio::sync::Mutex::new(event_rx),
             operations,
             stalled_shutdown,
+            tree_quiet: tree_quiet.clone(),
         },
         Instant::now() + ttl,
     ));
@@ -337,6 +356,7 @@ fn start_supervisor(
         events,
         operations: operation_rx,
         task,
+        tree_quiet,
     }
 }
 

@@ -685,3 +685,40 @@ fn test_try_parse_retry_after_azure() {
 }
 
 const CYBER_RESTRICTED_MODEL_FOR_TESTS: &str = "gpt-5.3-codex";
+
+#[tokio::test]
+async fn error_events_are_classified() {
+    let cases = [
+        (
+            r#"{"type":"error","error":{"message":"The encrypted content gAAA...tWc= could not be verified.","type":"invalid_request_error","param":"input","code":"invalid_encrypted_content"}}"#,
+            "invalid encrypted content: The encrypted content gAAA...tWc= could not be verified.",
+        ),
+        (
+            r#"{"type":"response.failed","response":{"id":"resp_enc","status":"failed","error":{"code":"invalid_encrypted_content","message":"could not be decrypted"}}}"#,
+            "invalid encrypted content: could not be decrypted",
+        ),
+        (
+            r#"{"type":"error","error":{"message":"Unknown parameter.","type":"invalid_request_error","param":"input","code":"unknown_parameter"}}"#,
+            "invalid request: Unknown parameter.",
+        ),
+        (
+            r#"{"type":"error","error":{"message":"Your input exceeds the context window.","type":"invalid_request_error","code":"context_length_exceeded"}}"#,
+            "context window exceeded",
+        ),
+        (
+            r#"{"type":"error","error":{"message":"The server had an error.","type":"server_error","code":null}}"#,
+            "retryable error: The server had an error.",
+        ),
+        (r#"{"type":"error"}"#, "stream error: error event received"),
+    ];
+
+    for (raw, expected) in cases {
+        let sse = format!("event: error\ndata: {raw}\n\n");
+        let events = collect_events(&[sse.as_bytes()]).await;
+        assert_eq!(events.len(), 1, "input: {raw}");
+        match &events[0] {
+            Err(err) => assert_eq!(err.to_string(), expected, "input: {raw}"),
+            Ok(event) => panic!("unexpected event {event:?} for input: {raw}"),
+        }
+    }
+}

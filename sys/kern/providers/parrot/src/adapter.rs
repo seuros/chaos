@@ -242,6 +242,9 @@ impl From<crate::error::ApiError> for AbiError {
             crate::error::ApiError::InvalidRequest { message } => {
                 AbiError::InvalidRequest { message }
             }
+            crate::error::ApiError::InvalidEncryptedContent { message } => {
+                AbiError::InvalidEncryptedContent { message }
+            }
             crate::error::ApiError::Stream(msg) => AbiError::Stream(msg),
             crate::error::ApiError::Transport(t) => match t {
                 crate::TransportError::Http { status, body, .. } => AbiError::Transport {

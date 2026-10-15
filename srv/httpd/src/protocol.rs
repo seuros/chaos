@@ -34,14 +34,14 @@ pub struct TriggerRequest {
 }
 
 /// Token usage snapshot mirroring `TokenCountEvent.info`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsageResponse {
     pub total_token_usage: TokenUsageEntry,
     pub last_token_usage: TokenUsageEntry,
     pub model_context_window: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenUsageEntry {
     pub input_tokens: i64,
     pub cached_input_tokens: i64,

@@ -64,6 +64,8 @@ mod approvals;
 mod auth_refresh;
 #[path = "chaos_delegate.rs"]
 mod chaos_delegate;
+#[path = "encrypted_reasoning.rs"]
+mod encrypted_reasoning;
 #[path = "exec.rs"]
 mod exec;
 #[path = "exec_oneshot.rs"]

@@ -123,7 +123,7 @@ fn unique_error(error: sqlx::Error, message: &str) -> JournalError {
 }
 
 macro_rules! impl_storage {
-    ($store:ty, $begin:expr, $lock:literal, $clock:literal) => {
+    ($store:ty, $begin:expr, $lock:literal, $clock:literal, $replay:ident, $retention:ident) => {
         impl $store {
             pub(crate) async fn execute_ledger(
                 &self,
@@ -134,6 +134,9 @@ macro_rules! impl_storage {
                 let mut new_process = false;
                 let mut metered = false;
                 let request = match request {
+                    ExecutionRequest::Replay { request } => return super::replay::$replay(self.pool(), request).await.map(ExecutionResponse::Replay),
+                    ExecutionRequest::Retention { request } => return super::retention::$retention(self.pool(), &request).await.map(ExecutionResponse::Retention),
+                    ExecutionRequest::Billing { request } => return self.execute_billing(request).await.map(ExecutionResponse::Billing),
                     ExecutionRequest::Invocation { request } => return self.execute_invocation(request).await,
                     ExecutionRequest::AcceptMetered { lease, turn_id, fingerprint } => {
                         metered = true;
@@ -349,10 +352,15 @@ macro_rules! impl_storage {
                             ).bind(process_id.to_string()).bind(&current.scope).bind(&policy)
                                 .execute(&mut *tx).await?;
                         }
-                        let binding = sqlx::query_as::<_, (Option<String>, Option<String>)>(
-                            "SELECT scope, policy_digest FROM execution_process_bindings WHERE process_id = $1",
-                        ).bind(process_id.to_string()).fetch_optional(&mut *tx).await?
+                        let binding = sqlx::query_as::<_, (Option<String>, Option<String>)>(concat!(
+                            "SELECT scope, policy_digest FROM execution_process_bindings WHERE process_id = $1", $lock
+                        )).bind(process_id.to_string()).fetch_optional(&mut *tx).await?
                             .ok_or_else(|| conflict("unverified process history cannot be resumed"))?;
+                        let descendant: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_descendants WHERE process_id = $1")
+                            .bind(process_id.to_string()).fetch_one(&mut *tx).await?;
+                        if descendant != 0 {
+                            return Err(conflict("descendant histories cannot be resumed as standalone sessions"));
+                        }
                         if binding.0.as_deref() != Some(current.scope.as_str()) || binding.1 != policy {
                             return Err(conflict("process history belongs to a different tenant or policy"));
                         }
@@ -405,13 +413,14 @@ macro_rules! impl_storage {
                                 return Err(conflict("execution session turn limit reached"));
                             }
                             sqlx::query(
-                                "INSERT INTO execution_turns (session_id, turn_id, fingerprint, state, accounting_enabled)
-                                 VALUES ($1, $2, $3, 'accepted', $4)",
+                                "INSERT INTO execution_turns (session_id, turn_id, fingerprint, state, accounting_enabled, accounting_coverage)
+                                 VALUES ($1, $2, $3, 'accepted', $4, $5)",
                             )
                             .bind(&id)
                             .bind(turn_id.to_string())
                             .bind(&fingerprint)
                             .bind(i32::from(metered))
+                            .bind(if metered { "root_and_descendant_logical_sampling_and_compaction" } else { "unmetered" })
                             .execute(&mut *tx)
                             .await?;
                             sqlx::query(
@@ -659,11 +668,15 @@ impl_storage!(
     "BEGIN IMMEDIATE",
     "",
     "SELECT CAST(strftime('%s', 'now') AS INTEGER) * 1000 +
-     CAST(substr(strftime('%f', 'now'), 4, 3) AS INTEGER)"
+     CAST(substr(strftime('%f', 'now'), 4, 3) AS INTEGER)",
+    execute_replay_sqlite,
+    execute_retention_sqlite
 );
 impl_storage!(
     crate::PostgresJournalStore,
     "BEGIN",
     " FOR UPDATE",
-    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)"
+    "SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)",
+    execute_replay_postgres,
+    execute_retention_postgres
 );

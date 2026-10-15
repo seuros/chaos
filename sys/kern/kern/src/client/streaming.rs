@@ -581,6 +581,7 @@ impl ModelClientSession {
             return Ok(stream);
         }
 
+        let metered = self.client.has_invocation_sink()?;
         let auth_manager = self.client.state.auth_manager.clone();
         let mut auth_recovery = auth_manager
             .as_ref()
@@ -628,7 +629,7 @@ impl ModelClientSession {
                 )
                 .with_options(options.clone())
                 .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-                if let Some(websocket) = &self.client.state.responses_websocket {
+                if !metered && let Some(websocket) = &self.client.state.responses_websocket {
                     adapter = adapter.with_websocket(Arc::clone(websocket));
                 }
                 Box::new(adapter)
@@ -642,7 +643,7 @@ impl ModelClientSession {
                 )
                 .with_options(options.clone())
                 .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-                if let Some(websocket) = &self.client.state.responses_websocket {
+                if !metered && let Some(websocket) = &self.client.state.responses_websocket {
                     adapter = adapter.with_websocket(Arc::clone(websocket));
                 }
                 Box::new(adapter)
@@ -660,7 +661,7 @@ impl ModelClientSession {
                     return Ok(stream);
                 }
                 Err(AbiError::Transport { status, message })
-                    if status == StatusCode::UNAUTHORIZED.as_u16() =>
+                    if !metered && status == StatusCode::UNAUTHORIZED.as_u16() =>
                 {
                     let unauthorized_transport = TransportError::Http {
                         status: StatusCode::UNAUTHORIZED,
@@ -1526,6 +1527,7 @@ impl ModelClientSession {
         // format. A rejected upgrade must surface instead of trying another API.
         if self.client.state.provider.wire_api == WireApi::Auto
             && self.client.state.responses_websocket.is_none()
+            && !self.client.has_invocation_sink()?
         {
             if let Some(&resolved) = self.client.state.resolved_wire.get() {
                 return match resolved {

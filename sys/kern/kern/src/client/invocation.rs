@@ -15,7 +15,142 @@ fn unavailable() -> ChaosErr {
     ChaosErr::Fatal("provider invocation accounting unavailable; execution must reconcile".into())
 }
 
+fn runnable(op: &chaos_ipc::protocol::Op) -> bool {
+    matches!(
+        op,
+        chaos_ipc::protocol::Op::UserTurn { .. }
+            | chaos_ipc::protocol::Op::Compact
+            | chaos_ipc::protocol::Op::Review { .. }
+            | chaos_ipc::protocol::Op::RunUserShellCommand { .. }
+    )
+}
+
+pub(crate) struct PendingSubmission(ModelClient);
+impl Drop for PendingSubmission {
+    fn drop(&mut self) {
+        self.0.release_submission();
+    }
+}
+
 impl ModelClient {
+    pub(crate) fn bind_admission_epoch(
+        &self,
+        epoch: Arc<crate::invocation::AdmissionEpoch>,
+    ) -> Result<()> {
+        let mut installed = self
+            .state
+            .admission_epoch
+            .lock()
+            .map_err(|_| unavailable())?;
+        if installed
+            .as_ref()
+            .is_some_and(|old| !Arc::ptr_eq(old, &epoch))
+        {
+            return Err(unavailable());
+        }
+        *installed = Some(epoch.clone());
+        drop(installed);
+        if self.has_invocation_sink()? {
+            epoch.record_metered(self.state.conversation_id)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn advance_admission_epoch(
+        &self,
+    ) -> Result<Option<crate::invocation::AdmissionMutation>> {
+        let epoch = self
+            .state
+            .admission_epoch
+            .lock()
+            .map_err(|_| unavailable())?;
+        epoch
+            .as_ref()
+            .map(crate::invocation::AdmissionEpoch::mutate)
+            .transpose()
+    }
+
+    pub(crate) fn reserve_submission(&self, op: &chaos_ipc::protocol::Op) -> Result<bool> {
+        if !runnable(op) || !self.has_invocation_sink()? {
+            return Ok(false);
+        }
+        let _mutation = self.advance_admission_epoch()?;
+        self.state
+            .pending_submissions
+            .try_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |count| {
+                    (count < chaos_journald::MAX_EXECUTION_INVOCATIONS as usize).then(|| count + 1)
+                },
+            )
+            .map_err(|_| unavailable())?;
+        Ok(true)
+    }
+
+    pub(crate) fn release_submission(&self) {
+        let Ok(_mutation) = self.advance_admission_epoch() else {
+            return;
+        };
+        let _ = self.state.pending_submissions.try_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |count| Some(count.saturating_sub(1)),
+        );
+    }
+
+    pub(crate) fn dispatch_submission(
+        &self,
+        op: &chaos_ipc::protocol::Op,
+    ) -> Option<PendingSubmission> {
+        (runnable(op) && self.has_pending_submissions()).then(|| PendingSubmission(self.clone()))
+    }
+
+    pub(crate) fn has_pending_submissions(&self) -> bool {
+        self.state
+            .pending_submissions
+            .load(std::sync::atomic::Ordering::SeqCst)
+            != 0
+    }
+
+    pub(crate) fn clear_pending_submissions(&self) {
+        let Ok(_mutation) = self.advance_admission_epoch() else {
+            return;
+        };
+        self.state
+            .pending_submissions
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn invocation_parent(
+        &self,
+        turn_id: &str,
+    ) -> Result<Option<crate::invocation::InvocationParent>> {
+        let sink = self
+            .state
+            .invocation_sink
+            .lock()
+            .map_err(|_| unavailable())?
+            .clone();
+        sink.map(|sink| {
+            let turn_id = uuid::Uuid::parse_str(turn_id).map_err(|_| unavailable())?;
+            Ok(crate::invocation::InvocationParent::new(
+                sink,
+                turn_id,
+                self.state.conversation_id,
+            ))
+        })
+        .transpose()
+    }
+
+    pub(crate) fn has_invocation_sink(&self) -> Result<bool> {
+        self.state
+            .invocation_sink
+            .lock()
+            .map(|sink| sink.is_some())
+            .map_err(|_| unavailable())
+    }
+
     pub(crate) fn set_invocation_sink(&self, sink: Arc<dyn ProviderInvocationSink>) -> Result<()> {
         let mut installed = self
             .state
@@ -26,6 +161,16 @@ impl ModelClient {
             return Err(unavailable());
         }
         *installed = Some(sink);
+        drop(installed);
+        if let Some(epoch) = self
+            .state
+            .admission_epoch
+            .lock()
+            .map_err(|_| unavailable())?
+            .as_ref()
+        {
+            epoch.record_metered(self.state.conversation_id)?;
+        }
         Ok(())
     }
 }
@@ -43,14 +188,7 @@ impl ModelClientSession {
         tier: Option<ServiceTier>,
         metadata: Option<&str>,
     ) -> Result<ResponseStream> {
-        if self
-            .client
-            .state
-            .invocation_sink
-            .lock()
-            .map_err(|_| unavailable())?
-            .is_some()
-        {
+        if self.client.has_invocation_sink()? {
             return Err(unavailable());
         }
         self.stream_unmetered(prompt, model, telemetry, effort, summary, tier, metadata)

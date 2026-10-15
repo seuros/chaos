@@ -75,6 +75,14 @@ impl Session {
         let state = self.state.lock().await;
         state.session_configuration.session_source.clone()
     }
+
+    #[cfg(test)]
+    pub(crate) async fn set_session_source_for_tests(
+        &self,
+        source: chaos_ipc::protocol::SessionSource,
+    ) {
+        self.state.lock().await.session_configuration.session_source = source;
+    }
 }
 
 #[cfg(test)]

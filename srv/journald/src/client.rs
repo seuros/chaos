@@ -80,7 +80,7 @@ impl JournalRpcClient {
             .send_request(JournalRequest::Execution(request))
             .await?
         {
-            JournalResponse::Execution(response) => Ok(response),
+            JournalResponse::Execution(response) => Ok(*response),
             other => Err(unexpected_variant("execution", &other)),
         }
     }

@@ -69,6 +69,8 @@ impl ModelClient {
         );
         Self {
             state: Arc::new(ModelClientState {
+                pending_submissions: std::sync::atomic::AtomicUsize::new(0),
+                admission_epoch: std::sync::Mutex::new(None),
                 invocation_sink: std::sync::Mutex::new(None),
                 auth_manager,
                 conversation_id,
@@ -114,6 +116,9 @@ impl ModelClient {
     }
 
     fn prewarm_responses_socket(&self) {
+        if self.has_invocation_sink().unwrap_or(true) {
+            return;
+        }
         let Some(websocket) = &self.state.responses_websocket else {
             return;
         };
@@ -380,10 +385,18 @@ impl ModelClient {
                 None => None,
             }
         };
-        let api_provider = self
+        let mut api_provider = self
             .state
             .provider
             .to_api_provider(auth.as_ref().map(ChaosAuth::auth_mode))?;
+        if self.has_invocation_sink()? {
+            // A durable invocation authorizes one dispatch, not an opaque set of
+            // transport retries. Outer sampling retries obtain their own record.
+            api_provider.retry.max_attempts = 1;
+            api_provider.retry.retry_429 = false;
+            api_provider.retry.retry_5xx = false;
+            api_provider.retry.retry_transport = false;
+        }
         let api_auth =
             crate::api_bridge::auth_provider_from_auth(auth.clone(), &self.state.provider)?;
         Ok(CurrentClientSetup {

@@ -65,8 +65,8 @@ impl Process {
         self.chaos.submit(op).await
     }
 
-    /// Install before submitting retained work. Other process families do not
-    /// inherit this sink and must not be silently included in billing totals.
+    /// Install before submitting retained work. Native descendants must obtain
+    /// their own durably admitted sink; unsupported process families fail closed.
     pub fn set_provider_invocation_sink(
         &self,
         sink: std::sync::Arc<dyn crate::invocation::ProviderInvocationSink>,

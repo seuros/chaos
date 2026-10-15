@@ -391,6 +391,36 @@ async fn spawn_agent_creates_process_and_sends_prompt() {
 }
 
 #[tokio::test]
+async fn unmetered_historical_parent_absence_does_not_block_fresh_child_creation() {
+    let harness = AgentControlHarness::new().await;
+    let child = harness
+        .control
+        .spawn_agent(
+            harness.config.clone(),
+            text_input("historical lineage"),
+            Some(SessionSource::SubAgent(SubAgentSource::ProcessSpawn {
+                parent_process_id: ProcessId::new(),
+                depth: 1,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+        )
+        .await
+        .expect("unmetered historical parent need not remain in memory");
+    let process = harness.manager.get_process(child).await.unwrap();
+    assert!(
+        !process
+            .chaos
+            .session
+            .services
+            .model_client
+            .has_invocation_sink()
+            .unwrap()
+    );
+    harness.control.shutdown_agent(child).await.unwrap();
+}
+
+#[tokio::test]
 async fn planning_child_attachment_is_explicit_even_when_forking_history() -> anyhow::Result<()> {
     // Attachment is a database/session policy, not a model turn or a shutdown
     // test. Exercise the production post-spawn seam without live child loops.

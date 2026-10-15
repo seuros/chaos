@@ -5,6 +5,8 @@ use uuid::Uuid;
 use super::*;
 use crate::{JournalStore, SqliteJournalStore};
 
+mod billing;
+mod descendants;
 mod isolation;
 mod recovery;
 

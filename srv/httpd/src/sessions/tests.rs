@@ -283,9 +283,13 @@ struct FakeBackend {
     events: tokio::sync::Mutex<mpsc::UnboundedReceiver<Event>>,
     operations: mpsc::UnboundedSender<Operation>,
     stalled_shutdown: bool,
+    tree_quiet: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Backend for FakeBackend {
+    async fn confirm_quiescent(&self) -> bool {
+        self.tree_quiet.load(std::sync::atomic::Ordering::SeqCst)
+    }
     async fn next_event(&self) -> Result<Event, ()> {
         self.events.lock().await.recv().await.ok_or(())
     }
@@ -325,6 +329,7 @@ struct SupervisorFixture {
     events: mpsc::UnboundedSender<Event>,
     operations: mpsc::UnboundedReceiver<Operation>,
     task: tokio::task::JoinHandle<()>,
+    tree_quiet: Arc<std::sync::atomic::AtomicBool>,
 }
 
 fn start_supervisor(
@@ -335,6 +340,7 @@ fn start_supervisor(
 ) -> SupervisorFixture {
     let (events, event_rx) = mpsc::unbounded_channel();
     let (operations, operation_rx) = mpsc::unbounded_channel();
+    let tree_quiet = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let task = tokio::spawn(supervise(
         session.clone(),
         commands,
@@ -342,6 +348,7 @@ fn start_supervisor(
             events: tokio::sync::Mutex::new(event_rx),
             operations,
             stalled_shutdown,
+            tree_quiet: tree_quiet.clone(),
         },
         Instant::now() + ttl,
     ));
@@ -349,6 +356,7 @@ fn start_supervisor(
         events,
         operations: operation_rx,
         task,
+        tree_quiet,
     }
 }
 

@@ -48,7 +48,7 @@ impl From<&chaos_ipc::protocol::TokenUsage> for InvocationTokenUsage {
 }
 
 impl InvocationTokenUsage {
-    fn validate(&self) -> Result<(), JournalError> {
+    pub(super) fn validate(&self) -> Result<(), JournalError> {
         if self.input_tokens < 0
             || self.cache_creation_input_tokens < 0
             || self.cached_input_tokens < 0
@@ -137,6 +137,9 @@ pub enum InvocationState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionInvocation {
     pub request: InvocationStart,
+    /// Actual descendant-local turn; request.turn_id remains the root ledger turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_turn_id: Option<Uuid>,
     pub state: InvocationState,
     pub started_at_ms: i64,
     pub finished_at_ms: Option<i64>,
@@ -168,12 +171,13 @@ pub struct ExecutionAccounting {
 
 pub(super) fn accounting(
     enabled: bool,
+    coverage: String,
     invocations: Vec<ExecutionInvocation>,
 ) -> ExecutionAccounting {
     let summary = enabled.then(|| {
         let mut summary = InvocationSummary {
             billing_complete: false,
-            coverage: "direct_logical_sampling_and_compaction".into(),
+            coverage,
             recorded_invocations: invocations.len() as u64,
             reported_invocations: 0,
             completed_without_usage: 0,
@@ -222,6 +226,23 @@ pub(super) fn accounting(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionInvocationRequest {
+    CompleteDescendant {
+        lease: ExecutionLease,
+        process_id: ProcessId,
+        invocation_id: Uuid,
+        receipt: InvocationReceipt,
+    },
+    RegisterDescendant {
+        lease: ExecutionLease,
+        root_turn_id: Uuid,
+        parent_process_id: ProcessId,
+        process_id: ProcessId,
+    },
+    BeginDescendant {
+        lease: ExecutionLease,
+        root_turn_id: Uuid,
+        request: InvocationStart,
+    },
     Begin {
         lease: ExecutionLease,
         request: InvocationStart,
@@ -240,12 +261,14 @@ pub enum ExecutionInvocationRequest {
 impl ExecutionInvocationRequest {
     pub(crate) fn validate(&self) -> Result<(), JournalError> {
         match self {
-            Self::Begin { request, .. } => {
+            Self::Begin { request, .. } | Self::BeginDescendant { request, .. } => {
                 validate_name(&request.provider_id)?;
                 validate_name(&request.requested_model)?;
             }
-            Self::Complete { receipt, .. } => receipt.validate()?,
-            Self::Read { .. } => {}
+            Self::Complete { receipt, .. } | Self::CompleteDescendant { receipt, .. } => {
+                receipt.validate()?
+            }
+            Self::Read { .. } | Self::RegisterDescendant { .. } => {}
         }
         Ok(())
     }
@@ -258,14 +281,16 @@ pub(super) type InvocationRow = (
     Option<i64>,
     Option<String>,
     Option<String>,
+    Option<String>,
 );
 pub(super) const SELECT_INVOCATIONS: &str =
-    "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of FROM execution_invocations
+    "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of, source_turn_id FROM execution_invocations
      WHERE session_id = $1 AND turn_id = $2 ORDER BY started_at_ms, invocation_id";
 
 pub(super) fn invocation(row: InvocationRow) -> Result<ExecutionInvocation, JournalError> {
     Ok(ExecutionInvocation {
         request: decode(&row.0)?,
+        source_turn_id: row.6.map(parse_uuid).transpose()?,
         state: decode_state(row.1)?,
         started_at_ms: row.2,
         finished_at_ms: row.3,
@@ -276,8 +301,8 @@ pub(super) fn invocation(row: InvocationRow) -> Result<ExecutionInvocation, Jour
 
 macro_rules! read_accounting {
     ($tx:expr, $session_id:expr, $turn_id:expr) => {{
-        let enabled: i32 = sqlx::query_scalar(
-            "SELECT accounting_enabled FROM execution_turns
+        let (enabled, coverage): (i32, String) = sqlx::query_as(
+            "SELECT accounting_enabled, accounting_coverage FROM execution_turns
             WHERE session_id = $1 AND turn_id = $2",
         )
         .bind($session_id)
@@ -294,6 +319,7 @@ macro_rules! read_accounting {
         .await?;
         super::invocations::accounting(
             enabled != 0,
+            coverage,
             rows.into_iter()
                 .map(super::invocations::invocation)
                 .collect::<Result<_, _>>()?,
@@ -324,7 +350,10 @@ macro_rules! impl_invocations {
                 use super::storage::{SessionRow, check_lease, session};
                 request.validate()?;
                 let session_id = match &request {
-                    ExecutionInvocationRequest::Begin { lease, .. } | ExecutionInvocationRequest::Complete { lease, .. } => lease.session_id,
+                    ExecutionInvocationRequest::Begin { lease, .. } | ExecutionInvocationRequest::Complete { lease, .. }
+                    | ExecutionInvocationRequest::BeginDescendant { lease, .. }
+                    | ExecutionInvocationRequest::CompleteDescendant { lease, .. }
+                    | ExecutionInvocationRequest::RegisterDescendant { lease, .. } => lease.session_id,
                     ExecutionInvocationRequest::Read { session_id, .. } => *session_id,
                 }.to_string();
                 let mut tx = self.pool().begin_with($begin).await?;
@@ -335,26 +364,94 @@ macro_rules! impl_invocations {
                      recovery_epoch FROM execution_sessions WHERE session_id = $1", $lock
                 )).bind(&session_id).fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
                 let now: i64 = sqlx::query_scalar($clock).fetch_one(&mut *tx).await?;
+                let mut source_turn_id = None;
+                let mut expected_process_id = None;
+                let request = match request {
+                    ExecutionInvocationRequest::CompleteDescendant { lease, process_id, invocation_id, receipt } => {
+                        expected_process_id = Some(process_id);
+                        ExecutionInvocationRequest::Complete { lease, invocation_id, receipt }
+                    }
+                    ExecutionInvocationRequest::BeginDescendant { lease, root_turn_id, mut request } => {
+                        source_turn_id = Some(request.turn_id);
+                        request.turn_id = root_turn_id;
+                        ExecutionInvocationRequest::Begin { lease, request }
+                    }
+                    request => request,
+                };
                 let response = match request {
+                    ExecutionInvocationRequest::RegisterDescendant { lease, root_turn_id, parent_process_id, process_id } => {
+                        check_lease(&row, &lease, now)?;
+                        let current = session(&row)?;
+                        if current.state != ExecutionSessionState::Active || current.active_turn_id != Some(root_turn_id)
+                            || process_id == parent_process_id || current.process_id == Some(process_id)
+                        { return Err(conflict("descendant requires current active root execution")); }
+                        let turn: (String, i32) = sqlx::query_as("SELECT state, accounting_enabled FROM execution_turns WHERE session_id = $1 AND turn_id = $2")
+                            .bind(&session_id).bind(root_turn_id.to_string()).fetch_one(&mut *tx).await?;
+                        if turn.0 != "running" || turn.1 == 0 {
+                            return Err(conflict("descendant requires dispatched metered execution"));
+                        }
+                        if current.process_id != Some(parent_process_id) {
+                            let parent: Option<String> = sqlx::query_scalar("SELECT process_id FROM execution_descendants WHERE process_id = $1 AND session_id = $2 AND root_turn_id = $3")
+                                .bind(parent_process_id.to_string()).bind(&session_id).bind(root_turn_id.to_string())
+                                .fetch_optional(&mut *tx).await?;
+                            if parent.is_none() { return Err(conflict("descendant parent is outside root execution")); }
+                        }
+                        let previous: Option<(String, String, String)> = sqlx::query_as(
+                            "SELECT session_id, root_turn_id, parent_process_id FROM execution_descendants WHERE process_id = $1")
+                            .bind(process_id.to_string()).fetch_optional(&mut *tx).await?;
+                        if let Some(previous) = previous {
+                            if previous != (session_id.clone(), root_turn_id.to_string(), parent_process_id.to_string()) {
+                                return Err(conflict("descendant identity is immutable"));
+                            }
+                            ExecutionResponse::DescendantRegistered { newly_registered: false }
+                        } else {
+                            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_descendants WHERE session_id = $1 AND root_turn_id = $2")
+                                .bind(&session_id).bind(root_turn_id.to_string()).fetch_one(&mut *tx).await?;
+                            if count >= MAX_EXECUTION_INVOCATIONS { return Err(conflict("descendant limit reached before boot")); }
+                            let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_process_bindings WHERE process_id = $1")
+                                .bind(process_id.to_string()).fetch_one(&mut *tx).await?;
+                            let history: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM processes WHERE id = $1")
+                                .bind(process_id.to_string()).fetch_one(&mut *tx).await?;
+                            if existing != 0 || history != 0 { return Err(conflict("descendant must be a fresh unowned process")); }
+                            let policy: Option<String> = sqlx::query_scalar("SELECT policy_digest FROM execution_scopes WHERE scope = $1")
+                                .bind(&current.scope).fetch_optional(&mut *tx).await?.flatten();
+                            let policy = policy.ok_or_else(|| conflict("descendant requires a bound policy"))?;
+                            // Immutable ownership survives root closure and blocks history import.
+                            sqlx::query("INSERT INTO execution_process_bindings (process_id, scope, policy_digest) VALUES ($1,$2,$3)")
+                                .bind(process_id.to_string()).bind(&current.scope).bind(policy).execute(&mut *tx).await?;
+                            sqlx::query("INSERT INTO execution_descendants (process_id,session_id,root_turn_id,parent_process_id,registered_at_ms)
+                                VALUES ($1,$2,$3,$4,$5)")
+                                .bind(process_id.to_string()).bind(&session_id).bind(root_turn_id.to_string())
+                                .bind(parent_process_id.to_string()).bind(now).execute(&mut *tx).await?;
+                            ExecutionResponse::DescendantRegistered { newly_registered: true }
+                        }
+                    }
                     ExecutionInvocationRequest::Read { turn_id, .. } => {
                         ExecutionResponse::Accounting(read_accounting!(tx, &session_id, turn_id.to_string()))
                     }
                     ExecutionInvocationRequest::Begin { lease, request } => {
                         check_lease(&row, &lease, now)?;
                         let previous = sqlx::query_as::<_, InvocationRow>(
-                            "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of
+                            "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of, source_turn_id
                              FROM execution_invocations WHERE invocation_id = $1 AND session_id = $2"
                         ).bind(request.invocation_id.to_string()).bind(&session_id)
                             .fetch_optional(&mut *tx).await?.map(invocation).transpose()?;
                         if let Some(previous) = previous {
-                            if previous.request != request { return Err(conflict("invocation identity is immutable")); }
+                            if previous.request != request || previous.source_turn_id != source_turn_id { return Err(conflict("invocation identity is immutable")); }
                             ExecutionResponse::InvocationBegan { invocation: previous, newly_recorded: false }
                         } else {
                             let current = session(&row)?;
                             if current.state != ExecutionSessionState::Active
                                 || current.active_turn_id != Some(request.turn_id)
-                                || current.process_id != Some(request.process_id)
                             { return Err(conflict("invocation is not bound to the active process/turn")); }
+                            if source_turn_id.is_some() {
+                                let registered: Option<String> = sqlx::query_scalar("SELECT process_id FROM execution_descendants WHERE process_id = $1 AND session_id = $2 AND root_turn_id = $3")
+                                    .bind(request.process_id.to_string()).bind(&session_id).bind(request.turn_id.to_string())
+                                    .fetch_optional(&mut *tx).await?;
+                                if registered.is_none() { return Err(conflict("descendant is not registered to this root")); }
+                            } else if current.process_id != Some(request.process_id) {
+                                return Err(conflict("root invocation process mismatch"));
+                            }
                             let state = sqlx::query_as::<_, (String, i32)>(
                                 "SELECT state, accounting_enabled FROM execution_turns WHERE session_id = $1 AND turn_id = $2"
                             ).bind(&session_id).bind(request.turn_id.to_string()).fetch_one(&mut *tx).await?;
@@ -364,22 +461,25 @@ macro_rules! impl_invocations {
                             if count >= MAX_EXECUTION_INVOCATIONS { return Err(conflict("invocation limit reached before provider dispatch")); }
                             let json = serde_json::to_string(&request).map_err(|source| JournalError::Serialize { field: "invocation start", source })?;
                             sqlx::query("INSERT INTO execution_invocations
-                                (invocation_id, session_id, turn_id, request_json, started_at_ms, state)
-                                VALUES ($1,$2,$3,$4,$5,'started')")
+                                (invocation_id, session_id, turn_id, request_json, started_at_ms, state, source_turn_id)
+                                VALUES ($1,$2,$3,$4,$5,'started',$6)")
                                 .bind(request.invocation_id.to_string()).bind(&session_id).bind(request.turn_id.to_string())
-                                .bind(json).bind(now).execute(&mut *tx).await?;
+                                .bind(json).bind(now).bind(source_turn_id.map(|id| id.to_string())).execute(&mut *tx).await?;
                             ExecutionResponse::InvocationBegan { invocation: ExecutionInvocation {
-                                request, state: InvocationState::Started, started_at_ms: now, finished_at_ms: None, receipt: None, duplicate_receipt_of: None,
+                                request, source_turn_id, state: InvocationState::Started, started_at_ms: now, finished_at_ms: None, receipt: None, duplicate_receipt_of: None,
                             }, newly_recorded: true }
                         }
                     }
                     ExecutionInvocationRequest::Complete { lease, invocation_id, receipt } => {
                         let previous = sqlx::query_as::<_, InvocationRow>(
-                            "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of
+                            "SELECT request_json, state, started_at_ms, finished_at_ms, receipt_json, duplicate_receipt_of, source_turn_id
                              FROM execution_invocations WHERE invocation_id = $1 AND session_id = $2"
                         ).bind(invocation_id.to_string()).bind(&session_id).fetch_optional(&mut *tx).await?
                             .ok_or(JournalError::ExecutionNotFound)?;
                         let mut previous = invocation(previous)?;
+                        if expected_process_id.is_some_and(|id| id != previous.request.process_id) {
+                            return Err(conflict("descendant receipt process mismatch"));
+                        }
                         if previous.state != InvocationState::Started {
                             let identical = previous.receipt.as_ref() == Some(&receipt)
                                 || previous.state == InvocationState::Unknown && previous.receipt.is_none() && receipt == InvocationReceipt::unknown();
@@ -414,6 +514,8 @@ macro_rules! impl_invocations {
                         }
                         ExecutionResponse::Invocation(previous)
                     }
+                    ExecutionInvocationRequest::BeginDescendant { .. }
+                    | ExecutionInvocationRequest::CompleteDescendant { .. } => unreachable!("normalized above"),
                 };
                 tx.commit().await?;
                 Ok(response)

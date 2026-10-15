@@ -113,6 +113,15 @@ pub struct ExecutionResolutionRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExecutionRequest {
+    Replay {
+        request: ExecutionReplayRequest,
+    },
+    Retention {
+        request: ExecutionRetentionRequest,
+    },
+    Billing {
+        request: ExecutionBillingRequest,
+    },
     Invocation {
         request: ExecutionInvocationRequest,
     },
@@ -246,12 +255,18 @@ impl ExecutionRequest {
             | Self::BindScope { .. }
             | Self::GetScope { .. }
             | Self::Delivery { .. } => None,
-            Self::Invocation { .. } => None,
+            Self::Invocation { .. }
+            | Self::Billing { .. }
+            | Self::Replay { .. }
+            | Self::Retention { .. } => None,
         }
     }
 
     pub(crate) fn validate(&self) -> Result<(), JournalError> {
         match self {
+            Self::Replay { request } => request.validate()?,
+            Self::Retention { request } => request.validate()?,
+            Self::Billing { request } => request.validate()?,
             Self::Invocation { request } => request.validate()?,
             Self::Delivery { request } => request.validate()?,
             Self::BindScope {
@@ -365,6 +380,12 @@ impl ExecutionResolution {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "operation", content = "result", rename_all = "snake_case")]
 pub enum ExecutionResponse {
+    DescendantRegistered {
+        newly_registered: bool,
+    },
+    Replay(ExecutionReplayResponse),
+    Retention(ExecutionRetentionResponse),
+    Billing(ExecutionBillingResponse),
     InvocationBegan {
         invocation: ExecutionInvocation,
         newly_recorded: bool,
@@ -443,6 +464,21 @@ pub(crate) fn parse_uuid(value: String) -> Result<Uuid, JournalError> {
 // Both backends run the same state machine and parameterized SQL. Only writer
 // locking and the authoritative storage-clock expression differ. SQLite holds
 // BEGIN IMMEDIATE; PostgreSQL locks the session row FOR UPDATE.
+mod replay;
+pub use replay::{
+    ExecutionReplayBatch, ExecutionReplayEvent, ExecutionReplayRequest, ExecutionReplayResponse,
+};
+mod retention;
+pub use retention::{
+    ExecutionArchiveManifest, ExecutionArchiveRecord, ExecutionRetentionRequest,
+    ExecutionRetentionResponse,
+};
+mod billing;
+pub use billing::{
+    ExecutionBillingReport, ExecutionBillingRequest, ExecutionBillingResponse, ExecutionMoney,
+    ExecutionPriceSchedule, ExecutionReconciliation, ExecutionReconciliationRecord,
+    ExecutionTokenPrices,
+};
 mod invocations;
 mod outbox;
 pub use invocations::{

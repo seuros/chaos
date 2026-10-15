@@ -52,7 +52,7 @@ pub struct ResponseEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "method", content = "result", rename_all = "snake_case")]
 pub enum JournalResponse {
-    Execution(crate::ExecutionResponse),
+    Execution(Box<crate::ExecutionResponse>),
     Hello(HelloResponse),
     CreateProcess(CreateProcessResponse),
     InitializeProcess(Box<InitializeProcessResult>),

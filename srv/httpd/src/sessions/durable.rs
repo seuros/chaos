@@ -3,6 +3,7 @@
 mod invocations;
 pub(crate) mod policy;
 pub(crate) mod recovery;
+mod replay;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -512,6 +513,7 @@ impl SessionManager {
                     record.state = ExecutionSessionState::Unknown;
                 }
                 session.ledger.set(owner).map_err(|_| unavailable())?;
+                session.restore_replay().await?;
                 {
                     let mut data = session.data.lock().unwrap();
                     data.status = match record.state {

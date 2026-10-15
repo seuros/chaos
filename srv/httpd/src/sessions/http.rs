@@ -12,6 +12,8 @@ use super::{
 use crate::ServerState;
 use crate::ingress;
 
+mod operations;
+
 pub(crate) async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let Some(manager) = state.sessions.clone() else {
         return response(
@@ -40,6 +42,7 @@ async fn route(
     if manager.recovery_only()
         && method != Method::GET
         && !(parts.len() == 4 && parts[3] == "recovery" && method == Method::POST)
+        && !(operations::is_route(&parts) && matches!(method, Method::POST | Method::PUT))
     {
         return Err(ApiError::conflict(
             "recovery-only mode cannot mutate execution",
@@ -78,6 +81,10 @@ async fn route(
     } else {
         None
     };
+
+    if operations::is_route(&parts) {
+        return operations::handle(&state, manager, request, _ingress).await;
+    }
 
     if parts.len() == 2 {
         return match method {
@@ -208,7 +215,7 @@ async fn route(
                 });
             if wants_stream {
                 // Validate before committing SSE response headers.
-                session.events(after)?;
+                session.read_events(after).await?;
                 return Ok(super::stream::response(
                     session,
                     manager.daemon_id.clone(),
@@ -220,7 +227,7 @@ async fn route(
                 StatusCode::OK,
                 json!({
                     "daemon_id": manager.daemon_id, "session_id": id,
-                    "replay": session.events(after)?,
+                    "replay": session.read_events(after).await?,
                 }),
             )
         }

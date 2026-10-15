@@ -239,7 +239,10 @@ a confirmed terminal outcome.
 Replay retains at most 256 events / 1 MiB; events over 64 KiB are replaced with
 `http_event_omitted` markers. JSON replay returns `events`, `gap` and
 `next_cursor` inside `replay`. A cursor ahead of the session returns `400`.
-Never treat an event gap as proof of completion; read turn status.
+Scoped replay commits before exposure and survives restart; a restart omission
+marker warns of potentially unobserved kernel work. Responses identify durable,
+observation-only history. Raw completion observations are not committed terminal
+outcomes. Never treat an event gap as proof of completion; read turn status.
 
 **These are private runtime events**, potentially containing prompts, tool
 arguments/results and reasoning. A frontend adapter must implement its own
@@ -361,15 +364,19 @@ not a wrapped/saturated amount. No unique reported usage also returns a null
 subtotal, not a fabricated zero. New terminal webhooks atomically include the
 accounting summary; full receipts remain on this authenticated endpoint.
 
-**Not a provider bill:** every summary says `billing_complete: false` and
-`coverage: direct_logical_sampling_and_compaction`. Hidden SDK HTTP/auth/fallback
-retries, delegated/review processes, planning/reflex work, startup/autonomous
+**Not a provider bill:** every summary says `billing_complete: false`. New
+turns record `coverage: root_and_descendant_logical_sampling_and_compaction`;
+old turns retain direct-only provenance. Descendants are admitted under fenced
+root lineage before startup. Metered clients disable automatic transport/auth
+and fallback retries; a new outer call requires a fresh durable begin.
+Planning/reflex work, root startup/autonomous
 calls, catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`
 are outside this coverage. Requested model/tier are not proof of a charged SKU.
 Even when recorded receipts have usage, excluded work may incur more cost.
-There is no pricing/tariff version, currency amount, credit reservation, invoice
-import or reconciliation/overwrite API. A billing adapter must reconcile
-provider evidence and apply an explicit pricing policy; missing/unknown/duplicate
+Operator-only immutable price schedules and receipt imports are described in
+`docs/http-session-financial-evidence.md`; these provide exact integer estimates,
+not credit reservations, invoice verification or native receipt overwrites.
+A billing adapter must verify provider evidence; missing/unknown/duplicate
 data is never a refund. Authorize/redact private receipt metadata for frontends.
 
 #### Recovery-only draining
@@ -382,7 +389,8 @@ chaos serve --sessions --session-scope old-worker --session-recovery-only
 
 Supply both bearer/recovery credentials through their environment variables.
 All protected reads as well as recovery POST require the operator header.
-Triggers and all other session mutations are rejected before reading the body.
+Triggers and execution mutations are rejected before reading the body.
+Operator-only price/evidence and archive operations remain available.
 No kernel is booted or resumed; released bound history is quarantined for
 independent containment. Execution login, clamp and git-trust checks are skipped;
 the original journal backend/home and sufficient capacity are still required.
@@ -438,8 +446,24 @@ operator header in recovery-only mode.
 
 After a generation change, read saved state before refreshing the mutation
 header. Same-payload retries return the saved outcome; changed payloads conflict.
-Replay/SSE buffers remain memory-only: discard old event cursors after restart,
-and use persisted turn state rather than event absence to reconcile.
+Scoped replay cursors survive restart with explicit gaps/omissions. Without a
+scope, buffers remain memory-only and old cursors must be discarded. Always use
+persisted turn state rather than event absence to reconcile.
+
+#### Operator financial evidence and archival
+
+These routes require the ordinary bearer and separate operator header, including
+GET. Mutations also require the current daemon generation:
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| GET, PUT | `/api/sessions/prices/{version}` | Immutable versioned exact-integer token prices |
+| GET, POST | `/api/sessions/{session}/turns/{turn}/billing` | Immutable external provider evidence, separate from native receipts |
+| GET, POST | `/api/sessions/{session}/archive` | Read/export a closed-session manifest or seal its verified digest |
+
+See `docs/http-session-financial-evidence.md` for wire schemas, rounding and
+authorization. Archival is non-destructive: original outcomes, receipts and
+tombstones remain, and no session-cap capacity is reclaimed.
 
 ## ARCHITECTURE
 

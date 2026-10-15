@@ -189,6 +189,23 @@ pub(crate) struct AgentControl {
 }
 
 impl AgentControl {
+    pub(crate) fn pending_inline_delegate(
+        &self,
+        parent: ProcessId,
+    ) -> ChaosResult<crate::process_table::PendingAdmission> {
+        self.upgrade()?.pending_admission(parent)
+    }
+
+    pub(crate) async fn register_inline_delegate(
+        &self,
+        parent: ProcessId,
+        chaos: &crate::chaos::Chaos,
+    ) -> ChaosResult<()> {
+        self.upgrade()?
+            .register_inline_delegate(parent, chaos)
+            .await
+    }
+
     /// Deliver an authoritative child status to its direct parent's live stream.
     /// No task or subscription outlives this call, and no parent/model-facing
     /// completion notification is involved. Production event queues are unbounded.

@@ -14,7 +14,10 @@ immutable operator resolutions and monotonic quarantine epochs. Migration 28
 adds immutable scope-policy bindings and permanent process-history ownership.
 Migration 29 adds the terminal-event outbox and destination bindings.
 Migration 30 adds bounded invocation records and explicit metering provenance.
-Journald protocol 11 prevents accidentally talking to an older sidecar.
+Migration 31 persists bounded observation replay; 32 adds archive manifests;
+33 adds immutable price/evidence records; 34 adds fenced descendant lineage and
+per-turn accounting coverage provenance.
+Journald protocol 12 prevents accidentally talking to an older sidecar.
 Conversation transcripts remain in the existing append-only journal.
 
 A server selects a stable configuration/tenant `scope` and a unique owner ID for
@@ -93,6 +96,11 @@ Leases are renewed independently every 15 seconds with a 90-second TTL; storage
 calls time out after 5 seconds. Dispatch requires the unique successful
 `newly_dispatched` transition. Terminal event processing waits for kernel
 quiescence, commits its outcome, then releases the local execution permit.
+Native quiescence checks include descendant processes, queued submissions and
+pending descendant boots, not just the root's completion event. An abandoned
+boot remains uncertain. Orderly shutdown stops the root, contains tracked
+descendants, and only then permits durable handoff; global registry cleanup
+must not erase that evidence first.
 
 Graceful shutdown contains the backend and releases idle history; recovery keeps
 its stable session ID and lazily resumes the process on a fresh accepted turn.
@@ -141,19 +149,47 @@ VFS and network policies for mutually untrusted tenants. A bearer still grants
 powerful server-owned tools. No per-request tenant, policy, credential, cwd,
 environment or sandbox overrides are added.
 
-Replay/SSE durability, automatic reconciliation of unknown outcomes, scoped
-per-turn environment, complete billing and clamp support remain separate work.
+Automatic reconciliation of unknown execution outcomes, scoped per-turn
+environment, complete provider-invoice coverage and clamp support remain
+separate work.
+
+## Durable observation replay
+
+Scoped sessions persist bounded kernel observations before exposing them to
+HTTP/SSE subscribers. Sequences survive restart; memory-only sessions retain
+their existing behavior. The retained window is at most 256 events/1 MiB, with
+individual observations bounded to 64 KiB and explicit omission/gap markers.
+This is not unlimited transcript retention or execution replay.
+
+After takeover/restart, an explicit omission observation warns that events may
+have been lost between kernel activity and durable observation commit. A failed
+append contains execution and retains uncertain capacity. Lease-fenced
+compare-and-append prevents stale writers from extending the log. Saved
+observations never authorize dispatch.
+
+Raw kernel completion observations are **not** committed HTTP terminal outcomes:
+clients must reconcile the turn record or terminal webhook. A later failed
+terminal transaction can still leave the turn unknown. Replay responses identify
+themselves as observation-only; they are not billing or containment evidence.
 
 ## Invocation-local accounting
 
 New durable HTTP turns explicitly enable accounting at admission. Before each
-direct native sampling/compaction call, the kernel must commit a fresh invocation
+native sampling/compaction call, the kernel must commit a fresh invocation
 UUID under the current fenced session lease, dispatched turn UUID and bound
 process ID. An identical begin is read-only and **never authorizes another
 provider call**. Metadata records the provider ID, requested model/service tier
 and sampling/compaction purpose; no prompt, URL, credentials or caller billing
 override is stored. The process's sink is installed before retained input is
 submitted. Plain streaming cannot bypass an installed sink.
+
+Native delegated/review descendants receive a root-bound sink before their
+startup loop can dispatch. Registration commits fresh process lineage under the
+root's active metered turn and permanently binds the child to the scope/policy.
+Nested descendants must name an already authorized parent. Invocation records
+retain the actual child process and `source_turn_id`, while `request.turn_id`
+identifies the owning root turn. Descendant histories cannot be resumed as
+standalone HTTP sessions or transferred to another root turn.
 
 A completed provider response's receipt commits before completion is forwarded
 to the kernel. Its observed response ID, optional server model and normalized
@@ -195,18 +231,23 @@ authenticated accounting endpoint. Existing stored webhook bytes are unchanged.
 
 ### Coverage is not a provider invoice
 
-Every summary explicitly says `billing_complete: false` and
-`coverage: "direct_logical_sampling_and_compaction"`. The boundary is a logical
-client request, not each hidden SDK HTTP/auth/wire-format retry. It excludes
-delegated/review processes, planning/reflex work, startup/autonomous calls,
+Every summary explicitly says `billing_complete: false`. New turns persist
+`coverage: "root_and_descendant_logical_sampling_and_compaction"`; old turns keep
+their original direct-only coverage tag. The boundary is a logical client
+request, not an assertion that every provider-side charge is observable.
+Metered clients disable automatic transport/auth/fallback retries; a new outer
+sampling call needs a new durable begin. It excludes
+planning/reflex work, root startup/autonomous calls,
 catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`.
 Cancellation can race a provider charge or an unobserved receipt. Even when all
 recorded calls have usage, excluded work/retries may incur additional costs.
 
-Requested model/service tier are not proof of the charged SKU/tier. There is no
-currency amount, tariff/pricing-version engine, credit reservation, invoice
-import or receipt reconciliation/overwrite endpoint. An adapter must establish
-coverage, reconcile provider evidence and apply its own explicit pricing policy.
+Requested model/service tier are not proof of the charged SKU/tier.
+Operator-only versioned prices and immutable external receipt imports are
+described in [Financial evidence](http-session-financial-evidence.md).
+They provide exact integer estimates and independently attested charged amounts,
+not a credit reservation, invoice verifier or native-receipt overwrite endpoint.
+An adapter must still establish coverage and verify provider evidence.
 Do not price a full provider bill from this subtotal or treat any missing,
 unknown, duplicate or overflowed data as a refund/free request. Private receipt
 metadata also needs authorization/redaction before frontend projection.
@@ -282,7 +323,8 @@ attempt counts, deadlines and acknowledgement timestamps, without payloads or
 lease tokens. `?after=<event UUID>` pages the UUID-sorted metadata snapshot; it
 is **not an append-only replay cursor**. Refresh the listing to find new events.
 Normal bearer authentication applies; recovery-only mode also requires the
-operator header on this read. Kernel SSE/replay buffers remain memory-only.
+operator header on this read. Scoped observation replay is separately durable
+and bounded; callback delivery is not SSE cursor acknowledgement.
 
 Callback networking is daemon control-plane I/O, not mediated by a model's tool
 sandbox or execution semaphore. Restrict daemon egress/proxy access and use only
@@ -349,7 +391,9 @@ history or replays input; continuing work requires an explicit new session.
 Start with `--sessions --session-scope <old namespace> --session-recovery-only`
 and both bearer/recovery credentials. This mode reads the stored policy instead
 of adopting the current one, requires the operator header on **all protected
-routes**, and rejects triggers and every session mutation except recovery.
+routes**, and rejects triggers and execution mutations. Audited recovery,
+price/evidence registration and archive operations remain available with the
+operator header.
 It never boots or resumes a kernel; orderly released bound history is quarantined
 for explicit containment/resolution. Execution-only login, clamp and git-trust
 checks are skipped, so obsolete model credentials need not be restored.
@@ -374,7 +418,7 @@ do not configure a restart loop to invent namespaces or overwrite policy.
 Before deployment:
 
 - Keep the runtime database and transcript history on durable storage. Update
-  the CLI and journald together (protocol 11, migrations through 30); migrations
+  the CLI and journald together (protocol 12, migrations through 34); migrations
   are forward-only here, not a supported old-binary rollback.
 - Isolate tools with OS users/containers, restricted mounts/environment and
   egress. Protect the bearer, operator and signing credentials independently;
@@ -432,6 +476,9 @@ executor, pending invocation and leased event, then reopens SQLite. It verifies
 unknown/no-replay recovery, receipt preservation, independent delivery fencing
 and audited capacity release. It does **not** prove real subprocess/container or
 remote-tool containment; the deployment drills above still require that evidence.
+The [real-daemon drill](http-session-e2e.md) additionally exercises the native
+kernel and shell, steering, signed callbacks, actual subprocess interruption and
+real lease-expiry recovery against an isolated mock provider.
 
 The HTTP durability suite uses SQLite by default. Set `TEST_DATABASE_URL` to a
 **disposable PostgreSQL database** to run the same scenarios through the

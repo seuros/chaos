@@ -62,6 +62,25 @@ pub(crate) async fn run_chaos_process_interactive(
     subagent_source: SubAgentSource,
     initial_history: Option<InitialHistory>,
 ) -> Result<Chaos, ChaosErr> {
+    let routing_admission = parent_session
+        .services
+        .model_client
+        .advance_admission_epoch()?;
+    let invocation_parent = parent_session
+        .services
+        .model_client
+        .invocation_parent(&parent_ctx.sub_id)?;
+    let (activation, submission_activation, pending_admission) = if invocation_parent.is_some() {
+        let pending = parent_session
+            .services
+            .agent_control
+            .pending_inline_delegate(parent_session.conversation_id)?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        (Some(tx), Some(rx), Some(pending))
+    } else {
+        (None, None, None)
+    };
+    drop(routing_admission);
     let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
 
@@ -79,8 +98,18 @@ pub(crate) async fn run_chaos_process_interactive(
         metrics_service_name: None,
         inherited_shell_environment: None,
         parent_trace: None,
+        invocation_parent,
+        submission_activation,
     })
     .await?;
+    if let Some(pending) = pending_admission {
+        parent_session
+            .services
+            .agent_control
+            .register_inline_delegate(parent_session.conversation_id, &chaos)
+            .await?;
+        pending.registered()?;
+    }
     let chaos = Arc::new(chaos);
 
     // Use a child token so parent cancel cascades but we can scope it to this task
@@ -110,8 +139,14 @@ pub(crate) async fn run_chaos_process_interactive(
     tokio::spawn(async move {
         forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
     });
+    if let Some(activation) = activation {
+        activation
+            .send(())
+            .map_err(|_| ChaosErr::InternalAgentDied)?;
+    }
 
     Ok(Chaos {
+        tracks_submissions: false,
         tx_sub: tx_ops,
         rx_event: rx_sub,
         agent_status: chaos.agent_status.clone(),
@@ -190,6 +225,7 @@ pub(crate) async fn run_chaos_process_one_shot(
     drop(rx_closed);
 
     Ok(Chaos {
+        tracks_submissions: false,
         rx_event: rx_bridge,
         tx_sub: tx_closed,
         agent_status,

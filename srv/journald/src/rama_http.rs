@@ -39,7 +39,7 @@ use crate::protocol::SetDefaultProcessResponse;
 pub const JOURNAL_RPC_PATH: &str = "/rpc";
 pub const SERVER_NAME: &str = "chaos_journald";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 pub struct JournalRpcServer<S> {
     store: Arc<S>,
@@ -127,7 +127,7 @@ where
                 .store
                 .execution(request)
                 .await
-                .map(JournalResponse::Execution),
+                .map(|response| JournalResponse::Execution(Box::new(response))),
             JournalRequest::Hello(_request) => Ok(JournalResponse::Hello(HelloResponse {
                 server_name: SERVER_NAME.to_string(),
                 protocol_version: PROTOCOL_VERSION,

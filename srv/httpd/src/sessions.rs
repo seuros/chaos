@@ -347,6 +347,9 @@ struct EventBatch {
     events: Vec<ReplayEvent>,
     gap: bool,
     next_cursor: u64,
+    /// Captured observations cannot prove that no unobserved work occurred.
+    observation_only: bool,
+    durable: bool,
 }
 
 /// Notice ids travel in a DELETE query string, so they are restricted to the
@@ -633,6 +636,8 @@ impl Session {
                 .collect(),
             gap: oldest.is_some_and(|oldest| after < oldest - 1),
             next_cursor: data.sequence,
+            observation_only: true,
+            durable: false,
         })
     }
 }
@@ -755,18 +760,7 @@ impl SessionData {
         }
         self.maybe_finish(quiescent);
         self.sequence += 1;
-        let value = serde_json::to_value(event).expect("kernel Event is JSON serializable");
-        let bytes = serde_json::to_vec(&value).unwrap().len();
-        let (value, bytes) = if bytes > MAX_EVENT_BYTES {
-            let value = serde_json::json!({
-                "id": bounded_text(&event.id, 128).0,
-                "msg": {"type": "http_event_omitted", "reason": "event_size_limit"}
-            });
-            let bytes = serde_json::to_vec(&value).unwrap().len();
-            (value, bytes)
-        } else {
-            (value, bytes)
-        };
+        let (value, bytes) = replay_value(event);
         while self.events.len() >= MAX_EVENTS || self.replay_bytes + bytes > MAX_REPLAY_BYTES {
             self.replay_bytes -= self.events.pop_front().unwrap().bytes;
         }
@@ -777,6 +771,20 @@ impl SessionData {
             bytes,
         });
     }
+}
+
+fn replay_value(event: &Event) -> (serde_json::Value, usize) {
+    let value = serde_json::to_value(event).expect("kernel Event is JSON serializable");
+    let bytes = serde_json::to_vec(&value).unwrap().len();
+    if bytes <= MAX_EVENT_BYTES {
+        return (value, bytes);
+    }
+    let value = serde_json::json!({
+        "id": bounded_text(&event.id, 128).0,
+        "msg": {"type": "http_event_omitted", "reason": "event_size_limit"}
+    });
+    let bytes = serde_json::to_vec(&value).unwrap().len();
+    (value, bytes)
 }
 
 fn bounded_text(text: &str, limit: usize) -> (String, bool) {

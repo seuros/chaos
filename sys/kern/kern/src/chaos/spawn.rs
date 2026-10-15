@@ -49,6 +49,8 @@ pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 /// The high-level interface to the Chaos system.
 /// It operates as a queue pair where you send submissions and receive events.
 pub struct Chaos {
+    /// Forwarding facades must not count the same native submission twice.
+    pub(crate) tracks_submissions: bool,
     pub(crate) tx_sub: Sender<Submission>,
     pub(crate) rx_event: Receiver<Event>,
     // Last known status of the agent.
@@ -81,6 +83,8 @@ pub(crate) struct ChaosSpawnArgs {
     pub(crate) metrics_service_name: Option<String>,
     pub(crate) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
     pub(crate) parent_trace: Option<W3cTraceContext>,
+    pub(crate) invocation_parent: Option<crate::invocation::InvocationParent>,
+    pub(crate) submission_activation: Option<tokio::sync::oneshot::Receiver<()>>,
 }
 
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
@@ -140,6 +144,8 @@ impl Chaos {
             metrics_service_name,
             inherited_shell_environment,
             parent_trace: _,
+            invocation_parent,
+            submission_activation,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -310,6 +316,7 @@ impl Chaos {
             mcp_manager.clone(),
             file_watcher,
             agent_control,
+            invocation_parent,
         )
         .await
         .map_err(|e| {
@@ -321,6 +328,20 @@ impl Chaos {
         // This task will run until Op::Shutdown is received.
         let session_for_loop = Arc::clone(&session);
         let session_loop_handle = tokio::spawn(async move {
+            if let Some(activation) = submission_activation
+                && activation.await.is_err()
+            {
+                super::submission_loop::handlers::shutdown(
+                    &session_for_loop,
+                    "descendant-not-activated".into(),
+                )
+                .await;
+                session_for_loop
+                    .services
+                    .model_client
+                    .clear_pending_submissions();
+                return;
+            }
             submission_loop(session_for_loop, config, rx_sub)
                 .instrument(info_span!("session_loop", process_id = %process_id))
                 .await;
@@ -329,6 +350,7 @@ impl Chaos {
             super::title_reflex::review_title_after_reconnect(Arc::clone(&session), history).await;
         }
         let chaos = Chaos {
+            tracks_submissions: true,
             tx_sub,
             rx_event,
             agent_status: agent_status_rx,
@@ -365,10 +387,18 @@ impl Chaos {
         if sub.trace.is_none() {
             sub.trace = current_span_w3c_trace_context();
         }
-        self.tx_sub
-            .send(sub)
-            .await
-            .map_err(|_| ChaosErr::InternalAgentDied)?;
+        let reserved = self.tracks_submissions
+            && self
+                .session
+                .services
+                .model_client
+                .reserve_submission(&sub.op)?;
+        if self.tx_sub.send(sub).await.is_err() {
+            if reserved {
+                self.session.services.model_client.release_submission();
+            }
+            return Err(ChaosErr::InternalAgentDied);
+        }
         Ok(())
     }
 

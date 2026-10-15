@@ -33,6 +33,9 @@ pub(super) trait Backend: Send + Sync + 'static {
     fn is_quiescent(&self) -> bool {
         true
     }
+    fn confirm_quiescent(&self) -> impl Future<Output = bool> + Send {
+        async { self.is_quiescent() }
+    }
     fn activity_changed(&self) -> impl Future<Output = Result<(), ()>> + Send {
         std::future::pending()
     }
@@ -80,7 +83,7 @@ impl Backend for KernelBackend {
     }
 
     async fn execute(&self, id: String, request: TurnRequest) -> Result<(), ()> {
-        if !self.is_quiescent() {
+        if !self.confirm_quiescent().await {
             // Never merge a newly admitted HTTP turn into autonomous work
             // that raced admission. There has been no prompt submission yet.
             return Err(());
@@ -145,12 +148,28 @@ impl Backend for KernelBackend {
 
     async fn shutdown(&self) -> Result<(), ()> {
         self.process.shutdown_and_wait().await.map_err(|_| ())?;
+        self.table
+            .shutdown_descendants_and_wait(self.process_id)
+            .await
+            .map_err(|_| ())?;
         self.table.remove_process(&self.process_id).await;
         Ok(())
     }
 
     fn is_quiescent(&self) -> bool {
         self.process.subscribe_activity().borrow().is_quiescent()
+    }
+
+    async fn confirm_quiescent(&self) -> bool {
+        self.is_quiescent()
+            && matches!(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    self.table.process_tree_is_quiescent(self.process_id),
+                )
+                .await,
+                Ok(Ok(true))
+            )
     }
 
     async fn activity_changed(&self) -> Result<(), ()> {
@@ -268,7 +287,7 @@ pub(crate) fn spawn(
                     } else {
                         owner.bind_new(process_id).await?;
                     }
-                    if !backend.is_quiescent() {
+                    if !backend.confirm_quiescent().await {
                         return Err(ApiError::conflict(
                             "autonomous startup requires containment",
                         ));
@@ -295,17 +314,31 @@ pub(crate) fn spawn(
                 return;
             }
         }
-        {
-            let mut data = session.data.lock().unwrap();
-            data.process_id = Some(process_id.to_string());
-            data.orphan_permit = None;
-            data.observe(
+        session.data.lock().unwrap().process_id = Some(process_id.to_string());
+        if session
+            .observe_committed(
                 &Event {
                     id: String::new(),
                     msg: EventMsg::SessionConfigured(configured),
                 },
                 false,
-            );
+            )
+            .await
+            .is_err()
+        {
+            terminate(
+                &session,
+                &mut commands,
+                &backend,
+                TurnStatus::Unknown,
+                false,
+            )
+            .await;
+            return;
+        }
+        {
+            let mut data = session.data.lock().unwrap();
+            data.orphan_permit = None;
             // A close request may already be queued during startup.
             if data.status == SessionStatus::Starting {
                 data.status = if process.subscribe_activity().borrow().is_quiescent() {
@@ -386,7 +419,7 @@ async fn supervise_inner<B: Backend>(
                             break;
                         }
                         if interrupted {
-                            if !backend.is_quiescent() {
+                            if !backend.confirm_quiescent().await {
                                 terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
                                 break;
                             }
@@ -413,7 +446,7 @@ async fn supervise_inner<B: Backend>(
                             result = tokio::time::timeout_at(turn_deadline, execution) => (Some(result), false),
                         };
                         if matches!(executed, Some(Ok(Ok(false)))) {
-                            if !backend.is_quiescent() {
+                            if !backend.confirm_quiescent().await {
                                 terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
                                 break;
                             }
@@ -503,11 +536,15 @@ async fn supervise_inner<B: Backend>(
                 match event {
                     Ok(event) => {
                         let shutdown = matches!(event.msg, EventMsg::ShutdownComplete);
-                        session.observe_with_activity(&event, backend.is_quiescent());
+                        if session.observe_committed(&event, backend.is_quiescent()).await.is_err() {
+                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                            break;
+                        }
+                        let quiescent = backend.confirm_quiescent().await;
                         let autonomous = session.ledger.get().is_some()
                             && session.data.lock().unwrap().active.is_none()
-                            && !backend.is_quiescent();
-                        if shutdown || autonomous || session.commit_completion(backend.is_quiescent()).await.is_err() {
+                            && !quiescent;
+                        if shutdown || autonomous || session.commit_completion(quiescent).await.is_err() {
                             terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                             break;
                         }
@@ -523,14 +560,25 @@ async fn supervise_inner<B: Backend>(
                     terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                     break;
                 }
+                let quiescent = backend.confirm_quiescent().await;
                 let autonomous = session.ledger.get().is_some()
                     && session.data.lock().unwrap().active.is_none()
-                    && !backend.is_quiescent();
-                if autonomous || session.commit_completion(backend.is_quiescent()).await.is_err() {
+                    && !quiescent;
+                if autonomous || session.commit_completion(quiescent).await.is_err() {
                     terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
                     break;
                 }
                 session.notify();
+            }
+            // Descendant activity does not necessarily wake the root's watch.
+            // Poll only while a root terminal outcome awaits whole-tree quiet.
+            _ = tokio::time::sleep(std::time::Duration::from_millis(250)),
+                if session.data.lock().unwrap().active.as_ref()
+                    .is_some_and(|active| active.completion_outcome.is_some()) => {
+                if session.commit_completion(backend.confirm_quiescent().await).await.is_err() {
+                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                    break;
+                }
             }
         }
     }

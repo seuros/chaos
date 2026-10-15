@@ -79,6 +79,8 @@ pub(super) const RESPONSES_ENDPOINT: &str = "/responses";
 /// Session-scoped state shared by all [`ModelClient`] clones.
 #[derive(Debug)]
 pub(super) struct ModelClientState {
+    pub(super) pending_submissions: std::sync::atomic::AtomicUsize,
+    pub(super) admission_epoch: StdMutex<Option<Arc<crate::invocation::AdmissionEpoch>>>,
     pub(super) invocation_sink:
         StdMutex<Option<Arc<dyn crate::invocation::ProviderInvocationSink>>>,
     pub(super) auth_manager: Option<Arc<crate::AuthManager>>,

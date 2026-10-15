@@ -277,6 +277,10 @@ impl Session {
     }
 
     async fn rewrite(&self, turn: &TurnContext, job: &ConsolidationJob) -> anyhow::Result<String> {
+        anyhow::ensure!(
+            !self.services.model_client.has_invocation_sink()?,
+            "planning consolidation requires durable invocation lineage support"
+        );
         let config = self
             .consolidation_config(&turn.config, &job.request)
             .await?;

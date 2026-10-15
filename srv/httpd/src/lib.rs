@@ -68,12 +68,13 @@ impl ServerState {
     async fn shutdown_sessions(&self) {
         if let Some(sessions) = &self.sessions {
             sessions.close_all();
+            // Supervisors need the complete process tree to attest descendant
+            // containment and commit handoff. Global cleanup removes registry
+            // entries, so it must not race that proof.
+            sessions.wait_stopped().await;
             self.process_table
                 .shutdown_all_processes_bounded(Duration::from_secs(30))
                 .await;
-            // Container shutdown is not a durable handoff acknowledgement.
-            // Let the supervisors commit outcomes/releases before HTTP exits.
-            sessions.wait_stopped().await;
         }
     }
 }

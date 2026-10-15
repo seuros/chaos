@@ -4,10 +4,12 @@ use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
 use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
 
+mod descendants;
 mod invocations;
 mod isolation;
 mod outbox;
 mod recovery;
+mod replay;
 #[cfg(unix)]
 mod restart;
 mod storage;

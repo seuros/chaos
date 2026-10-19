@@ -33,6 +33,8 @@ mod recall;
 pub mod reflex;
 pub use process::Process;
 pub use process::ProcessConfigSnapshot;
+pub use process::WorkflowOwner;
+pub use process::WorkflowScope;
 mod chaos_delegate;
 mod command_canonicalization;
 pub mod config;

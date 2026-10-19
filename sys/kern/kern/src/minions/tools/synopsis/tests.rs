@@ -118,6 +118,7 @@ fn job(id: &str) -> NormalizedJob {
         id: id.to_string(),
         message: format!("run {id}"),
         agent_type: None,
+        allow_replay: false,
     }
 }
 
@@ -162,14 +163,83 @@ fn normalizes_jobs_and_rejects_duplicates() {
             id: " first ".to_string(),
             message: "one".to_string(),
             agent_type: Some(" scout ".to_string()),
+            allow_replay: false,
         },
         SynopsisJobArgs {
             id: "first".to_string(),
             message: "two".to_string(),
             agent_type: None,
+            allow_replay: false,
         },
     ]);
     assert!(jobs.is_err());
+}
+
+#[test]
+fn replay_defaults_to_false_and_jobs_reject_forged_fields() {
+    let mut value = serde_json::json!({
+        "mode":"sequence","jobs":[{"id":"work","message":"work"}]
+    });
+    let args: RunSynopsisArgs = serde_json::from_value(value.clone()).unwrap();
+    assert!(!args.jobs[0].allow_replay);
+    value["jobs"][0]["mode_policy_override"] = serde_json::json!("automatic");
+    assert!(serde_json::from_value::<RunSynopsisArgs>(value).is_err());
+}
+
+#[test]
+fn synopsis_log_preview_never_contains_result_payloads() {
+    assert!(Handler.is_execution_container());
+    let registry = chaos_synopsis::runs::RunRegistry::default();
+    let lease = registry.start(RunKind::Synopsis).unwrap();
+    let result = RunSynopsisResult {
+        run_id: lease.id(),
+        outcome: RunSynopsisOutcome::Failure,
+        jobs: Vec::new(),
+        error: Some("private diagnostic".into()),
+    };
+    assert_eq!(result.log_preview(), "[synopsis snapshot redacted]");
+    assert!(!result.success_for_logging());
+    assert!(
+        serde_json::to_string(&result)
+            .unwrap()
+            .contains("private diagnostic")
+    );
+}
+
+#[tokio::test]
+async fn requires_exactly_one_of_mode_or_tree_before_spawning() {
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    for selection in [
+        serde_json::json!({}),
+        serde_json::json!({
+            "mode":"sequence",
+            "tree":{"type":"job","id":"leaf","job_id":"work"}
+        }),
+    ] {
+        let mut args = selection;
+        args["jobs"] = serde_json::json!([{"id":"work","message":"work"}]);
+        let result = Handler
+            .handle(ToolInvocation {
+                session: session.clone(),
+                turn: turn.clone(),
+                tracker: Arc::new(tokio::sync::Mutex::new(
+                    crate::turn_diff_tracker::TurnDiffTracker::default(),
+                )),
+                call_id: "synopsis-validation".into(),
+                tool_name: "run_synopsis".into(),
+                tool_namespace: None,
+                payload: ToolPayload::Function {
+                    arguments: args.to_string(),
+                },
+            })
+            .await;
+        assert!(
+            matches!(result, Err(FunctionCallError::RespondToModel(error))
+            if error == "provide exactly one of mode or tree")
+        );
+    }
 }
 
 #[tokio::test(start_paused = true)]

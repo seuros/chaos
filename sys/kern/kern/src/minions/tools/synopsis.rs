@@ -4,7 +4,7 @@ use super::{
     AgentStatus, FunctionCallError, ResponseInputItem, ToolHandler, ToolInvocation, ToolKind,
     ToolOutput, ToolPayload, UserInput, apply_spawn_agent_overrides,
     apply_spawn_agent_runtime_overrides, build_agent_spawn_config, function_arguments,
-    parse_arguments, process_spawn_source, tool_output_json_text, tool_output_response_item,
+    parse_arguments, process_spawn_source, tool_output_response_item,
 };
 use crate::config::Config;
 use crate::minions::control::{AgentControl, SpawnAgentOptions};
@@ -12,9 +12,11 @@ use crate::minions::role::apply_role_to_config;
 use crate::minions::status::is_final;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
-use chaos_synopsis::{
-    ActionExecutor, ActionFuture, ActionId, ActionOutcome, Node, Outcome, Runner, Synopsis,
-};
+use chaos_synopsis::runs::{RunId, RunKind, RunOutcome};
+use chaos_synopsis::tree::TreeNode;
+use chaos_synopsis::{ActionExecutor, ActionFuture, ActionId, ActionOutcome};
+#[cfg(test)]
+use chaos_synopsis::{Node, Outcome, Runner, Synopsis};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -32,10 +34,18 @@ const MAX_SYNOPSIS_JOBS: usize = 16;
 
 pub(crate) struct Handler;
 
+mod tree;
+
 impl ToolHandler for Handler {
     type Output = RunSynopsisResult;
 
     impl_function_tool_kind!();
+
+    fn is_execution_container(&self) -> bool {
+        // Job leaves create separately policy-scoped children; the parent
+        // must neither retain a leaf permit nor log its orchestration input.
+        true
+    }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
@@ -48,79 +58,16 @@ impl ToolHandler for Handler {
         let args: RunSynopsisArgs = parse_arguments(&arguments)?;
         let jobs = normalize_jobs(args.jobs)?;
         let timeout_ms = normalize_timeout(args.timeout_ms)?;
-        let child_depth = check_depth_limit(&turn.session_source, turn.config.agent_max_depth)?;
-
-        let base_config =
-            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
-        let child_mode_policy = session
-            .child_mode_policy(turn.as_ref(), None, None, None)
-            .await
-            .map_err(FunctionCallError::RespondToModel)?;
-        let state = Arc::new(ExecutionState::new(&jobs));
-        let backend: Arc<dyn AgentBackend> = Arc::new(LiveAgentBackend {
-            control: session.services.agent_control.clone(),
-        });
-        let run_cancellation = CancellationToken::new();
-        let mut cancellation_guard = RunCancellationGuard::new(run_cancellation.clone());
-        let executor: Arc<dyn ActionExecutor<AgentAction>> = Arc::new(AgentExecutor {
-            backend: Arc::clone(&backend),
-            state: Arc::clone(&state),
-            run_cancellation: run_cancellation.clone(),
-        });
-
-        let mut action_nodes = Vec::with_capacity(jobs.len());
-        let job_order = jobs.iter().map(|job| job.id.clone()).collect::<Vec<_>>();
-        for job in jobs {
-            let mut config = base_config.clone();
-            apply_role_to_config(&mut config, job.agent_type.as_deref())
-                .await
-                .map_err(FunctionCallError::RespondToModel)?;
-            apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
-            apply_spawn_agent_overrides(&mut config, child_depth);
-            config.mode_policy_override = Some(child_mode_policy.clone());
-
-            let role = job.agent_type.clone();
-            let action = AgentAction {
-                config,
-                input_items: vec![UserInput::Text {
-                    text: job.message,
-                    text_elements: Vec::new(),
-                }],
-                session_source: process_spawn_source(
-                    session.conversation_id,
-                    child_depth,
-                    role.as_deref(),
-                ),
-            };
-            action_nodes.push(Node::action(job.id, action));
-        }
-
-        let root = build_root(args.mode, action_nodes);
-        let runner = Runner::new(Synopsis::new(root), executor)
-            .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
-        let run_result = tokio::time::timeout(
-            Duration::from_millis(timeout_ms as u64),
-            runner.run(run_cancellation.clone()),
-        )
-        .await;
-
-        let (outcome, error) = match run_result {
-            Ok(Ok(Outcome::Success)) => (RunSynopsisOutcome::Success, None),
-            Ok(Ok(Outcome::Failure)) => (RunSynopsisOutcome::Failure, None),
-            Ok(Ok(Outcome::Cancelled)) => (RunSynopsisOutcome::Cancelled, None),
-            Ok(Err(error)) => (RunSynopsisOutcome::Error, Some(error.to_string())),
-            Err(_) => (RunSynopsisOutcome::TimedOut, None),
+        let root = match (args.mode, args.tree) {
+            (None, Some(root)) => root,
+            (Some(mode), None) => build_legacy_tree(mode, &jobs),
+            _ => {
+                return Err(FunctionCallError::RespondToModel(
+                    "provide exactly one of mode or tree".into(),
+                ));
+            }
         };
-
-        run_cancellation.cancel();
-        state.shutdown_remaining().await;
-        cancellation_guard.disarm();
-
-        Ok(RunSynopsisResult {
-            outcome,
-            jobs: state.snapshot(&job_order),
-            error,
-        })
+        tree::run(session, turn, root, jobs, timeout_ms).await
     }
 }
 
@@ -172,23 +119,37 @@ fn normalize_jobs(jobs: Vec<SynopsisJobArgs>) -> Result<Vec<NormalizedJob>, Func
                 id,
                 message: job.message,
                 agent_type,
+                allow_replay: job.allow_replay,
             })
         })
         .collect()
 }
 
-fn build_root(mode: SynopsisMode, nodes: Vec<Node<AgentAction>>) -> Node<AgentAction> {
+fn build_legacy_tree(mode: SynopsisMode, jobs: &[NormalizedJob]) -> TreeNode {
+    // Generated node IDs keep legacy job IDs unrestricted and result order intact.
+    let children = jobs
+        .iter()
+        .enumerate()
+        .map(|(index, job)| TreeNode::Job {
+            id: format!("job_{index}"),
+            job_id: job.id.clone(),
+            result_key: None,
+        })
+        .collect();
+    let id = "root".to_string();
     match mode {
-        SynopsisMode::Sequence => Node::sequence(nodes),
-        SynopsisMode::ParallelAll => Node::parallel_all(nodes),
-        SynopsisMode::Fallback => Node::fallback(nodes),
-        SynopsisMode::Race => Node::race(nodes),
+        SynopsisMode::Sequence => TreeNode::Sequence { id, children },
+        SynopsisMode::ParallelAll => TreeNode::ParallelAll { id, children },
+        SynopsisMode::Fallback => TreeNode::Fallback { id, children },
+        SynopsisMode::Race => TreeNode::Race { id, children },
     }
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RunSynopsisArgs {
-    mode: SynopsisMode,
+    mode: Option<SynopsisMode>,
+    tree: Option<TreeNode>,
     jobs: Vec<SynopsisJobArgs>,
     timeout_ms: Option<i64>,
 }
@@ -203,16 +164,21 @@ enum SynopsisMode {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SynopsisJobArgs {
     id: String,
     message: String,
     agent_type: Option<String>,
+    #[serde(default)]
+    allow_replay: bool,
 }
 
+#[derive(Clone)]
 struct NormalizedJob {
     id: String,
     message: String,
     agent_type: Option<String>,
+    allow_replay: bool,
 }
 
 struct AgentAction {
@@ -682,6 +648,7 @@ impl ExecutionState {
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct RunSynopsisResult {
+    run_id: RunId,
     outcome: RunSynopsisOutcome,
     jobs: Vec<SynopsisJobResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -690,7 +657,7 @@ pub(crate) struct RunSynopsisResult {
 
 impl ToolOutput for RunSynopsisResult {
     fn log_preview(&self) -> String {
-        tool_output_json_text(self, "run_synopsis")
+        "[synopsis snapshot redacted]".into()
     }
 
     fn success_for_logging(&self) -> bool {
@@ -716,6 +683,18 @@ enum RunSynopsisOutcome {
     Cancelled,
     TimedOut,
     Error,
+}
+
+impl From<RunSynopsisOutcome> for RunOutcome {
+    fn from(outcome: RunSynopsisOutcome) -> Self {
+        match outcome {
+            RunSynopsisOutcome::Success => Self::Success,
+            RunSynopsisOutcome::Failure => Self::Failure,
+            RunSynopsisOutcome::Cancelled => Self::Cancelled,
+            RunSynopsisOutcome::TimedOut => Self::TimedOut,
+            RunSynopsisOutcome::Error => Self::Error,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]

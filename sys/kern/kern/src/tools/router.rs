@@ -91,11 +91,28 @@ impl ToolRouter {
         self.model_visible_specs.clone()
     }
 
+    pub(crate) fn visible_specs(&self) -> &[ToolSpec] {
+        &self.model_visible_specs
+    }
+
     pub fn tool_supports_parallel(&self, tool_name: &str) -> bool {
         self.specs
             .iter()
-            .filter(|config| config.supports_parallel_tool_calls)
-            .any(|config| config.spec.name() == tool_name)
+            .rev()
+            .find(|config| config.spec.name() == tool_name)
+            .is_some_and(|config| config.supports_parallel_tool_calls)
+    }
+
+    pub fn tool_is_idempotent(&self, tool_name: &str) -> bool {
+        self.registry.is_idempotent(tool_name, None)
+    }
+
+    pub(crate) fn is_execution_container(&self, call: &ToolCall) -> bool {
+        self.registry.is_execution_container(
+            &call.tool_name,
+            call.tool_namespace.as_deref(),
+            &call.payload,
+        )
     }
 
     #[instrument(level = "trace", skip_all, err)]
@@ -203,8 +220,11 @@ impl ToolRouter {
         turn: Arc<TurnContext>,
         tracker: SharedTurnDiffTracker,
         call: ToolCall,
-        _source: ToolCallSource,
+        source: ToolCallSource,
     ) -> Result<AnyToolResult, FunctionCallError> {
+        if let ToolCallSource::Workflow { replay, .. } = source {
+            self.check_workflow_call(&call, replay)?;
+        }
         let ToolCall {
             tool_name,
             tool_namespace,
@@ -247,6 +267,39 @@ impl ToolRouter {
                 err,
             )),
         }
+    }
+
+    fn check_workflow_call(&self, call: &ToolCall, replay: bool) -> Result<(), FunctionCallError> {
+        let canonical = match &call.payload {
+            ToolPayload::Mcp { tool, .. } => tool.as_str(),
+            _ => call.tool_name.as_str(),
+        };
+        if chaos_synopsis::tree::is_control_tool(canonical)
+            || chaos_synopsis::tree::is_control_tool(&call.tool_name)
+            || self.is_execution_container(call)
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "workflow leaves cannot call runners or authority-changing controls".into(),
+            ));
+        }
+        if !self
+            .registry
+            .is_registered(&call.tool_name, call.tool_namespace.as_deref())
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "workflow tool is no longer available to this caller".into(),
+            ));
+        }
+        if replay
+            && !self
+                .registry
+                .is_idempotent(&call.tool_name, call.tool_namespace.as_deref())
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "workflow replay requires current affirmative idempotency metadata".into(),
+            ));
+        }
+        Ok(())
     }
 
     fn failure_result(

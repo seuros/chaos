@@ -10,6 +10,7 @@ pub mod router;
 pub mod runtimes;
 pub mod sandboxing;
 pub mod spec;
+pub(crate) mod workflows;
 
 use crate::exec::ExecToolCallOutput;
 use crate::truncate::TruncationPolicy;

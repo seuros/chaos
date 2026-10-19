@@ -221,7 +221,7 @@ fn static_resource_driver_registration(
 fn chaos_static_resources(session: &Session) -> Vec<ResourceInfo> {
     let filter = ToolGroupFilter {
         catalog: &session.services.tool_group_catalog,
-        state: &session.services.tool_group_state,
+        state: session.tool_group_state(),
     };
     let catalog = session
         .services
@@ -297,7 +297,7 @@ fn chaos_inline_resource_templates() -> Vec<ResourceTemplateInfo> {
 fn chaos_static_resource_templates(session: &Session) -> Vec<ResourceTemplateInfo> {
     let filter = ToolGroupFilter {
         catalog: &session.services.tool_group_catalog,
-        state: &session.services.tool_group_state,
+        state: session.tool_group_state(),
     };
     let catalog = session
         .services
@@ -489,7 +489,7 @@ async fn read_static_resource(
 
     let filter = ToolGroupFilter {
         catalog: &session.services.tool_group_catalog,
-        state: &session.services.tool_group_state,
+        state: session.tool_group_state(),
     };
     let exposure = (registration.exposure)(uri);
     if !filter.is_exposure_visible(&exposure) {

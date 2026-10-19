@@ -5,6 +5,8 @@ use chaos_clamp::AntigravityUsage;
 use chaos_clamp::Usage;
 use chaos_ipc::openai_models::ReasoningEffort;
 
+mod sampling;
+
 #[tokio::test]
 async fn canceling_kernel_stream_releases_provider_even_when_no_more_events_arrive() {
     use futures::StreamExt;

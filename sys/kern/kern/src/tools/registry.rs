@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,6 +32,13 @@ pub trait ToolHandler: Send + Sync {
     type Output: ToolOutput + 'static;
 
     fn kind(&self) -> ToolKind;
+
+    /// Trusted native orchestration/lifecycle handlers may omit a leaf permit.
+    /// Such handlers must dispatch every effect through scheduled leaf calls;
+    /// remote metadata and model-supplied tool names cannot enable this.
+    fn is_execution_container(&self) -> bool {
+        false
+    }
 
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(
@@ -92,6 +101,8 @@ impl AnyToolResult {
 }
 
 trait AnyToolHandler: Send + Sync {
+    fn is_execution_container(&self) -> bool;
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool;
 
     fn is_mutating<'a>(
@@ -109,6 +120,10 @@ impl<T> AnyToolHandler for T
 where
     T: ToolHandler,
 {
+    fn is_execution_container(&self) -> bool {
+        ToolHandler::is_execution_container(self)
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         ToolHandler::matches_kind(self, payload)
     }
@@ -149,17 +164,44 @@ pub(crate) fn tool_handler_key(tool_name: &str, namespace: Option<&str>) -> Stri
 
 pub struct ToolRegistry {
     handlers: HashMap<String, Arc<dyn AnyToolHandler>>,
+    idempotent_handlers: HashSet<String>,
 }
 
 impl ToolRegistry {
     fn new(handlers: HashMap<String, Arc<dyn AnyToolHandler>>) -> Self {
-        Self { handlers }
+        Self {
+            handlers,
+            idempotent_handlers: HashSet::new(),
+        }
     }
 
     fn handler(&self, name: &str, namespace: Option<&str>) -> Option<Arc<dyn AnyToolHandler>> {
         self.handlers
             .get(&tool_handler_key(name, namespace))
             .map(Arc::clone)
+    }
+
+    pub(crate) fn is_execution_container(
+        &self,
+        name: &str,
+        namespace: Option<&str>,
+        payload: &ToolPayload,
+    ) -> bool {
+        namespace.is_none()
+            && matches!(payload, ToolPayload::Function { .. })
+            && self.handler(name, namespace).is_some_and(|handler| {
+                handler.matches_kind(payload) && handler.is_execution_container()
+            })
+    }
+
+    pub(crate) fn is_registered(&self, name: &str, namespace: Option<&str>) -> bool {
+        self.handlers
+            .contains_key(&tool_handler_key(name, namespace))
+    }
+
+    pub(crate) fn is_idempotent(&self, name: &str, namespace: Option<&str>) -> bool {
+        let key = tool_handler_key(name, namespace);
+        self.handlers.contains_key(&key) && self.idempotent_handlers.contains(&key)
     }
 
     // TODO(jif) for dynamic tools.
@@ -179,7 +221,15 @@ impl ToolRegistry {
         let call_id_owned = invocation.call_id.clone();
         let otel = invocation.turn.session_telemetry.clone();
         let payload_for_response = invocation.payload.clone();
-        let log_payload = payload_for_response.log_payload();
+        let log_payload = if self.is_execution_container(
+            &tool_name,
+            tool_namespace.as_deref(),
+            &payload_for_response,
+        ) {
+            std::borrow::Cow::Borrowed("[orchestration payload redacted]")
+        } else {
+            payload_for_response.log_payload()
+        };
         let metric_tags = [
             (
                 "sandbox",
@@ -345,6 +395,7 @@ impl ConfiguredToolSpec {
 pub struct ToolRegistryBuilder {
     handlers: HashMap<String, Arc<dyn AnyToolHandler>>,
     specs: Vec<ConfiguredToolSpec>,
+    idempotent_handlers: HashSet<String>,
 }
 
 impl ToolRegistryBuilder {
@@ -352,6 +403,7 @@ impl ToolRegistryBuilder {
         Self {
             handlers: HashMap::new(),
             specs: Vec::new(),
+            idempotent_handlers: HashSet::new(),
         }
     }
 
@@ -372,14 +424,34 @@ impl ToolRegistryBuilder {
     where
         H: ToolHandler + 'static,
     {
+        self.register_handler_with_idempotency(name, handler, false);
+    }
+
+    /// Bind affirmative replay metadata to this exact handler registration.
+    /// Replacing a handler through the default API clears previous metadata.
+    pub(crate) fn register_handler_with_idempotency<H>(
+        &mut self,
+        name: impl Into<String>,
+        handler: Arc<H>,
+        idempotent: bool,
+    ) where
+        H: ToolHandler + 'static,
+    {
         let name = name.into();
+        if idempotent {
+            self.idempotent_handlers.insert(name.clone());
+        } else {
+            self.idempotent_handlers.remove(&name);
+        }
         let handler: Arc<dyn AnyToolHandler> = handler;
-        if self
-            .handlers
-            .insert(name.clone(), handler.clone())
-            .is_some()
-        {
-            warn!("overwriting handler for tool {name}");
+        match self.handlers.entry(name) {
+            Entry::Occupied(mut slot) => {
+                warn!("overwriting handler for tool {}", slot.key());
+                slot.insert(handler);
+            }
+            Entry::Vacant(slot) => {
+                slot.insert(handler);
+            }
         }
     }
 
@@ -390,6 +462,8 @@ impl ToolRegistryBuilder {
         self.specs
             .retain(|configured| is_visible(configured.spec.name()));
         self.handlers.retain(|name, _| is_visible(name));
+        self.idempotent_handlers
+            .retain(|name| self.handlers.contains_key(name));
     }
 
     // TODO(jif) for dynamic tools.
@@ -411,7 +485,8 @@ impl ToolRegistryBuilder {
     // }
 
     pub fn build(self) -> (Vec<ConfiguredToolSpec>, ToolRegistry) {
-        let registry = ToolRegistry::new(self.handlers);
+        let mut registry = ToolRegistry::new(self.handlers);
+        registry.idempotent_handlers = self.idempotent_handlers;
         (self.specs, registry)
     }
 }

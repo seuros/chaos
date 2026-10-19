@@ -19,6 +19,8 @@ use crate::parse_command::shlex_join;
 /// Example:
 ///
 /// ```rust
+/// # let provider_id = "openai";
+/// # let request_id = "req-123";
 /// chaos_kern::feedback_tags!(model = "gpt-5", cached = true);
 /// chaos_kern::feedback_tags!(provider = provider_id, request_id = request_id);
 /// ```

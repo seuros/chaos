@@ -174,7 +174,7 @@ mod tests;
 /// per-server circuit breaker.
 ///
 /// Syntax:
-/// ```
+/// ```text
 /// mcp_delegate!(vis fn name(server [, arg: Ty]*) -> Ret => manager_method);
 /// ```
 /// where `manager_method` is the method name on `McpConnectionManager` (may

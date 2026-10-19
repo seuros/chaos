@@ -866,14 +866,32 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
                 description: Some(available_roles),
             },
         ),
+        (
+            "allow_replay".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "Explicitly permit a fresh child for each retry attempt; defaults to false."
+                        .to_string(),
+                ),
+            },
+        ),
     ]);
     let properties = BTreeMap::from([
         (
             "mode".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Control-flow mode: sequence, parallel_all, fallback, or race.".to_string(),
+                    "Legacy control-flow mode: sequence, parallel_all, fallback, or race. \
+                     Provide exactly one of mode or tree.".to_string(),
                 ),
+            },
+        ),
+        (
+            "tree".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(true.into()),
             },
         ),
         (
@@ -903,13 +921,27 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "run_synopsis".to_string(),
-        description: "Only use `run_synopsis` when the user explicitly authorizes sub-agents, delegation, or parallel agent work. Execute a small behavior-tree workflow over real ChaOS agents. `sequence` runs jobs in order and stops on failure; `parallel_all` requires every job to succeed; `fallback` tries jobs until one succeeds; `race` returns the first terminal result and cancels the rest. The call blocks until the workflow terminates, returns each agent's final status/message, and automatically closes all agents it spawned."
+        description: "Only use `run_synopsis` when the user explicitly authorizes sub-agents, \
+            delegation, or parallel agent work. Provide jobs and exactly one of mode or tree. \
+            Legacy modes: sequence, parallel_all, fallback, race. \
+            Tree nodes: sequence/fallback/parallel_all/race {id,children}; \
+            timeout {id,timeout_ms,child}; retry {id,attempts,child}, at most 3 total tries, \
+            every descendant job must allow_replay=true; \
+            condition {id,pointer,predicate:{op:exists|equals,value?}}; \
+            job {id,job_id,result_key?}. Every declared job must appear exactly once in the tree; \
+            all node IDs/result keys must be unique. \
+            Only job/condition leaves, no tools or interactions. \
+            Limits:128 nodes,depth16,16 concurrent leaves,256 attempts. \
+            Retries spawn fresh children. \
+            The call blocks, returns each job's latest status/message plus a session-owned run_id \
+            for workflow_status/cancel_workflow, and automatically closes all agents it spawned. \
+            No restart replay."
             .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["mode".to_string(), "jobs".to_string()]),
+            required: Some(vec!["jobs".to_string()]),
             additional_properties: Some(false.into()),
         },
         output_schema: None,

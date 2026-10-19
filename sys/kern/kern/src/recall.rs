@@ -130,13 +130,13 @@ pub(crate) async fn prepare_for_router(session: &Session, turn: &TurnContext) ->
     let services = &session.services;
     if !services
         .tool_group_catalog
-        .is_group_enabled(&services.tool_group_state, crate::tools::groups::RECALL)
+        .is_group_enabled(session.tool_group_state(), crate::tools::groups::RECALL)
     {
         return None;
     }
     let error = prepare(session, turn).await.err()?;
     let _ = services.tool_group_catalog.set_groups_enabled(
-        &services.tool_group_state,
+        session.tool_group_state(),
         [crate::tools::groups::RECALL],
         false,
     );

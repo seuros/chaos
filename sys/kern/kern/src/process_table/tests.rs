@@ -16,6 +16,8 @@ use std::time::Duration;
 use tempfile::tempdir;
 use wiremock::MockServer;
 
+mod registration;
+
 #[test]
 fn drops_from_last_user_only() {
     let items = [

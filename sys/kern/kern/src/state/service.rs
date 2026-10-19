@@ -24,6 +24,14 @@ use mcp_host::prelude::{ToolGroupCatalog, ToolGroupState};
 use tokio::sync::Mutex;
 
 pub(crate) struct SessionServices {
+    /// Live workflow/synopsis ownership and budgets; never restored from history.
+    pub(crate) workflow_runs: chaos_synopsis::runs::RunRegistry,
+    pub(crate) external_workflow_owner: std::sync::OnceLock<crate::process::WorkflowOwner>,
+    /// Host-only admission, serialized with ordinary process submissions.
+    pub(crate) workflow_control: crate::process::workflows::WorkflowControl,
+    /// Native fallback. Dispatch must use `Session::tool_scheduler()` so sibling
+    /// external operation processes retain their owner's serialization boundary.
+    pub(crate) tool_scheduler: crate::tools::parallel::ToolSchedulerActor,
     pub(crate) catalog: Arc<CatalogSink>,
     pub(crate) tool_group_catalog: ToolGroupCatalog,
     pub(crate) tool_group_state: ToolGroupState,

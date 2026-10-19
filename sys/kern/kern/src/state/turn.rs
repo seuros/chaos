@@ -43,6 +43,7 @@ pub(crate) enum TaskKind {
     Regular,
     Review,
     Compact,
+    Workflow,
 }
 
 pub(crate) struct RunningTask {
@@ -65,6 +66,10 @@ impl ActiveTurn {
 
     pub(crate) fn remove_completed_task(&mut self, sub_id: &str) -> bool {
         if let Some(task) = self.tasks.swap_remove(sub_id) {
+            // Completion ends the turn's authority lifetime too. Attached
+            // executions must be revoked before its permissions are removed,
+            // not only when the turn is explicitly interrupted.
+            task.cancellation_token.cancel();
             task.handle.detach();
         }
         self.tasks.is_empty()
@@ -195,12 +200,25 @@ impl TurnState {
         tx: oneshot::Sender<RequestUserInputResponse>,
     ) -> PendingInsert<RequestUserInputResponse> {
         use std::collections::hash_map::Entry;
+        self.remove_closed_user_input(&key);
         match self.pending_user_input.entry(key) {
             Entry::Occupied(_) => PendingInsert::Duplicate(tx),
             Entry::Vacant(slot) => {
                 slot.insert(tx);
                 PendingInsert::Inserted
             }
+        }
+    }
+
+    /// A dropped receiver must not block a later interaction in the same turn.
+    /// Never remove a live replacement registered while cleanup was queued.
+    pub(crate) fn remove_closed_user_input(&mut self, key: &str) {
+        if self
+            .pending_user_input
+            .get(key)
+            .is_some_and(oneshot::Sender::is_closed)
+        {
+            self.pending_user_input.remove(key);
         }
     }
 

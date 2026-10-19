@@ -227,7 +227,19 @@ impl ModelClient {
         ModelClientSession {
             client: self.clone(),
             turn_state: Arc::new(std::sync::OnceLock::new()),
+            sample_token_limit: None,
         }
+    }
+
+    /// Stateless HTTP sampling on this client's provider/auth/accounting path.
+    /// Clamped CLI transports are refused at dispatch, not silently replaced.
+    pub(crate) fn new_text_sampling_session(
+        &self,
+        max_tokens: std::num::NonZeroU32,
+    ) -> ModelClientSession {
+        let mut session = self.new_session();
+        session.sample_token_limit = Some(max_tokens);
+        session
     }
 
     pub fn clamp_backend(&self) -> ClampBackend {

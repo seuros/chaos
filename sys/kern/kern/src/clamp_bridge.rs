@@ -8,6 +8,7 @@ use std::sync::Weak;
 use chaos_ipc::clamp_bridge::ClampBridgeRequest;
 use chaos_ipc::clamp_bridge::ClampBridgeResponse;
 use chaos_ipc::mcp::Tool as McpTool;
+use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use rand::distr::Alphanumeric;
 use rand::distr::SampleString;
@@ -181,8 +182,9 @@ async fn handle_request(
             match dispatch_tool_call(Arc::clone(&session), turn_context, router, &name, arguments)
                 .await
             {
-                Ok(output) => ClampBridgeResponse::ToolResult {
-                    output,
+                Ok((output, structured_output)) => ClampBridgeResponse::ToolResult {
+                    output: Box::new(output),
+                    structured_output,
                     notices: take_steered_notices(&session).await,
                 },
                 Err(err) => ClampBridgeResponse::Error { message: err },
@@ -329,7 +331,7 @@ async fn dispatch_tool_call(
     router: Arc<ToolRouter>,
     name: &str,
     arguments: serde_json::Value,
-) -> Result<chaos_ipc::models::ResponseInputItem, String> {
+) -> Result<(ResponseInputItem, Option<serde_json::Value>), String> {
     let specs_by_name: HashMap<String, ToolSpec> = router
         .model_visible_specs()
         .into_iter()
@@ -372,9 +374,9 @@ async fn dispatch_tool_call(
     let output = router
         .dispatch_tool_call(session, turn_context, tracker, call, ToolCallSource::Direct)
         .await
-        .map_err(|err| format!("tool execution failed: {err}"))?
-        .into_response();
-    Ok(output)
+        .map_err(|err| format!("tool execution failed: {err}"))?;
+    let structured_output = output.result.structured_output();
+    Ok((output.into_response(), structured_output))
 }
 
 #[cfg(test)]

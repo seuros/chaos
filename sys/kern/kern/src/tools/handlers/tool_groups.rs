@@ -64,11 +64,7 @@ impl ToolHandler for ToolGroupsHandler {
             .session
             .services
             .tool_group_catalog
-            .set_groups_enabled(
-                &invocation.session.services.tool_group_state,
-                args.groups,
-                enabled,
-            )
+            .set_groups_enabled(invocation.session.tool_group_state(), args.groups, enabled)
             .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
         let output = serde_json::to_string(&change).map_err(|error| {
             FunctionCallError::RespondToModel(format!(

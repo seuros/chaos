@@ -440,6 +440,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 .annotations
                 .as_ref()
                 .and_then(|v| chaos_mcp_runtime::ToolAnnotations::deserialize(v).ok());
+            let idempotent = annotations.as_ref().and_then(|a| a.idempotent_hint) == Some(true);
             if plan_mode && annotations_are_destructive(annotations.as_ref()) {
                 tracing::debug!(
                     tool = %tool.name,
@@ -478,7 +479,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                         let handler = Arc::new(HalluacinateHandler {
                             handle: handle.clone(),
                         });
-                        builder.register_handler(&tool.name, handler);
+                        builder.register_handler_with_idempotency(&tool.name, handler, idempotent);
                     }
                 }
                 _ => {
@@ -498,7 +499,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                         driver: tool_driver(),
                         read_only_hint: tool.read_only_hint,
                     });
-                    builder.register_handler(&tool.name, handler);
+                    builder.register_handler_with_idempotency(&tool.name, handler, idempotent);
                 }
             }
         }
@@ -593,6 +594,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
         );
         builder.register_handler("send_to_supervisor", Arc::new(SupervisorHandler));
     }
+
+    crate::tools::workflows::register(&mut builder);
 
     if config.collab_tools {
         push_tool_spec(
@@ -693,6 +696,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, tool) in entries.into_iter() {
+            let idempotent =
+                tool.annotations.as_ref().and_then(|a| a.idempotent_hint) == Some(true);
             if plan_mode && annotations_are_destructive(tool.annotations.as_ref()) {
                 tracing::debug!(
                     tool = %name,
@@ -713,7 +718,11 @@ pub(crate) fn build_specs_with_discoverable_tools(
                         ToolSpec::Function(converted_tool),
                         /*supports_parallel_tool_calls*/ false,
                     );
-                    builder.register_handler(name, mcp_handler.clone());
+                    builder.register_handler_with_idempotency(
+                        name,
+                        mcp_handler.clone(),
+                        idempotent,
+                    );
                 }
                 Err(e) => {
                     tracing::error!("Failed to convert {name:?} MCP tool to model tool: {e:?}");

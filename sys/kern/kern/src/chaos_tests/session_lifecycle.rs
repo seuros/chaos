@@ -7,6 +7,12 @@ use chaos_ipc::protocol::PermissionUpdateScope;
 #[tokio::test]
 async fn submission_disconnect_runs_session_shutdown() {
     let (session, turn, rx) = make_session_and_context_with_rx().await;
+    let workflow = session
+        .services
+        .workflow_runs
+        .start(chaos_synopsis::runs::RunKind::Workflow)
+        .expect("reserve workflow");
+    let workflow_cancel = workflow.cancellation();
     session
         .spawn_task(
             turn,
@@ -26,6 +32,15 @@ async fn submission_disconnect_runs_session_shutdown() {
     .await
     .expect("disconnect must complete session cleanup");
     assert!(session.active_turn.lock().await.is_none());
+    assert!(workflow_cancel.is_cancelled());
+    std::assert_matches!(
+        session
+            .services
+            .workflow_runs
+            .start(chaos_synopsis::runs::RunKind::Workflow)
+            .err(),
+        Some(chaos_synopsis::runs::RunError::SessionClosed)
+    );
     assert!(session.services.rollout.lock().await.is_none());
     assert!(
         session
@@ -38,6 +53,40 @@ async fn submission_disconnect_runs_session_shutdown() {
         std::iter::from_fn(|| rx.try_recv().ok())
             .any(|event| matches!(event.msg, EventMsg::ShutdownComplete))
     );
+}
+
+#[tokio::test]
+async fn workflow_run_registry_is_session_owned_and_drop_cancels_cloned_handles() {
+    use chaos_synopsis::runs::{RunError, RunKind};
+
+    let (owner, _) = make_session_and_context().await;
+    let (other, _) = make_session_and_context().await;
+    let registry = owner.services.workflow_runs.clone();
+    let lease = registry.start(RunKind::Synopsis).expect("reserve synopsis");
+    let other_lease = other
+        .services
+        .workflow_runs
+        .start(RunKind::Workflow)
+        .expect("reserve unrelated workflow");
+    let cancellation = lease.cancellation();
+
+    std::assert_matches!(
+        other.services.workflow_runs.status(lease.id()),
+        Err(RunError::UnknownRun(_))
+    );
+    std::assert_matches!(
+        other.services.workflow_runs.cancel(lease.id()),
+        Err(RunError::UnknownRun(_))
+    );
+    assert!(!cancellation.is_cancelled());
+    drop(owner);
+
+    assert!(cancellation.is_cancelled());
+    std::assert_matches!(
+        registry.start(RunKind::Workflow).err(),
+        Some(RunError::SessionClosed)
+    );
+    assert!(!other_lease.cancellation().is_cancelled());
 }
 
 #[tokio::test]

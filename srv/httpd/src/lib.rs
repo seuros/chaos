@@ -10,6 +10,7 @@ mod api;
 mod auth;
 pub mod cli;
 mod ingress;
+mod mcp;
 mod monitor;
 pub mod protocol;
 mod runner;
@@ -62,10 +63,14 @@ pub(crate) struct ServerState {
     body_limit: usize,
     monitor: monitor::MonitorState,
     sessions: Option<Arc<sessions::SessionManager>>,
+    mcp: Option<mcp::McpEndpoint>,
 }
 
 impl ServerState {
     async fn shutdown_sessions(&self) {
+        if let Some(mcp) = &self.mcp {
+            mcp.shutdown().await;
+        }
         if let Some(sessions) = &self.sessions {
             sessions.close_all();
             // Supervisors need the complete process tree to attest descendant
@@ -85,6 +90,7 @@ pub async fn run_main(
     cli_config_overrides: CliConfigOverrides,
     serve_cli: ServeCli,
 ) -> anyhow::Result<()> {
+    mcp::validate_cli(&serve_cli)?;
     // 1. Validate bearer token and numeric settings.
     let bearer_token: Arc<str> = match serve_cli.bearer_token.as_deref() {
         Some(t) if !t.is_empty() => Arc::from(t),
@@ -248,6 +254,12 @@ pub async fn run_main(
     );
 
     let config = Arc::new(config);
+    let mcp = if serve_cli.mcp {
+        let handle = chaos_mcpd::build_server(config.clone(), arg0_paths).await?;
+        Some(mcp::McpEndpoint::new(handle, &serve_cli, &bearer_token)?)
+    } else {
+        None
+    };
     let policy = if serve_cli.session_scope.is_some() && !serve_cli.session_recovery_only {
         Some(Arc::new(
             sessions::durable::policy::PinnedPolicy::new(config.clone(), core.auth_manager.clone())
@@ -304,6 +316,7 @@ pub async fn run_main(
         body_limit: serve_cli.body_limit,
         monitor: monitor::MonitorState::new(),
         sessions,
+        mcp,
     });
     for (session, commands, request) in recovered {
         let lazy = request.resume_process_id.is_some();

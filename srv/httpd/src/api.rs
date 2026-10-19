@@ -36,6 +36,31 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let path_cow = request.uri().path().map(|path| path.as_encoded_str());
     let path = path_cow.as_deref().unwrap_or("");
 
+    // The SDK owns protocol admission for every method, including OPTIONS and
+    // unsupported methods. Never use the legacy bearer/header/body path here.
+    if path == "/mcp"
+        && let Some(mcp) = &state.mcp
+    {
+        // Bound POST ingress across MCP and existing execution APIs before the
+        // SDK can collect any body. GET/DELETE/OPTIONS retain control access
+        // during saturation; the SDK separately bounds sessions/SSE streams.
+        // Release at response creation, not when its lazy SSE body terminates.
+        let _permit = if method == Method::POST {
+            match state.semaphore.clone().try_acquire_owned() {
+                Ok(permit) => Some(permit),
+                Err(_) => {
+                    return json_response(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &ApiErrorResponse::error("too many concurrent requests"),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        return mcp.handle(request).await;
+    }
+
     // The monitor page is a static login shell; only authenticated callers may
     // subscribe to live state. Authenticate before touching either request body.
     if matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH)

@@ -514,6 +514,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1526,11 +1548,13 @@ dependencies = [
  "chaos-getopt",
  "chaos-ipc",
  "chaos-kern",
+ "chaos-mcpd",
  "chaos-proc",
  "chaos-session",
  "chaos-test-fixtures",
  "chaos_journald",
  "hmac 0.13.0",
+ "mcp-host",
  "rama",
  "serde",
  "serde_json",
@@ -6690,6 +6714,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68146817972907cc18253f9da16a3c3026f78f9ecaff5a7a47ae0d22e64d3dab"
 dependencies = [
  "arc-swap",
+ "async-stream",
  "base64 0.23.1",
  "behavior-machines",
  "breaker-machines 0.20.0",
@@ -6701,12 +6726,15 @@ dependencies = [
  "jiff",
  "mcp-host-macros",
  "parking_lot",
+ "rama",
+ "rama-http-backend",
  "regex",
  "schemars",
  "serde",
  "serde_json",
  "state-machines 0.32.1",
  "strum",
+ "subtle",
  "thiserror 2.0.21",
  "throttle-machines 0.3.0",
  "tokio",

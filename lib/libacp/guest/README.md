@@ -84,8 +84,6 @@ fixing platform argument construction and a policy-parent rename bypass.
 However, the official ACP runtime fails local harness binding under that
 strict policy; the matching unconfined control succeeds. Supported bounded
 runtime IPC is still unverified, so production ACP/HTTP execution stays disabled.
-See [`antigravity-acp-status.md`](../../../docs/antigravity-acp-status.md) for
-the failed acceptance test, verified behavior and reproduction commands.
 
 An ignored live preflight test initializes the official runtime in a temporary,
 empty profile and checks that session creation requires authentication. It does

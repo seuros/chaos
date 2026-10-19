@@ -8,6 +8,7 @@
 //! surface.
 
 mod antigravity;
+mod antigravity_sandbox;
 mod egress;
 mod protocol;
 mod proxy;
@@ -26,6 +27,7 @@ pub use antigravity::AntigravityStepUpdate;
 pub use antigravity::AntigravityTransport;
 pub use antigravity::AntigravityTurn;
 pub use antigravity::AntigravityUsage;
+pub use antigravity_sandbox::prepare_antigravity_sandbox;
 pub use egress::ANTIGRAVITY_ALLOWED_HOSTS;
 pub use egress::EgressPolicy;
 pub use egress::EgressProxy;

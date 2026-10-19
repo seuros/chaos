@@ -45,6 +45,7 @@ members = [
 
     # srv/ — services
     "srv/mcpd",
+    "lib/libacp/guest",
     "lib/libmcp/guest",
     "lib/libmcp/runtime",
     "srv/arsenal",
@@ -250,6 +251,7 @@ mcp_test_support = { path = "srv/mcpd/tests/common" }
 mcp-host = { version = "0.13.1", default-features = false, features = ["stdio", "macros"] }
 
 # External
+agent-client-protocol = { version = "3.3.0", default-features = false }
 age = "0.12.1"
 ansi-to-tui = "8.0.1"
 anyhow = "1"

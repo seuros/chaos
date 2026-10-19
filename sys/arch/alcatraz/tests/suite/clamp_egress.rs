@@ -121,7 +121,13 @@ async fn sandboxed_egress_reaches_allowlisted_hosts_only_through_the_proxy() {
         std::path::Path::new(env!("CARGO_BIN_EXE_alcatraz")),
         Some(temporary_home.path()),
         &cwd,
+        &chaos_clamp::AntigravityEgress {
+            proxy_url: proxy_url.clone(),
+            ca_bundle_path: None,
+        },
+        &temporary_home.path().join("bridge.sock"),
     )
+    .await
     .expect("build sandbox invocation");
 
     // 1. A direct connection to the upstream, bypassing the proxy, is refused

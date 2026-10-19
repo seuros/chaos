@@ -859,7 +859,11 @@ impl ModelClientSession {
                         helper,
                         settings.home.as_deref(),
                         &sandbox_cwd,
-                    ) {
+                        &egress,
+                        &bridge_socket_path,
+                    )
+                    .await
+                    {
                         Ok(sandbox) => Some(sandbox),
                         Err(error) => {
                             let _ = tx_event

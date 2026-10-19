@@ -157,6 +157,7 @@ openssl-sys = { workspace = true, features = ["vendored"] }
 chaos-doas = { workspace = true }
 
 [dev-dependencies]
+acp-guest = { path = "../../../lib/libacp/guest" }
 chaos-recall = { workspace = true, features = ["test-support"] }
 chaos-keyring = { workspace = true }
 chaos-test-fixtures = { workspace = true }

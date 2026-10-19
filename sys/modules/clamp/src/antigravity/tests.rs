@@ -227,6 +227,7 @@ fn command_removes_metered_api_keys_and_never_auto_approves() {
         home: Some(dir.join("home")),
         bridge: Some(test_bridge(dir)),
         sandbox: Some(AntigravitySandbox {
+            env: Default::default(),
             program: PathBuf::from("/usr/lib/chaos/alcatraz"),
             arg0: Some("alcatraz".to_string()),
             args: vec!["--allow-network-for-proxy".to_string(), "--".to_string()],

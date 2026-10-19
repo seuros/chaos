@@ -285,6 +285,26 @@ impl Session {
         self.send_token_count_event(turn_context).await;
     }
 
+    /// Auxiliary samples cost tokens but do not establish a new baseline for
+    /// the canonical conversation's context size or compaction pressure.
+    pub(crate) async fn record_auxiliary_token_usage(
+        &self,
+        turn_context: &TurnContext,
+        usage: Option<&TokenUsage>,
+    ) {
+        if let Some(usage) = usage {
+            let mut state = self.state.lock().await;
+            let mut info = state.token_info().unwrap_or(TokenUsageInfo {
+                total_token_usage: TokenUsage::default(),
+                last_token_usage: TokenUsage::default(),
+                model_context_window: turn_context.model_context_window(),
+            });
+            info.total_token_usage.add_assign(usage);
+            state.set_token_info(Some(info));
+        }
+        self.send_token_count_event(turn_context).await;
+    }
+
     pub(crate) async fn recompute_token_usage(&self, turn_context: &TurnContext) {
         let history = self.clone_history().await;
         let base_instructions = self.get_base_instructions().await;

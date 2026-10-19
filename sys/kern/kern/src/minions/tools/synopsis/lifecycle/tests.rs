@@ -11,6 +11,7 @@ fn terminal_results_cannot_be_reopened_or_overwritten() {
             id: "job".to_string(),
             message: "work".to_string(),
             agent_type: None,
+            allow_replay: false,
         });
         assert!(job.apply(SynopsisJobEvent::Start));
         assert!(job.apply(match terminal {
@@ -29,6 +30,7 @@ fn terminal_results_cannot_be_reopened_or_overwritten() {
         id: "job".to_string(),
         message: "work".to_string(),
         agent_type: None,
+        allow_replay: false,
     });
     assert!(job.apply(SynopsisJobEvent::Fail));
     assert_eq!(job.snapshot().state, ResultState::Failed);

@@ -317,6 +317,8 @@ pub struct ModelClientSession {
     pub(super) client: ModelClient,
     /// Turn state for sticky routing.
     pub(super) turn_state: Arc<OnceLock<String>>,
+    /// Host-only bound for isolated, tool-free workflow sampling.
+    pub(super) sample_token_limit: Option<std::num::NonZeroU32>,
 }
 
 #[cfg(test)]

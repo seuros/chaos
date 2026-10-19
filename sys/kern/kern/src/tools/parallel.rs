@@ -42,13 +42,14 @@ impl ToolCallRuntime {
         turn_context: Arc<TurnContext>,
         tracker: SharedTurnDiffTracker,
     ) -> Self {
+        let scheduler = session.tool_scheduler().clone();
         Self {
             call_count: Arc::default(),
             router,
             session,
             turn_context,
             tracker,
-            scheduler: ToolSchedulerActor::spawn(),
+            scheduler,
         }
     }
 
@@ -77,6 +78,12 @@ impl ToolCallRuntime {
         self.call_count
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let supports_parallel = self.router.tool_supports_parallel(&call.tool_name);
+        let workflow_leaf = matches!(source, ToolCallSource::Workflow { .. });
+        let is_container = !workflow_leaf && self.router.is_execution_container(&call);
+        let tasks = match &source {
+            ToolCallSource::Workflow { tasks, .. } => Some(tasks.clone()),
+            ToolCallSource::Direct => None,
+        };
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);
         let turn = Arc::clone(&self.turn_context);
@@ -92,45 +99,66 @@ impl ToolCallRuntime {
             aborted = false,
         );
 
-        let handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
-            AbortOnDropHandle::new(tokio::spawn(async move {
-                let (permit_tx, permit_rx) = oneshot::channel();
-                scheduler
-                    .enqueue(call.call_id.clone(), supports_parallel, permit_tx)
-                    .await
-                    .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
-                let _lease = scheduler.lease(call.call_id.clone());
-
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        let secs = started.elapsed().as_secs_f32().max(0.1);
-                        dispatch_span.record("aborted", true);
-                        Ok(Self::aborted_response(&call, secs))
-                    }
-                    permit = permit_rx => {
-                        permit.map_err(|_| FunctionCallError::Fatal(
-                            "tool execution actor dropped dispatch permit".to_string()
-                        ))?;
-                        let result = tokio::select! {
-                            _ = cancellation_token.cancelled() => {
-                                let secs = started.elapsed().as_secs_f32().max(0.1);
-                                dispatch_span.record("aborted", true);
-                                Ok(Self::aborted_response(&call, secs))
-                            }
-                            result = router
-                                .dispatch_tool_call(
-                                    session,
-                                    turn,
-                                    tracker,
-                                    call.clone(),
-                                    source,
-                                )
-                                .instrument(dispatch_span.clone()) => result,
-                        };
-                        result
-                    }
+        let dispatch = async move {
+            let acquire = async {
+                if is_container {
+                    Ok(None)
+                } else {
+                    scheduler.acquire(supports_parallel).await.map(Some)
                 }
-            }));
+            };
+
+            tokio::select! {
+                biased;
+                _ = cancellation_token.cancelled() => {
+                    let secs = started.elapsed().as_secs_f32().max(0.1);
+                    dispatch_span.record("aborted", true);
+                    Ok(Self::aborted_response(&call, secs))
+                }
+                lease = acquire => {
+                    let mut lease = lease?;
+                    let result = tokio::select! {
+                        biased;
+                        _ = cancellation_token.cancelled() => {
+                            let secs = started.elapsed().as_secs_f32().max(0.1);
+                            dispatch_span.record("aborted", true);
+                            Ok(Self::aborted_response(&call, secs))
+                        }
+                        result = async {
+                            let (mut router, mut turn) = if workflow_leaf {
+                                Self::refresh_workflow_dispatch(
+                                    &session, &turn, &cancellation_token,
+                                ).await?
+                            } else {
+                                (router, turn)
+                            };
+                            // Visibility, mode, permissions and replay metadata may
+                            // change while a leaf waits for its execution permit.
+                            // Downgrade a stale parallel permit conservatively.
+                            if workflow_leaf && supports_parallel
+                                && !router.tool_supports_parallel(&call.tool_name)
+                            {
+                                drop(lease.take());
+                                lease = Some(scheduler.acquire(false).await?);
+                                (router, turn) = Self::refresh_workflow_dispatch(
+                                    &session, &turn, &cancellation_token,
+                                ).await?;
+                            }
+                            router.dispatch_tool_call(
+                                session, turn, tracker, call.clone(), source,
+                            ).instrument(dispatch_span.clone()).await
+                        } => result,
+                    };
+                    result
+                }
+            }
+        };
+        // Account for existing dispatch tasks, without a second tree executor.
+        let handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
+            AbortOnDropHandle::new(match tasks {
+                Some(tasks) => tasks.spawn(dispatch),
+                None => tokio::spawn(dispatch),
+            });
 
         async move {
             match handle.await {
@@ -143,6 +171,29 @@ impl ToolCallRuntime {
             }
         }
         .in_current_span()
+    }
+
+    async fn refresh_workflow_dispatch(
+        session: &Session,
+        original_turn: &Arc<TurnContext>,
+        cancellation: &CancellationToken,
+    ) -> Result<(Arc<ToolRouter>, Arc<TurnContext>), FunctionCallError> {
+        // Preserve the originating turn/tracker rather than synthesizing a new
+        // turn with broader defaults. Effective context re-reads mode and grants.
+        let turn = session
+            .try_effective_turn_context(original_turn)
+            .await
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!("workflow turn is unavailable: {error}"))
+            })?;
+        let router = crate::chaos::built_tools(session, &turn, &[], cancellation)
+            .await
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!(
+                    "workflow dispatch is unavailable: {error}"
+                ))
+            })?;
+        Ok((router, turn))
     }
 }
 
@@ -222,13 +273,13 @@ impl ToolSchedule {
 }
 
 #[derive(Clone)]
-struct ToolSchedulerActor {
+pub(crate) struct ToolSchedulerActor {
     mailbox: Adapter<ToolSchedulerCommand, ()>,
     releases: mpsc::UnboundedSender<String>,
 }
 
 impl ToolSchedulerActor {
-    fn spawn() -> Self {
+    pub(crate) fn spawn() -> Self {
         let (mailbox, mut commands) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
         let (releases, mut released_calls) = mpsc::unbounded_channel::<String>();
         tokio::spawn(async move {
@@ -259,6 +310,26 @@ impl ToolSchedulerActor {
         Self { mailbox, releases }
     }
 
+    pub(crate) async fn acquire(
+        &self,
+        supports_parallel: bool,
+    ) -> Result<ToolExecutionLease, FunctionCallError> {
+        // Caller IDs may repeat across turns/runtimes. Only this internal
+        // ticket keys scheduling; public call IDs retain their provenance.
+        let ticket = uuid::Uuid::new_v4().to_string();
+        // Arm cleanup before enqueueing: dropping while awaiting the mailbox
+        // acknowledgement must release an already queued/granted permit too.
+        let lease = self.lease(ticket.clone());
+        let (permit_tx, permit_rx) = oneshot::channel();
+        self.enqueue(ticket, supports_parallel, permit_tx)
+            .await
+            .map_err(|error| FunctionCallError::Fatal(error.to_string()))?;
+        permit_rx.await.map_err(|_| {
+            FunctionCallError::Fatal("tool execution actor dropped dispatch permit".to_string())
+        })?;
+        Ok(lease)
+    }
+
     async fn enqueue(
         &self,
         call_id: String,
@@ -282,7 +353,7 @@ impl ToolSchedulerActor {
     }
 }
 
-struct ToolExecutionLease {
+pub(crate) struct ToolExecutionLease {
     call_id: Option<String>,
     releases: mpsc::UnboundedSender<String>,
 }

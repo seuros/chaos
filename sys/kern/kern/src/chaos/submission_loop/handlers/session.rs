@@ -113,6 +113,8 @@ pub async fn user_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
 }
 
 pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
+    sess.services.workflow_control.shutdown();
+    sess.services.workflow_runs.shutdown();
     if !sess
         .completions
         .releasing

@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 struct CursorLoopTransport {
     incoming_tx: mpsc::UnboundedSender<JsonRpcMessage>,
     incoming_rx: Mutex<mpsc::UnboundedReceiver<JsonRpcMessage>>,
+    logging_requests: Mutex<Vec<Value>>,
 }
 
 impl CursorLoopTransport {
@@ -20,6 +21,7 @@ impl CursorLoopTransport {
         Arc::new(Self {
             incoming_tx,
             incoming_rx: Mutex::new(incoming_rx),
+            logging_requests: Mutex::new(Vec::new()),
         })
     }
 }
@@ -32,13 +34,20 @@ impl MessageTransport for CursorLoopTransport {
                 let result = match request.method.as_str() {
                     "initialize" => serde_json::json!({
                         "protocolVersion": "2025-11-25",
-                        "capabilities": {},
+                        "capabilities": {"logging": {}},
                         "serverInfo": {"name": "loop-server", "version": "0.0.1"}
                     }),
                     "tools/list" => serde_json::json!({
                         "tools": [],
                         "nextCursor": "same-cursor"
                     }),
+                    "logging/setLevel" => {
+                        self.logging_requests
+                            .lock()
+                            .await
+                            .push(request.params.clone().unwrap());
+                        serde_json::json!({})
+                    }
                     other => serde_json::json!({"unexpected": other}),
                 };
                 let _ = self
@@ -63,6 +72,59 @@ impl MessageTransport for CursorLoopTransport {
     fn shutdown<'a>(&'a self) -> TransportFuture<'a, ()> {
         Box::pin(async { Ok(()) })
     }
+}
+
+#[tokio::test]
+async fn logging_levels_use_typed_wire_names_and_reject_invalid_values_locally() {
+    let transport = CursorLoopTransport::new();
+    let session = connect_with_transport(
+        transport.clone(),
+        ConnectionOptions {
+            client_info: Implementation::new("test-client", "1.0.0"),
+            capabilities: ClientCapabilities::default(),
+            handler: Arc::new(NoopClientHandler),
+            default_timeout: Duration::from_secs(5),
+        },
+    )
+    .await
+    .unwrap();
+
+    let levels = [
+        "emergency",
+        "alert",
+        "critical",
+        "error",
+        "warning",
+        "notice",
+        "info",
+        "debug",
+    ];
+    for level in levels {
+        session.set_logging_level(level).await.unwrap();
+    }
+    // Preserve compatibility with owned strings as well as borrowed strings.
+    session.set_logging_level("info".to_owned()).await.unwrap();
+    let expected: Vec<_> = levels
+        .into_iter()
+        .chain(["info"])
+        .map(|level| serde_json::json!({"level": level}))
+        .collect();
+    assert_eq!(*transport.logging_requests.lock().await, expected);
+
+    for invalid in ["", "warn", "INFO", " info", "warning "] {
+        assert!(matches!(
+            session.set_logging_level(invalid).await,
+            Err(GuestError::InvalidParams(_))
+        ));
+    }
+    assert_eq!(*transport.logging_requests.lock().await, expected);
+    // Invalid input must neither send a request nor disconnect a healthy session.
+    session.set_logging_level("debug").await.unwrap();
+    assert_eq!(
+        transport.logging_requests.lock().await.len(),
+        expected.len() + 1
+    );
+    session.disconnect().await.unwrap();
 }
 
 #[tokio::test]

@@ -21,6 +21,6 @@ pub fn to_response<T: DeserializeOwned>(response: JsonRpcResponse) -> anyhow::Re
         .result
         .ok_or_else(|| anyhow::anyhow!("response has no result"))?;
     let value = serde_json::to_value(result)?;
-    let codex_response = serde_json::from_value(value)?;
-    Ok(codex_response)
+    let chaos_response = serde_json::from_value(value)?;
+    Ok(chaos_response)
 }

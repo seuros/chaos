@@ -65,7 +65,7 @@ pub(crate) fn initial_replay_event_msgs(
     }
 }
 
-pub(super) async fn submission_loop(
+pub(crate) async fn submission_loop(
     sess: Arc<Session>,
     config: Arc<Config>,
     rx_sub: Receiver<Submission>,
@@ -143,6 +143,14 @@ pub(super) async fn submission_loop(
                     break;
                 },
             },
+            admission = sess.services.workflow_control.recv(),
+                if !sess.services.workflow_control.is_closed() => {
+                if let Ok(admission) = admission {
+                    finalize_finished_tasks(&sess).await;
+                    admission.admit(&sess, journal_paused).await;
+                }
+                continue;
+            },
             _ = sess.completions.changed.notified() => {
                 finalize_finished_tasks(&sess).await;
                 if !journal_paused {
@@ -160,6 +168,7 @@ pub(super) async fn submission_loop(
                 continue;
             },
             _ = maintenance.tick() => {
+                sess.services.workflow_runs.collect_expired();
                 if journal_paused && *writer_status.borrow() == JournalWriterStatus::Ready {
                     writer_status.mark_changed();
                 }

@@ -2,12 +2,11 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::product::OS_NAME;
 use chaos_kern::builtin_mcp_resources;
-use chaos_kern::config::Config;
-use chaos_kern::config::ConfigOverrides;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceRouter;
 use mcp_host::registry::router::McpResourceTemplateRouter;
@@ -24,34 +23,26 @@ fn to_json<T: Serialize>(value: &T, context: &str) -> Result<String, String> {
         .map_err(|err| format!("failed to serialize {context} resource: {err}"))
 }
 
-async fn load_config_for_resource(context: &str) -> Result<Config, String> {
-    Config::load_with_cli_overrides_and_harness_overrides(Vec::new(), ConfigOverrides::default())
-        .await
-        .map_err(|err| format!("failed to load config for {context}: {err}"))
-}
-
 struct McpHostBuiltinResourceBackend<'a> {
     server: &'a ChaosMcpServer,
+    state: Arc<crate::session_state::McpSessionState>,
 }
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResourceBackend<'_> {
     async fn hooks_json(&self, id: Option<&str>) -> Result<String, String> {
-        let config = load_config_for_resource("hooks").await?;
+        let config = &self.server.config;
         chaos_kern::hooks::resource_json(&config.chaos_home, &config.cwd, id).await
     }
     async fn machine_json(&self) -> Result<String, String> {
-        // There is no unique child session for a server-level resource read.
-        let config = load_config_for_resource("machine observations").await?;
-        builtin_mcp_resources::machine_json(&config, &config.cwd).await
+        let config = &self.server.config;
+        builtin_mcp_resources::machine_json(config, &config.cwd).await
     }
 
     async fn sessions_json(&self) -> Result<String, String> {
-        if let Some(runtime_db) = self.server.runtime_db.as_ref() {
-            return builtin_mcp_resources::sessions_json_from_runtime_db(Some(runtime_db)).await;
-        }
-
-        let process_ids = self.server.process_table.list_process_ids().await;
-        let names = self.server.process_names.lock().await;
+        // The database is shared by CLI/TUI and other MCP principals. It is not
+        // an ownership index and must never be used for an unfiltered listing.
+        let process_ids = self.state.process_table.list_process_ids().await;
+        let names = self.state.process_names.lock().await;
         let sessions = process_ids
             .iter()
             .map(|process_id| {
@@ -65,6 +56,9 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn session_detail_json(&self, process_id: ProcessId) -> Result<String, String> {
+        if !self.state.owns_process(process_id).await {
+            return Err("process not owned by this MCP session".into());
+        }
         if let Some(runtime_db) = self.server.runtime_db.as_ref() {
             return builtin_mcp_resources::session_detail_json_from_runtime_db(
                 Some(runtime_db),
@@ -73,13 +67,13 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
             .await;
         }
 
-        self.server
+        self.state
             .process_table
             .get_process(process_id)
             .await
             .map_err(|err| format!("process not found: {err}"))?;
         let title = self
-            .server
+            .state
             .process_names
             .lock()
             .await
@@ -96,20 +90,30 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn crons_json(&self) -> Result<String, String> {
-        chaos_cron::resource::list_crons().await
+        let json = chaos_cron::resource::list_crons().await?;
+        let mut jobs: Vec<serde_json::Value> =
+            serde_json::from_str(&json).map_err(|err| format!("invalid cron resource: {err}"))?;
+        let owned = self.state.process_table.list_process_ids().await;
+        jobs.retain(|job| {
+            job.get("session_id")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|id| ProcessId::from_string(id).ok())
+                .is_some_and(|id| owned.contains(&id))
+        });
+        to_json(&jobs, "owned crons")
     }
 
     async fn spool_json(&self) -> Result<String, String> {
-        chaos_cron::resource::list_spool().await
+        // Spool rows currently have no trustworthy session/process owner.
+        // Do not expose global prompts/results until that index exists.
+        Ok("[]".into())
     }
 
     async fn models_json(&self) -> Result<String, String> {
-        // The provider map lives in config, not in the process table, so load
-        // config the same way a `chaos` tool call does — minus any overrides.
-        let config = load_config_for_resource("model listing").await?;
+        let config = &self.server.config;
 
         let groups = self
-            .server
+            .state
             .process_table
             .get_models_manager()
             .list_models_by_provider(&config.model_providers, &config.model_provider_id)
@@ -118,21 +122,25 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn modes_json(&self) -> Result<String, String> {
-        let config = load_config_for_resource("mode listing").await?;
+        let config = &self.server.config;
         builtin_mcp_resources::modes_json_from_chaos_home(&config.chaos_home).await
     }
 
     async fn mcp_json(&self) -> Result<String, String> {
-        let config = load_config_for_resource("MCP listing").await?;
-        builtin_mcp_resources::mcp_json_from_config(None, &config, None, None).await
+        let config = &self.server.config;
+        builtin_mcp_resources::mcp_json_from_config(None, config, None, None).await
     }
 }
 
 async fn read_builtin_resource(
     server: &ChaosMcpServer,
+    session: &Session,
     uri: &str,
 ) -> Result<builtin_mcp_resources::ChaosBuiltinResourceContent, ResourceError> {
-    let backend = McpHostBuiltinResourceBackend { server };
+    let state = server
+        .session_state(session)
+        .map_err(|err| ResourceError::Internal(err.to_string()))?;
+    let backend = McpHostBuiltinResourceBackend { server, state };
     builtin_mcp_resources::read_resource(&backend, uri)
         .await
         .map_err(ResourceError::Internal)?
@@ -141,10 +149,11 @@ async fn read_builtin_resource(
 
 fn read_static_resource_handler<'a>(
     server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
     uri: &'static str,
 ) -> ResourceReadFuture<'a> {
     Box::pin(async move {
-        let content = read_builtin_resource(server, uri).await?;
+        let content = read_builtin_resource(server, ctx.session, uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
             content.text,
@@ -157,55 +166,49 @@ fn sessions_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_SESSIONS_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_SESSIONS_URI)
 }
 
 fn crons_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_CRONS_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_CRONS_URI)
 }
 
 fn spool_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_SPOOL_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_SPOOL_URI)
 }
 
 fn models_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODELS_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MODELS_URI)
 }
 
 fn modes_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MODES_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MODES_URI)
 }
 
 fn mcp_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MCP_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MCP_URI)
 }
 
 fn hooks_list_handler<'a>(
     server: &'a ChaosMcpServer,
-    _ctx: ExecutionContext<'a>,
+    ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_HOOKS_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_HOOKS_URI)
 }
 
 fn hook_detail_handler<'a>(
@@ -218,7 +221,7 @@ fn hook_detail_handler<'a>(
             .get("id")
             .ok_or_else(|| ResourceError::InvalidUri("missing hook id".into()))?;
         let uri = format!("chaos://hooks/{id}");
-        let content = read_builtin_resource(server, &uri).await?;
+        let content = read_builtin_resource(server, ctx.session, &uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
             content.text,
@@ -231,16 +234,14 @@ fn manual_list_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MANUAL_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MANUAL_URI)
 }
 
 fn machine_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
 ) -> ResourceReadFuture<'a> {
-    let _ = ctx;
-    read_static_resource_handler(server, builtin_mcp_resources::CHAOS_MACHINE_URI)
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MACHINE_URI)
 }
 
 fn session_detail_handler<'a>(
@@ -256,7 +257,7 @@ fn session_detail_handler<'a>(
         ProcessId::from_string(&id)
             .map_err(|err| ResourceError::NotFound(format!("invalid process_id: {err}")))?;
         let uri = format!("chaos://sessions/{id}");
-        let content = read_builtin_resource(server, &uri).await?;
+        let content = read_builtin_resource(server, ctx.session, &uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
             content.text,
@@ -276,7 +277,7 @@ fn manual_page_handler<'a>(
             .ok_or_else(|| ResourceError::InvalidUri("missing 'page' parameter".into()))?
             .clone();
         let uri = format!("chaos://man/{page}");
-        let content = read_builtin_resource(server, &uri).await?;
+        let content = read_builtin_resource(server, ctx.session, &uri).await?;
         Ok(vec![text_resource_with_mime(
             uri,
             content.text,

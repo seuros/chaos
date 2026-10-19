@@ -27,6 +27,10 @@ use tokio::sync::watch;
 use crate::runtime_db::RuntimeDbHandle;
 
 mod resources;
+pub(crate) mod workflows;
+
+pub use workflows::WorkflowOwner;
+pub use workflows::WorkflowScope;
 
 #[derive(Clone, Debug)]
 pub struct ProcessConfigSnapshot {

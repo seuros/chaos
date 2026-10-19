@@ -38,6 +38,32 @@ use crate::protocol::ApprovalPolicy;
 use crate::state::turn::ApprovalKind;
 use crate::state::turn::PendingInsert;
 
+/// Cancellation/drop of a user-input future releases its turn mailbox slot.
+/// The receiver is closed before cleanup, so delayed cleanup cannot remove
+/// a live replacement using the same turn ID.
+struct PendingUserInput {
+    receiver: oneshot::Receiver<RequestUserInputResponse>,
+    state: std::sync::Arc<tokio::sync::Mutex<crate::state::turn::TurnState>>,
+    key: String,
+}
+
+impl Drop for PendingUserInput {
+    fn drop(&mut self) {
+        self.receiver.close();
+        if let Ok(mut state) = self.state.try_lock() {
+            state.remove_closed_user_input(&self.key);
+        } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let state = self.state.clone();
+            let key = std::mem::take(&mut self.key);
+            runtime.spawn(async move {
+                state.lock().await.remove_closed_user_input(&key);
+            });
+        }
+        // Without a runtime the receiver is still closed. A subsequent insert
+        // prunes that closed sender; never panic during executor teardown.
+    }
+}
+
 fn automatic_request_permissions_response(
     approval_policy: ApprovalPolicy,
 ) -> Option<RequestPermissionsResponse> {
@@ -544,21 +570,25 @@ impl Session {
     ) -> Option<RequestUserInputResponse> {
         let sub_id = turn_context.sub_id.clone();
         let (tx_response, rx_response) = oneshot::channel();
-        let event_id = sub_id.clone();
-        let insert_result = {
-            let mut active = self.active_turn.lock().await;
-            match active.as_mut() {
-                Some(at) => {
-                    let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_user_input(sub_id, tx_response)
-                }
-                None => PendingInsert::Inserted,
-            }
-        };
+        let state = self
+            .active_turn
+            .lock()
+            .await
+            .as_ref()
+            .map(|active| active.turn_state.clone())?;
+        let insert_result = state
+            .lock()
+            .await
+            .insert_pending_user_input(sub_id.clone(), tx_response);
         if let PendingInsert::Duplicate(_) = insert_result {
-            error!("Duplicate pending user input for sub_id: {event_id}");
+            error!("Duplicate pending user input for sub_id: {sub_id}");
             return None;
         }
+        let mut pending = PendingUserInput {
+            receiver: rx_response,
+            state,
+            key: sub_id,
+        };
 
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
             call_id,
@@ -566,7 +596,7 @@ impl Session {
             questions: args.questions,
         });
         self.send_event(turn_context, event).await;
-        rx_response.await.ok()
+        (&mut pending.receiver).await.ok()
     }
 }
 

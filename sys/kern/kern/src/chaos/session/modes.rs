@@ -132,6 +132,19 @@ impl Session {
     }
 
     pub(crate) async fn effective_turn_context(&self, base: &Arc<TurnContext>) -> Arc<TurnContext> {
+        self.try_effective_turn_context(base)
+            .await
+            .unwrap_or_else(|_| {
+                panic!("permission actor stopped while reading turn permissions");
+            })
+    }
+
+    /// Attached executions may race with the owning turn's normal teardown.
+    /// Unknown/removed turns fail closed; never rebuild them from defaults.
+    pub(crate) async fn try_effective_turn_context(
+        &self,
+        base: &Arc<TurnContext>,
+    ) -> Result<Arc<TurnContext>, crate::chaos::permissions::PermissionUpdateError> {
         let planning = self
             .runtime_db()
             .map(|db| db.planning_capabilities())
@@ -159,7 +172,7 @@ impl Session {
                 state.session_configuration.mode_policy.clone(),
             )
         };
-        let permission_snapshot = self.permission_snapshot(base).await;
+        let permission_snapshot = self.permission_actor.snapshot(base.sub_id.clone()).await?;
         let effective_vfs_policy = permission_snapshot.effective_vfs_policy();
         let effective_socket_policy = permission_snapshot.effective_socket_policy();
         let permissions_unchanged = base.approval_policy.value()
@@ -173,7 +186,7 @@ impl Session {
             && base.tools_config.attached_plan == attached_plan
             && base.tools_config.planning == planning
         {
-            return Arc::clone(base);
+            return Ok(Arc::clone(base));
         }
 
         let mode_capabilities = mode_registry
@@ -231,6 +244,6 @@ impl Session {
         effective.vfs_policy = effective_vfs_policy;
         effective.socket_policy = effective_socket_policy;
         effective.tools_config = tools_config;
-        Arc::new(effective)
+        Ok(Arc::new(effective))
     }
 }

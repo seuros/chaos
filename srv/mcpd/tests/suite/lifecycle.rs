@@ -1,12 +1,13 @@
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chaos_cron::CreateJobParams;
 use chaos_cron::CronScope;
 use chaos_cron::CronStore;
 use chaos_proc::open_runtime_db;
 use mcp_host::protocol::types::ErrorCode;
 use mcp_host::protocol::types::JsonRpcMessage;
+use mcp_host::protocol::types::RequestId;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
@@ -23,8 +24,89 @@ async fn spawn_mcp_process() -> Result<(TempDir, McpProcess)> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn both_protocol_versions_keep_resources_templates_and_capability_gates() -> Result<()> {
+    for version in ["2025-06-18", "2025-11-25"] {
+        let (_home, mut mcp) = spawn_mcp_process().await?;
+        let initialize = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.initialize_with_protocol_version(version),
+        )
+        .await??;
+        let JsonRpcMessage::Response(response) = initialize else {
+            anyhow::bail!("expected initialize response");
+        };
+        let result = response
+            .result
+            .ok_or_else(|| anyhow::anyhow!("initialize result"))?;
+        assert_eq!(result["protocolVersion"], version);
+        assert_eq!(
+            result["capabilities"].get("tasks").is_some(),
+            version == "2025-11-25"
+        );
+        mcp.send_initialized_notification().await?;
+
+        for (method, list_key, uri_key) in [
+            ("resources/list", "resources", "uri"),
+            (
+                "resources/templates/list",
+                "resourceTemplates",
+                "uriTemplate",
+            ),
+        ] {
+            let id = mcp.send_custom_request(method, None).await?;
+            let message = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp.read_stream_until_response_or_error_message(id),
+            )
+            .await??;
+            let JsonRpcMessage::Response(response) = message else {
+                anyhow::bail!("expected {method} response");
+            };
+            assert!(response.error.is_none(), "{response:?}");
+            let result = response
+                .result
+                .ok_or_else(|| anyhow::anyhow!("{method} result"))?;
+            let entries = result[list_key]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("{list_key}"))?;
+            assert!(!entries.is_empty());
+            for entry in entries {
+                let uri = entry[uri_key]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("{uri_key}"))?;
+                assert_eq!(uri.contains('{'), uri_key == "uriTemplate");
+                assert!(
+                    entry
+                        .get(if uri_key == "uri" {
+                            "uriTemplate"
+                        } else {
+                            "uri"
+                        })
+                        .is_none()
+                );
+            }
+        }
+        // Neither version may call a capability this server did not declare.
+        let id = mcp.send_custom_request("prompts/list", None).await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_response_or_error_message(id),
+        )
+        .await??;
+        let JsonRpcMessage::Response(response) = response else {
+            anyhow::bail!("expected missing-capability response");
+        };
+        let error = response
+            .error
+            .ok_or_else(|| anyhow::anyhow!("missing capability accepted"))?;
+        assert_eq!(error.code, ErrorCode::METHOD_NOT_FOUND);
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
 
     let message = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -36,7 +118,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
         anyhow::bail!("expected initialize response, got: {message:?}");
     };
 
-    assert_eq!(response.jsonrpc, "2.0");
+    assert_eq!(serde_json::to_value(response.jsonrpc)?, json!("2.0"));
     assert_eq!(
         response.result.as_ref().unwrap()["protocolVersion"],
         json!("2025-11-25")
@@ -64,6 +146,11 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
                         "call": {}
                     }
                 }
+            },
+            "extensions": {
+                "io.modelcontextprotocol/ui": {
+                    "mimeTypes": ["text/html;profile=mcp-app"]
+                }
             }
         })
     );
@@ -89,7 +176,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tools_list_before_initialize_is_rejected() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
 
     let request_id = mcp.send_custom_request("tools/list", None).await?;
     let message = timeout(
@@ -122,7 +209,7 @@ async fn tools_list_before_initialize_is_rejected() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
 
     let _ = timeout(
         DEFAULT_READ_TIMEOUT,
@@ -162,7 +249,7 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resources_are_listed_after_initialize() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp.send_custom_request("resources/list", None).await?;
@@ -234,7 +321,7 @@ async fn mcp_resource_can_be_read_after_initialize() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resource_templates_are_listed_after_initialize() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp
@@ -405,7 +492,7 @@ async fn manual_resources_can_be_read_after_initialize() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp
@@ -441,7 +528,7 @@ async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp
@@ -534,7 +621,7 @@ async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn models_resource_can_be_read_after_initialize() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp
@@ -594,10 +681,13 @@ async fn models_resource_can_be_read_after_initialize() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_runtime()
--> Result<()> {
+async fn cron_resource_reads_only_jobs_owned_by_this_mcp_session() -> Result<()> {
     let chaos_home = TempDir::new()?;
-
+    let server = mcp_test_support::create_mock_responses_server(vec![
+        mcp_test_support::create_final_assistant_message_sse_response("Owner ready")?,
+    ])
+    .await;
+    super::chaos_tool::create_config_toml(chaos_home.path(), &server.uri())?;
     let pool = open_runtime_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
     store
@@ -610,10 +700,48 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
             None,
         ))
         .await?;
+    store
+        .create(&CreateJobParams::shell(
+            "foreign session job".into(),
+            chaos_cron::Schedule::Interval { seconds: 300 }.to_json(),
+            "echo foreign-private-command".into(),
+            CronScope::Session,
+            None,
+            Some("00000000-0000-7000-8000-000000000001".into()),
+        ))
+        .await?;
 
     let mut mcp = McpProcess::new(chaos_home.path()).await?;
-
     mcp.initialize().await?;
+
+    let call_id = mcp
+        .send_chaos_tool_call(chaos_mcpd::ChaosToolParams {
+            prompt: "say hi".into(),
+            ..Default::default()
+        })
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Number(call_id.into())),
+    )
+    .await??;
+    let result = response.result.context("owned process result")?;
+    assert_ne!(result["isError"], json!(true), "{result}");
+    let owner = result["structuredContent"]["processId"]
+        .as_str()
+        .context("owned process ID")?
+        .to_owned();
+    let owned = store
+        .create(&CreateJobParams::shell(
+            "owned session job".into(),
+            chaos_cron::Schedule::Interval { seconds: 300 }.to_json(),
+            "echo owned".into(),
+            CronScope::Session,
+            None,
+            Some(owner.clone()),
+        ))
+        .await?;
+    assert_eq!(store.list(None, None).await?.len(), 3);
 
     let request_id = mcp
         .send_custom_request("resources/read", Some(json!({ "uri": "chaos://crons" })))
@@ -636,23 +764,26 @@ async fn cron_resource_reads_jobs_from_runtime_db_even_without_preopened_state_r
     let crons: serde_json::Value = serde_json::from_str(text)?;
     let items = crons.as_array().expect("cron list array");
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["name"], json!("persisted job"));
-    assert_eq!(items[0]["scope"], json!("project"));
-    assert_eq!(items[0]["command"], json!("echo hi"));
+    assert_eq!(items[0]["id"], owned.id);
+    assert_eq!(items[0]["name"], json!("owned session job"));
+    assert_eq!(items[0]["scope"], json!("session"));
+    assert_eq!(items[0]["session_id"], owner);
+    assert!(!text.contains("persisted job"));
+    assert!(!text.contains("foreign-private-command"));
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_runtime()
--> Result<()> {
+async fn spool_resource_never_exposes_global_rows_without_a_trustworthy_owner() -> Result<()> {
     let chaos_home = TempDir::new()?;
 
     let pool = open_runtime_db(chaos_home.path()).await?;
     sqlx::query(
         "INSERT INTO spool_jobs \
          (manifest_id, backend, batch_id, status, request_count, payload_json, submitted_at, created_at, updated_at) \
-         VALUES (?, 'xai', 'batch-1', 'InProgress', 2, '[\"a\",\"b\"]', 123, 111, 222)",
+         VALUES (?, 'xai', 'batch-1', 'InProgress', 2, \
+         '[\"foreign-private-prompt\"]', 123, 111, 222)",
     )
     .bind("manifest-1")
     .execute(&pool)
@@ -682,18 +813,20 @@ async fn spool_resource_reads_rows_from_runtime_db_even_without_preopened_state_
         .expect("spool resource text");
     let spool: serde_json::Value = serde_json::from_str(text)?;
     let items = spool.as_array().expect("spool list array");
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["manifest_id"], json!("manifest-1"));
-    assert_eq!(items[0]["backend"], json!("xai"));
-    assert_eq!(items[0]["batch_id"], json!("batch-1"));
-    assert_eq!(items[0]["status"], json!("InProgress"));
+    assert!(items.is_empty());
+    assert!(!text.contains("foreign-private-prompt"));
+    assert!(!text.contains("manifest-1"));
+    let persisted: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM spool_jobs")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(persisted, 1, "resource reads must not delete private rows");
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resource_subscribe_is_rejected_when_capability_disabled() -> Result<()> {
-    let (_codex_home, mut mcp) = spawn_mcp_process().await?;
+    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
     let request_id = mcp

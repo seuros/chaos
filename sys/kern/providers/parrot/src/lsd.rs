@@ -227,7 +227,9 @@ fn build_request_body(
 
     // Extract params from extensions if present.
     let params = {
-        let max_tokens = request.extensions.get("max_tokens").and_then(Value::as_u64);
+        let max_tokens = crate::common::max_output_tokens(request)?
+            .map(u64::from)
+            .or_else(|| request.extensions.get("max_tokens").and_then(Value::as_u64));
         let temperature = request
             .extensions
             .get("temperature")

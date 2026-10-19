@@ -20,10 +20,10 @@ pub(crate) async fn inject(
     input: String,
     cancellation: CancellationToken,
 ) {
-    let enabled = session.services.tool_group_catalog.is_group_enabled(
-        &session.services.tool_group_state,
-        crate::tools::groups::RECALL,
-    );
+    let enabled = session
+        .services
+        .tool_group_catalog
+        .is_group_enabled(session.tool_group_state(), crate::tools::groups::RECALL);
     if !turn.config.recall_automatic || !enabled || input.trim().is_empty() {
         return;
     }

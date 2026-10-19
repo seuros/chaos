@@ -522,6 +522,7 @@ async fn remote_models_do_not_append_removed_builtin_presets() -> Result<()> {
     .await;
 
     let chaos_home = TempDir::new()?;
+    load_default_config_for_test(&chaos_home).await;
 
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
@@ -579,6 +580,7 @@ async fn remote_models_merge_adds_new_high_priority_first() -> Result<()> {
     .await;
 
     let chaos_home = TempDir::new()?;
+    load_default_config_for_test(&chaos_home).await;
 
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {
@@ -626,6 +628,7 @@ async fn remote_models_merge_replaces_overlapping_model() -> Result<()> {
     .await;
 
     let chaos_home = TempDir::new()?;
+    load_default_config_for_test(&chaos_home).await;
 
     let auth = ChaosAuth::create_dummy_chatgpt_auth_for_testing();
     let provider = ModelProviderInfo {

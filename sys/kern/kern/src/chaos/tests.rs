@@ -476,6 +476,10 @@ fn make_test_session_services(
         crate::tools::groups::build_catalog().expect("build test tool group catalog");
     let tool_group_state = tool_group_catalog.new_state();
     SessionServices {
+        workflow_runs: chaos_synopsis::runs::RunRegistry::default(),
+        external_workflow_owner: std::sync::OnceLock::new(),
+        workflow_control: crate::process::workflows::WorkflowControl::default(),
+        tool_scheduler: crate::tools::parallel::ToolSchedulerActor::spawn(),
         catalog: Arc::new(crate::catalog::CatalogSink::new(
             crate::catalog::Catalog::from_inventory(),
         )),

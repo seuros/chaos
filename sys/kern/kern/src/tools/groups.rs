@@ -12,6 +12,7 @@ pub(crate) const WEB: &str = "web";
 pub(crate) const CRON: &str = "cron";
 pub(crate) const MCP_MANAGEMENT: &str = "mcp-management";
 pub(crate) const RECALL: &str = "recall";
+pub(crate) const WORKFLOWS: &str = "workflows";
 
 pub(crate) struct ToolGroupFilter<'a> {
     pub(crate) catalog: &'a ToolGroupCatalog,
@@ -53,6 +54,7 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         (WEB, "Web retrieval and image generation"),
         (CRON, "Recurring job controls"),
         (MCP_MANAGEMENT, "Add and administer configured MCP servers"),
+        (WORKFLOWS, "Execute bounded, session-owned tool workflows"),
         (
             RECALL,
             "Search and explicitly store scoped persistent memory",
@@ -64,6 +66,16 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     assign(
         &catalog,
         ["enable_tools", "disable_tools"],
+        ToolExposure::Always,
+    )?;
+    assign(
+        &catalog,
+        ["run_workflow"],
+        ToolExposure::groups([WORKFLOWS]),
+    )?;
+    assign(
+        &catalog,
+        ["workflow_status", "cancel_workflow"],
         ToolExposure::Always,
     )?;
     assign(
@@ -158,6 +170,9 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
     }
 
     let mut native_tool_names = vec![
+        "run_workflow",
+        "workflow_status",
+        "cancel_workflow",
         "enable_tools",
         "disable_tools",
         "switch_mode",

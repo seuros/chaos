@@ -1,6 +1,51 @@
 use super::*;
 use chaos_test_fixtures::TEST_MODEL;
 
+#[test]
+fn output_cap_is_opt_in_for_streaming_and_structured_chat() {
+    let mut request = TurnRequest {
+        model: "model".into(),
+        instructions: String::new(),
+        input: vec![],
+        tools: vec![],
+        parallel_tool_calls: false,
+        reasoning: None,
+        output_schema: None,
+        verbosity: None,
+        turn_state: None,
+        extensions: serde_json::Map::new(),
+    };
+    assert_eq!(
+        build_request_body(&request, "model", true).unwrap(),
+        serde_json::json!({
+            "model": "model",
+            "stream": true,
+            "stream_options": {"include_usage": true}
+        })
+    );
+    for stream in [true, false] {
+        request.extensions.clear();
+        request.output_schema = (!stream).then(|| serde_json::json!({"type": "object"}));
+        let baseline = build_request_body(&request, "model", stream).unwrap();
+        for cap in [1, 37, u32::MAX] {
+            request
+                .extensions
+                .insert("max_output_tokens".into(), serde_json::json!(cap));
+            let mut body = build_request_body(&request, "model", stream).unwrap();
+            assert_eq!(body["max_completion_tokens"], cap);
+            assert!(body.get("max_output_tokens").is_none());
+            assert!(body.get("max_tokens").is_none());
+            body.as_object_mut()
+                .unwrap()
+                .remove("max_completion_tokens");
+            assert_eq!(
+                serde_json::to_vec(&body).unwrap(),
+                serde_json::to_vec(&baseline).unwrap()
+            );
+        }
+    }
+}
+
 fn completion_fixture() -> Value {
     serde_json::json!({
         "id": "chatcmpl-test",

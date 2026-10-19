@@ -45,6 +45,7 @@ members = [
 
     # srv/ — services
     "srv/mcpd",
+    "lib/libacp/guest",
     "lib/libmcp/guest",
     "lib/libmcp/runtime",
     "srv/arsenal",
@@ -132,7 +133,7 @@ version = "47.13.2"
 # crates created with `cargo new -w ...` automatically inherit the 2024
 # edition.
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "Apache-2.0"
 publish = false
 
@@ -247,9 +248,10 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.8.0", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.13.1", default-features = false, features = ["stdio", "macros"] }
 
 # External
+agent-client-protocol = { version = "3.3.0", default-features = false }
 age = "0.12.1"
 ansi-to-tui = "8.0.1"
 anyhow = "1"
@@ -258,7 +260,6 @@ assert_cmd = "2"
 async-channel = "2.5.0"
 async-stream = "0.3.6"
 base64 = "0.23.1"
-bonsai-bt = { version = "0.14.0", default-features = false }
 bytes = "1.12.1"
 chardetng = "1.0.0"
 color-eyre = "0.6.5"

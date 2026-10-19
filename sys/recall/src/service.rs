@@ -266,8 +266,8 @@ impl<S: RecallStore, E: EmbeddingProvider> RecallService<S, E> {
         let runner = Runner::new(synopsis, executor)
             .map_err(|error| RecallError::Workflow(error.to_string()))?;
         let started = Instant::now();
-        // Dropping a timed-out runner aborts its JoinSet. Blocking inference
-        // retains its semaphore permit until it actually finishes.
+        // Dropping a timed-out runner halts its tree and drops scoped jobs.
+        // Blocking inference retains its permit until it actually finishes.
         let outcome = tokio::time::timeout(self.timeout, runner.run(cancellation)).await;
         let mut state = state.lock().await;
         let result = match outcome {

@@ -9,7 +9,7 @@
     {"id": "fingerprint", "content": "A model fingerprint hashes tokenizer.json, model.safetensors, and config.json. Changing model artifacts requires explicit reindexing."},
     {"id": "migration", "content": "The recall migration installs scoped memory tables and PostgreSQL storage functions. Recall has its own migration ledger, independent of the VFS state migrations."},
     {"id": "atomic", "content": "Embedding is computed before inserting a memory. Failed embeddings leave no partial write. Batch indexing is transactional."},
-    {"id": "runner", "content": "chaos-synopsis compiles a bounded acyclic workflow into a Bonsai behavior tree. Each action runs once per request."},
+    {"id": "runner", "content": "chaos-synopsis compiles a bounded acyclic workflow into an mcp_host::bt behavior tree. Each action runs once per request."},
     {"id": "provenance", "content": "Recall results preserve document IDs, namespaces, source metadata, and matched retrieval methods so users can trace their origin."},
     {"id": "inference", "content": "CPU inference runs on blocking workers. A semaphore limits concurrent embeddings and retains its permit until cancelled CPU work finishes."},
     {"id": "http", "content": "The HTTP daemon serves browser requests and configures route handlers and authentication."},

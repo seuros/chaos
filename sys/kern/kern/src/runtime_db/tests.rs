@@ -96,3 +96,29 @@ fn home_local_sqlite_urls_mount_under_the_home_key() {
         chaos_vfs::MountConfig::sqlite_url(&with_options)
     );
 }
+
+#[tokio::test]
+async fn runtime_storage_breaker_is_scoped_to_chaos_home() {
+    let failing = tempfile::tempdir().expect("create failing home");
+    let healthy = tempfile::tempdir().expect("create healthy home");
+
+    assert!(Arc::ptr_eq(
+        &runtime_storage_breaker(failing.path()),
+        &runtime_storage_breaker(failing.path()),
+    ));
+
+    let failed = runtime_storage_breaker(failing.path())
+        .call(|| async { Err::<(), _>("no such table: processes") })
+        .await;
+    std::assert_matches!(failed, Err(BreakerError::Operation(_)));
+
+    let rejected = runtime_storage_breaker(failing.path())
+        .call(|| async { Ok::<(), &str>(()) })
+        .await;
+    std::assert_matches!(rejected, Err(BreakerError::Open));
+
+    let isolated = runtime_storage_breaker(healthy.path())
+        .call(|| async { Ok::<_, &str>("served") })
+        .await;
+    std::assert_matches!(isolated, Ok("served"));
+}

@@ -21,6 +21,101 @@ fn make_req(model: &str) -> TurnRequest {
 }
 
 #[test]
+fn ordinary_responses_request_bytes_are_unchanged() {
+    let api = turn_request_to_api_request(make_req("model"), &ResponsesRepresenter).unwrap();
+    assert_eq!(
+        serde_json::to_string(&api).unwrap(),
+        concat!(
+            r#"{"model":"model","instructions":"","input":[],"tools":[],"tool_choice":"auto","#,
+            r#""parallel_tool_calls":false,"reasoning":null,"store":false,"#,
+            r#""stream":true,"include":[]}"#
+        )
+    );
+}
+
+#[test]
+fn output_cap_survives_responses_dialects_and_both_websocket_projections() {
+    use crate::common::ResponseCreateWsRequest;
+    use crate::common::ResponseCreateWsRequestRef;
+    use crate::representer::SessionRepresenter;
+
+    for representer in [
+        SessionRepresenter::openai(),
+        SessionRepresenter::for_compatible_endpoint("https://api.x.ai/v1"),
+        SessionRepresenter::for_compatible_endpoint("https://api.moonshot.ai/v1"),
+    ] {
+        let baseline =
+            turn_request_to_api_request(make_req("model"), representer.as_representer()).unwrap();
+        for cap in [1, 37, u32::MAX] {
+            let mut req = make_req("model");
+            req.extensions
+                .insert("max_output_tokens".into(), json!(cap));
+            let mut api = turn_request_to_api_request(req, representer.as_representer()).unwrap();
+            let http = serde_json::to_value(&api).unwrap();
+            let owned_ws = serde_json::to_value(ResponseCreateWsRequest::from(&api)).unwrap();
+            let borrowed_ws = serde_json::to_value(ResponseCreateWsRequestRef::from(&api)).unwrap();
+            for body in [&http, &owned_ws, &borrowed_ws] {
+                assert_eq!(body["max_output_tokens"], cap);
+                assert!(body.get("max_tokens").is_none());
+            }
+            let mut expected_ws = http;
+            expected_ws.as_object_mut().unwrap().remove("stream");
+            assert_eq!(owned_ws, expected_ws);
+            expected_ws["type"] = json!("response.create");
+            assert_eq!(borrowed_ws, expected_ws);
+
+            api.max_output_tokens = None;
+            assert_eq!(
+                serde_json::to_vec(&api).unwrap(),
+                serde_json::to_vec(&baseline).unwrap(),
+                "the opt-in cap must not alter other request bytes"
+            );
+        }
+        assert!(
+            serde_json::to_value(ResponseCreateWsRequest::from(&baseline))
+                .unwrap()
+                .get("max_output_tokens")
+                .is_none()
+        );
+        assert!(
+            serde_json::to_value(ResponseCreateWsRequestRef::from(&baseline))
+                .unwrap()
+                .get("max_output_tokens")
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn invalid_output_caps_fail_instead_of_producing_uncapped_requests() {
+    for invalid in [
+        json!(0),
+        json!(-1),
+        json!(1.5),
+        json!("37"),
+        json!(null),
+        json!(u64::from(u32::MAX) + 1),
+    ] {
+        let mut req = make_req("model");
+        req.extensions.insert("max_output_tokens".into(), invalid);
+        // A legacy limit must not mask an invalid explicit canonical cap.
+        req.extensions.insert("max_tokens".into(), json!(8192));
+        std::assert_matches!(
+            crate::chat_completions::build_request_body(&req, "model", true),
+            Err(AbiError::InvalidRequest { .. })
+        );
+        std::assert_matches!(
+            crate::anthropic::build_request_body(&req, "model"),
+            Err(AbiError::InvalidRequest { .. })
+        );
+        std::assert_matches!(
+            turn_request_to_api_request(req, &ResponsesRepresenter),
+            Err(AbiError::InvalidRequest { .. })
+        );
+    }
+}
+
+#[test]
 fn kimi_request_uses_plaintext_reasoning_controls_and_preserves_output_schema() {
     let representer = crate::representer::SessionRepresenter::for_compatible_endpoint(
         "https://api.moonshot.ai/v1",
@@ -35,7 +130,7 @@ fn kimi_request_uses_plaintext_reasoning_controls_and_preserves_output_schema() 
         .insert("service_tier".into(), json!("priority"));
     req.output_schema = Some(json!({"type": "object"}));
 
-    let api = turn_request_to_api_request(req, representer.as_representer());
+    let api = turn_request_to_api_request(req, representer.as_representer()).unwrap();
     let body = serde_json::to_value(api).unwrap();
     assert_eq!(body["reasoning"], json!({"effort": "high"}));
     assert_eq!(body["include"], json!([]));
@@ -70,7 +165,7 @@ fn kimi_reasoning_effort_maps_to_supported_levels() {
                 summary: None,
             });
             req.verbosity = Some(VerbosityConfig::Low);
-            let api = turn_request_to_api_request(req, representer.as_representer());
+            let api = turn_request_to_api_request(req, representer.as_representer()).unwrap();
             let body = serde_json::to_value(api).unwrap();
             assert_eq!(
                 body["reasoning"]["effort"], expected,
@@ -95,7 +190,7 @@ fn kimi_does_not_inject_effort_when_it_is_unspecified() {
     ] {
         let mut req = make_req("kimi-for-coding");
         req.reasoning = reasoning;
-        let api = turn_request_to_api_request(req, representer.as_representer());
+        let api = turn_request_to_api_request(req, representer.as_representer()).unwrap();
         let body = serde_json::to_value(api).unwrap();
         assert!(body["reasoning"].get("effort").is_none());
     }
@@ -113,7 +208,7 @@ fn none_effort_is_preserved_for_non_kimi_providers() {
             effort: Some(chaos_abi::ReasoningEffort::None),
             summary: None,
         });
-        let api = turn_request_to_api_request(req, representer.as_representer());
+        let api = turn_request_to_api_request(req, representer.as_representer()).unwrap();
         let body = serde_json::to_value(api).unwrap();
         assert_eq!(body["reasoning"]["effort"], "none");
     }
@@ -142,7 +237,7 @@ fn turn_request_converts_to_responses_api_request() {
         extensions: serde_json::Map::new(),
     };
 
-    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
+    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter).unwrap();
 
     assert_eq!(api_req.model, TEST_MODEL);
     assert_eq!(api_req.instructions, "Be helpful.");
@@ -167,7 +262,7 @@ fn ultra_effort_clamps_to_max_on_the_wire() {
         summary: None,
     });
 
-    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
+    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter).unwrap();
 
     let reasoning = api_req.reasoning.expect("reasoning present");
     assert_eq!(reasoning.effort, Some(chaos_abi::ReasoningEffort::Max));
@@ -189,7 +284,7 @@ fn compatible_provider_preserves_ultra_effort_on_the_wire() {
     });
 
     let representer = OpenwAInnabeRepresenter::new(SystemRole::Anywhere);
-    let api_req = turn_request_to_api_request(req, &representer);
+    let api_req = turn_request_to_api_request(req, &representer).unwrap();
 
     let reasoning = api_req.reasoning.expect("reasoning present");
     assert_eq!(reasoning.effort, Some(chaos_abi::ReasoningEffort::Ultra));
@@ -219,7 +314,7 @@ fn extensions_populate_openai_specific_fields() {
         extensions,
     };
 
-    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
+    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter).unwrap();
 
     assert!(api_req.store);
     assert_eq!(api_req.service_tier.as_deref(), Some("priority"));
@@ -254,7 +349,7 @@ fn openai_tools_extension_overrides_neutral_tool_conversion() {
         extensions,
     };
 
-    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter);
+    let api_req = turn_request_to_api_request(req, &ResponsesRepresenter).unwrap();
     assert_eq!(api_req.tools, vec![json!({"type": "local_shell"})]);
 }
 
@@ -282,7 +377,7 @@ fn wannabe_representer_used_via_turn_request_conversion() {
         ..make_req("grok-4")
     };
     let representer = OpenwAInnabeRepresenter::new(SystemRole::Anywhere);
-    let api_req = turn_request_to_api_request(req, &representer);
+    let api_req = turn_request_to_api_request(req, &representer).unwrap();
     assert_eq!(api_req.input.len(), 1, "Reasoning item must be dropped");
     std::assert_matches!(
         &api_req.input[0], ResponseItem::Message { role, .. } if role == "system",

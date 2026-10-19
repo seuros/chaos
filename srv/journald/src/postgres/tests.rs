@@ -147,3 +147,83 @@ async fn postgres_client_supports_complete_journal_lifecycle() {
         .await
         .expect("release resumed PostgreSQL lease");
 }
+
+#[test]
+fn jsonb_payloads_replace_nul_in_strings_and_keys() {
+    let value = serde_json::json!({
+        "output": "exit\u{0}code",
+        "nested": [{"key\u{0}": "\u{0}"}, 7, null],
+    });
+    assert_eq!(
+        super::jsonb_safe(value),
+        serde_json::json!({
+            "output": "exit\u{FFFD}code",
+            "nested": [{"key\u{FFFD}": "\u{FFFD}"}, 7, null],
+        })
+    );
+}
+
+#[tokio::test]
+async fn postgres_append_batch_accepts_nul_in_payloads() {
+    let Some(database_url) = postgres_test_url() else {
+        eprintln!("skipping PostgreSQL NUL payload validation; {TEST_DATABASE_URL_ENV} is not set");
+        return;
+    };
+    let pool = chaos_proc::open_runtime_db_postgres_url(&database_url)
+        .await
+        .expect("open PostgreSQL runtime database");
+    let client = JournalClient::postgres_pool(pool);
+
+    let process_id = ProcessId::new();
+    let owner_id = "postgres-owner-nul".to_string();
+    let initialized = client
+        .initialize_process(InitializeProcessInput {
+            create: CreateProcessInput {
+                process_id,
+                parent: None,
+                source: SessionSource::Cli,
+                cwd: std::env::temp_dir().join(process_id.to_string()),
+                created_at: jiff::Timestamp::now(),
+                title: Some("PostgreSQL NUL payload".to_string()),
+                model_provider: Some("openai".to_string()),
+                cli_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            },
+            owner_id: owner_id.clone(),
+            ttl_ms: 30_000,
+            items: vec![JournalEntry {
+                seq: 0,
+                recorded_at: jiff::Timestamp::now(),
+                item: compacted("first"),
+            }],
+        })
+        .await
+        .expect("initialize PostgreSQL journal");
+    client
+        .append_batch(AppendBatchInput {
+            process_id,
+            owner_id: owner_id.clone(),
+            lease_token: initialized.lease.lease_token.clone(),
+            expected_next_seq: initialized.next_seq,
+            items: vec![JournalEntry {
+                seq: initialized.next_seq,
+                recorded_at: jiff::Timestamp::now(),
+                item: compacted("exit\u{0}code"),
+            }],
+        })
+        .await
+        .expect("append NUL payload to PostgreSQL journal");
+
+    let loaded = client
+        .load_journal(process_id)
+        .await
+        .expect("load PostgreSQL journal");
+    assert_eq!(
+        serde_json::to_value(&loaded.items[1].item).expect("serialize loaded item"),
+        serde_json::to_value(compacted("exit\u{FFFD}code")).expect("serialize expected item")
+    );
+
+    client
+        .release_lease(process_id, owner_id, initialized.lease.lease_token)
+        .await
+        .expect("release PostgreSQL lease");
+}

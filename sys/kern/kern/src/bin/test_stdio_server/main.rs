@@ -34,14 +34,18 @@ async fn main() -> io::Result<()> {
     });
     for tool in tools::router().into_tools(server) {
         if tool.name() == "project_task" {
-            tool_registry.register_boxed_configured(
-                tool,
-                ToolRegistrationPolicy::new().lifecycle(
-                    ToolLifecyclePolicy::new().initial_state(ToolLifecycleState::Disabled),
-                ),
-            );
+            tool_registry
+                .register_boxed_configured(
+                    tool,
+                    ToolRegistrationPolicy::new().lifecycle(
+                        ToolLifecyclePolicy::new().initial_state(ToolLifecycleState::Disabled),
+                    ),
+                )
+                .map_err(io::Error::other)?;
         } else {
-            tool_registry.register_boxed(tool);
+            tool_registry
+                .register_boxed(tool)
+                .map_err(io::Error::other)?;
         }
     }
     mcp_server

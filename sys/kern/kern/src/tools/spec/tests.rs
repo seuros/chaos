@@ -1053,6 +1053,12 @@ fn test_full_toolset_specs_for_codex_style_exec_web_search_model() {
         expected.insert(tool_name(&spec).to_string(), spec);
     }
 
+    let mut workflow_builder = crate::tools::registry::ToolRegistryBuilder::new();
+    crate::tools::workflows::register(&mut workflow_builder);
+    for configured in workflow_builder.build().0 {
+        expected.insert(tool_name(&configured.spec).to_string(), configured.spec);
+    }
+
     // Catalog tools (arsenal, cron, git, mcp, etc.) — collected from inventory,
     // matching the same path the builder uses so annotations are consistent.
     {
@@ -1615,6 +1621,9 @@ const MODEL_TOOL_TAIL_SUFFIX: &[&str] = &[
     "mcp_server",
     "web_search",
     "view_image",
+    "run_workflow",
+    "workflow_status",
+    "cancel_workflow",
     "spawn_agent",
     "run_synopsis",
     "send_input",
@@ -2007,9 +2016,13 @@ fn run_synopsis_tool_exposes_agent_jobs_and_control_flow_modes() {
     else {
         panic!("run_synopsis should use an object schema");
     };
-    assert_eq!(required, Some(vec!["mode".to_string(), "jobs".to_string()]));
+    assert_eq!(required, Some(vec!["jobs".to_string()]));
     assert_eq!(additional_properties, Some(false.into()));
     assert!(properties.contains_key("timeout_ms"));
+    assert!(properties.contains_key("mode"));
+    assert!(properties.contains_key("tree"));
+    assert!(description.contains("exactly one of mode or tree"));
+    assert!(description.contains("allow_replay=true"));
     let Some(JsonSchema::Array { items, .. }) = properties.get("jobs") else {
         panic!("jobs should be an array schema");
     };
@@ -2027,6 +2040,7 @@ fn run_synopsis_tool_exposes_agent_jobs_and_control_flow_modes() {
     );
     assert_eq!(additional_properties, &Some(false.into()));
     assert!(properties.contains_key("agent_type"));
+    assert!(properties.contains_key("allow_replay"));
 }
 
 #[test]

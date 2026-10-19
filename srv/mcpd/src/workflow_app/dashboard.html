@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Session workflows</title>
+  <style>
+    :root { color-scheme: light dark; font: 14px/1.5 system-ui, sans-serif; }
+    body { margin: 0; padding: 1rem; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: .8rem; }
+    h1 { font-size: 1.2rem; margin: 0; }
+    h2 { font-size: 1rem; overflow-wrap: anywhere; }
+    p { margin: .6rem 0; }
+    button { font: inherit; padding: .3rem .75rem; cursor: pointer; }
+    button:disabled { cursor: default; opacity: .6; }
+    article { border-top: 1px solid GrayText; padding: .5rem 0; }
+    #runs { max-height: 34rem; overflow: auto; }
+    #status, #notice { overflow-wrap: anywhere; white-space: pre-wrap; }
+    .warning { font-weight: 600; }
+    .hint { opacity: .8; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th, td { padding: .3rem .5rem; vertical-align: top; overflow-wrap: anywhere; }
+    th { border-bottom: 1px solid GrayText; }
+    td:first-child { max-width: 20rem; }
+  </style>
+</head>
+<body>
+  <header><h1>This session's workflows &amp; synopses</h1><button id="refresh" type="button" disabled>Refresh / first page</button><button id="next" type="button" disabled>Next page</button></header>
+  <p id="status" role="status" aria-live="polite">Connecting to MCP Apps host…</p>
+  <p id="notice" class="warning"></p>
+  <p class="hint">Only snapshots returned by this host are shown. The server enforces session ownership.
+    Pending input uses the host's existing interaction flow; this view cannot grant approvals.
+    Cancellation remains pending until cleanup finishes.</p>
+  <section id="runs" aria-label="Session run snapshots"><p>No snapshots received. Choose Refresh after connecting.</p></section>
+  <p class="hint">Text alternative: ask for <code>workflow_status</code> with <code>run_id</code>.
+    To request cancellation, use <code>cancel_workflow</code> with <code>run_id</code>.
+    Expired runs are not restored.</p>
+  <noscript>This dashboard needs an MCP Apps host and JavaScript. Use workflow_status with run_id
+    for run state, steps, attempts, pending input, outcome, and truncation; use cancel_workflow
+    with run_id to request cancellation.</noscript>
+  <script>
+    "use strict";
+    (() => {
+      // Minimal, fixed-purpose ext-apps 2026-01-26 bridge. No browser networking.
+      const PROTOCOL_VERSION = "2026-01-26";
+      const REQUEST_TIMEOUT_MS = 30_000;
+      const MAX_RUNS = 10;
+      const MAX_STEPS = 256;
+      const MAX_TOTAL_STEPS = 512;
+      const pending = new Map();
+      const refresh = document.getElementById("refresh");
+      const next = document.getElementById("next");
+      const status = document.getElementById("status");
+      const notice = document.getElementById("notice");
+      const runsNode = document.getElementById("runs");
+      let nextId = 1;
+      let ready = false;
+      let closed = false;
+      let serverTools = false;
+      let busy = false;
+      let hostOrigin = null;
+      let observer = null;
+      let lastSize = "";
+      let displayedRuns = [];
+      let displayTruncated = false;
+      let detailsOmitted = false;
+      let nextOffset = null;
+      let currentOffset = 0;
+
+      const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+      function text(value, limit = 160) {
+        const raw = typeof value === "string" ? value : "unknown";
+        return raw.length > limit ? raw.slice(0, limit) + "… [display truncated]" : raw;
+      }
+      function element(tag, value, className) {
+        const node = document.createElement(tag);
+        if (value !== undefined) node.textContent = value;
+        if (className) node.className = className;
+        return node;
+      }
+      function send(message) {
+        // Opaque sandbox origins require "*"; never broadcast beyond parent.
+        window.parent.postMessage({ jsonrpc: "2.0", ...message },
+          hostOrigin && hostOrigin !== "null" ? hostOrigin : "*");
+      }
+      function notify(method, params) {
+        if (!closed) send({ method, params });
+      }
+      function request(method, params) {
+        return new Promise((resolve, reject) => {
+          if (closed || pending.size >= 2) {
+            reject(new Error("Bridge unavailable or request limit reached"));
+            return;
+          }
+          const id = nextId++;
+          const timer = setTimeout(() => {
+            pending.delete(id);
+            reject(new Error("Host response timed out; refresh to inspect current state"));
+          }, REQUEST_TIMEOUT_MS);
+          pending.set(id, { resolve, reject, timer, method });
+          try {
+            send({ id, method, params });
+          } catch (error) {
+            pending.delete(id);
+            clearTimeout(timer);
+            reject(error);
+          }
+        });
+      }
+      function toolText(result) {
+        if (!Array.isArray(result?.content)) return "";
+        return result.content.slice(0, 8)
+          .filter((part) => part?.type === "text" && typeof part.text === "string")
+          .map((part) => text(part.text, 512)).join("\n").slice(0, 4096);
+      }
+      function lifecycle(value) {
+        if (!record(value)) return { state: "unknown", outcome: "" };
+        const state = ["running", "cancelling", "terminal", "waiting_for_input"].includes(value.state)
+          ? value.state : "unknown";
+        return { state, outcome: state === "terminal" ? text(value.outcome, 48) : "" };
+      }
+      function stateText(value) {
+        if (value.state === "waiting_for_input") return "Pending input — use host interaction flow";
+        if (value.state === "cancelling") return "Cancelling — cleanup pending";
+        return value.state;
+      }
+      function snapshot(value, budget) {
+        if (!record(value) || typeof value.run_id !== "string" || !Array.isArray(value.steps)) return null;
+        const count = Math.min(value.steps.length, MAX_STEPS, budget.left);
+        budget.left -= count;
+        const steps = value.steps.slice(0, count).filter(record).map((step) => ({
+          node: text(step.node_id), attempt: Number.isSafeInteger(step.attempt) && step.attempt > 0 ? step.attempt : "?",
+          status: lifecycle(step.status), truncated: step.truncated === true,
+        }));
+        return {
+          id: text(value.run_id, 80),
+          cancellableId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.run_id)
+            ? value.run_id : null,
+          kind: value.kind === "workflow" || value.kind === "synopsis" ? value.kind : "unknown kind",
+          status: lifecycle(value.status), steps, truncated: value.truncated === true,
+          omitted: value.steps.length > count,
+        };
+      }
+      function controls() {
+        refresh.disabled = closed || !ready || !serverTools || busy;
+        next.disabled = refresh.disabled || nextOffset === null;
+        for (const button of runsNode.querySelectorAll("button")) {
+          button.disabled = closed || !ready || !serverTools || busy;
+        }
+      }
+      function renderRuns() {
+        runsNode.replaceChildren();
+        if (!displayedRuns.length) runsNode.append(element("p", "No runs on this page."));
+        for (const run of displayedRuns) {
+          const article = element("article");
+          article.append(element("h2", `${run.kind} · ${run.id}`));
+          article.append(element("p", `State: ${stateText(run.status)} · Outcome: ${run.status.outcome || "not terminal"}`));
+          if (run.truncated || run.omitted) {
+            article.append(element("p", run.truncated
+              ? "Truncated: the server discarded some result or step detail."
+              : "Display truncated: additional attempts omitted.", "warning"));
+          }
+          const table = element("table");
+          const head = element("tr");
+          for (const title of ["Step", "Attempt", "State / pending input", "Outcome", "Truncated"]) {
+            const th = element("th", title);
+            th.scope = "col";
+            head.append(th);
+          }
+          const thead = element("thead");
+          thead.append(head);
+          table.append(thead);
+          const body = element("tbody");
+          for (const step of run.steps) {
+            const row = element("tr");
+            for (const value of [step.node, String(step.attempt), stateText(step.status),
+              step.status.outcome || "—", step.truncated ? "yes" : "no"]) row.append(element("td", value));
+            body.append(row);
+          }
+          table.append(body);
+          const wrapper = element("div", undefined, "table-wrap");
+          wrapper.append(table);
+          article.append(wrapper);
+          if (!run.steps.length) article.append(element("p", "No attempt records displayed."));
+          if (run.status.state === "running" && run.cancellableId) {
+            const cancel = element("button", "Request cancellation");
+            cancel.type = "button";
+            cancel.addEventListener("click", () => cancelRun(run.cancellableId));
+            article.append(cancel);
+          }
+          runsNode.append(article);
+        }
+        notice.textContent = [
+          displayTruncated ? "Display truncated: run/attempt limits reached. Use workflow_status for an individual run." : "",
+          detailsOmitted ? "Details/root payloads intentionally omitted from these summaries." : "",
+        ].filter(Boolean).join("\n");
+        controls();
+        reportSize();
+      }
+      function renderResult(result, offset = 0) {
+        if (closed || !ready) return;
+        if (!record(result)) {
+          status.textContent = "Invalid tool result. Use the text alternative.";
+          return;
+        }
+        if (result.isError === true) {
+          status.textContent = "Tool error: " + (toolText(result) || "request refused");
+          return;
+        }
+        const payload = result.structuredContent;
+        const budget = { left: MAX_TOTAL_STEPS };
+        if (record(payload) && Array.isArray(payload.runs)) {
+          displayedRuns = payload.runs.slice(0, MAX_RUNS).map((run) => snapshot(run, budget)).filter(Boolean);
+          displayTruncated = payload.runs.length > MAX_RUNS || displayedRuns.some((run) => run.omitted);
+          currentOffset = offset;
+          nextOffset = Number.isSafeInteger(payload.next_offset) && payload.next_offset > currentOffset
+            ? payload.next_offset : null;
+          detailsOmitted = payload.details_omitted === true;
+        } else if (record(payload) && typeof payload.run_id === "string") {
+          const run = snapshot(payload, budget);
+          if (!run) {
+            status.textContent = "Invalid snapshot. Use workflow_status for this run.";
+            return;
+          }
+          // A single status/cancel result is a fresh view, not a persistent ownership registry.
+          displayedRuns = [run];
+          displayTruncated = run.omitted;
+          currentOffset = 0;
+          nextOffset = null;
+          detailsOmitted = false;
+        } else {
+          status.textContent = toolText(result) || "No structured run snapshots. Use the text alternative.";
+          return;
+        }
+        renderRuns();
+        status.textContent = `Showing ${displayedRuns.length} session run(s), page offset ${currentOffset}. `
+          + (nextOffset !== null ? "More runs available: choose Next page." : "No further page reported.")
+          + " Refresh returns to the first page.";
+      }
+      async function callTool(name, args) {
+        if (!ready || closed || !serverTools || busy) return;
+        busy = true;
+        controls();
+        status.textContent = name === "cancel_workflow" ? "Requesting cancellation; completion is not assumed…" : "Refreshing…";
+        try {
+          renderResult(await request("tools/call", { name, arguments: args }), args.offset ?? 0);
+        } catch (error) {
+          if (!closed) status.textContent = text(error.message, 512);
+        } finally {
+          busy = false;
+          controls();
+        }
+      }
+      function refreshRuns() { return callTool("workflow_dashboard", {}); }
+      function nextPage() {
+        if (nextOffset !== null) return callTool("workflow_dashboard", { offset: nextOffset });
+      }
+      function cancelRun(runId) { return callTool("cancel_workflow", { run_id: runId }); }
+      function reportSize() {
+        if (!ready || closed) return;
+        const width = Math.max(1, Math.min(4096, Math.ceil(window.innerWidth)));
+        const height = Math.max(1, Math.min(4096, Math.ceil(document.documentElement.getBoundingClientRect().height)));
+        const size = `${width}x${height}`;
+        if (lastSize !== size) {
+          lastSize = size;
+          notify("ui/notifications/size-changed", { width, height });
+        }
+      }
+      function teardown() {
+        if (closed) return;
+        closed = true;
+        ready = false;
+        serverTools = false;
+        for (const call of pending.values()) {
+          clearTimeout(call.timer);
+          call.reject(new Error("View closed"));
+        }
+        pending.clear();
+        observer?.disconnect();
+        window.removeEventListener("message", onMessage);
+        window.removeEventListener("pagehide", teardown);
+        refresh.removeEventListener("click", refreshRuns);
+        next.removeEventListener("click", nextPage);
+        displayedRuns = [];
+        nextOffset = null;
+        runsNode.replaceChildren(element("p", "View closed. No snapshots retained."));
+        notice.textContent = "";
+        status.textContent = "Disconnected. Use the host's text tools.";
+        controls();
+      }
+      function onMessage(event) {
+        if (closed || event.source !== window.parent || !record(event.data) || event.data.jsonrpc !== "2.0") return;
+        if (hostOrigin !== null && event.origin !== hostOrigin) return;
+        const data = event.data;
+        if (data.method === undefined) {
+          const call = pending.get(data.id);
+          if (!call || (("result" in data) === ("error" in data))) return;
+          pending.delete(data.id);
+          clearTimeout(call.timer);
+          if (call.method === "ui/initialize") hostOrigin = event.origin;
+          if ("error" in data) call.reject(new Error(text(data.error?.message, 512)));
+          else call.resolve(data.result);
+        } else if (data.id !== undefined) {
+          if (!(typeof data.id === "string" && data.id.length <= 128) && !Number.isSafeInteger(data.id)) return;
+          if (data.method === "ping" || data.method === "ui/resource-teardown") {
+            send({ id: data.id, result: {} });
+            if (data.method === "ui/resource-teardown") teardown();
+          } else {
+            send({ id: data.id, error: { code: -32601, message: "Method not found" } });
+          }
+        } else if (ready && data.method === "ui/notifications/tool-result") {
+          renderResult(data.params);
+        }
+      }
+      async function initialize() {
+        if (window.parent === window) {
+          status.textContent = "MCP Apps host unavailable. Use workflow_status with run_id or cancel_workflow.";
+          return;
+        }
+        try {
+          const result = await request("ui/initialize", {
+            appInfo: { name: "chaos-workflows", version: "1.0.0" },
+            appCapabilities: {},
+            protocolVersion: PROTOCOL_VERSION,
+          });
+          if (closed) return;
+          if (result?.protocolVersion !== PROTOCOL_VERSION) throw new Error("Unsupported Apps protocol version");
+          serverTools = result.hostCapabilities?.serverTools === true || record(result.hostCapabilities?.serverTools);
+          ready = true;
+          notify("ui/notifications/initialized");
+          if (typeof ResizeObserver === "function") {
+            observer = new ResizeObserver(reportSize);
+            observer.observe(document.body);
+          }
+          reportSize();
+          status.textContent = serverTools ? "Connected. Choose Refresh to list this session's runs."
+            : "Connected without server tool support. Waiting for host tool results; text tools remain available.";
+          controls();
+        } catch (error) {
+          if (!closed) status.textContent = "Apps handshake failed: " + text(error.message, 512) + ". Use the text alternative.";
+        }
+      }
+      refresh.addEventListener("click", refreshRuns);
+      next.addEventListener("click", nextPage);
+      window.addEventListener("message", onMessage);
+      window.addEventListener("pagehide", teardown, { once: true });
+      void initialize();
+    })();
+  </script>
+</body>
+</html>

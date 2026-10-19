@@ -4,6 +4,83 @@ use pretty_assertions::assert_eq;
 
 struct TestHandler;
 
+#[test]
+fn replacing_or_hiding_a_handler_revokes_its_replay_metadata() {
+    let mut builder = ToolRegistryBuilder::new();
+    builder.register_handler_with_idempotency("probe", Arc::new(TestHandler), true);
+    builder.register_handler("probe", Arc::new(TestHandler));
+    let (_, registry) = builder.build();
+    assert!(!registry.is_idempotent("probe", None));
+    let mut builder = ToolRegistryBuilder::new();
+    builder.register_handler_with_idempotency("probe", Arc::new(TestHandler), true);
+    builder.retain_tools(|_| false);
+    let (_, registry) = builder.build();
+    assert!(!registry.is_idempotent("probe", None));
+}
+
+#[test]
+fn replay_metadata_is_affirmative_and_namespace_scoped() {
+    let mut builder = ToolRegistryBuilder::new();
+    builder.register_handler("unknown", Arc::new(TestHandler));
+    builder.register_handler_with_idempotency("remote:probe", Arc::new(TestHandler), true);
+    let (_, registry) = builder.build();
+    assert!(!registry.is_idempotent("unknown", None));
+    assert!(!registry.is_idempotent("probe", None));
+    assert!(registry.is_idempotent("probe", Some("remote")));
+}
+
+struct ContainerHandler;
+
+impl ToolHandler for ContainerHandler {
+    type Output = crate::tools::context::FunctionToolOutput;
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Function
+    }
+
+    fn is_execution_container(&self) -> bool {
+        true
+    }
+
+    async fn handle(&self, _invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
+        unreachable!("classification must not execute the handler")
+    }
+}
+
+#[test]
+fn only_trusted_unqualified_function_handlers_can_omit_leaf_permits() {
+    let registry = ToolRegistry::new(HashMap::from([
+        (
+            "run_workflow".into(),
+            Arc::new(TestHandler) as Arc<dyn AnyToolHandler>,
+        ),
+        (
+            "container".into(),
+            Arc::new(ContainerHandler) as Arc<dyn AnyToolHandler>,
+        ),
+        (
+            "remote:container".into(),
+            Arc::new(ContainerHandler) as Arc<dyn AnyToolHandler>,
+        ),
+    ]));
+    let function = ToolPayload::Function {
+        arguments: "{}".into(),
+    };
+    assert!(!registry.is_execution_container("run_workflow", None, &function));
+    assert!(!registry.is_execution_container("missing", None, &function));
+    assert!(registry.is_execution_container("container", None, &function));
+    assert!(!registry.is_execution_container("container", Some("remote"), &function));
+    assert!(!registry.is_execution_container(
+        "container",
+        None,
+        &ToolPayload::Mcp {
+            server: "remote".into(),
+            tool: "container".into(),
+            raw_arguments: "{}".into(),
+        }
+    ));
+}
+
 impl ToolHandler for TestHandler {
     type Output = crate::tools::context::FunctionToolOutput;
 

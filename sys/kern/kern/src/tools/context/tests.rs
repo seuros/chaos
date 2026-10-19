@@ -244,3 +244,64 @@ fn exec_command_tool_output_formats_truncated_response() {
         other => panic!("expected FunctionCallOutput, got {other:?}"),
     }
 }
+
+#[test]
+fn exec_structured_output_preserves_finished_and_running_metadata() {
+    let mut output = ExecCommandToolOutput {
+        event_call_id: "call-typed".into(),
+        chunk_id: "chunk-typed".into(),
+        wall_time: Duration::from_millis(1250),
+        raw_output: b"hello".to_vec(),
+        max_output_tokens: Some(100),
+        process_id: None,
+        exit_code: Some(7),
+        original_token_count: Some(2),
+        session_command: Some(vec!["printf".into(), "hello".into()]),
+        task_id: Some("task-typed".into()),
+    };
+    assert_eq!(
+        output.structured_output(),
+        Some(json!({
+            "wall_time_seconds": 1.25,
+            "output": "hello",
+            "chunk_id": "chunk-typed",
+            "exit_code": 7,
+            "original_token_count": 2,
+            "task_id": "task-typed",
+        }))
+    );
+    output.exit_code = None;
+    output.process_id = Some(123);
+    output.chunk_id.clear();
+    output.task_id = None;
+    output.original_token_count = None;
+    assert_eq!(
+        output.structured_output(),
+        Some(json!({
+            "wall_time_seconds": 1.25,
+            "output": "hello",
+            "session_id": 123,
+        }))
+    );
+}
+
+#[test]
+fn exec_structured_output_uses_the_same_truncation_as_native_text() {
+    let output = ExecCommandToolOutput {
+        event_call_id: "call-truncated".into(),
+        chunk_id: String::new(),
+        wall_time: Duration::ZERO,
+        raw_output: b"token one token two token three token four token five".to_vec(),
+        max_output_tokens: Some(4),
+        process_id: None,
+        exit_code: Some(0),
+        original_token_count: None,
+        session_command: None,
+        task_id: None,
+    };
+    let structured = output.structured_output().expect("typed exec result");
+    let text = structured["output"].as_str().expect("output text");
+    assert!(text.contains("tokens truncated"));
+    assert_eq!(text, output.truncated_output());
+    assert!(output.response_text().ends_with(text));
+}

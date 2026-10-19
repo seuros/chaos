@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use chaos_synopsis::{
-    ActionExecutor, ActionFuture, ActionId, ActionOutcome, CompositeKind, Node, Outcome, Runner,
-    Synopsis, ValidationError,
+    ActionExecutor, ActionFuture, ActionId, ActionOutcome, CompositeKind, Node, Outcome, RunError,
+    Runner, Synopsis, ValidationError,
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -40,6 +40,7 @@ enum MockEvent {
 #[derive(Clone, Default)]
 struct MockExecutor {
     events: Arc<Mutex<Vec<MockEvent>>>,
+    tokens: Arc<Mutex<HashMap<ActionId, CancellationToken>>>,
 }
 
 impl MockExecutor {
@@ -56,6 +57,23 @@ impl MockExecutor {
             .iter()
             .filter(|event| matches!(event, MockEvent::Started(id) if id.as_str() == expected))
             .count()
+    }
+
+    fn remember_token(&self, id: &ActionId, cancellation: CancellationToken) {
+        self.tokens
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id.clone(), cancellation);
+    }
+
+    fn assert_cancelled(&self, expected: &str) {
+        let tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(
+            tokens
+                .get(&id(expected))
+                .is_some_and(CancellationToken::is_cancelled),
+            "{expected} must receive token cancellation"
+        );
     }
 }
 
@@ -81,8 +99,9 @@ impl ActionExecutor<MockAction> for MockExecutor {
         &self,
         id: ActionId,
         action: MockAction,
-        _cancellation: CancellationToken,
+        cancellation: CancellationToken,
     ) -> ActionFuture {
+        self.remember_token(&id, cancellation);
         let events = Arc::clone(&self.events);
         Box::pin(async move {
             events
@@ -280,6 +299,7 @@ async fn abandoned_nested_race_branch_is_cancelled_before_next_action_finishes()
         panic!("next action should complete");
     };
     assert!(cancelled < after_completed);
+    executor.assert_cancelled("race-loser");
 }
 
 #[tokio::test(start_paused = true)]
@@ -309,6 +329,264 @@ async fn external_cancellation_stops_all_actions() {
     let events = executor.events();
     assert!(events.contains(&MockEvent::Cancelled(id("left"))));
     assert!(events.contains(&MockEvent::Cancelled(id("right"))));
+    executor.assert_cancelled("left");
+    executor.assert_cancelled("right");
+}
+
+#[tokio::test(start_paused = true)]
+async fn race_failure_is_terminal_without_waiting_for_success() {
+    let executor = MockExecutor::default();
+    let synopsis = Node::race([
+        action("failure", MockAction::fails_after(10)),
+        action("slow-success", MockAction::succeeds_after(1_000)),
+    ]);
+    let start = tokio::time::Instant::now();
+
+    let outcome = runner(synopsis, &executor)
+        .run(CancellationToken::new())
+        .await;
+
+    std::assert_matches!(outcome, Ok(Outcome::Failure));
+    assert_eq!(start.elapsed(), Duration::from_millis(10));
+    executor.assert_cancelled("slow-success");
+    assert!(
+        executor
+            .events()
+            .contains(&MockEvent::Cancelled(id("slow-success")))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn simultaneous_race_completions_use_declared_order_without_relaunching() {
+    for first in [ActionOutcome::Success, ActionOutcome::Failure] {
+        let executor = MockExecutor::default();
+        let second = match first {
+            ActionOutcome::Success => ActionOutcome::Failure,
+            ActionOutcome::Failure => ActionOutcome::Success,
+        };
+        let synopsis = Node::race([
+            action(
+                "left",
+                MockAction {
+                    delay_ms: 10,
+                    outcome: first,
+                },
+            ),
+            action(
+                "right",
+                MockAction {
+                    delay_ms: 10,
+                    outcome: second,
+                },
+            ),
+        ]);
+        let outcome = runner(synopsis, &executor)
+            .run(CancellationToken::new())
+            .await;
+        let expected = match first {
+            ActionOutcome::Success => Outcome::Success,
+            ActionOutcome::Failure => Outcome::Failure,
+        };
+        std::assert_matches!(outcome, Ok(actual) if actual == expected);
+        assert_eq!(executor.started_count("left"), 1);
+        assert_eq!(executor.started_count("right"), 1);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn dropping_run_future_cancels_tokens_and_drops_all_action_futures() {
+    let executor = MockExecutor::default();
+    let synopsis = Node::parallel_all([
+        action("left", MockAction::succeeds_after(60_000)),
+        action("right", MockAction::succeeds_after(60_000)),
+    ]);
+    let mut run = Box::pin(runner(synopsis, &executor).run(CancellationToken::new()));
+    assert!(futures::poll!(run.as_mut()).is_pending());
+    assert_eq!(executor.started_count("left"), 1);
+    assert_eq!(executor.started_count("right"), 1);
+
+    drop(run);
+
+    executor.assert_cancelled("left");
+    executor.assert_cancelled("right");
+    let events = executor.events();
+    assert!(events.contains(&MockEvent::Cancelled(id("left"))));
+    assert!(events.contains(&MockEvent::Cancelled(id("right"))));
+}
+
+#[tokio::test(start_paused = true)]
+async fn pre_cancelled_run_does_not_start_actions() {
+    let executor = MockExecutor::default();
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let outcome = runner(action("never", MockAction::succeeds_after(1)), &executor)
+        .run(cancellation)
+        .await;
+
+    std::assert_matches!(outcome, Ok(Outcome::Cancelled));
+    assert!(executor.events().is_empty());
+}
+
+struct CheckHaltExecutor(MockExecutor);
+
+impl ActionExecutor<MockAction> for CheckHaltExecutor {
+    fn execute(
+        &self,
+        id: ActionId,
+        action: MockAction,
+        cancellation: CancellationToken,
+    ) -> ActionFuture {
+        if id.as_str() == "after-race" {
+            self.0.assert_cancelled("loser-left");
+            self.0.assert_cancelled("loser-right");
+        }
+        self.0.execute(id, action, cancellation)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn nested_composite_losers_receive_halt_before_following_action_starts() {
+    let executor = MockExecutor::default();
+    let synopsis = Node::sequence([
+        Node::race([
+            action("winner", MockAction::succeeds_after(10)),
+            Node::parallel_all([
+                action("loser-left", MockAction::succeeds_after(1_000)),
+                Node::sequence([
+                    action("loser-right", MockAction::succeeds_after(1_000)),
+                    action("never", MockAction::succeeds_after(1)),
+                ]),
+            ]),
+        ]),
+        action("after-race", MockAction::succeeds_after(10)),
+    ]);
+    let built = Runner::new(
+        Synopsis::new(synopsis),
+        Arc::new(CheckHaltExecutor(executor.clone())),
+    );
+    let Ok(runner) = built else {
+        panic!("nested test synopsis should validate");
+    };
+
+    std::assert_matches!(
+        runner.run(CancellationToken::new()).await,
+        Ok(Outcome::Success)
+    );
+    assert_eq!(executor.started_count("never"), 0);
+    for name in ["loser-left", "loser-right"] {
+        assert!(executor.events().contains(&MockEvent::Cancelled(id(name))));
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PanicWhen {
+    Creating,
+    Polling,
+}
+
+struct PanicExecutor {
+    inner: MockExecutor,
+    when: PanicWhen,
+}
+
+impl ActionExecutor<MockAction> for PanicExecutor {
+    fn execute(
+        &self,
+        id: ActionId,
+        action: MockAction,
+        cancellation: CancellationToken,
+    ) -> ActionFuture {
+        if id.as_str() != "panic" {
+            return self.inner.execute(id, action, cancellation);
+        }
+        self.inner.remember_token(&id, cancellation);
+        self.inner
+            .lock_events()
+            .push(MockEvent::Started(id.clone()));
+        match self.when {
+            PanicWhen::Creating => panic!("executor creation panic"),
+            PanicWhen::Polling => {
+                let guard = CancelOnDrop {
+                    id,
+                    events: Arc::clone(&self.inner.events),
+                    completed: false,
+                };
+                Box::pin(async move {
+                    let _guard = guard;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    panic!("executor polling panic");
+                })
+            }
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn executor_panics_are_errors_not_fallback_results_and_cleanup_siblings() {
+    for when in [PanicWhen::Creating, PanicWhen::Polling] {
+        let executor = MockExecutor::default();
+        let synopsis = Node::fallback([
+            Node::parallel_all([
+                action("panic", MockAction::succeeds_after(1)),
+                action("sibling", MockAction::succeeds_after(60_000)),
+            ]),
+            action("must-not-start", MockAction::succeeds_after(1)),
+        ]);
+        let built = Runner::new(
+            Synopsis::new(synopsis),
+            Arc::new(PanicExecutor {
+                inner: executor.clone(),
+                when,
+            }),
+        );
+        let Ok(runner) = built else {
+            panic!("panic test synopsis should validate");
+        };
+        let outcome = runner.run(CancellationToken::new()).await;
+
+        std::assert_matches!(
+            outcome,
+            Err(RunError::ActionPanicked { id: failed, message })
+                if failed == id("panic") && message.contains("executor")
+        );
+        assert_eq!(executor.started_count("must-not-start"), 0);
+        executor.assert_cancelled("panic");
+        if executor.started_count("sibling") > 0 {
+            executor.assert_cancelled("sibling");
+            assert!(
+                executor
+                    .events()
+                    .contains(&MockEvent::Cancelled(id("sibling")))
+            );
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn simultaneous_race_success_does_not_hide_a_panicking_job() {
+    let executor = MockExecutor::default();
+    let synopsis = Node::race([
+        action("success", MockAction::succeeds_after(10)),
+        action("panic", MockAction::succeeds_after(10)),
+    ]);
+    let built = Runner::new(
+        Synopsis::new(synopsis),
+        Arc::new(PanicExecutor {
+            inner: executor.clone(),
+            when: PanicWhen::Polling,
+        }),
+    );
+    let Ok(runner) = built else {
+        panic!("race panic test synopsis should validate");
+    };
+
+    std::assert_matches!(
+        runner.run(CancellationToken::new()).await,
+        Err(RunError::ActionPanicked { id: failed, .. }) if failed == id("panic")
+    );
+    assert_eq!(executor.started_count("success"), 1);
+    assert_eq!(executor.started_count("panic"), 1);
+    executor.assert_cancelled("panic");
 }
 
 #[test]
@@ -363,3 +641,4 @@ fn synopsis_definition_round_trips_through_json() {
     };
     assert_eq!(synopsis, restored);
 }
+use std::collections::HashMap;

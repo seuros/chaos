@@ -17,17 +17,6 @@ use chaos_clamp::AntigravitySandbox;
 use chaos_clamp::EgressPolicy;
 use chaos_clamp::EgressProxy;
 use chaos_clamp::WiretapSink;
-use chaos_ipc::permissions::SocketPolicy;
-use chaos_ipc::permissions::VfsAccessMode;
-use chaos_ipc::permissions::VfsEntry;
-use chaos_ipc::permissions::VfsPath;
-use chaos_ipc::permissions::VfsPolicy;
-use chaos_ipc::permissions::VfsSpecialPath;
-use chaos_realpath::AbsolutePathBuf;
-
-/// The helper is the multicall Chaos executable, which selects the sandbox tool
-/// from `argv[0]` rather than a subcommand.
-const LINUX_SANDBOX_ARG0: &str = "alcatraz";
 
 /// Starts the Antigravity egress proxy and returns the environment the CLI
 /// needs to route through it, along with the handle keeping it alive.
@@ -57,54 +46,18 @@ pub async fn start_antigravity_egress(
 
 /// Builds the sandbox helper invocation that wraps the Antigravity CLI.
 ///
-/// The CLI reads its own installation tree and writes only its dedicated home
-/// and working directory. Networking is permitted solely so the helper can
-/// derive the proxy loopback port from `HTTPS_PROXY`; every other destination
-/// is refused before a connection exists.
-pub fn antigravity_sandbox(
+/// The platform backend receives the exact proxy and bridge endpoints rather
+/// than inferring ambient networking or receiving another platform's arguments.
+pub async fn antigravity_sandbox(
     helper: &Path,
     home: Option<&Path>,
     cwd: &Path,
+    egress: &AntigravityEgress,
+    bridge_socket: &Path,
 ) -> Result<AntigravitySandbox, String> {
-    let mut entries = vec![VfsEntry {
-        path: VfsPath::Special {
-            value: VfsSpecialPath::Root,
-        },
-        access: VfsAccessMode::Read,
-    }];
-    for writable in [Some(cwd), home].into_iter().flatten() {
-        let path = AbsolutePathBuf::from_absolute_path(writable).map_err(|error| {
-            format!("Antigravity sandbox path {writable:?} is unusable: {error}")
-        })?;
-        entries.push(VfsEntry {
-            path: VfsPath::Path { path },
-            access: VfsAccessMode::Write,
-        });
-    }
-    entries.push(VfsEntry {
-        path: VfsPath::Special {
-            value: VfsSpecialPath::Tmpdir,
-        },
-        access: VfsAccessMode::Write,
-    });
-
-    let vfs_policy = VfsPolicy::restricted(entries);
-    let sandbox_policy = vfs_policy
-        .to_sandbox_policy(SocketPolicy::Enabled, cwd)
-        .map_err(|error| format!("failed to project Antigravity sandbox policy: {error}"))?;
-    let args = crate::landlock::create_linux_sandbox_command_args_for_policies(
-        Vec::new(),
-        &sandbox_policy,
-        &vfs_policy,
-        SocketPolicy::Enabled,
-        cwd,
-        /* allow_network_for_proxy */ true,
-    );
-    Ok(AntigravitySandbox {
-        program: helper.to_path_buf(),
-        arg0: Some(LINUX_SANDBOX_ARG0.to_string()),
-        args,
-    })
+    let home = home.ok_or("Antigravity sandbox requires a dedicated home")?;
+    chaos_clamp::prepare_antigravity_sandbox(helper, home, cwd, egress, bridge_socket, &[], &[])
+        .await
 }
 
 #[cfg(test)]

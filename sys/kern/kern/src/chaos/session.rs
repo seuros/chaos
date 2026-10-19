@@ -49,3 +49,12 @@ pub(crate) struct Session {
     /// Host-owned notice delivered at the next boundary (see `host_notice`).
     pub(crate) host_notice: crate::host_notice::HostNoticeSlot,
 }
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Executors may retain cloned registry handles. Closing the owner
+        // must cancel work without waiting for those handles to disappear.
+        self.services.workflow_runs.shutdown();
+        self.services.workflow_control.shutdown();
+    }
+}

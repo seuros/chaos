@@ -25,9 +25,14 @@ use tokio::sync::Mutex;
 
 pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum ToolCallSource {
     Direct,
+    /// Host-created provenance, never derived from leaf arguments or MCP meta.
+    Workflow {
+        replay: bool,
+        tasks: tokio_util::task::TaskTracker,
+    },
 }
 
 #[derive(Clone)]
@@ -78,6 +83,12 @@ pub trait ToolOutput: Send {
     fn log_preview(&self) -> String;
 
     fn success_for_logging(&self) -> bool;
+
+    /// Typed data for transports that enforce an advertised output schema.
+    /// Keep this separate from the native provider's readable response body.
+    fn structured_output(&self) -> Option<JsonValue> {
+        None
+    }
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem;
 }
@@ -247,6 +258,29 @@ impl ToolOutput for ExecCommandToolOutput {
         true
     }
 
+    fn structured_output(&self) -> Option<JsonValue> {
+        let mut output = serde_json::json!({
+            "wall_time_seconds": self.wall_time.as_secs_f64(),
+            "output": self.truncated_output(),
+        });
+        if !self.chunk_id.is_empty() {
+            output["chunk_id"] = self.chunk_id.clone().into();
+        }
+        if let Some(exit_code) = self.exit_code {
+            output["exit_code"] = exit_code.into();
+        }
+        if let Some(process_id) = self.process_id {
+            output["session_id"] = process_id.into();
+        }
+        if let Some(task_id) = &self.task_id {
+            output["task_id"] = task_id.clone().into();
+        }
+        if let Some(count) = self.original_token_count {
+            output["original_token_count"] = count.into();
+        }
+        Some(output)
+    }
+
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
         function_tool_response(
             call_id,
@@ -261,7 +295,7 @@ impl ToolOutput for ExecCommandToolOutput {
 
 impl ExecCommandToolOutput {
     pub(crate) fn truncated_output(&self) -> String {
-        let text = String::from_utf8_lossy(&self.raw_output).to_string();
+        let text = String::from_utf8_lossy(&self.raw_output);
         let max_tokens = resolve_max_tokens(self.max_output_tokens);
         formatted_truncate_text(&text, TruncationPolicy::Tokens(max_tokens))
     }

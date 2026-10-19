@@ -79,6 +79,7 @@ impl McpProcess {
         if settings.exists() {
             let mut import = Command::new(&program);
             import
+                .current_dir(chaos_home)
                 .arg("config")
                 .arg("import")
                 .arg(&settings)
@@ -102,6 +103,9 @@ impl McpProcess {
             anyhow::ensure!(status.success(), "test settings import failed: {status}");
         }
         let mut cmd = Command::new(program);
+        // Do not inherit the developer checkout's .mcp.json or start its
+        // drivers when a test creates an agent session.
+        cmd.current_dir(chaos_home);
         cmd.arg("mcp").arg("serve");
 
         cmd.stdin(Stdio::piped());
@@ -180,7 +184,7 @@ impl McpProcess {
         else {
             anyhow::bail!("expected initialize response message, got: {initialized:?}")
         };
-        assert_eq!(jsonrpc, "2.0");
+        assert_eq!(serde_json::to_value(jsonrpc)?, json!("2.0"));
         assert_eq!(id, Some(json!(0)));
         // mcp-host's ResourcesCapability struct doesn't yet carry a
         // `listTemplates` flag, so the on-the-wire capability set
@@ -204,6 +208,11 @@ impl McpProcess {
                             "tools": {
                                 "call": {}
                             }
+                        }
+                    },
+                    "extensions": {
+                        "io.modelcontextprotocol/ui": {
+                            "mimeTypes": ["text/html;profile=mcp-app"]
                         }
                     },
                 },
@@ -292,7 +301,7 @@ impl McpProcess {
     /// Returns the id used to make the request so it can be used when
     /// correlating notifications.
     pub async fn send_chaos_tool_call(&mut self, params: ChaosToolParams) -> anyhow::Result<i64> {
-        let codex_tool_call_params = CallToolRequestParams {
+        let chaos_tool_call_params = CallToolRequestParams {
             meta: None,
             task: None,
             name: "chaos".into(),
@@ -303,7 +312,7 @@ impl McpProcess {
         };
         self.send_request(
             "tools/call",
-            Some(serde_json::to_value(codex_tool_call_params)?),
+            Some(serde_json::to_value(chaos_tool_call_params)?),
         )
         .await
     }
@@ -337,7 +346,7 @@ impl McpProcess {
         result: serde_json::Value,
     ) -> anyhow::Result<()> {
         self.send_jsonrpc_message(JsonRpcMessage::Response(JsonRpcResponse {
-            jsonrpc: "2.0".into(),
+            jsonrpc: Default::default(),
             id: Some(id.to_value()),
             result: Some(result),
             error: None,

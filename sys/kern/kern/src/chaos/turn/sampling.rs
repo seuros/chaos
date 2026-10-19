@@ -210,7 +210,7 @@ pub(super) async fn run_sampling_request(
             &mut prompt,
             ToolGroupFilter {
                 catalog: &sess.services.tool_group_catalog,
-                state: &sess.services.tool_group_state,
+                state: sess.tool_group_state(),
             },
             turn_context.mode_capabilities,
             &turn_context.session_source,

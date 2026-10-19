@@ -13,7 +13,7 @@ use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::SandboxMode;
 use chaos_ipc::product::OS_NAME;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_kern::ProcessTable;
+use chaos_kern::AuthManager;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use mcp_host::prelude::*;
@@ -23,22 +23,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
-use tokio::sync::Mutex;
 
 use crate::chaos_runner;
 use crate::outgoing_message::OutgoingMessageSender;
 
 /// Server state shared across all MCP tool invocations.
 pub(crate) struct ChaosMcpServer {
-    pub(crate) process_table: Arc<ProcessTable>,
-    pub(crate) outgoing: Arc<OutgoingMessageSender>,
+    pub(crate) config: Arc<Config>,
+    pub(crate) auth_manager: Arc<AuthManager>,
+    pub(crate) states: Arc<crate::session_state::SessionStates>,
+    pub(crate) mcp_server: std::sync::Weak<Server>,
     pub(crate) arg0_paths: Arg0DispatchPaths,
-    /// Maps active MCP request IDs → active process IDs for cancellation.
-    pub(crate) running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
-    /// Maps MCP session IDs → last used process ID for auto-resume.
-    pub(crate) session_processes: Arc<Mutex<HashMap<String, ProcessId>>>,
-    /// Caches process names from ProcessNameUpdated events.
-    pub(crate) process_names: Arc<Mutex<HashMap<ProcessId, String>>>,
     /// Runtime database for persisted process metadata.
     pub(crate) runtime_db: Option<chaos_kern::runtime_db::RuntimeDbHandle>,
 }
@@ -200,16 +195,48 @@ impl ChaosToolParams {
 // ---------------------------------------------------------------------------
 
 impl ChaosMcpServer {
+    pub(crate) fn session_state(
+        &self,
+        session: &Session,
+    ) -> Result<Arc<crate::session_state::McpSessionState>, ToolError> {
+        let active = self
+            .mcp_server
+            .upgrade()
+            .and_then(|server| server.get_session(session.id()));
+        if !active
+            .as_ref()
+            .is_some_and(|active| crate::session_state::same_session(active, session))
+        {
+            return Err(ToolError::Execution(
+                "MCP session is no longer active".into(),
+            ));
+        }
+        self.states.get(session, &self.config, &self.auth_manager)
+    }
+
     async fn handle_chaos<'a>(&self, ctx: ExecutionContext<'a>) -> Result<ToolOutput, ToolError> {
-        let session_id = ctx.session.id.clone();
-        // Use the JSON-RPC request id from the originating tools/call so that
-        // elicitation/create requests include the correct codex_mcp_tool_call_id
-        // (MCP spec §Elicitation). Fall back to session id if unavailable.
-        let request_id = ctx
-            .request_id()
-            .cloned()
-            .unwrap_or_else(|| RequestId::String(session_id.clone()));
-        let progress_token = ctx.progress_token().map(ToString::to_string);
+        let state = self.session_state(ctx.session)?;
+        let _conversation = tokio::select! {
+            biased;
+            _ = state.cancelled() => return Err(ToolError::Execution("MCP session closed".into())),
+            guard = state.conversation.lock() => guard,
+        };
+        let session_id = ctx.session.id().to_owned();
+        // Preserve the originating tools/call ID; never invent a requester or
+        // request identity for approval routing.
+        let request_id = ctx.request_id().cloned().ok_or_else(|| {
+            ToolError::Execution("chaos requires an originating MCP request".into())
+        })?;
+        let progress = ctx.progress().cloned();
+        let outgoing = Arc::new(
+            OutgoingMessageSender::new(
+                self.mcp_server.clone(),
+                session_id.clone(),
+                ctx.client_requester().cloned(),
+                state.url_elicitations.clone(),
+            )
+            .with_lifetime(state.close_signal()),
+        );
         let params: ChaosToolParams = serde_json::from_value(ctx.params)
             .map_err(|e| ToolError::InvalidArguments(format!("invalid params: {e}")))?;
 
@@ -223,13 +250,23 @@ impl ChaosMcpServer {
             ),
             None => {
                 // Auto-resume: reuse the last process for this session
-                self.session_processes
+                state
+                    .session_processes
                     .lock()
                     .await
                     .get(&session_id)
                     .copied()
             }
         };
+        // Never consult persistent history for a process belonging to another
+        // MCP session, even when its ID is known to the caller.
+        if let Some(id) = existing_process_id
+            && !state.owns_process(id).await
+        {
+            return Err(ToolError::Execution(
+                "process not owned by this MCP session".into(),
+            ));
+        }
 
         let wait_background = params.wait_background;
         let background_timeout = params
@@ -247,26 +284,33 @@ impl ChaosMcpServer {
             (prompt, Some(cfg))
         };
 
-        let outcome = chaos_runner::run_chaos_session(chaos_runner::RunChaosSessionArgs {
+        let run = chaos_runner::run_chaos_session(chaos_runner::RunChaosSessionArgs {
             request_id,
             prompt,
             config,
             existing_process_id,
-            outgoing: self.outgoing.clone(),
-            process_table: self.process_table.clone(),
-            running_requests: self.running_requests.clone(),
-            process_names: self.process_names.clone(),
-            progress_token,
+            outgoing,
+            process_table: state.process_table.clone(),
+            running_requests: state.running_requests.clone(),
+            process_names: state.process_names.clone(),
+            progress,
             wait_background,
             background_timeout,
-        })
-        .await;
+        });
+        let outcome = tokio::select! {
+            biased;
+            _ = state.cancelled() => return Err(ToolError::Execution("MCP session closed".into())),
+            outcome = run => outcome,
+        };
 
         // Track the process for auto-resume on next call from this session.
-        self.session_processes
-            .lock()
-            .await
-            .insert(session_id, outcome.process_id);
+        if state.owns_process(outcome.process_id).await {
+            state
+                .session_processes
+                .lock()
+                .await
+                .insert(session_id, outcome.process_id);
+        }
 
         if outcome.is_error {
             Err(ToolError::Execution(outcome.text))

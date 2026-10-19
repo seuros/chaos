@@ -308,7 +308,7 @@ pub struct ProgressNotificationParams {
 }
 
 pub fn latest_supported_protocol_version() -> &'static str {
-    ProtocolVersion::V_2025_11_25
+    ProtocolVersion::LATEST.as_str()
 }
 
 #[cfg(test)]

@@ -4,6 +4,111 @@ use crate::client_common::tools::FreeformToolFormat;
 use chaos_parrot::sanitize::JsonSchema;
 use serde_json::json;
 
+#[cfg(unix)]
+mod antigravity_acp;
+
+/// Exercise the real session-backed Unix bridge and kernel read tool without a
+/// provider. This is not yet the combined AGY ACP -> MCP -> kernel acceptance.
+#[tokio::test]
+async fn session_bridge_reads_fixture_through_kernel_tool_dispatch() {
+    let (_home, workspace, session) = session_bridge_fixture().await;
+    let file = workspace.path().join("kernel-bridge-fixture.txt");
+    let marker = uuid::Uuid::now_v7().to_string();
+    std::fs::write(&file, &marker).expect("write fixture");
+    let bridge = ClampSessionBridge::spawn(Arc::downgrade(&session))
+        .await
+        .expect("bridge");
+    let listed = bridge_test_request(
+        bridge.socket_path(),
+        ClampBridgeRequest::ListTools {
+            token: bridge.token().to_string(),
+        },
+    )
+    .await;
+    let result = bridge_test_request(
+        bridge.socket_path(),
+        ClampBridgeRequest::CallTool {
+            token: bridge.token().to_string(),
+            name: "read_file".into(),
+            arguments: json!({"file_path": file, "offset": 1, "limit": 5}),
+        },
+    )
+    .await;
+    bridge.shutdown().await.expect("stop bridge");
+    let tools = match listed.expect("list response") {
+        ClampBridgeResponse::Tools { tools } => tools,
+        _ => panic!("bridge did not list tools"),
+    };
+    assert!(tools.iter().any(|tool| tool.name == "read_file"));
+    let result = result.expect("read response");
+    assert!(
+        matches!(result, ClampBridgeResponse::ToolResult { .. }),
+        "kernel read did not return a tool result"
+    );
+    assert!(
+        serde_json::to_string(&result)
+            .expect("result JSON")
+            .contains(&marker)
+    );
+}
+
+async fn session_bridge_fixture() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    Arc<crate::chaos::Session>,
+) {
+    use crate::state::{ActiveTurn, RunningTask, TaskKind};
+    use tokio::sync::Notify;
+    use tokio_util::task::AbortOnDropHandle;
+
+    let home = tempfile::tempdir().expect("isolated Chaos home");
+    let workspace = tempfile::tempdir().expect("isolated workspace");
+    let (session, mut turn) = crate::chaos::make_session_and_context_with_home(home.path()).await;
+    turn.cwd = workspace.path().to_path_buf();
+    let session = Arc::new(session);
+    session
+        .services
+        .tool_group_catalog
+        .set_groups_enabled(
+            &session.services.tool_group_state,
+            [crate::tools::groups::FILESYSTEM.to_string()],
+            true,
+        )
+        .expect("enable fixture filesystem tools");
+    let mut active = ActiveTurn::default();
+    active.add_task(RunningTask {
+        done: Arc::new(Notify::new()),
+        kind: TaskKind::Regular,
+        task: Arc::new(crate::tasks::RegularTask::default()),
+        cancellation_token: CancellationToken::new(),
+        handle: AbortOnDropHandle::new(tokio::spawn(std::future::pending())),
+        turn_context: Arc::new(turn),
+        unrecorded_input: Arc::default(),
+        _timer: None,
+    });
+    *session.active_turn.lock().await = Some(active);
+    (home, workspace, session)
+}
+
+async fn bridge_test_request(
+    path: &Path,
+    request: ClampBridgeRequest,
+) -> io::Result<ClampBridgeResponse> {
+    tokio::time::timeout(std::time::Duration::from_secs(20), async {
+        let mut stream = UnixStream::connect(path).await?;
+        let mut request = serde_json::to_vec(&request)?;
+        request.push(b'\n');
+        stream.write_all(&request).await?;
+        let mut line = String::new();
+        tokio::io::BufReader::new(stream)
+            .read_line(&mut line)
+            .await?;
+        Ok(serde_json::from_str(&line)?)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
 #[test]
 fn antigravity_catalogue_projects_current_mcp_tools_not_native_tools() {
     let parameters = JsonSchema::Object {

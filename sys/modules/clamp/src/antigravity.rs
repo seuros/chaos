@@ -88,6 +88,8 @@ pub struct AntigravitySandbox {
     pub arg0: Option<String>,
     /// Helper arguments, ending with the `--` separator.
     pub args: Vec<String>,
+    /// Environment supplied by the platform sandbox backend.
+    pub env: std::collections::HashMap<String, String>,
 }
 
 /// Where the CLI's outbound HTTP must go, and which trust root makes the
@@ -489,6 +491,7 @@ fn build_command(
                 command.arg0(arg0);
             }
             command.args(&sandbox.args);
+            command.envs(&sandbox.env);
             command.arg(cli_path);
             command
         }

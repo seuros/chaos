@@ -17,7 +17,7 @@ use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::OS_NAME;
-use mcp_host::content::types::Content;
+use mcp_host::content::types::ContentBlock;
 use mcp_host::content::types::ImageContent;
 use mcp_host::content::types::TextContent;
 use mcp_host::prelude::*;
@@ -26,7 +26,6 @@ use mcp_host::registry::tools::ToolError;
 use mcp_host::registry::tools::ToolFuture;
 use mcp_host::registry::tools::ToolOutput;
 use mcp_host::registry::tools::ToolRegistry;
-use mcp_host::server::NotificationSender;
 use mcp_host::server::visibility::ExecutionContext;
 use mcp_host::server::visibility::VisibilityContext;
 use serde_json::Value;
@@ -53,9 +52,8 @@ pub async fn run_main() -> IoResult<()> {
         socket_path,
         token,
         server.tool_registry().clone(),
-        server.notification_sender(),
     ));
-    state.refresh(false).await?;
+    state.refresh().await?;
 
     server
         .run(StdioTransport::new())
@@ -67,68 +65,64 @@ struct BridgeState {
     socket_path: PathBuf,
     token: String,
     registry: ToolRegistry,
-    notification_sender: NotificationSender,
     visible_tools: RwLock<HashMap<String, BridgeToolSpec>>,
     refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl BridgeState {
-    fn new(
-        socket_path: PathBuf,
-        token: String,
-        registry: ToolRegistry,
-        notification_sender: NotificationSender,
-    ) -> Self {
+    fn new(socket_path: PathBuf, token: String, registry: ToolRegistry) -> Self {
         Self {
             socket_path,
             token,
             registry,
-            notification_sender,
             visible_tools: RwLock::new(HashMap::new()),
             refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 
-    async fn refresh(self: &Arc<Self>, notify: bool) -> IoResult<()> {
+    async fn refresh(self: &Arc<Self>) -> IoResult<()> {
         let _guard = self.refresh_lock.lock().await;
         let tool_specs = list_tools(&self.socket_path, &self.token).await?;
-        self.replace_visible_tools(tool_specs, notify)
+        self.replace_visible_tools(tool_specs)
     }
 
-    fn replace_visible_tools(
-        self: &Arc<Self>,
-        tool_specs: Vec<BridgeToolSpec>,
-        notify: bool,
-    ) -> IoResult<()> {
-        let next_visible = tool_specs
-            .iter()
-            .map(|tool| (tool.name.clone(), tool.clone()))
-            .collect::<HashMap<_, _>>();
+    fn replace_visible_tools(self: &Arc<Self>, tool_specs: Vec<BridgeToolSpec>) -> IoResult<()> {
         let changed = {
             let visible = self
                 .visible_tools
                 .read()
                 .map_err(|_| Error::other("clamp bridge visible tool state is poisoned"))?;
-            *visible != next_visible
+            tool_specs
+                .iter()
+                .filter(|tool| visible.get(&tool.name) != Some(*tool))
+                .cloned()
+                .collect::<Vec<_>>()
         };
+        let next_visible = tool_specs
+            .into_iter()
+            .map(|tool| (tool.name.clone(), tool))
+            .collect::<HashMap<_, _>>();
 
-        for tool in tool_specs {
+        for tool in changed {
             self.registry
-                .try_register_boxed(Arc::new(BridgeTool::new(Arc::clone(self), tool)))
+                .register_boxed(Arc::new(BridgeTool::new(Arc::clone(self), tool)))
                 .map_err(|err| Error::other(format!("invalid clamp bridge tool: {err}")))?;
         }
 
-        *self
-            .visible_tools
-            .write()
-            .map_err(|_| Error::other("clamp bridge visible tool state is poisoned"))? =
-            next_visible;
+        let previous = std::mem::replace(
+            &mut *self
+                .visible_tools
+                .write()
+                .map_err(|_| Error::other("clamp bridge visible tool state is poisoned"))?,
+            next_visible,
+        );
 
-        if notify && changed {
-            let _ = self.notification_sender.send(JsonRpcNotification::new(
-                "notifications/tools/list_changed",
-                None,
-            ));
+        // Registration/removal announces changes through the host's gated
+        // broadcaster. Remove stale tools instead of accumulating hidden entries.
+        for name in previous.keys() {
+            if !self.is_visible(name) {
+                self.registry.remove(name);
+            }
         }
         Ok(())
     }
@@ -206,7 +200,23 @@ impl Tool for BridgeTool {
     }
 
     fn output_schema(&self) -> Option<Value> {
-        self.spec.output_schema.clone()
+        self.spec.output_schema.clone().map(|mut schema| {
+            // Runtime notices are a bridge-owned, additive result field. It
+            // must be declared even when the native schema forbids extras.
+            if schema.get("type").and_then(Value::as_str) == Some("object")
+                && let Some(root) = schema.as_object_mut()
+            {
+                let properties = root
+                    .entry("properties")
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(properties) = properties.as_object_mut() {
+                    properties
+                        .entry("runtime_notice")
+                        .or_insert_with(|| serde_json::json!({"type":"string"}));
+                }
+            }
+            schema
+        })
     }
 
     fn is_visible(&self, _ctx: &VisibilityContext) -> bool {
@@ -226,16 +236,24 @@ impl Tool for BridgeTool {
             .await
             .map_err(|err| ToolError::Execution(err.to_string()))?;
             match response {
-                ClampBridgeResponse::ToolResult { output, notices } => {
+                ClampBridgeResponse::ToolResult {
+                    output,
+                    structured_output,
+                    notices,
+                } => {
                     if matches!(self.spec.name.as_str(), "enable_tools" | "disable_tools") {
-                        self.state.refresh(true).await.map_err(|err| {
+                        self.state.refresh().await.map_err(|err| {
                             ToolError::Execution(format!(
                                 "tool groups changed but the clamp bridge failed to refresh: {err}"
                             ))
                         })?;
                     }
-                    response_input_to_tool_output(output, self.spec.output_schema.is_some())
-                        .map(|tool_output| with_runtime_notices(tool_output, notices))
+                    response_input_to_tool_output(
+                        *output,
+                        self.spec.output_schema.is_some(),
+                        structured_output,
+                    )
+                    .and_then(|tool_output| with_runtime_notices(tool_output, notices))
                 }
                 ClampBridgeResponse::Error { message } => Err(ToolError::Execution(message)),
                 ClampBridgeResponse::Tools { .. } => Err(ToolError::Internal(
@@ -249,21 +267,26 @@ impl Tool for BridgeTool {
 /// Attach text steered into the running turn to the tool result the external
 /// model is about to read. Structured results carry it as `runtime_notice`;
 /// content results get it as a trailing text block.
-fn with_runtime_notices(output: ToolOutput, notices: Vec<String>) -> ToolOutput {
+fn with_runtime_notices(output: ToolOutput, notices: Vec<String>) -> Result<ToolOutput, ToolError> {
     if notices.is_empty() {
-        return output;
+        return Ok(output);
     }
     let notice = notices.join("\n\n");
     match output {
         ToolOutput::Structured(mut map) => {
+            if map.contains_key("runtime_notice") {
+                return Err(ToolError::Internal(
+                    "tool result collides with the bridge-owned runtime_notice field".into(),
+                ));
+            }
             map.insert("runtime_notice".to_string(), Value::String(notice));
-            ToolOutput::Structured(map)
+            Ok(ToolOutput::Structured(map))
         }
         ToolOutput::Content(mut items) => {
-            items.push(Box::new(TextContent::new(format!(
+            items.push(ContentBlock::Text(TextContent::new(format!(
                 "[runtime notice]\n{notice}"
             ))));
-            ToolOutput::Content(items)
+            Ok(ToolOutput::Content(items))
         }
     }
 }
@@ -271,21 +294,48 @@ fn with_runtime_notices(output: ToolOutput, notices: Vec<String>) -> ToolOutput 
 fn response_input_to_tool_output(
     output: ResponseInputItem,
     prefer_structured: bool,
+    structured_output: Option<Value>,
 ) -> Result<ToolOutput, ToolError> {
     match output {
         ResponseInputItem::FunctionCallOutput { output, .. }
         | ResponseInputItem::CustomToolCallOutput { output, .. } => {
-            if prefer_structured {
-                ToolOutput::structured(serde_json::json!({
-                    "output": output.body.into_text().unwrap_or_default(),
-                    "success": output.success
-                }))
-                .map_err(|err| ToolError::Internal(err.to_string()))
-            } else {
-                function_call_output_body_to_tool_output(output.body)
+            if output.success == Some(false) {
+                return Err(ToolError::Execution(
+                    output.body.into_text().unwrap_or_default(),
+                ));
             }
+            if prefer_structured {
+                if let Some(value) = structured_output {
+                    return ToolOutput::structured(value)
+                        .map_err(|err| ToolError::Internal(err.to_string()));
+                }
+                let text = match &output.body {
+                    FunctionCallOutputBody::Text(text) => Some(text.as_str()),
+                    FunctionCallOutputBody::ContentItems(items) => match items.as_slice() {
+                        [FunctionCallOutputContentItem::InputText { text }] => Some(text.as_str()),
+                        _ => None,
+                    },
+                };
+                if let Some(text) = text
+                    && let Ok(Value::Object(value)) = serde_json::from_str(text)
+                {
+                    return Ok(ToolOutput::json(value));
+                }
+            }
+            // A declared schema with no valid typed result remains content:
+            // the SDK must reject it, not accept a fabricated wrapper.
+            function_call_output_body_to_tool_output(output.body)
         }
         ResponseInputItem::McpToolCallOutput { output, .. } => {
+            if output.is_error == Some(true) {
+                return Err(ToolError::Execution(content_items_to_text(&output.content)));
+            }
+            if prefer_structured {
+                // Model-visible MCP schemas describe the complete call-result
+                // envelope, not only its nested structuredContent.
+                return ToolOutput::structured(output)
+                    .map_err(|err| ToolError::Internal(err.to_string()));
+            }
             if let Some(structured) = output.structured_content {
                 ToolOutput::structured(structured)
                     .map_err(|e| ToolError::Internal(format!("non-object tool output: {e}")))
@@ -326,7 +376,7 @@ fn function_call_output_body_to_tool_output(
         .into_iter()
         .map(|item| match item {
             FunctionCallOutputContentItem::InputText { text } => {
-                Ok(Box::new(TextContent::new(text)) as Box<dyn Content>)
+                Ok(ContentBlock::Text(TextContent::new(text)))
             }
             FunctionCallOutputContentItem::InputImage { mut image_url, .. } => {
                 let Some(data_url) = image_url.strip_prefix("data:") else {
@@ -349,7 +399,7 @@ fn function_call_output_body_to_tool_output(
                 // Remove the small URL header in place, preserving the owned
                 // base64 buffer instead of allocating a second image payload.
                 image_url.drain(..data_start);
-                Ok(Box::new(ImageContent::new(image_url, mime_type)) as Box<dyn Content>)
+                Ok(ContentBlock::Image(ImageContent::new(image_url, mime_type)))
             }
         })
         .collect::<Result<Vec<_>, _>>()?;

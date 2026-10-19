@@ -10,10 +10,14 @@ description = "First-party model CLI subprocess transports for subscription-back
 workspace = true
 
 [dependencies]
+alcatraz = { workspace = true }
+anyhow = { workspace = true }
 base64 = { workspace = true }
 chaos-abi = { workspace = true }
 chaos-client = { workspace = true }
 chaos-ipc = { workspace = true }
+chaos-pf = { workspace = true }
+chaos-realpath = { workspace = true }
 futures = { workspace = true }
 rama = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -25,8 +29,11 @@ tracing = { workspace = true }
 which = { workspace = true }
 
 [dev-dependencies]
+acp-guest = { path = "../../../lib/libacp/guest", version = "0.1.0" }
+libc = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-util = { workspace = true, features = ["codec"] }
 
 [package.metadata.cargo-shear]
 ignored = ["chaos-abi", "chaos-ipc"]

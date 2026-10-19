@@ -17,6 +17,26 @@ use std::task::Context;
 use std::task::Poll;
 use tokio::sync::mpsc;
 
+/// Read the opt-in, provider-neutral output cap without treating an invalid cap
+/// as an uncapped request. The kernel normally validates this before dispatch.
+pub(crate) fn max_output_tokens(
+    request: &chaos_abi::TurnRequest,
+) -> Result<Option<u32>, chaos_abi::AbiError> {
+    request
+        .extensions
+        .get("max_output_tokens")
+        .map(|value| {
+            value
+                .as_u64()
+                .and_then(|value| u32::try_from(value).ok())
+                .filter(|value| *value > 0)
+                .ok_or_else(|| chaos_abi::AbiError::InvalidRequest {
+                    message: "max_output_tokens must be a positive u32".to_string(),
+                })
+        })
+        .transpose()
+}
+
 /// Flattens a tool-call output body into the plain text that the chat-style
 /// wire formats (Anthropic, chat completions, LSD) expect.
 pub(crate) fn function_output_text(body: &chaos_ipc::models::FunctionCallOutputBody) -> String {
@@ -179,6 +199,9 @@ pub struct ResponsesApiRequest {
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
+    /// Opt-in output budget; omitted rather than defaulted for ordinary turns.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
 }
 
 impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
@@ -197,6 +220,7 @@ impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
             service_tier: request.service_tier.clone(),
             prompt_cache_key: request.prompt_cache_key.clone(),
             text: request.text.clone(),
+            max_output_tokens: request.max_output_tokens,
             generate: None,
             client_metadata: None,
         }
@@ -223,6 +247,8 @@ pub struct ResponseCreateWsRequest {
     pub prompt_cache_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,6 +281,8 @@ pub(crate) struct ResponseCreateWsRequestRef<'a> {
     pub prompt_cache_key: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<&'a TextControls>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
 }
 
 impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequestRef<'a> {
@@ -272,6 +300,7 @@ impl<'a> From<&'a ResponsesApiRequest> for ResponseCreateWsRequestRef<'a> {
             service_tier: request.service_tier.as_deref(),
             prompt_cache_key: request.prompt_cache_key.as_deref(),
             text: request.text.as_ref(),
+            max_output_tokens: request.max_output_tokens,
         }
     }
 }

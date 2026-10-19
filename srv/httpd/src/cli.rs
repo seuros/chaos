@@ -16,11 +16,13 @@ pub struct ServeCli {
     #[usage(long = "bearer-token", env = "CHAOS_BEARER_TOKEN")]
     pub bearer_token: Option<String>,
 
-    /// Trigger wall-clock timeout, retained-turn deadline and body-read timeout, in seconds.
+    /// Trigger/retained-turn deadline and body-read/MCP response timeout, in seconds.
     #[usage(long = "timeout", default = "600")]
     pub timeout: u64,
 
-    /// Maximum concurrent triggers/retained turns, including trigger body reading and cleanup.
+    /// Shared trigger/retained-turn and MCP POST ingress capacity. MCP releases
+    /// its slot at response creation, not SSE completion. Also bounds MCP SSE
+    /// connections per session; MCP root workflows separately allow 4 per session.
     #[usage(long = "max-concurrent", default = "4")]
     pub max_concurrent: usize,
 
@@ -31,6 +33,14 @@ pub struct ServeCli {
     /// Enable the experimental retained-session API alongside /api/trigger.
     #[usage(long = "sessions")]
     pub sessions: bool,
+
+    /// Enable authenticated MCP Streamable HTTP at the fixed /mcp endpoint.
+    #[usage(long = "mcp")]
+    pub mcp: bool,
+
+    /// Allow this browser Origin for MCP (repeatable).
+    #[usage(long = "mcp-allowed-origin", var)]
+    pub mcp_allowed_origin: Vec<String>,
 
     /// Persist retained-session identity/outcomes in journald under this namespace.
     /// Requires --sessions and forbids --ephemeral.
@@ -59,11 +69,11 @@ pub struct ServeCli {
     )]
     pub session_webhook_secret_env: String,
 
-    /// Maximum retained session records (including closed-session tombstones).
+    /// Maximum retained records (including tombstones), and MCP sessions per transport.
     #[usage(long = "max-sessions", default = "32")]
     pub max_sessions: usize,
 
-    /// Maximum lifetime of a retained session in seconds.
+    /// Retained-session lifetime and MCP session inactivity timeout, in seconds.
     #[usage(long = "session-ttl", default = "3600")]
     pub session_ttl: u64,
 

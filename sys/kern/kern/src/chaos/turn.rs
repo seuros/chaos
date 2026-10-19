@@ -935,7 +935,7 @@ pub(crate) async fn built_tools(
             plan_mode,
             tool_groups: Some(crate::tools::groups::ToolGroupFilter {
                 catalog: &sess.services.tool_group_catalog,
-                state: &sess.services.tool_group_state,
+                state: sess.tool_group_state(),
             }),
         },
     )))

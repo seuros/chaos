@@ -532,6 +532,10 @@ impl Session {
         .context("failed to initialize tool groups for session")?;
         let (mcp_notification_tx, mcp_notification_rx) = async_channel::bounded(256);
         let services = SessionServices {
+            workflow_runs: chaos_synopsis::runs::RunRegistry::default(),
+            external_workflow_owner: std::sync::OnceLock::new(),
+            workflow_control: crate::process::workflows::WorkflowControl::default(),
+            tool_scheduler: crate::tools::parallel::ToolSchedulerActor::spawn(),
             catalog: Arc::new(crate::catalog::CatalogSink::new(
                 crate::catalog::Catalog::from_inventory(),
             )),

@@ -286,9 +286,14 @@ impl Session {
             return Err(SteerInputError::NoActiveTurn(input));
         };
 
-        let Some((active_turn_id, _)) = active_turn.tasks.first() else {
+        let Some((active_turn_id, task)) = active_turn.tasks.first() else {
             return Err(SteerInputError::NoActiveTurn(input));
         };
+        // A model-free operation cannot consume conversational steering.
+        // An explicit owner turn will replace it through ordinary spawn_task.
+        if task.kind == crate::state::TaskKind::Workflow {
+            return Err(SteerInputError::NoActiveTurn(input));
+        }
 
         if let Some(expected_turn_id) = expected_turn_id
             && expected_turn_id != active_turn_id

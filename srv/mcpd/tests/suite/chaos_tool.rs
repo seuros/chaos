@@ -68,7 +68,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     .await?;
 
     // Send a "chaos" tool request that will trigger the apply_patch command
-    let (codex_request_id, elicitation_request, request_params) =
+    let (chaos_request_id, elicitation_request, request_params) =
         send_tool_call_and_read_elicitation(
             &mut mcp_process,
             ChaosToolParams {
@@ -96,7 +96,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
             expected_changes,
             None, // No grant_root expected
             None, // No reason expected
-            codex_request_id.to_string(),
+            chaos_request_id.to_string(),
             params.meta.chaos_event_id.clone(),
             params.meta.process_id,
         )?
@@ -117,7 +117,7 @@ async fn patch_approval_triggers_elicitation() -> anyhow::Result<()> {
     // Verify the original `chaos` tool call completes
     assert_tool_response_content(
         &mut mcp_process,
-        codex_request_id,
+        chaos_request_id,
         params.meta.process_id,
         "Patch has been applied successfully!",
     )
@@ -135,12 +135,12 @@ async fn test_chaos_tool_passes_base_instructions() {
 
     // Apparently `#[tokio::test]` must return `()`, so we create a helper
     // function that returns `Result` so we can use `?` in favor of `unwrap`.
-    if let Err(err) = codex_tool_passes_base_instructions().await {
+    if let Err(err) = chaos_tool_passes_base_instructions().await {
         panic!("failure: {err}");
     }
 }
 
-async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
+async fn chaos_tool_passes_base_instructions() -> anyhow::Result<()> {
     let server =
         create_mock_responses_server(vec![create_final_assistant_message_sse_response("Enjoy!")?])
             .await;
@@ -152,7 +152,7 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
 
     // Send a "chaos" tool request, which should hit the responses endpoint.
-    let codex_request_id = mcp_process
+    let chaos_request_id = mcp_process
         .send_chaos_tool_call(ChaosToolParams {
             prompt: "How are you?".to_string(),
             base_instructions: Some("You are a helpful assistant.".to_string()),
@@ -161,12 +161,12 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         })
         .await?;
 
-    let codex_response = timeout(
+    let chaos_response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id.into())),
+        mcp_process.read_stream_until_response_message(RequestId::Number(chaos_request_id.into())),
     )
     .await??;
-    let result = codex_response
+    let result = chaos_response
         .result
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
@@ -175,22 +175,14 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
         .and_then(|value| value.get("processId"))
         .and_then(serde_json::Value::as_str)
         .context("chaos tool response should include structuredContent.processId")?;
-    assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, Some(json!(codex_request_id)));
-    let structured_text = format!("{{\"processId\":\"{process_id}\",\"content\":\"Enjoy!\"}}");
-    assert_eq!(
-        *result,
-        json!({
-            "content": [{
-                "type": "text",
-                "text": structured_text
-            }],
-            "structuredContent": {
-                "processId": process_id,
-                "content": "Enjoy!"
-            }
-        })
-    );
+    assert_eq!(serde_json::to_value(chaos_response.jsonrpc)?, json!("2.0"));
+    assert_eq!(chaos_response.id, Some(json!(chaos_request_id)));
+    assert_structured_tool_result(
+        result,
+        &json!({
+            "processId": process_id, "content": "Enjoy!"
+        }),
+    )?;
 
     let requests = server
         .received_requests()
@@ -258,18 +250,21 @@ async fn send_tool_call_and_read_elicitation(
     mcp_process: &mut McpProcess,
     params: ChaosToolParams,
 ) -> anyhow::Result<(i64, JsonRpcRequest, serde_json::Value)> {
-    let codex_request_id = mcp_process.send_chaos_tool_call(params).await?;
+    let chaos_request_id = mcp_process.send_chaos_tool_call(params).await?;
     let elicitation_request = timeout(
         DEFAULT_READ_TIMEOUT,
         mcp_process.read_stream_until_request_message(),
     )
     .await??;
 
-    assert_eq!(elicitation_request.jsonrpc, "2.0");
+    assert_eq!(
+        serde_json::to_value(elicitation_request.jsonrpc)?,
+        json!("2.0")
+    );
     assert_eq!(elicitation_request.method, "elicitation/create");
 
     let request_params = request_params_with_meta(&elicitation_request)?;
-    Ok((codex_request_id, elicitation_request, request_params))
+    Ok((chaos_request_id, elicitation_request, request_params))
 }
 
 async fn accept_elicitation_response<T: serde::Serialize>(
@@ -293,37 +288,49 @@ async fn accept_elicitation_response<T: serde::Serialize>(
 
 async fn assert_tool_response_content(
     mcp_process: &mut McpProcess,
-    codex_request_id: i64,
+    chaos_request_id: i64,
     process_id: chaos_ipc::ProcessId,
     content: &str,
 ) -> anyhow::Result<()> {
-    let codex_response = timeout(
+    let chaos_response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(codex_request_id.into())),
+        mcp_process.read_stream_until_response_message(RequestId::Number(chaos_request_id.into())),
     )
     .await??;
-    assert_eq!(codex_response.jsonrpc, "2.0");
-    assert_eq!(codex_response.id, Some(json!(codex_request_id)));
-    assert!(codex_response.error.is_none());
-    let result = codex_response
+    assert_eq!(serde_json::to_value(chaos_response.jsonrpc)?, json!("2.0"));
+    assert_eq!(chaos_response.id, Some(json!(chaos_request_id)));
+    assert!(chaos_response.error.is_none());
+    let result = chaos_response
         .result
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("result should be present"))?;
-    let structured_text = format!(
-        "{{\"processId\":\"{process_id}\",\"content\":{}}}",
-        json!(content)
-    );
+    assert_structured_tool_result(
+        result,
+        &json!({
+            "processId": process_id, "content": content
+        }),
+    )?;
+    Ok(())
+}
+
+fn assert_structured_tool_result(
+    result: &serde_json::Value,
+    expected: &serde_json::Value,
+) -> anyhow::Result<()> {
+    let text = result["content"][0]["text"]
+        .as_str()
+        .context("text fallback")?;
+    // Object key order is not part of the JSON contract. Check that both
+    // representations carry exactly the same structured result.
+    assert_eq!(&serde_json::from_str::<serde_json::Value>(text)?, expected);
     assert_eq!(
         result,
         &json!({
             "content": [{
                 "type": "text",
-                "text": structured_text
+                "text": text
             }],
-            "structuredContent": {
-                "processId": process_id,
-                "content": content
-            }
+            "structuredContent": expected
         })
     );
     Ok(())
@@ -517,7 +524,7 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
 /// Create a Chaos config that uses the mock server as the model provider.
 /// It also uses `approval_policy = "supervised"` so that we exercise the
 /// elicitation code path for shell commands.
-fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
+pub(super) fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
     write_settings(
         chaos_home,
         json!({
@@ -555,14 +562,35 @@ async fn test_chaos_tool_task_augmented_call() {
 }
 
 async fn chaos_tool_task_augmented_call() -> anyhow::Result<()> {
-    let McpHandle {
-        process: mut mcp,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(vec![create_final_assistant_message_sse_response(
+    let server = create_mock_responses_server(vec![create_final_assistant_message_sse_response(
         "Task path works!",
     )?])
-    .await?;
+    .await;
+    let dir = TempDir::new()?;
+    create_config_toml(dir.path(), &server.uri())?;
+    let mut mcp = McpProcess::new(dir.path()).await?;
+    // A positive task test must negotiate task calls. Leave the shared
+    // no-task initializer unchanged for ordinary/capability-negative clients.
+    let initialized = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.initialize_with_protocol_version_and_capabilities(
+            "2025-11-25",
+            serde_json::from_value(json!({
+                "elicitation": {"form": {}},
+                "tasks": {"requests": {"tools": {"call": {}}}}
+            }))?,
+        ),
+    )
+    .await??;
+    let JsonRpcMessage::Response(response) = initialized else {
+        anyhow::bail!("expected initialization response, got {initialized:?}");
+    };
+    anyhow::ensure!(
+        response.error.is_none(),
+        "task client initialization failed: {:?}",
+        response.error
+    );
+    mcp.send_initialized_notification().await?;
 
     let request_id = mcp
         .send_custom_request(

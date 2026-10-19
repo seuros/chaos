@@ -404,9 +404,16 @@ impl ModelClientSession {
         config: HttpTurnRequestConfig<'_>,
     ) -> Result<AbiTurnRequest> {
         let input = prompt.get_formatted_input();
+        if self.sample_token_limit.is_some() && !prompt.tools.is_empty() {
+            return Err(ChaosErr::Fatal(
+                "workflow sampling cannot advertise tools".into(),
+            ));
+        }
         let mut openai_tools = create_tools_json_for_responses_api(&prompt.tools)?;
-        for tool_name in &model_info.native_server_side_tools {
-            openai_tools.push(serde_json::json!({"type": tool_name}));
+        if self.sample_token_limit.is_none() {
+            for tool_name in &model_info.native_server_side_tools {
+                openai_tools.push(serde_json::json!({"type": tool_name}));
+            }
         }
         let tools = prompt
             .tools
@@ -448,6 +455,9 @@ impl ModelClientSession {
         }
 
         let mut extensions = serde_json::Map::new();
+        if let Some(limit) = self.sample_token_limit {
+            extensions.insert("max_output_tokens".into(), json!(limit.get()));
+        }
         extensions.insert(
             "store".to_string(),
             json!(provider.is_azure_responses_endpoint()),
@@ -484,7 +494,7 @@ impl ModelClientSession {
             instructions: prompt.base_instructions.text.clone(),
             input,
             tools,
-            parallel_tool_calls: prompt.parallel_tool_calls,
+            parallel_tool_calls: self.sample_token_limit.is_none() && prompt.parallel_tool_calls,
             reasoning,
             output_schema: prompt.output_schema.clone(),
             verbosity,
@@ -629,7 +639,10 @@ impl ModelClientSession {
                 )
                 .with_options(options.clone())
                 .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-                if !metered && let Some(websocket) = &self.client.state.responses_websocket {
+                if !metered
+                    && self.sample_token_limit.is_none()
+                    && let Some(websocket) = &self.client.state.responses_websocket
+                {
                     adapter = adapter.with_websocket(Arc::clone(websocket));
                 }
                 Box::new(adapter)
@@ -643,7 +656,10 @@ impl ModelClientSession {
                 )
                 .with_options(options.clone())
                 .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-                if !metered && let Some(websocket) = &self.client.state.responses_websocket {
+                if !metered
+                    && self.sample_token_limit.is_none()
+                    && let Some(websocket) = &self.client.state.responses_websocket
+                {
                     adapter = adapter.with_websocket(Arc::clone(websocket));
                 }
                 Box::new(adapter)
@@ -843,7 +859,11 @@ impl ModelClientSession {
                         helper,
                         settings.home.as_deref(),
                         &sandbox_cwd,
-                    ) {
+                        &egress,
+                        &bridge_socket_path,
+                    )
+                    .await
+                    {
                         Ok(sandbox) => Some(sandbox),
                         Err(error) => {
                             let _ = tx_event
@@ -1466,7 +1486,13 @@ impl ModelClientSession {
             "sending model request",
         );
 
-        if self.client.state.clamped.load(Ordering::Relaxed) {
+        let clamped = self.client.state.clamped.load(Ordering::Relaxed);
+        if clamped && self.sample_token_limit.is_some() {
+            return Err(ChaosErr::Fatal(
+                "tool-free workflow sampling is unsupported on clamped transports".into(),
+            ));
+        }
+        if clamped {
             return match self.client.clamp_backend() {
                 crate::config::ClampBackend::ClaudeCode => {
                     self.stream_clamped(prompt, model_info, session_telemetry)
@@ -1526,7 +1552,8 @@ impl ModelClientSession {
         // Advertising WS v2 selects Responses, not a probe for an older wire
         // format. A rejected upgrade must surface instead of trying another API.
         if self.client.state.provider.wire_api == WireApi::Auto
-            && self.client.state.responses_websocket.is_none()
+            && (self.sample_token_limit.is_some()
+                || self.client.state.responses_websocket.is_none())
             && !self.client.has_invocation_sink()?
         {
             if let Some(&resolved) = self.client.state.resolved_wire.get() {

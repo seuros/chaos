@@ -875,14 +875,15 @@ impl ProcessTableState {
             .model_client
             .bind_admission_epoch(self.admission_epoch.clone())?;
         let _mutation = self.admission_epoch.mutate()?;
-        {
-            let mut processes = self.processes.write().await;
-            processes.insert(process_id, process.clone());
-        }
-        self.closed_process_histories
-            .write()
-            .await
-            .remove(&process_id);
+        // Acquire history before the live map: cancellation while waiting must
+        // not publish a process whose caller never receives its shutdown handle.
+        // Other history/map paths release their first guard before taking the
+        // second; this is the only path holding both, in history -> live order.
+        let mut histories = self.closed_process_histories.write().await;
+        let mut processes = self.processes.write().await;
+        processes.insert(process_id, process.clone());
+        histories.remove(&process_id);
+        // No await after publication: registration and handoff finish in this poll.
 
         Ok(NewProcess {
             process_id,

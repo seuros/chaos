@@ -508,7 +508,7 @@ async fn project_trust_context(
         }
     };
     for candidate in trust_candidates {
-        match crate::runtime_db::with_runtime_storage_breaker(|| {
+        match crate::runtime_db::with_runtime_storage_breaker(&runtime, || {
             runtime.get_project_trust(candidate.as_path())
         })
         .await

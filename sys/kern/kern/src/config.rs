@@ -1232,7 +1232,9 @@ pub(crate) async fn load_agent_role_records(
             .map_err(|err| {
                 std::io::Error::other(format!("failed to open runtime storage: {err}"))
             })?;
-    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_agent_roles()).await {
+    match crate::runtime_db::with_runtime_storage_breaker(&runtime, || runtime.list_agent_roles())
+        .await
+    {
         Ok(records) => Ok(records
             .into_iter()
             .filter(|record| record.enabled)
@@ -1287,8 +1289,10 @@ async fn load_global_mcp_servers_from_runtime_db(
             .map_err(|err| {
                 std::io::Error::other(format!("failed to open runtime storage: {err}"))
             })?;
-    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.list_global_mcp_servers())
-        .await
+    match crate::runtime_db::with_runtime_storage_breaker(&runtime, || {
+        runtime.list_global_mcp_servers()
+    })
+    .await
     {
         Ok(servers) => {
             for config in servers.values() {
@@ -1316,8 +1320,10 @@ async fn load_global_mcp_server_from_runtime_db(
             .map_err(|err| {
                 std::io::Error::other(format!("failed to open runtime storage: {err}"))
             })?;
-    match crate::runtime_db::with_runtime_storage_breaker(|| runtime.get_global_mcp_server(name))
-        .await
+    match crate::runtime_db::with_runtime_storage_breaker(&runtime, || {
+        runtime.get_global_mcp_server(name)
+    })
+    .await
     {
         Ok(server) => {
             if let Some(config) = &server {

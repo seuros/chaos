@@ -21,33 +21,50 @@ use chaos_vfs::ChaosVfs;
 use chaos_vfs::Vfs;
 use jiff::Timestamp;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::Mutex;
+use std::sync::PoisonError;
 use std::time::Duration;
 use tracing::warn;
 use uuid::Uuid;
 
 const RUNTIME_STORAGE_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 
-static RUNTIME_STORAGE_BREAKER: LazyLock<AsyncCircuitBreaker> = LazyLock::new(|| {
-    AsyncCircuitBreaker::new(
-        "runtime-storage",
+static RUNTIME_STORAGE_BREAKERS: LazyLock<Mutex<HashMap<PathBuf, Arc<AsyncCircuitBreaker>>>> =
+    LazyLock::new(Mutex::default);
+
+fn runtime_storage_breaker(chaos_home: &Path) -> Arc<AsyncCircuitBreaker> {
+    let mut breakers = RUNTIME_STORAGE_BREAKERS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(breaker) = breakers.get(chaos_home) {
+        return Arc::clone(breaker);
+    }
+    let breaker = Arc::new(AsyncCircuitBreaker::new(
+        format!("runtime-storage:{}", chaos_home.display()),
         1,
         Duration::from_secs(60),
         RUNTIME_STORAGE_HALF_OPEN_TIMEOUT,
         1,
-    )
-});
+    ));
+    breakers.insert(chaos_home.to_path_buf(), Arc::clone(&breaker));
+    breaker
+}
 
-pub(crate) async fn with_runtime_storage_breaker<T, E, F, Fut>(op: F) -> Result<T, BreakerError<E>>
+pub(crate) async fn with_runtime_storage_breaker<T, E, F, Fut>(
+    runtime: &RuntimeDbHandle,
+    op: F,
+) -> Result<T, BreakerError<E>>
 where
     E: 'static,
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
 {
-    RUNTIME_STORAGE_BREAKER.call(op).await
+    runtime_storage_breaker(runtime.chaos_home()).call(op).await
 }
 
 /// Initialize the runtime DB for thread persistence. To only be used
@@ -478,7 +495,7 @@ pub async fn apply_rollout_items(
         },
     };
     builder.cwd = normalize_cwd_for_runtime_db(&builder.cwd);
-    match with_runtime_storage_breaker(|| {
+    match with_runtime_storage_breaker(ctx, || {
         ctx.apply_rollout_items(
             &builder,
             items,
@@ -516,7 +533,7 @@ pub(crate) async fn touch_process_updated_at(
     let Some(process_id) = process_id else {
         return TouchProcessResult::Missing;
     };
-    match with_runtime_storage_breaker(|| ctx.touch_process_updated_at(process_id, updated_at))
+    match with_runtime_storage_breaker(ctx, || ctx.touch_process_updated_at(process_id, updated_at))
         .await
     {
         Ok(true) => TouchProcessResult::Updated,

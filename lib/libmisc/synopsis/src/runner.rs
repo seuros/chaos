@@ -1,27 +1,26 @@
-use std::collections::{HashMap, HashSet};
+use std::any::Any;
+use std::collections::HashSet;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::task::Poll;
 
-use bonsai_bt::{
-    Action, BT, Behavior, Event, Failure, Race, Running, Select, Sequence, Status, Success, WhenAll,
-};
+use futures::FutureExt;
+use mcp_host::bt::{self, Job, Leaf, Node as BtNode, Scope, Status, Threshold, Time, Tree};
 use thiserror::Error;
-use tokio::task::{JoinError, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use crate::{ActionId, ActionOutcome, CompositeKind, Node, Outcome, Synopsis, ValidationError};
-
-const MAX_STABILIZATION_TICKS: usize = 64;
 
 /// Boxed asynchronous action returned by [`ActionExecutor`].
 pub type ActionFuture = Pin<Box<dyn Future<Output = ActionOutcome> + Send + 'static>>;
 
 /// Backend responsible for executing synopsis action leaves.
 ///
-/// The runner also wraps the returned future in a cancellation select. This
-/// ensures that cancellation drops the future even if an executor does not
-/// actively observe the supplied token.
+/// Actions run concurrently on the task driving the tree and must not block
+/// it. The runner wraps the returned future in a cancellation select and drops
+/// abandoned work even if the executor does not observe the supplied token.
 pub trait ActionExecutor<A>: Send + Sync + 'static {
     /// Starts one action.
     fn execute(&self, id: ActionId, action: A, cancellation: CancellationToken) -> ActionFuture;
@@ -30,305 +29,249 @@ pub trait ActionExecutor<A>: Send + Sync + 'static {
 /// Error returned while running a validated synopsis.
 #[derive(Debug, Error)]
 pub enum RunError {
-    /// Bonsai unexpectedly reported that an already-finished tree was ticked.
-    #[error("behavior tree stopped producing a tick result before termination")]
-    UnexpectedFinishedTree,
-    /// The behavior tree requested an action that was not in the compiled
-    /// action table.
-    #[error("behavior tree referenced missing action `{0}`")]
-    MissingAction(ActionId),
-    /// The synopsis remained running without any asynchronous work capable of
-    /// waking it.
-    #[error("synopsis is running but has no active action")]
-    Stalled,
-    /// Repeated zero-time ticks could not settle on a stable active branch.
-    #[error("behavior tree did not stabilize within {MAX_STABILIZATION_TICKS} ticks")]
-    StabilizationLimit,
-    /// An action task panicked or was aborted unexpectedly.
-    #[error("action task failed to join: {0}")]
-    TaskJoin(#[source] JoinError),
-}
-
-enum TaskExit {
-    Completed(ActionOutcome),
-    Cancelled,
+    /// An executor panicked while creating or polling its action future.
+    #[error("action `{id}` panicked: {message}")]
+    ActionPanicked {
+        /// The action that panicked.
+        id: ActionId,
+        /// The panic message, when the payload contains one.
+        message: String,
+    },
 }
 
 /// Executes one validated [`Synopsis`].
 ///
 /// A runner is single-use. Each action ID may be launched at most once.
 pub struct Runner<A> {
-    tree: BT<ActionId, ()>,
-    actions: HashMap<ActionId, A>,
-    executor: Arc<dyn ActionExecutor<A>>,
-    active: HashMap<ActionId, CancellationToken>,
-    completed: HashMap<ActionId, ActionOutcome>,
-    abandoned: HashSet<ActionId>,
-    tasks: JoinSet<(ActionId, TaskExit)>,
+    tree: Tree<ActionLeaf>,
+    context: Context<A>,
 }
 
-impl<A> Runner<A>
-where
-    A: Send + 'static,
-{
+struct Context<A> {
+    actions: Vec<ActionState<A>>,
+    executor: Arc<dyn ActionExecutor<A>>,
+    scope: Scope<'static>,
+    error: Arc<Mutex<Option<ActionPanic>>>,
+}
+
+struct ActionPanic {
+    index: usize,
+    message: String,
+}
+
+struct ActionState<A> {
+    id: ActionId,
+    action: Option<A>,
+    job: Job<Status>,
+    cancellation: CancellationToken,
+    finished: Option<Status>,
+}
+
+/// Immutable leaf definition; activation state belongs to the context.
+struct ActionLeaf(usize);
+
+impl<A: Send + 'static> Leaf<Context<A>> for ActionLeaf {
+    fn tick(&self, context: &mut Context<A>, _now: Time) -> Status {
+        // A panic is a runner error, never a recoverable fallback result.
+        // Scope may have polled multiple jobs before this tick.
+        if lock_error(&context.error).is_some() {
+            return Status::Failure;
+        }
+
+        let state = &mut context.actions[self.0];
+        if let Some(status) = state.finished {
+            return status;
+        }
+
+        let index = self.0;
+        let status = state.job.poll(&context.scope, || {
+            let action = state.action.take();
+            let id = state.id.clone();
+            let executor = Arc::clone(&context.executor);
+            let cancellation = state.cancellation.clone();
+            let error = Arc::clone(&context.error);
+            // Capture before polling, so abandoning even an unpolled job
+            // delivers cancellation. Never capture Scope in its own jobs.
+            let cancel_on_drop = cancellation.clone().drop_guard();
+            async move {
+                let result = AssertUnwindSafe(async {
+                    // Compilation and the finished cache ensure single use.
+                    let Some(action) = action else {
+                        unreachable!("a single-use action cannot be launched twice");
+                    };
+                    let work = executor.execute(id, action, cancellation.clone());
+                    tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => Status::Failure,
+                        outcome = work => match outcome {
+                            ActionOutcome::Success => Status::Success,
+                            ActionOutcome::Failure => Status::Failure,
+                        },
+                    }
+                })
+                .catch_unwind()
+                .await;
+
+                match result {
+                    Ok(status) => {
+                        cancel_on_drop.disarm();
+                        status
+                    }
+                    Err(payload) => {
+                        let mut error = lock_error(&error);
+                        if error.is_none() {
+                            *error = Some(ActionPanic {
+                                index,
+                                message: panic_message(payload),
+                            });
+                        }
+                        Status::Failure
+                    }
+                }
+            }
+        });
+
+        match status {
+            Poll::Pending => Status::Running,
+            Poll::Ready(status) => {
+                state.finished = Some(status);
+                status
+            }
+        }
+    }
+
+    fn halt(&self, context: &mut Context<A>) {
+        let state = &mut context.actions[self.0];
+        state.cancellation.cancel();
+        state.job.abort();
+        // A halted action must not be restarted by another branch.
+        state.finished = Some(Status::Failure);
+    }
+}
+
+impl<A: Send + 'static> Runner<A> {
     /// Validates and compiles a synopsis.
     pub fn new(
         synopsis: Synopsis<A>,
         executor: Arc<dyn ActionExecutor<A>>,
     ) -> Result<Self, ValidationError> {
-        let mut actions = HashMap::new();
-        let behavior = compile_node(synopsis.into_root(), &mut actions)?;
-
+        validate_node(synopsis.root(), &mut HashSet::new())?;
+        let mut actions = Vec::new();
+        let root = compile_node(synopsis.into_root(), &mut actions);
         Ok(Self {
-            tree: BT::new(behavior, ()),
-            actions,
-            executor,
-            active: HashMap::new(),
-            completed: HashMap::new(),
-            abandoned: HashSet::new(),
-            tasks: JoinSet::new(),
+            tree: Tree::new(root)?,
+            context: Context {
+                actions,
+                executor,
+                scope: Scope::default(),
+                error: Arc::default(),
+            },
         })
     }
 
-    /// Runs the synopsis until success, failure, external cancellation, or a
-    /// runtime error.
+    /// Runs until success, failure, external cancellation, or an executor
+    /// panic. Dropping this future halts the tree and drops all owned jobs.
     pub async fn run(
         mut self,
         external_cancellation: CancellationToken,
     ) -> Result<Outcome, RunError> {
-        loop {
-            if external_cancellation.is_cancelled() {
-                self.cancel_and_drain_all().await?;
-                return Ok(Outcome::Cancelled);
-            }
-
-            match self.stabilize()? {
-                Success => {
-                    self.cancel_and_drain_all().await?;
-                    return Ok(Outcome::Success);
-                }
-                Failure => {
-                    self.cancel_and_drain_all().await?;
-                    return Ok(Outcome::Failure);
-                }
-                Running => {}
-            }
-
-            if self.active.is_empty() {
-                self.cancel_and_drain_all().await?;
-                return Err(RunError::Stalled);
-            }
-
-            tokio::select! {
-                biased;
-                _ = external_cancellation.cancelled() => {
-                    self.cancel_and_drain_all().await?;
-                    return Ok(Outcome::Cancelled);
-                }
-                task = self.tasks.join_next() => {
-                    match task {
-                        Some(Ok(exit)) => self.record_task_exit(exit),
-                        Some(Err(error)) => {
-                            self.cancel_and_drain_after_error().await;
-                            return Err(RunError::TaskJoin(error));
-                        }
-                        None => {
-                            self.cancel_and_drain_after_error().await;
-                            return Err(RunError::Stalled);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn stabilize(&mut self) -> Result<Status, RunError> {
-        let mut previous_visited = None;
-
-        // Bonsai reports leaf status but does not expose a branch-abandoned
-        // callback. Re-tick without advancing time until the active leaf set
-        // settles, allowing actions left behind by a completed nested race or
-        // composite transition to be cancelled before the runner waits again.
-        for _ in 0..MAX_STABILIZATION_TICKS {
-            let (status, visited) = self.tick_once()?;
-            self.cancel_unvisited(&visited);
-
-            if matches!(status, Success | Failure) {
-                return Ok(status);
-            }
-
-            if previous_visited.as_ref() == Some(&visited) {
-                return Ok(Running);
-            }
-            previous_visited = Some(visited);
-        }
-
-        Err(RunError::StabilizationLimit)
-    }
-
-    fn tick_once(&mut self) -> Result<(Status, HashSet<ActionId>), RunError> {
-        let mut visited = HashSet::new();
-        let mut missing_action = None;
-        let event = Event::zero_dt_args();
-
-        let Self {
-            tree,
-            actions,
-            executor,
-            active,
-            completed,
-            tasks,
-            ..
-        } = self;
-
-        let result = tree.tick(&event, &mut |args, _| {
-            let id = args.action.clone();
-            visited.insert(id.clone());
-
-            if let Some(outcome) = completed.get(&id) {
-                return match outcome {
-                    ActionOutcome::Success => (Success, args.dt),
-                    ActionOutcome::Failure => (Failure, args.dt),
-                };
-            }
-
-            if active.contains_key(&id) {
-                return (Running, args.dt);
-            }
-
-            let Some(action) = actions.remove(&id) else {
-                missing_action = Some(id);
-                return (Failure, args.dt);
-            };
-
-            let action_token = CancellationToken::new();
-            active.insert(id.clone(), action_token.clone());
-
-            let action_executor = Arc::clone(executor);
-            let task_id = id;
-            tasks.spawn(async move {
-                let action_future =
-                    action_executor.execute(task_id.clone(), action, action_token.clone());
-                let exit = tokio::select! {
-                    biased;
-                    _ = action_token.cancelled() => TaskExit::Cancelled,
-                    outcome = action_future => TaskExit::Completed(outcome),
-                };
-                (task_id, exit)
-            });
-
-            (Running, args.dt)
-        });
-
-        if let Some(id) = missing_action {
-            return Err(RunError::MissingAction(id));
-        }
-
-        result
-            .map(|(status, _remaining_dt)| (status, visited))
-            .ok_or(RunError::UnexpectedFinishedTree)
-    }
-
-    fn cancel_unvisited(&mut self, visited: &HashSet<ActionId>) {
-        for (id, token) in &self.active {
-            if !visited.contains(id) {
-                self.abandoned.insert(id.clone());
-                token.cancel();
-            }
-        }
-    }
-
-    fn cancel_all_tokens(&mut self) {
-        for (id, token) in &self.active {
-            self.abandoned.insert(id.clone());
-            token.cancel();
-        }
-    }
-
-    fn record_task_exit(&mut self, (id, exit): (ActionId, TaskExit)) {
-        self.active.remove(&id);
-
-        match exit {
-            TaskExit::Completed(outcome) if !self.abandoned.contains(&id) => {
-                self.completed.insert(id, outcome);
-            }
-            TaskExit::Completed(_) | TaskExit::Cancelled => {
-                self.abandoned.insert(id);
-            }
-        }
-    }
-
-    async fn cancel_and_drain_all(&mut self) -> Result<(), RunError> {
-        self.cancel_all_tokens();
-        let mut first_error = None;
-
-        while let Some(task) = self.tasks.join_next().await {
-            match task {
-                Ok(exit) => self.record_task_exit(exit),
-                Err(error) if first_error.is_none() => {
-                    first_error = Some(error);
-                }
-                Err(_) => {}
-            }
-        }
-
-        if let Some(error) = first_error {
-            return Err(RunError::TaskJoin(error));
-        }
-        Ok(())
-    }
-
-    async fn cancel_and_drain_after_error(&mut self) {
-        self.cancel_all_tokens();
-
-        while let Some(task) = self.tasks.join_next().await {
-            if let Ok(exit) = task {
-                self.record_task_exit(exit);
-            }
+        let scope = self.context.scope.clone();
+        let outcome = tokio::select! {
+            biased;
+            () = external_cancellation.cancelled() => Outcome::Cancelled,
+            status = bt::run(&mut self.tree, &mut self.context, &scope) => match status {
+                Status::Success => Outcome::Success,
+                Status::Failure => Outcome::Failure,
+                Status::Running => unreachable!("bt::run returns only terminal status"),
+            },
+        };
+        // bt::run halts active leaves on cancellation/drop. Dropping this
+        // context and the final Scope handle releases every aborted future
+        // before returning; there are no detached action tasks to drain.
+        let panic = lock_error(&self.context.error).take();
+        match panic {
+            Some(ActionPanic { index, message }) => Err(RunError::ActionPanicked {
+                id: self.context.actions.swap_remove(index).id,
+                message,
+            }),
+            None => Ok(outcome),
         }
     }
 }
 
-fn compile_node<A>(
-    node: Node<A>,
-    actions: &mut HashMap<ActionId, A>,
-) -> Result<Behavior<ActionId>, ValidationError> {
-    match node {
-        Node::Action { id, action } => {
+fn lock_error(error: &Mutex<Option<ActionPanic>>) -> MutexGuard<'_, Option<ActionPanic>> {
+    error.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => payload.downcast_ref::<&str>().map_or_else(
+            || "non-string panic payload".to_owned(),
+            |message| (*message).to_owned(),
+        ),
+    }
+}
+
+fn validate_node<'a, A>(
+    node: &'a Node<A>,
+    ids: &mut HashSet<&'a ActionId>,
+) -> Result<(), ValidationError> {
+    let (kind, children) = match node {
+        Node::Action { id, .. } => {
             if id.as_str().trim().is_empty() {
                 return Err(ValidationError::EmptyActionId);
             }
-            if actions.insert(id.clone(), action).is_some() {
-                return Err(ValidationError::DuplicateActionId(id));
+            if !ids.insert(id) {
+                return Err(ValidationError::DuplicateActionId(id.clone()));
             }
-            Ok(Action(id))
+            return Ok(());
         }
-        Node::Sequence(children) => {
-            compile_composite(CompositeKind::Sequence, children, actions, Sequence)
-        }
-        Node::Fallback(children) => {
-            compile_composite(CompositeKind::Fallback, children, actions, Select)
-        }
-        Node::ParallelAll(children) => {
-            compile_composite(CompositeKind::ParallelAll, children, actions, WhenAll)
-        }
-        Node::Race(children) => compile_composite(CompositeKind::Race, children, actions, Race),
-    }
-}
-
-fn compile_composite<A>(
-    kind: CompositeKind,
-    children: Vec<Node<A>>,
-    actions: &mut HashMap<ActionId, A>,
-    constructor: fn(Vec<Behavior<ActionId>>) -> Behavior<ActionId>,
-) -> Result<Behavior<ActionId>, ValidationError> {
+        Node::Sequence(children) => (CompositeKind::Sequence, children),
+        Node::Fallback(children) => (CompositeKind::Fallback, children),
+        Node::ParallelAll(children) => (CompositeKind::ParallelAll, children),
+        Node::Race(children) => (CompositeKind::Race, children),
+    };
     if children.is_empty() {
         return Err(ValidationError::EmptyComposite(kind));
     }
-
     children
-        .into_iter()
-        .map(|child| compile_node(child, actions))
-        .collect::<Result<Vec<_>, _>>()
-        .map(constructor)
+        .iter()
+        .try_for_each(|child| validate_node(child, ids))
+}
+
+fn compile_node<A>(node: Node<A>, actions: &mut Vec<ActionState<A>>) -> BtNode<ActionLeaf> {
+    let mut compile_children = |children: Vec<Node<A>>| {
+        children
+            .into_iter()
+            .map(|child| compile_node(child, actions))
+            .collect::<Vec<_>>()
+    };
+    match node {
+        Node::Action { id, action } => {
+            let index = actions.len();
+            actions.push(ActionState {
+                id,
+                action: Some(action),
+                job: Job::default(),
+                cancellation: CancellationToken::new(),
+                finished: None,
+            });
+            BtNode::leaf(ActionLeaf(index))
+        }
+        Node::Sequence(children) => BtNode::sequence(compile_children(children)),
+        Node::Fallback(children) => BtNode::fallback(compile_children(children)),
+        Node::ParallelAll(children) => BtNode::parallel(
+            compile_children(children),
+            Threshold::All,
+            Threshold::Count(1),
+        ),
+        // Both terminal outcomes decide a race, with upstream's leftmost
+        // child deciding a tie when several jobs finish before one tick.
+        Node::Race(children) => BtNode::parallel(
+            compile_children(children),
+            Threshold::Count(1),
+            Threshold::Count(1),
+        ),
+    }
 }

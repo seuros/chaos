@@ -258,7 +258,6 @@ assert_cmd = "2"
 async-channel = "2.5.0"
 async-stream = "0.3.6"
 base64 = "0.23.1"
-bonsai-bt = { version = "0.14.0", default-features = false }
 bytes = "1.12.1"
 chardetng = "1.0.0"
 color-eyre = "0.6.5"

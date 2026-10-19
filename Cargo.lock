@@ -771,12 +771,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bonsai-bt"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e1674327521eb98cf7ac79d3b3203929119ec1d3a4aa32ba0077bf5e7f447d5"
-
-[[package]]
 name = "borrow-or-share"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2202,12 +2196,14 @@ dependencies = [
 name = "chaos-synopsis"
 version = "47.13.2"
 dependencies = [
- "bonsai-bt",
+ "futures",
+ "mcp-host",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]

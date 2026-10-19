@@ -58,7 +58,8 @@ pub enum Node<A> {
     Fallback(Vec<Self>),
     /// Runs every child concurrently and succeeds when all children succeed.
     ParallelAll(Vec<Self>),
-    /// Runs every child concurrently and returns the first terminal result.
+    /// Runs every child concurrently and returns the first observed terminal
+    /// result. If several finish before one tree tick, the leftmost decides.
     Race(Vec<Self>),
 }
 
@@ -171,4 +172,7 @@ pub enum ValidationError {
     /// A composite contained no children.
     #[error("{0} composites cannot be empty")]
     EmptyComposite(CompositeKind),
+    /// The upstream behavior-tree compiler rejected the definition.
+    #[error("invalid behavior tree: {0}")]
+    TreeBuild(#[from] mcp_host::bt::BuildError),
 }

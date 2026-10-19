@@ -5,7 +5,7 @@
 A PostgreSQL-native memory engine embedded in ChaOS—not a prompt dump or a
 vector-search sidecar.
 
-- **Hybrid retrieval:** concurrent semantic + lexical branches through Bonsai,
+- **Hybrid retrieval:** concurrent semantic + lexical branches through `mcp_host::bt`,
   RRF fusion, scoped deduplication, deadlines, cancellation, and degraded results.
 - **Isolation by identity:** project/session namespaces; shared globals only
   when requested.

@@ -10,16 +10,10 @@ use std::sync::Arc;
 use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::product::OS_NAME;
-use chaos_ipc::protocol::SessionSource;
-use chaos_kern::AuthManager;
-use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
-use chaos_kern::models_manager::CollaborationModesConfig;
 use mcp_host::prelude::*;
-use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
@@ -39,13 +33,13 @@ mod chaos_tool;
 mod clamp_session_bridge;
 mod elicitation;
 mod exec_approval;
+mod factory;
 mod models_tool;
 mod outgoing_message;
 mod patch_approval;
-
-use crate::chaos_tool::ChaosMcpServer;
-use crate::outgoing_message::OutgoingMessage;
-use crate::outgoing_message::OutgoingMessageSender;
+mod session_state;
+mod workflow_app;
+mod workflows;
 
 pub use crate::chaos_tool::ChaosToolParams;
 pub use crate::clamp_session_bridge::run_main as run_clamp_session_bridge_main;
@@ -54,6 +48,8 @@ pub use crate::elicitation::ApprovalElicitationResponse;
 pub use crate::exec_approval::ExecApprovalElicitRequestMeta;
 pub use crate::exec_approval::ExecApprovalElicitRequestParams;
 pub use crate::exec_approval::ExecApprovalResponse;
+pub use crate::factory::McpServerHandle;
+pub use crate::factory::build_server;
 pub use crate::patch_approval::PatchApprovalElicitRequestMeta;
 pub use crate::patch_approval::PatchApprovalElicitRequestParams;
 pub use crate::patch_approval::PatchApprovalResponse;
@@ -119,113 +115,16 @@ pub async fn run_main(
         .with(otel_tracing_layer)
         .try_init();
 
-    // Init runtime database singleton — same DB as TUI/CLI.
-    let config = Arc::new(config);
-    chaos_kern::runtime_db::mount_vfs_for_startup(&config)
-        .await
-        .map_err(std::io::Error::other)?;
-    let runtime_db = chaos_kern::runtime_db::get_runtime_db(&config);
-
-    // Build ProcessTable.
-    let auth_manager = AuthManager::shared(
-        config.chaos_home.clone(),
-        false,
-        config.cli_auth_credentials_store_mode,
-    );
-    let process_table = Arc::new(ProcessTable::new(
-        config.as_ref(),
-        auth_manager,
-        SessionSource::Mcp,
-        CollaborationModesConfig {
-            default_mode_request_user_input: true,
-        },
-    ));
-
-    // Outgoing message channel — used by the tool runner to send JSON-RPC
-    // messages while mcp-host handles the transport framing.
-    let (outgoing_tx, mut outgoing_rx) = tokio::sync::mpsc::unbounded_channel::<OutgoingMessage>();
-    let outgoing = Arc::new(OutgoingMessageSender::new(outgoing_tx));
-
-    // Build the mcp-host Server.
-    let mcp_server = Server::builder("chaos-mcp-server", CHAOS_VERSION)
-        .with_title(OS_NAME)
-        .with_description(MCP_SERVER_DESCRIPTION)
-        .with_website_url(CHAOS_WEBSITE_URL)
-        .with_tools(true)
-        .with_resources(true, false)
-        .with_resource_templates()
-        .with_tasks(true, true)
-        .with_instructions("Chaos — provider-agnostic coding agent")
-        .on_initialized({
-            let outgoing = outgoing.clone();
-            move |_session_id: String, requester: Option<ClientRequester>| {
-                let outgoing = outgoing.clone();
-                async move {
-                    if let Some(req) = requester {
-                        // Mirror elicitation support to our outgoing sender so approval
-                        // handlers can check it without holding the requester lock.
-                        if req.supports_elicitation() {
-                            outgoing.set_client_elicitation_capability(Some(
-                                &mcp_host::protocol::capabilities::ElicitationCapability::default(),
-                            ));
-                        }
-                        // Store the requester so send_request can route server→client
-                        // requests (e.g. elicitation/create) through mcp-host's transport.
-                        outgoing.set_client_requester(req).await;
-                    }
-                }
-            }
-        })
-        .build();
-
-    // Register tools.
-    let chaos_server = Arc::new(ChaosMcpServer {
-        process_table,
-        outgoing,
-        arg0_paths,
-        running_requests: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        session_processes: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        process_names: Arc::new(Mutex::new(std::collections::HashMap::new())),
-        runtime_db,
-    });
-    chaos_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
-    models_tool::tool_router().register_all(mcp_server.tool_registry(), chaos_server.clone());
-    builtin_resources::resource_router()
-        .register_all(mcp_server.resource_manager(), chaos_server.clone());
-    builtin_resources::resource_template_router()
-        .register_all(mcp_server.resource_manager(), chaos_server);
-
-    // Forward outgoing notifications and error responses to mcp-host's transport.
-    // Server→client requests (e.g. `elicitation/create`) bypass this channel
-    // entirely — they go through `OutgoingMessageSender::send_request` which
-    // calls `ClientRequester::request_raw` directly.
-    let notification_sender = mcp_server.notification_sender();
-    tokio::spawn(async move {
-        use crate::outgoing_message::OutgoingJsonRpcMessage;
-        use mcp_host::protocol::types::JsonRpcMessage;
-
-        while let Some(msg) = outgoing_rx.recv().await {
-            let jsonrpc: OutgoingJsonRpcMessage = msg.into();
-            match jsonrpc {
-                JsonRpcMessage::Notification(n) => {
-                    let notif = mcp_host::prelude::JsonRpcNotification::new(n.method, n.params);
-                    let _ = notification_sender.send(notif);
-                }
-                JsonRpcMessage::Response(_) | JsonRpcMessage::Request(_) => {
-                    // Unreachable: OutgoingMessage has no Request variant and
-                    // errors are sent as Response. Guard kept for exhaustiveness.
-                }
-            }
-        }
-    });
-
-    // Run with stdio transport.
-    mcp_server
+    // The same factory can be embedded with HTTP or in-process transports.
+    // Keep recursion guards and telemetry in the stdio entry point.
+    let mut handle = build_server(Arc::new(config), arg0_paths).await?;
+    let result = handle
+        .server
         .run(StdioTransport::new())
         .await
-        .map_err(|e| std::io::Error::other(format!("mcp server error: {e}")))?;
-
-    Ok(())
+        .map_err(|e| std::io::Error::other(format!("mcp server error: {e}")));
+    let cleanup = handle.shutdown().await;
+    result.and(cleanup)
 }
 
 /// Returns `Err(ErrorKind::WouldBlock)` if the current process is already

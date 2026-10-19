@@ -1,7 +1,6 @@
 //! Explicit model discovery; resource reads remain cache-only.
 
 use chaos_kern::builtin_mcp_resources::refresh_models_json;
-use chaos_kern::config::Config;
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpToolRouter;
 use mcp_host::registry::router::tool_info_with_output;
@@ -49,14 +48,12 @@ fn handler<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send + 'a>>
 {
     Box::pin(async move {
+        let state = server.session_state(ctx.session)?;
         let params: RefreshModelsParams = serde_json::from_value(ctx.params)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
-        let config = Config::load_with_cli_overrides(Vec::new())
-            .await
-            .map_err(|err| ToolError::Execution(format!("failed to load config: {err}")))?;
         let output = refresh_models_json(
-            &server.process_table.get_models_manager(),
-            &config.model_providers,
+            &state.process_table.get_models_manager(),
+            &server.config.model_providers,
             &params.provider,
         )
         .await

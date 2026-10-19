@@ -1,7 +1,7 @@
 //! Unified Chaos session runner — handles both new and resumed processes.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as RequestMutex};
 
 use crate::elicitation::handle_mcp_server_elicitation_complete;
 use crate::elicitation::handle_mcp_server_elicitation_request;
@@ -24,34 +24,9 @@ use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config as ChaosConfig;
 use chaos_session::background::{BackgroundWait, WaitEvent};
+use mcp_host::managers::progress::Progress;
 use mcp_host::protocol::types::RequestId;
 use tokio::sync::Mutex;
-
-/// Lightweight MCP progress sender — sends `notifications/progress` via
-/// the existing `OutgoingMessageSender` channel.
-struct ProgressSender {
-    token: String,
-    outgoing: Arc<OutgoingMessageSender>,
-}
-
-impl ProgressSender {
-    fn new(token: String, outgoing: Arc<OutgoingMessageSender>) -> Self {
-        Self { token, outgoing }
-    }
-
-    async fn send(&self, progress: u32, total: u32, message: &str) {
-        let notification = crate::outgoing_message::OutgoingNotification {
-            method: "notifications/progress".to_string(),
-            params: Some(serde_json::json!({
-                "progressToken": self.token,
-                "progress": progress,
-                "total": total,
-                "message": message,
-            })),
-        };
-        self.outgoing.send_notification(notification).await;
-    }
-}
 
 /// Outcome of a Chaos session run.
 pub(crate) struct SessionOutcome {
@@ -70,9 +45,9 @@ pub(crate) struct RunChaosSessionArgs {
     pub existing_process_id: Option<ProcessId>,
     pub outgoing: Arc<OutgoingMessageSender>,
     pub process_table: Arc<ProcessTable>,
-    pub running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
+    pub running_requests: Arc<RequestMutex<HashMap<RequestId, ProcessId>>>,
     pub process_names: ProcessNameCache,
-    pub progress_token: Option<String>,
+    pub progress: Option<Progress>,
     pub wait_background: bool,
     pub background_timeout: std::time::Duration,
 }
@@ -83,11 +58,41 @@ struct ResolvedProcess {
     process: Arc<Process>,
 }
 
+/// Request cancellation drops its future. Remove its ID synchronously and
+/// interrupt only the process bound to that originating request.
+struct ActiveRequest {
+    id: RequestId,
+    running: Arc<RequestMutex<HashMap<RequestId, ProcessId>>>,
+    process: Arc<Process>,
+    complete: bool,
+}
+
+impl Drop for ActiveRequest {
+    fn drop(&mut self) {
+        self.running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.id);
+        if !self.complete
+            && let Ok(runtime) = tokio::runtime::Handle::try_current()
+        {
+            let process = self.process.clone();
+            runtime.spawn(async move {
+                let _ = tokio::time::timeout(
+                    std::time::Duration::from_millis(250),
+                    process.submit(Op::Interrupt),
+                )
+                .await;
+            });
+        }
+    }
+}
+
 /// Unified entry point: create or resume a Chaos session.
 ///
 /// Returns a `SessionOutcome` — the caller (tool handler) converts this
 /// to the appropriate `ToolOutput`. Notifications are streamed via `outgoing`.
-/// If `progress_token` is provided, MCP progress notifications are sent at
+/// If request-scoped `progress` is provided, MCP progress notifications are sent at
 /// key milestones so the client can display status.
 pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutcome {
     let RunChaosSessionArgs {
@@ -99,17 +104,14 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         process_table,
         running_requests,
         process_names,
-        progress_token,
+        progress,
         wait_background,
         background_timeout,
     } = args;
 
     // Send progress if the client requested it.
-    let progress = progress_token
-        .as_ref()
-        .map(|token| ProgressSender::new(token.clone(), outgoing.clone()));
     if let Some(ref p) = progress {
-        p.send(0, 4, "Resolving process...").await;
+        p.report(0.0, Some(4.0), Some("Resolving process...".into()));
     }
 
     // Phase 1: resolve process
@@ -173,14 +175,20 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
     } = resolved;
 
     if let Some(ref p) = progress {
-        p.send(1, 4, "Configuring session...").await;
+        p.report(1.0, Some(4.0), Some("Configuring session...".into()));
     }
 
     // Phase 2: submit prompt
     running_requests
         .lock()
-        .await
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(request_id.clone(), process_id);
+    let mut request = ActiveRequest {
+        id: request_id.clone(),
+        running: running_requests.clone(),
+        process: process.clone(),
+        complete: false,
+    };
 
     let user_input = process
         .user_turn(
@@ -207,7 +215,6 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
 
     if let Some(e) = submit_err {
         tracing::error!("Failed to submit prompt: {e}");
-        running_requests.lock().await.remove(&request_id);
         return SessionOutcome {
             process_id,
             text: format!("Failed to submit prompt: {e}"),
@@ -216,7 +223,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
     }
 
     if let Some(ref p) = progress {
-        p.send(2, 4, "Streaming response...").await;
+        p.report(2.0, Some(4.0), Some("Streaming response...".into()));
     }
 
     // Phase 3: event loop
@@ -226,11 +233,11 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         process,
         outgoing,
         request_id,
-        running_requests,
         process_names,
         wait,
     )
     .await;
+    request.complete = true;
 
     if let Some(ref p) = progress {
         let msg = if outcome.is_error {
@@ -238,7 +245,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         } else {
             "Complete"
         };
-        p.send(4, 4, msg).await;
+        p.report(4.0, Some(4.0), Some(msg.into()));
     }
 
     outcome
@@ -250,7 +257,6 @@ async fn run_event_loop(
     process: Arc<Process>,
     outgoing: Arc<OutgoingMessageSender>,
     request_id: RequestId,
-    running_requests: Arc<Mutex<HashMap<RequestId, ProcessId>>>,
     process_names: ProcessNameCache,
     mut wait: BackgroundWait,
 ) -> SessionOutcome {
@@ -261,7 +267,6 @@ async fn run_event_loop(
     loop {
         match wait.next(&process).await {
             WaitEvent::Complete => {
-                running_requests.lock().await.remove(&request_id);
                 return SessionOutcome {
                     process_id,
                     text,
@@ -323,12 +328,18 @@ async fn run_event_loop(
                             request,
                             outgoing.clone(),
                             process.clone(),
+                            process_id,
                         )
                         .await;
                     }
                     EventMsg::ElicitationComplete(ev) => {
-                        handle_mcp_server_elicitation_complete(ev.elicitation_id, outgoing.clone())
-                            .await;
+                        handle_mcp_server_elicitation_complete(
+                            process_id,
+                            ev.server_name,
+                            ev.elicitation_id,
+                            outgoing.clone(),
+                        )
+                        .await;
                     }
                     EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
                         call_id,
@@ -361,7 +372,6 @@ async fn run_event_loop(
                         // A persistent MCP session no longer has a waiting
                         // caller; retain results without unattended sampling.
                         let _ = process.submit(Op::Interrupt).await;
-                        running_requests.lock().await.remove(&request_id);
                         return SessionOutcome {
                             process_id,
                             text: last_agent_message.unwrap_or_default(),
@@ -450,7 +460,6 @@ async fn run_event_loop(
             }
             WaitEvent::Stopped(e) => {
                 let _ = process.submit(Op::Interrupt).await;
-                running_requests.lock().await.remove(&request_id);
                 return SessionOutcome {
                     process_id,
                     text: format!("{OS_NAME} runtime error: {e}"),

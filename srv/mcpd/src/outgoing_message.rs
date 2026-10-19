@@ -1,209 +1,239 @@
-use std::sync::atomic::AtomicU8;
-use std::sync::atomic::Ordering;
+//! Session-addressed delivery; standard MCP methods use the host's gated APIs.
+
+use std::sync::Arc;
+use std::sync::Weak;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::Event;
-use mcp_host::protocol::capabilities::ElicitationCapability;
+use mcp_host::prelude::Server;
+use mcp_host::prelude::Session;
 use mcp_host::protocol::types::JsonRpcError;
-use mcp_host::protocol::types::JsonRpcMessage;
-use mcp_host::protocol::types::JsonRpcRequest;
-use mcp_host::protocol::types::JsonRpcResponse;
 use mcp_host::protocol::types::RequestId;
 use mcp_host::server::multiplexer::ClientRequester;
 use serde::Serialize;
+use serde_json::Map;
 use serde_json::Value;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tracing::error;
+use tokio::sync::watch;
 use tracing::warn;
 
-/// Alias kept for compatibility with existing call-sites.
+mod url_relay;
+pub(crate) use url_relay::UrlElicitations;
 pub(crate) type ErrorData = JsonRpcError;
-pub(crate) type OutgoingJsonRpcMessage = JsonRpcMessage;
+pub(crate) type ResponseReceiver = oneshot::Receiver<Result<Value, ErrorData>>;
 
-/// Routes outgoing messages to the MCP client.
-///
-/// Notifications (e.g. `chaos/event`) are sent via the mcp-host notification
-/// channel. Server→client requests (e.g. `elicitation/create` per MCP spec
-/// §Elicitation) go through [`ClientRequester::request_raw`] so that mcp-host's
-/// multiplexer can match responses back to their pending calls.
+/// Constructed from the originating execution context, never a process-global
+/// requester. Clones retain that requester's session/task routing.
 pub(crate) struct OutgoingMessageSender {
-    sender: mpsc::UnboundedSender<OutgoingMessage>,
-    /// Tracks which elicitation modes the client declared in `capabilities.elicitation`
-    /// (MCP spec §Capabilities). Bit 0 = form, bit 1 = url.
-    client_elicitation_modes: AtomicU8,
-    /// Set once after `initialized` — required to send server→client requests.
-    client_requester: Mutex<Option<ClientRequester>>,
+    server: Weak<Server>,
+    session_id: String,
+    sdk_session: Option<Session>,
+    requester: Option<ClientRequester>,
+    urls: Arc<UrlElicitations>,
+    lifetime: Option<watch::Receiver<bool>>,
 }
 
 impl OutgoingMessageSender {
-    pub(crate) fn new(sender: mpsc::UnboundedSender<OutgoingMessage>) -> Self {
+    pub(crate) fn new(
+        server: Weak<Server>,
+        session_id: String,
+        requester: Option<ClientRequester>,
+        urls: Arc<UrlElicitations>,
+    ) -> Self {
+        let sdk_session = server
+            .upgrade()
+            .and_then(|server| server.get_session(&session_id));
         Self {
-            sender,
-            client_elicitation_modes: AtomicU8::new(0),
-            client_requester: Mutex::new(None),
+            server,
+            session_id,
+            sdk_session,
+            requester,
+            urls,
+            lifetime: None,
         }
     }
 
-    /// Called from the `on_initialized` hook once the client has completed the
-    /// MCP handshake and its capabilities are known.
-    pub(crate) async fn set_client_requester(&self, requester: ClientRequester) {
-        *self.client_requester.lock().await = Some(requester);
-    }
-
-    /// Send a server→client request per the MCP spec and return a receiver for
-    /// the client's response.
-    ///
-    /// Uses [`ClientRequester::request_raw`] so that:
-    /// - The request is written to the transport with a unique JSON-RPC id.
-    /// - The multiplexer routes the client's response back to the returned receiver.
-    ///
-    /// Chaos-specific extensions (e.g. `_meta` in `elicitation/create`) are allowed
-    /// by the MCP spec's general `_meta` extension mechanism and are passed through
-    /// unchanged in `params`.
-    pub(crate) async fn send_request(
-        &self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> oneshot::Receiver<Result<Value, ErrorData>> {
-        let (tx, rx) = oneshot::channel();
-
-        let guard = self.client_requester.lock().await;
-        let Some(requester) = guard.as_ref() else {
-            error!(
-                method,
-                "send_request called before ClientRequester was set; \
-                 approval will be treated as denied"
-            );
-            return rx;
-        };
-
-        let requester = requester.clone();
-        let method = method.to_string();
-
-        tokio::spawn(async move {
-            let result = requester.request_raw(&method, params, None).await;
-            let mapped = result.map_err(|e| JsonRpcError {
-                code: mcp_host::protocol::types::ErrorCode::INTERNAL_ERROR,
-                message: e.to_string(),
-                data: None,
-            });
-            let _ = tx.send(mapped);
-        });
-
-        rx
-    }
-
-    /// Mirror the client's declared `elicitation` capability so that approval
-    /// handlers can check support without holding the requester lock.
-    pub(crate) fn set_client_elicitation_capability(
-        &self,
-        elicitation: Option<&ElicitationCapability>,
-    ) {
-        const FORM_MODE: u8 = 0b01;
-        const URL_MODE: u8 = 0b10;
-
-        let supports_form = match elicitation {
-            None => false,
-            Some(capability) if capability.form.is_some() => true,
-            Some(capability) => capability.url.is_none(),
-        };
-        let supports_url = elicitation.is_some_and(|capability| capability.url.is_some());
-
-        let mut modes = 0;
-        if supports_form {
-            modes |= FORM_MODE;
-        }
-        if supports_url {
-            modes |= URL_MODE;
-        }
-        self.client_elicitation_modes
-            .store(modes, Ordering::Relaxed);
+    pub(crate) fn with_lifetime(mut self, lifetime: watch::Receiver<bool>) -> Self {
+        self.lifetime = Some(lifetime);
+        self
     }
 
     pub(crate) fn supports_form_elicitation(&self) -> bool {
-        self.client_elicitation_modes.load(Ordering::Relaxed) & 0b01 != 0
+        self.active_server().is_some()
+            && self
+                .requester
+                .as_ref()
+                .is_some_and(ClientRequester::supports_elicitation)
     }
 
     pub(crate) fn supports_url_elicitation(&self) -> bool {
-        self.client_elicitation_modes.load(Ordering::Relaxed) & 0b10 != 0
+        self.active_server().is_some()
+            && self
+                .requester
+                .as_ref()
+                .is_some_and(ClientRequester::supports_url_elicitation)
     }
 
-    /// Encode a Chaos event as a `chaos/event` MCP notification and enqueue it.
+    pub(crate) fn request_form(
+        &self,
+        message: String,
+        schema: Value,
+        meta: Option<Map<String, Value>>,
+    ) -> ResponseReceiver {
+        let (mut tx, rx) = oneshot::channel();
+        if self.active_server().is_none() {
+            return rx;
+        }
+        let Some(requester) = self.requester.clone() else {
+            return rx;
+        };
+        let lifetime = self.lifetime.clone();
+        tokio::spawn(async move {
+            let request = requester.request_elicitation_reply(message, schema, meta, None);
+            tokio::select! {
+                biased;
+                _ = session_closed(lifetime) => {}
+                _ = tx.closed() => {}
+                result = request => {
+                    let result = result
+                        .map_err(|error| ErrorData::internal_error(error.to_string()))
+                        .and_then(|value| serde_json::to_value(value)
+                            .map_err(|error| ErrorData::internal_error(error.to_string())));
+                    let _ = tx.send(result);
+                }
+            }
+        });
+        rx
+    }
+
+    /// The outer host mints its own URL id. The source URL is opaque and must
+    /// not be rewritten; remember the id translation for the later completion.
+    pub(crate) fn request_url(
+        &self,
+        process_id: ProcessId,
+        server_name: String,
+        source_id: String,
+        message: String,
+        url: String,
+        meta: Option<Map<String, Value>>,
+    ) -> ResponseReceiver {
+        let (mut tx, rx) = oneshot::channel();
+        if self.active_server().is_none() {
+            return rx;
+        }
+        let Some(requester) = self.requester.clone() else {
+            return rx;
+        };
+        let mut relay =
+            self.urls
+                .reservation(self.session_id.clone(), process_id, server_name, source_id);
+        let lifetime = self.lifetime.clone();
+        tokio::spawn(async move {
+            let request = async {
+                let result = requester
+                    .request_url_elicitation_reply(
+                        message,
+                        |id| {
+                            if relay.register(id) {
+                                url
+                            } else {
+                                String::new()
+                            }
+                        },
+                        meta,
+                        None,
+                    )
+                    .await
+                    .map_err(|error| ErrorData::internal_error(error.to_string()))?;
+                if result.reply.result.action
+                    == mcp_host::protocol::types::ElicitationAction::Accept
+                {
+                    relay.retain();
+                }
+                serde_json::to_value(result.reply)
+                    .map_err(|error| ErrorData::internal_error(error.to_string()))
+            };
+            tokio::select! {
+                biased;
+                _ = session_closed(lifetime) => {}
+                _ = tx.closed() => {}
+                result = request => { let _ = tx.send(result); }
+            }
+        });
+        rx
+    }
+
+    pub(crate) fn complete_url(
+        &self,
+        process_id: ProcessId,
+        server_name: String,
+        source_id: String,
+    ) {
+        let Some(id) = self
+            .urls
+            .complete(&self.session_id, process_id, server_name, source_id)
+        else {
+            return;
+        };
+        if let Some(server) = self.active_server()
+            && let Err(error) = server.notify_elicitation_complete(&self.session_id, &id)
+        {
+            warn!(%error, "could not queue URL elicitation completion");
+        }
+    }
+
     pub(crate) async fn send_event_as_notification(
         &self,
         event: &Event,
         meta: Option<OutgoingNotificationMeta>,
     ) {
-        let params =
-            if let Ok(params) = serde_json::to_value(OutgoingNotificationParams { meta, event }) {
-                params
-            } else {
-                warn!("Failed to serialize event as OutgoingNotificationParams");
-                #[expect(clippy::expect_used)]
-                serde_json::to_value(event).expect("Event must serialize")
-            };
-
-        self.send_notification(OutgoingNotification {
-            method: "chaos/event".to_string(),
-            params: Some(params),
-        })
-        .await;
-    }
-
-    pub(crate) async fn send_notification(&self, notification: OutgoingNotification) {
-        let _ = self
-            .sender
-            .send(OutgoingMessage::Notification(notification));
-    }
-
-    pub(crate) async fn send_error(&self, id: RequestId, error: ErrorData) {
-        let _ = self
-            .sender
-            .send(OutgoingMessage::Error(OutgoingError { id, error }));
-    }
-}
-
-/// Outgoing message from the server to the MCP client sent via the notification
-/// channel. Server→client *requests* (e.g. `elicitation/create`) bypass this
-/// enum and go directly through `ClientRequester::request_raw`.
-pub(crate) enum OutgoingMessage {
-    Notification(OutgoingNotification),
-    Error(OutgoingError),
-}
-
-impl From<OutgoingMessage> for OutgoingJsonRpcMessage {
-    fn from(val: OutgoingMessage) -> Self {
-        match val {
-            OutgoingMessage::Notification(OutgoingNotification { method, params }) => {
-                JsonRpcMessage::Notification(JsonRpcRequest::notification(method, params))
+        let Some(server) = self.active_server() else {
+            return;
+        };
+        let params = match serde_json::to_value(OutgoingNotificationParams { meta, event }) {
+            Ok(params) => params,
+            Err(error) => {
+                warn!(%error, "could not serialize chaos/event");
+                return;
             }
-            OutgoingMessage::Error(OutgoingError { id, error }) => {
-                let id = match id {
-                    RequestId::Number(number) => Value::Number(number),
-                    RequestId::String(string) => Value::String(string),
-                };
-                JsonRpcMessage::Response(JsonRpcResponse::error(Some(id), error))
-            }
+        };
+        // No extra unbounded forwarding queue. Saturation is observable and
+        // never spills a notification into another session's transport.
+        if let Err(error) =
+            server.send_notification_to_session(&self.session_id, "chaos/event", Some(params))
+        {
+            warn!(%error, "could not queue chaos/event");
         }
     }
+
+    fn active_server(&self) -> Option<Arc<Server>> {
+        if self
+            .lifetime
+            .as_ref()
+            .is_some_and(|lifetime| *lifetime.borrow())
+        {
+            return None;
+        }
+        let original = self.sdk_session.as_ref()?;
+        let server = self.server.upgrade()?;
+        let active = server.get_session(&self.session_id)?;
+        crate::session_state::same_session(original, &active).then_some(server)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingNotification {
-    pub method: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub params: Option<serde_json::Value>,
+async fn session_closed(lifetime: Option<watch::Receiver<bool>>) {
+    let Some(mut lifetime) = lifetime else {
+        return std::future::pending().await;
+    };
+    if !*lifetime.borrow_and_update() {
+        let _ = lifetime.changed().await;
+    }
 }
 
-/// Params envelope for `chaos/event` notifications. The `_meta` field follows
-/// the MCP spec's general extension mechanism.
 #[derive(Serialize)]
 pub(crate) struct OutgoingNotificationParams<'a> {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<OutgoingNotificationMeta>,
-
     #[serde(flatten)]
     pub event: &'a Event,
 }
@@ -212,15 +242,8 @@ pub(crate) struct OutgoingNotificationParams<'a> {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OutgoingNotificationMeta {
     pub request_id: Option<RequestId>,
-
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process_id: Option<ProcessId>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct OutgoingError {
-    pub error: ErrorData,
-    pub id: RequestId,
 }
 
 #[cfg(test)]

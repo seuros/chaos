@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::outgoing_message::ErrorData;
+use chaos_ipc::ProcessId;
 use chaos_ipc::approvals::ElicitationAction as CoreElicitationAction;
 use chaos_ipc::approvals::ElicitationRequest as CoreElicitationRequest;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -15,7 +16,6 @@ use std::future::Future;
 use tracing::error;
 
 use crate::outgoing_message::OutgoingMessageSender;
-use crate::outgoing_message::OutgoingNotification;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -77,20 +77,28 @@ pub(crate) enum CreateFormElicitationError {
     Unsupported,
 }
 
+#[derive(Deserialize)]
+struct FormParams {
+    message: String,
+    #[serde(rename = "requestedSchema")]
+    schema: Value,
+    #[serde(rename = "_meta")]
+    meta: Option<serde_json::Map<String, Value>>,
+}
+
 pub(crate) async fn create_form_elicitation_request<P: Serialize>(
     outgoing: &OutgoingMessageSender,
     request_id: RequestId,
     params: &P,
     params_label: &str,
 ) -> Result<ElicitationResponseReceiver, CreateFormElicitationError> {
-    let params_json = match serde_json::to_value(params) {
+    let params: FormParams = match serde_json::to_value(params).and_then(serde_json::from_value) {
         Ok(value) => value,
         Err(err) => {
             let message = format!("Failed to serialize {params_label}: {err}");
-            error!("{message}");
-            outgoing
-                .send_error(request_id, ErrorData::invalid_params(message))
-                .await;
+            // Do not manufacture a second tools/call response. The approval
+            // path must submit a denial even when local serialization fails.
+            error!(?request_id, "{message}");
             return Err(CreateFormElicitationError::InvalidParams);
         }
     };
@@ -100,9 +108,7 @@ pub(crate) async fn create_form_elicitation_request<P: Serialize>(
         return Err(CreateFormElicitationError::Unsupported);
     }
 
-    Ok(outgoing
-        .send_request("elicitation/create", Some(params_json))
-        .await)
+    Ok(outgoing.request_form(params.message, params.schema, params.meta))
 }
 
 pub(crate) async fn decode_approval_elicitation_response(
@@ -141,8 +147,7 @@ where
 {
     match create_form_elicitation_request(outgoing, request_id, params, params_label).await {
         Ok(receiver) => Some(receiver),
-        Err(CreateFormElicitationError::InvalidParams) => None,
-        Err(CreateFormElicitationError::Unsupported) => {
+        Err(_) => {
             on_unsupported().await;
             None
         }
@@ -221,6 +226,7 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
     request: ElicitationRequestEvent,
     outgoing: Arc<OutgoingMessageSender>,
     process: Arc<Process>,
+    process_id: ProcessId,
 ) {
     let params = ForwardedElicitationRequestParams::from_protocol_request(request.request);
     if !params.is_supported_by(outgoing.as_ref()) {
@@ -239,31 +245,54 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
         return;
     }
 
-    let params_json = match serde_json::to_value(&params) {
-        Ok(value) => value,
-        Err(err) => {
-            error!(
-                error = %err,
-                server_name = request.server_name,
-                request_id = ?request.id,
-                "failed to serialize elicitation request"
-            );
-            submit_resolve_elicitation(
-                request.server_name,
-                request.id,
-                ApprovalElicitationResponse::cancel(),
-                process,
-            )
-            .await;
-            return;
-        }
-    };
-
     let server_name = request.server_name;
     let request_id = request.id;
-    let on_response = outgoing
-        .send_request("elicitation/create", Some(params_json))
-        .await;
+    let on_response = match params {
+        ForwardedElicitationRequestParams::Form {
+            meta,
+            message,
+            requested_schema,
+        } => match decode_meta(meta) {
+            Ok(meta) => outgoing.request_form(message, requested_schema, meta),
+            Err(error) => {
+                error!(%error, "invalid forwarded elicitation metadata");
+                submit_resolve_elicitation(
+                    server_name,
+                    request_id,
+                    ApprovalElicitationResponse::cancel(),
+                    process,
+                )
+                .await;
+                return;
+            }
+        },
+        ForwardedElicitationRequestParams::Url {
+            meta,
+            message,
+            url,
+            elicitation_id,
+        } => match decode_meta(meta) {
+            Ok(meta) => outgoing.request_url(
+                process_id,
+                server_name.clone(),
+                elicitation_id,
+                message,
+                url,
+                meta,
+            ),
+            Err(error) => {
+                error!(%error, "invalid forwarded elicitation metadata");
+                submit_resolve_elicitation(
+                    server_name,
+                    request_id,
+                    ApprovalElicitationResponse::cancel(),
+                    process,
+                )
+                .await;
+                return;
+            }
+        },
+    };
 
     tokio::spawn(async move {
         on_mcp_server_elicitation_response(server_name, request_id, on_response, process).await;
@@ -271,17 +300,22 @@ pub(crate) async fn handle_mcp_server_elicitation_request(
 }
 
 pub(crate) async fn handle_mcp_server_elicitation_complete(
+    process_id: ProcessId,
+    server_name: String,
     elicitation_id: String,
     outgoing: Arc<OutgoingMessageSender>,
 ) {
-    outgoing
-        .send_notification(OutgoingNotification {
-            method: "notifications/elicitation/complete".to_string(),
-            params: Some(serde_json::json!({
-                "elicitationId": elicitation_id,
-            })),
-        })
-        .await;
+    outgoing.complete_url(process_id, server_name, elicitation_id);
+}
+
+fn decode_meta(
+    meta: Option<Value>,
+) -> Result<Option<serde_json::Map<String, Value>>, &'static str> {
+    match meta {
+        None => Ok(None),
+        Some(Value::Object(meta)) => Ok(Some(meta)),
+        Some(_) => Err("_meta must be an object"),
+    }
 }
 
 async fn on_mcp_server_elicitation_response(

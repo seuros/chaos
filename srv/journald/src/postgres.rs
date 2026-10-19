@@ -697,10 +697,12 @@ fn parse_process_id(value: String) -> Result<ProcessId, JournalError> {
 }
 
 fn serialize_source(source: &SessionSource) -> Result<Value, JournalError> {
-    serde_json::to_value(source).map_err(|source| JournalError::Serialize {
-        field: "source_json",
-        source,
-    })
+    serde_json::to_value(source)
+        .map(jsonb_safe)
+        .map_err(|source| JournalError::Serialize {
+            field: "source_json",
+            source,
+        })
 }
 
 fn deserialize_source(value: Value) -> Result<SessionSource, JournalError> {
@@ -719,10 +721,44 @@ fn source_label(source: &SessionSource) -> String {
 }
 
 fn serialize_item(item: &RolloutItem) -> Result<Value, JournalError> {
-    serde_json::to_value(item).map_err(|source| JournalError::Serialize {
-        field: "payload_json",
-        source,
-    })
+    serde_json::to_value(item)
+        .map(jsonb_safe)
+        .map_err(|source| JournalError::Serialize {
+            field: "payload_json",
+            source,
+        })
+}
+
+/// PostgreSQL `jsonb` cannot store U+0000; it is stored as U+FFFD instead.
+fn jsonb_safe(mut value: Value) -> Value {
+    replace_nul(&mut value);
+    value
+}
+
+fn replace_nul(value: &mut Value) {
+    match value {
+        Value::String(text) => replace_nul_in(text),
+        Value::Array(items) => items.iter_mut().for_each(replace_nul),
+        Value::Object(map) => {
+            if map.keys().any(|key| key.contains('\0')) {
+                *map = std::mem::take(map)
+                    .into_iter()
+                    .map(|(mut key, value)| {
+                        replace_nul_in(&mut key);
+                        (key, value)
+                    })
+                    .collect();
+            }
+            map.values_mut().for_each(replace_nul);
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
+}
+
+fn replace_nul_in(text: &mut String) {
+    if text.contains('\0') {
+        *text = text.replace('\0', "\u{FFFD}");
+    }
 }
 
 fn deserialize_item(value: Value) -> Result<RolloutItem, JournalError> {

@@ -251,7 +251,9 @@ pub(crate) struct AsyncSocket {
 impl AsyncSocket {
     fn new(socket: Socket) -> std::io::Result<AsyncSocket> {
         socket.set_nonblocking(true)?;
-        let async_socket = AsyncFd::new(socket)?;
+        // SAFETY: Socket owns a valid, stable fd and is moved into AsyncFd.
+        // We never close or replace the fd while it is registered.
+        let async_socket = unsafe { AsyncFd::register(socket)? };
         Ok(AsyncSocket {
             inner: async_socket,
         })
@@ -367,7 +369,9 @@ impl AsyncDatagramSocket {
     fn new(socket: Socket) -> std::io::Result<Self> {
         socket.set_nonblocking(true)?;
         Ok(Self {
-            inner: AsyncFd::new(socket)?,
+            // SAFETY: Socket owns a valid, stable fd and is moved into AsyncFd.
+            // We never close or replace the fd while it is registered.
+            inner: unsafe { AsyncFd::register(socket)? },
         })
     }
 

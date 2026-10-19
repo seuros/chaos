@@ -9,7 +9,7 @@ pub(crate) fn owner_context_from_cron_ctx(ctx: CronCtx<'_>) -> create::OwnerCont
         project_path: ctx
             .environment
             .map(|environment| environment.cwd().to_string_lossy().to_string()),
-        session_id: Some(ctx.session.id.clone()),
+        session_id: Some(ctx.session.id().to_owned()),
         execution_policy: None,
     }
 }

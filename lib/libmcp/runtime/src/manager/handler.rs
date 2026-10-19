@@ -265,6 +265,7 @@ impl ClientHandler for ChaosClientHandler {
                 roots: vec![Root {
                     uri: root_uri_from_cwd(&cwd),
                     name: None,
+                    meta: None,
                 }],
             })
         })

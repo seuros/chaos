@@ -552,13 +552,12 @@ impl McpSession {
     }
 
     pub async fn set_logging_level(&self, level: impl Into<String>) -> Result<(), GuestError> {
+        let level = level
+            .into()
+            .parse::<crate::protocol::LogLevel>()
+            .map_err(GuestError::InvalidParams)?;
         let _: Value = self
-            .request(
-                "logging/setLevel",
-                &SetLevelRequest {
-                    level: level.into(),
-                },
-            )
+            .request("logging/setLevel", &SetLevelRequest { level })
             .await?;
         Ok(())
     }
@@ -714,3 +713,6 @@ mod tests;
 
 #[cfg(test)]
 mod apps_tests;
+
+#[cfg(test)]
+mod host_tests;

@@ -19,10 +19,10 @@ impl TestStdioServer {
             ToolError::Execution(format!("missing MCP_TEST_IMAGE_DATA_URL: {err}"))
         })?;
         let (mime_type, base64_data) = parse_data_url(&data_url).map_err(ToolError::Execution)?;
-        Ok(ToolOutput::content(vec![Box::new(ImageContent::new(
+        Ok(ToolOutput::content(vec![ImageContent::new(
             base64_data.to_owned(),
             mime_type.to_owned(),
-        ))]))
+        )]))
     }
 }
 

@@ -33,7 +33,8 @@ use serde_json::Value;
 pub(crate) fn turn_request_to_api_request(
     req: TurnRequest,
     representer: &dyn Representer,
-) -> ResponsesApiRequest {
+) -> Result<ResponsesApiRequest, AbiError> {
+    let max_output_tokens = crate::common::max_output_tokens(&req)?;
     let tools: Vec<Value> = req
         .extensions
         .get("openai_tools")
@@ -87,9 +88,10 @@ pub(crate) fn turn_request_to_api_request(
         service_tier,
         prompt_cache_key,
         text,
+        max_output_tokens,
     };
     representer.prepare_request(&mut request);
-    request
+    Ok(request)
 }
 
 // ---------------------------------------------------------------------------

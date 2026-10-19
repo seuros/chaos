@@ -242,6 +242,7 @@ fn request(model: &str) -> ResponsesApiRequest {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
     }
 }
 

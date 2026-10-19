@@ -164,6 +164,8 @@ struct ChatRequest {
     response_format: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream_options: Option<StreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -246,6 +248,9 @@ pub(crate) fn build_request_body(
         stream_options: stream.then_some(StreamOptions {
             include_usage: true,
         }),
+        // Use the modern output+reasoning budget field. An incompatible
+        // endpoint must reject this request; never retry without the cap.
+        max_completion_tokens: crate::common::max_output_tokens(request)?,
     })
     .map_err(|e| AbiError::InvalidRequest {
         message: e.to_string(),

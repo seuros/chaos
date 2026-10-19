@@ -28,6 +28,43 @@ fn test_request() -> TurnRequest {
     }
 }
 
+#[test]
+fn output_cap_overrides_legacy_limit_without_changing_ordinary_anthropic_payload() {
+    let mut request = test_request();
+    request
+        .extensions
+        .insert(CACHE_TTL_EXTENSION.into(), json!("off"));
+    let baseline = build_request_body(&request, "claude-test").unwrap();
+    assert_eq!(
+        baseline,
+        json!({
+            "model": "claude-test",
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "stream": true,
+            "system": "Be helpful.",
+            "messages": [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
+        })
+    );
+    request.extensions.insert("max_tokens".into(), json!(1234));
+    assert_eq!(
+        build_request_body(&request, "claude-test").unwrap()["max_tokens"],
+        1234
+    );
+    for cap in [1, 37, u32::MAX] {
+        request
+            .extensions
+            .insert("max_output_tokens".into(), json!(cap));
+        let mut body = build_request_body(&request, "claude-test").unwrap();
+        assert_eq!(body["max_tokens"], cap);
+        assert!(body.get("max_output_tokens").is_none());
+        body["max_tokens"] = json!(DEFAULT_MAX_TOKENS);
+        assert_eq!(
+            serde_json::to_vec(&body).unwrap(),
+            serde_json::to_vec(&baseline).unwrap()
+        );
+    }
+}
+
 fn test_provider() -> Provider {
     use crate::provider::RetryConfig;
 

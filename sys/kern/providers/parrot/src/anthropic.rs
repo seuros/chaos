@@ -208,10 +208,9 @@ struct AnthropicTool {
 }
 
 pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
-    let max_tokens = request
-        .extensions
-        .get("max_tokens")
-        .and_then(Value::as_u64)
+    let max_tokens = crate::common::max_output_tokens(request)?
+        .map(u64::from)
+        .or_else(|| request.extensions.get("max_tokens").and_then(Value::as_u64))
         .unwrap_or(DEFAULT_MAX_TOKENS);
     let cache_ttl = request
         .extensions

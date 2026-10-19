@@ -90,7 +90,8 @@ fn web_search_content_types_follow_endpoint_compatibility() {
             let wire = crate::adapter::turn_request_to_api_request(
                 request,
                 crate::representer::SessionRepresenter::openai().as_representer(),
-            );
+            )
+            .unwrap();
             let mut expected = tools;
             if text_only {
                 expected[0]

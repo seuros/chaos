@@ -97,8 +97,10 @@ impl<A: AuthProvider> ResponsesAdapter<A> {
         request: TurnRequest,
         options: ResponsesOptions,
     ) -> Result<TurnStream, AbiError> {
-        let api_request =
-            crate::adapter::turn_request_to_api_request(request, self.representer.as_representer());
+        let api_request = crate::adapter::turn_request_to_api_request(
+            request,
+            self.representer.as_representer(),
+        )?;
         let api_stream = self
             .client
             .stream_request(api_request, options)

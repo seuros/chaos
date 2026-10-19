@@ -1,5 +1,91 @@
 use super::*;
 
+fn token_limit_request() -> TurnRequest {
+    TurnRequest {
+        model: "coding_large".into(),
+        instructions: String::new(),
+        input: vec![],
+        tools: vec![],
+        parallel_tool_calls: false,
+        reasoning: None,
+        output_schema: None,
+        verbosity: None,
+        turn_state: None,
+        extensions: serde_json::Map::new(),
+    }
+}
+
+#[test]
+fn output_cap_is_opt_in_and_preserves_legacy_lsd_params() {
+    let mut request = token_limit_request();
+    let baseline = build_request_body(&request, "coding_large", Some("episode")).unwrap();
+    assert_eq!(
+        baseline,
+        serde_json::json!({
+            "function_name": "coding_large",
+            "input": {"messages": []},
+            "stream": true,
+            "episode_id": "episode"
+        })
+    );
+    for cap in [1, 37, u32::MAX] {
+        request
+            .extensions
+            .insert("max_output_tokens".into(), serde_json::json!(cap));
+        let mut body = build_request_body(&request, "coding_large", Some("episode")).unwrap();
+        assert_eq!(body["params"]["chat_completion"]["max_tokens"], cap);
+        assert!(body.get("max_output_tokens").is_none());
+        body.as_object_mut().unwrap().remove("params");
+        assert_eq!(
+            serde_json::to_vec(&body).unwrap(),
+            serde_json::to_vec(&baseline).unwrap()
+        );
+    }
+    request.extensions.remove("max_output_tokens");
+    request
+        .extensions
+        .insert("max_tokens".into(), serde_json::json!(1234));
+    request
+        .extensions
+        .insert("temperature".into(), serde_json::json!(0.25));
+    let legacy = build_request_body(&request, "coding_large", Some("episode")).unwrap();
+    assert_eq!(
+        legacy["params"],
+        serde_json::json!({"chat_completion": {"max_tokens": 1234, "temperature": 0.25}})
+    );
+    request
+        .extensions
+        .insert("max_output_tokens".into(), serde_json::json!(37));
+    let mut capped = build_request_body(&request, "coding_large", Some("episode")).unwrap();
+    assert_eq!(capped["params"]["chat_completion"]["max_tokens"], 37);
+    capped["params"]["chat_completion"]["max_tokens"] = serde_json::json!(1234);
+    assert_eq!(capped, legacy);
+}
+
+#[test]
+fn invalid_output_cap_cannot_fall_back_to_a_legacy_lsd_limit() {
+    let mut request = token_limit_request();
+    request
+        .extensions
+        .insert("max_tokens".into(), serde_json::json!(1234));
+    for invalid in [
+        serde_json::json!(0),
+        serde_json::json!(-1),
+        serde_json::json!(1.5),
+        serde_json::json!("37"),
+        serde_json::json!(null),
+        serde_json::json!(u64::from(u32::MAX) + 1),
+    ] {
+        request
+            .extensions
+            .insert("max_output_tokens".into(), invalid);
+        std::assert_matches!(
+            build_request_body(&request, "coding_large", None),
+            Err(AbiError::InvalidRequest { .. })
+        );
+    }
+}
+
 #[test]
 fn build_request_body_includes_system_prompt() {
     let request = TurnRequest {

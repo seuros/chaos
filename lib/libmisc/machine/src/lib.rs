@@ -46,7 +46,10 @@ pub use storage::{
     Filesystem, FilesystemBacking, FilesystemId, ResolvedStorageTarget, StorageFailure,
     StorageRole, StorageSnapshot, StorageTarget, inspect_storage,
 };
-pub use thermal::{CpuTemperature, TemperatureKind, TemperatureSource, ThermalInfo, ThermalState};
+pub use thermal::{
+    CpuTemperature, MacosThermalDiagnostics, TemperatureKind, TemperatureSource, ThermalInfo,
+    ThermalState,
+};
 
 use serde::Serialize;
 use std::time::SystemTime;

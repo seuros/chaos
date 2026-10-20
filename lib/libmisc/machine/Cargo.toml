@@ -18,4 +18,5 @@ serde = { workspace = true, features = ["derive"] }
 objc2-foundation = { workspace = true, features = ["std", "NSProcessInfo"] }
 
 [dev-dependencies]
+serde_json = { workspace = true }
 tempfile = { workspace = true }

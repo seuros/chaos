@@ -10,6 +10,10 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- Raw macOS IOPM return code/warning level and NSProcessInfo thermal state
+  in `chaos://machine` under `machine.thermal.macos`, so sessions reporting
+  different merged thermal states can identify the source without changing
+  warning or recovery policy.
 - ACP slash-command discovery and native dispatch for session controls,
   compaction, reviews, renaming and stored custom prompts. Custom prompt
   argument expansion is shared with the console; console-only UI actions

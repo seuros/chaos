@@ -22,6 +22,7 @@ fn snapshot(config: &MachineWarningsConfig, temperature: f64, available: u64) ->
                 celsius: Some(temperature),
                 critical_celsius: Some(90.0),
             }],
+            ..Default::default()
         },
     };
     let storage = StorageSnapshot {

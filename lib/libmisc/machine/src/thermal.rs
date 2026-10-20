@@ -53,6 +53,24 @@ pub struct ThermalInfo {
     /// Best-effort CPU channels only. Empty means none could be identified,
     /// not a cool CPU or a complete hardware inventory. Channels may overlap.
     pub cpu_temperatures: Vec<CpuTemperature>,
+    /// Raw macOS observations from this sample, not additional safety evidence.
+    /// Absent on other platforms and when host observations are suppressed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub macos: Option<MacosThermalDiagnostics>,
+}
+
+/// Preserve the two macOS sources separately so conflicting or process-local
+/// observations remain visible rather than only their merged severity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MacosThermalDiagnostics {
+    /// IOReturn from IOPMGetThermalWarningLevel; zero means the query succeeded.
+    pub iopm_return_code: i32,
+    /// Raw successful IOPM level: 0 normal, 100 danger, 10 crisis. Other values
+    /// are unrecognized. None means the query failed, not a normal reading.
+    pub iopm_warning_level: Option<u32>,
+    /// Raw NSProcessInfo value: 0 nominal (also returned when unsupported),
+    /// 1 fair, 2 serious, 3 critical. Unknown values are preserved verbatim.
+    pub ns_process_info_thermal_state: isize,
 }
 
 pub(crate) fn inspect(environment: ExecutionEnvironment) -> ThermalInfo {

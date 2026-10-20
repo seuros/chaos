@@ -5,6 +5,13 @@ fn unavailable_thermals_are_not_normal() {
     let thermal = ThermalInfo::default();
     assert_eq!(thermal.state, ThermalState::Unknown);
     assert!(thermal.cpu_temperatures.is_empty());
+    assert!(thermal.macos.is_none());
+    assert!(
+        serde_json::to_value(&thermal)
+            .unwrap()
+            .get("macos")
+            .is_none()
+    );
 }
 
 #[test]
@@ -12,6 +19,7 @@ fn containers_do_not_report_host_thermals() {
     let thermal = inspect(ExecutionEnvironment::Container);
     assert_eq!(thermal.state, ThermalState::Unknown);
     assert!(thermal.cpu_temperatures.is_empty());
+    assert!(thermal.macos.is_none());
 }
 
 #[test]
@@ -34,6 +42,7 @@ fn sanity_checks_preserve_zero_subzero_and_overheating() {
 fn native_machine_snapshot_includes_thermal_observations() {
     let thermal = crate::inspect_machine().thermal;
     eprintln!("native thermal observation: {thermal:?}");
+    assert_eq!(thermal.macos.is_some(), cfg!(target_os = "macos"));
     for sensor in thermal.cpu_temperatures {
         assert!(!sensor.id.is_empty());
         assert!(!sensor.label.is_empty());

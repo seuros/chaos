@@ -53,3 +53,58 @@ fn pressure_never_downgrades_a_known_warning() {
         ThermalState::Critical
     );
 }
+
+#[test]
+fn diagnostics_preserve_both_sources_when_they_disagree() {
+    for (level, pressure) in [(100, 0), (0, 2)] {
+        let thermal = from_raw(0, level, pressure);
+        assert_eq!(thermal.state, ThermalState::Warning);
+        assert_eq!(
+            serde_json::to_value(&thermal).unwrap(),
+            serde_json::json!({
+                "state":"warning", "cpu_temperatures":[],
+                "macos":{
+                    "iopm_return_code":0,
+                    "iopm_warning_level":level,
+                    "ns_process_info_thermal_state":pressure,
+                }
+            })
+        );
+    }
+}
+
+#[test]
+fn failed_iopm_query_does_not_publish_an_initialized_or_partial_level() {
+    for level in [0, 100, 255] {
+        let thermal = from_raw(-1, level, 0);
+        assert_eq!(thermal.state, ThermalState::Unknown);
+        let value = serde_json::to_value(&thermal).unwrap();
+        assert_eq!(value["macos"]["iopm_return_code"], -1);
+        assert_eq!(
+            value["macos"]["iopm_warning_level"],
+            serde_json::Value::Null
+        );
+        assert_eq!(value["macos"]["ns_process_info_thermal_state"], 0);
+    }
+    // A failed IOPM query must not discard a warning from the other source.
+    assert_eq!(from_raw(-1, 255, 2).state, ThermalState::Warning);
+}
+
+#[test]
+fn successful_unknown_values_are_preserved_without_inventing_a_state() {
+    let thermal = from_raw(0, 777, -2);
+    assert_eq!(thermal.state, ThermalState::Unknown);
+    let raw = thermal.macos.unwrap();
+    assert_eq!(raw.iopm_warning_level, Some(777));
+    assert_eq!(raw.ns_process_info_thermal_state, -2);
+}
+
+#[test]
+fn each_sample_reports_its_own_raw_values_without_latching_prior_warnings() {
+    let hot = from_raw(0, 100, 2);
+    let cool = from_raw(0, 0, 0);
+    assert_eq!(hot.state, ThermalState::Warning);
+    assert_eq!(cool.state, ThermalState::Normal);
+    assert_eq!(cool.macos.unwrap().iopm_warning_level, Some(0));
+    assert_eq!(hot.macos.unwrap().iopm_warning_level, Some(100));
+}

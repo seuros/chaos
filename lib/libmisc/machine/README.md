@@ -53,6 +53,31 @@ not configured warning thresholds.
   Its nominal value also covers unsupported hardware, so only a successful
   normal IOPM warning observation can establish `normal`.
 
+On macOS, `thermal.macos` exposes the raw sources from each sample, including
+through `chaos://machine`:
+
+```json
+{
+  "iopm_return_code": 0,
+  "iopm_warning_level": 100,
+  "ns_process_info_thermal_state": 0
+}
+```
+
+IOPM return code zero means success. Its levels are **not ordered numerically**:
+0 is normal, 100 danger, and 10 crisis. The level is `null` on query failure;
+unrecognized successful levels remain visible. NSProcessInfo reports 0 nominal
+(also when unsupported), 1 fair, 2 serious, or 3 critical. Other raw values are
+preserved. The example therefore explains a merged `warning` despite nominal
+NSProcessInfo pressure. These fields are omitted on other platforms and for
+containers, not filled with invented zeros.
+
+To compare sessions, use fresh `machine.observed_at` timestamps and the same
+host/build. Compare `machine.thermal` separately from session-local `recovery`:
+raw observations do not bypass the recovery stability window or establish that
+an OS API's own process-local view is fresh. No warning/recovery policy changes
+are implied by these diagnostic fields.
+
 Detection is best-effort, not proof that every CPU sensor was enumerated or that
 cooling is safe. No thermal state is inferred from Celsius or CPU utilization.
 Unpublished OS warnings and absent sensor drivers remain unknown. No private

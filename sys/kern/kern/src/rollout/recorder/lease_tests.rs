@@ -424,6 +424,7 @@ fn recorder(tx: UnboundedSender<RolloutCmd>) -> RolloutRecorder {
         tx,
         runtime_db: None,
         event_persistence_mode: EventPersistenceMode::Extended,
+        persist_acp_user_items: false,
         live_rollout_items: Arc::new(Mutex::new(Vec::new())),
         writer_status: watch::channel(JournalWriterStatus::Ready).1,
     }

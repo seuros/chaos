@@ -18,6 +18,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "acp-host"
+version = "0.1.0"
+dependencies = [
+ "acp-guest",
+ "agent-client-protocol",
+ "futures",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1124,6 +1138,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "chaos-acpd"
+version = "47.13.2"
+dependencies = [
+ "acp-guest",
+ "acp-host",
+ "chaos-argv",
+ "chaos-getopt",
+ "chaos-ipc",
+ "chaos-kern",
+ "chaos_journald",
+ "core_test_support",
+ "ctor",
+ "libc",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "chaos-age-verification"
 version = "47.13.2"
 
@@ -1243,6 +1281,7 @@ dependencies = [
  "alcatraz",
  "anyhow",
  "assert_cmd",
+ "chaos-acpd",
  "chaos-argv",
  "chaos-client",
  "chaos-console",

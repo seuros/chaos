@@ -164,20 +164,15 @@ impl TestChaosBuilder {
         resume_from: Option<ProcessId>,
     ) -> anyhow::Result<TestChaos> {
         let auth = self.auth.clone();
-        let process_table = if config.model_catalog.is_some() {
-            ProcessTable::new(
-                &config,
-                chaos_kern::test_support::auth_manager_from_auth(auth.clone()),
-                SessionSource::Exec,
-                CollaborationModesConfig::default(),
-            )
-        } else {
-            chaos_kern::test_support::process_table_with_models_provider_and_home(
-                auth.clone(),
-                config.model_provider.clone(),
-                config.chaos_home.clone(),
-            )
-        };
+        // Integration fixtures point at mock providers and must exercise real
+        // discovery/cache refresh. The unit-test constructor intentionally
+        // disables automatic refresh for dummy, non-networked control fixtures.
+        let process_table = ProcessTable::new(
+            &config,
+            chaos_kern::test_support::auth_manager_from_auth(auth.clone()),
+            SessionSource::Exec,
+            CollaborationModesConfig::default(),
+        );
         let process_table = Arc::new(process_table);
 
         let new_conversation = match resume_from {

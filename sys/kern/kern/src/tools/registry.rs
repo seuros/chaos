@@ -22,6 +22,8 @@ use chaos_ipc::models::ResponseInputItem;
 use std::future::Future;
 use tracing::warn;
 
+mod api_events;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ToolKind {
     Function,
@@ -317,6 +319,7 @@ impl ToolRegistry {
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 
+        let api_events = api_events::ToolEvents::start(&invocation, log_payload.as_ref()).await;
         let started = Instant::now();
         let result = otel
             .log_tool_result_with_tags(
@@ -352,7 +355,7 @@ impl ToolRegistry {
         // Memory subsystem evicted — tool-read metric removed.
         let hook_abort_error = dispatch_after_tool_use_hook(AfterToolUseHookDispatch {
             invocation: &invocation,
-            output_preview,
+            output_preview: output_preview.clone(),
             success,
             executed: true,
             duration,
@@ -360,6 +363,16 @@ impl ToolRegistry {
         })
         .await;
 
+        if let Some(events) = api_events {
+            events
+                .finish(
+                    &invocation,
+                    duration,
+                    success && hook_abort_error.is_none(),
+                    output_preview,
+                )
+                .await;
+        }
         if let Some(err) = hook_abort_error {
             return Err(err);
         }

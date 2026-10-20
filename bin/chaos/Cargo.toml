@@ -39,6 +39,7 @@ chaos-fork = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-mcpd = { workspace = true }
+chaos-acpd = { workspace = true }
 chaos-httpd = { workspace = true }
 chaos-taskd = { workspace = true }
 chaos-pwd = { workspace = true }

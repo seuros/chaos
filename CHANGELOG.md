@@ -9,6 +9,8 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.0] - 2026-10-20
+
 ### Removed (MAJOR: read before upgrading)
 - TOML is no longer a configuration source. `/etc/chaos/config.toml` and
   project `.chaos/config.toml` files are not read. `$CHAOS_HOME/config.toml`
@@ -38,6 +40,16 @@ should. There is no patch level; the build timestamp is the patch.
   `$CHAOS_HOME/agents` are not read.
 
 ### Added
+- `chaos acp` exposes native Chaos sessions to ACP editors over stdio,
+  including continued conversations, streamed text/tool activity, once-only
+  approvals and cancellation. Existing provider accounts, project trust,
+  instructions and sandbox policy remain kernel-owned.
+- Independently publishable `acp-host` 0.1.0: bounded stable ACP v1 hosting
+  over caller-owned Tokio streams using the official SDK, with no Chaos
+  runtime dependencies.
+- Editor MCP declarations select matching enabled Chaos registrations;
+  unregistered commands or mismatching arguments/environment are rejected.
+  Disconnect and uncertain cancellation fail closed without replaying work.
 - `docs/getting-started.md`: database provisioning (PostgreSQL recommended),
   first run, headless bootstrap, first provider.
 - `chaos agents list|show|import|export|remove|enable|disable`: agent role
@@ -78,9 +90,8 @@ should. There is no patch level; the build timestamp is the patch.
   47.13.2 relabeled instructions that arrived after the first user turn as
   `user` messages, so permission and mode changes reached the model as if
   the human had typed them.
-- The workspace `rust-version` is 1.98 so FreeBSD's ports Rust (1.98.1)
-  builds it; development still pins 1.99 through `mise` and
-  `rust-toolchain.toml`.
+- The workspace minimum Rust version remains 1.99, matching the toolchain
+  pinned through `mise` and `rust-toolchain.toml`.
 - PostgreSQL mounts now enforce the same per-partition log retention as
   SQLite; previously only time-based cleanup ran.
 - The message-history log id on PostgreSQL changes when the table is
@@ -414,7 +425,11 @@ See the Drivers section of `man/chaos-install.7.md`.
   access for the model now comes from skipper.
 - `git://branches` resource template.
 
-[Unreleased]: https://github.com/seuros/chaos/compare/v47.12.0...HEAD
+[Unreleased]: https://github.com/seuros/chaos/compare/v47.14.0...HEAD
+[47.14.0]: https://github.com/seuros/chaos/compare/v47.13.2...v47.14.0
+[47.13.2]: https://github.com/seuros/chaos/compare/v47.13.1...v47.13.2
+[47.13.1]: https://github.com/seuros/chaos/compare/v47.13.0...v47.13.1
+[47.13.0]: https://github.com/seuros/chaos/compare/v47.12.0...v47.13.0
 [47.12.0]: https://github.com/seuros/chaos/compare/v47.11.0...v47.12.0
 [47.10.0]: https://github.com/seuros/chaos/compare/v47.9.0...v47.10.0
 [47.9.0]: https://github.com/seuros/chaos/compare/v47.8.0...v47.9.0

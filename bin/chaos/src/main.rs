@@ -172,6 +172,9 @@ enum Subcommand {
     /// Manage external MCP servers for Chaos.
     Mcp(McpCli),
 
+    /// Expose Chaos as an ACP agent over stdio.
+    Acp,
+
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
@@ -507,6 +510,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
+        Some(Subcommand::Acp) => {
+            chaos_acpd::run_main(arg0_paths.clone(), root_config_overrides, models_profile).await?;
+        }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
                 chaos_mcpd::run_main(arg0_paths.clone(), root_config_overrides).await?;
@@ -601,16 +607,20 @@ async fn run_interactive_tui(
     if terminal_info.name == TerminalName::Dumb {
         if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
             return Ok(AppExitInfo::fatal(
-                "TERM is set to \"dumb\". Refusing to start the interactive TUI because no terminal is available for a confirmation prompt (stdin/stderr is not a TTY). Run in a supported terminal or unset TERM.",
+                "TERM is set to \"dumb\". Refusing to start the interactive TUI because \
+                 no terminal is available for a confirmation prompt (stdin/stderr is not a TTY). \
+                 Run in a supported terminal or unset TERM.",
             ));
         }
 
         eprintln!(
-            "WARNING: TERM is set to \"dumb\". {OS_NAME}'s interactive TUI may not work in this terminal."
+            "WARNING: TERM is set to \"dumb\". \
+             {OS_NAME}'s interactive TUI may not work in this terminal."
         );
         if !confirm("Continue anyway? [y/N]: ")? {
             return Ok(AppExitInfo::fatal(
-                "Refusing to start the interactive TUI because TERM is set to \"dumb\". Run in a supported terminal or unset TERM.",
+                "Refusing to start the interactive TUI because TERM is set to \"dumb\". \
+                 Run in a supported terminal or unset TERM.",
             ));
         }
     }

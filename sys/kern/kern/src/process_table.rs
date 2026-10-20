@@ -246,11 +246,17 @@ impl ProcessTable {
     ) -> Self {
         set_process_table_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
-        let models_manager = Arc::new(ModelsManager::with_provider_for_tests(
-            chaos_home.clone(),
-            auth_manager.clone(),
-            provider,
-        ));
+        let models_manager = Arc::new(
+            ModelsManager::with_provider_for_tests(
+                chaos_home.clone(),
+                auth_manager.clone(),
+                provider,
+            )
+            // Dummy test credentials must not trigger live catalog HTTP calls
+            // during ordinary startup. Discovery tests can still request Online
+            // explicitly against their own mock provider.
+            .with_automatic_catalog_refresh(false),
+        );
         Self::assemble(
             models_manager,
             auth_manager,
@@ -660,7 +666,8 @@ impl ProcessTableState {
                         tracing::warn!(
                             process_id = %process_id,
                             error = %err,
-                            "journal returned empty/unusable history; falling back to in-memory stash"
+                            "journal returned empty/unusable history; \
+                             falling back to in-memory stash"
                         );
                         resumed(history)
                     }

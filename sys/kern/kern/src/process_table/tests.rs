@@ -1,21 +1,17 @@
 use super::*;
 use crate::chaos::make_session_and_context;
-use crate::collaboration_modes::CollaborationModesConfig;
 use crate::config::test_config;
-use crate::models_manager::manager::RefreshStrategy;
 use crate::test_support::{assistant_msg, user_msg};
 use chaos_ipc::models::ReasoningItemReasoningSummary;
 use chaos_ipc::models::ResponseItem;
-use chaos_ipc::openai_models::ModelsResponse;
-use core_test_support::responses::mount_models_once;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use std::assert_matches;
 use std::task::Poll;
 use std::time::Duration;
 use tempfile::tempdir;
-use wiremock::MockServer;
 
+mod discovery;
 mod registration;
 
 #[test]
@@ -430,37 +426,4 @@ async fn quiescence_snapshot_cannot_miss_a_child_inserted_before_its_pending_ent
     release.notify_one();
     table.shutdown_descendants_and_wait(root).await.unwrap();
     assert!(table.process_tree_is_quiescent(root).await.unwrap());
-}
-
-#[tokio::test]
-async fn new_uses_configured_openai_provider_for_model_refresh() {
-    let server = MockServer::start().await;
-    let models_mock = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
-
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.chaos_home = temp_dir.path().join("chaos-home");
-    config.cwd = config.chaos_home.clone();
-    std::fs::create_dir_all(&config.chaos_home).expect("create chaos home");
-    config.model_catalog = None;
-    config
-        .model_providers
-        .get_mut("openai")
-        .expect("openai provider should exist")
-        .base_url = Some(server.uri());
-    // ProcessTable now uses model_provider (the active provider) for
-    // model discovery, not the hardcoded "openai" entry.
-    config.model_provider.base_url = Some(server.uri());
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(ChaosAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ProcessTable::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-    );
-
-    let _ = manager.list_models(RefreshStrategy::Online).await;
-    assert_eq!(models_mock.requests().len(), 1);
 }

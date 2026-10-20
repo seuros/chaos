@@ -26,10 +26,13 @@ impl EditorFileAccess for Editor {
 
     fn read<'a>(&'a self, path: &'a Path) -> EditorFileFuture<'a, String> {
         Box::pin(async move {
-            self.client
-                .read_text_file(path)
-                .await
-                .map_err(io::Error::other)
+            self.client.read_text_file(path).await.map_err(|error| {
+                if error.code == acp_host::protocol::Error::resource_not_found(None).code {
+                    io::Error::new(io::ErrorKind::NotFound, error)
+                } else {
+                    io::Error::other(error)
+                }
+            })
         })
     }
 

@@ -2,6 +2,9 @@ use chaos_ipc::custom_prompts::CustomPrompt;
 use std::path::Path;
 use std::path::PathBuf;
 
+/// Shared prompt parsing/expansion for native frontends, without terminal UI.
+pub mod args;
+
 /// Enabled prompts stored for `chaos_home`, sorted by name. The `path` field is
 /// a `chaos://prompts/<name>` locator; prompts no longer live on disk.
 pub async fn discover_prompts(chaos_home: &Path) -> Vec<CustomPrompt> {

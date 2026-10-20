@@ -98,6 +98,7 @@ impl ClientHandle {
                 .prepare_request(request)
                 .on_receiving_result(async move |reply| {
                     received.acknowledge_inbound();
+                    // The caller may have cancelled; reply accounting still completes.
                     let _ = raw_tx.send(reply);
                     Ok(())
                 })?;
@@ -118,6 +119,7 @@ impl ClientHandle {
             .await
             {
                 Ok(reply) => {
+                    // A cancelled caller no longer needs the already-accounted reply.
                     let _ = tx.send(reply);
                 }
                 Err(_) => watching.fail("ACP editor response timed out"),
@@ -137,6 +139,11 @@ impl ClientHandle {
             Ok(Ok(Ok(reply))) if self.ready().is_ok() && !self.turn.cancel.is_cancelled() => {
                 unknown.0 = None;
                 Ok(reply)
+            }
+            Ok(Ok(Err(reply)))
+                if !write && self.ready().is_ok() && !self.turn.cancel.is_cancelled() =>
+            {
+                Err(reply)
             }
             _ => Err(error(
                 "editor request failed; a sent write outcome is unknown",

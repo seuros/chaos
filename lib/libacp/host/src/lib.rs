@@ -4,9 +4,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use protocol::schema::v1::{
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, NewSessionRequest,
-    PromptCapabilities, PromptRequest, PromptResponse, ResumeSessionRequest, SessionCapabilities,
-    SessionConfigOption, SessionId, SessionModeState, SetSessionConfigOptionRequest,
+    AvailableCommand, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
+    NewSessionRequest, PromptCapabilities, PromptRequest, PromptResponse, ResumeSessionRequest,
+    SessionCapabilities, SessionConfigOption, SessionId, SessionModeState,
+    SetSessionConfigOptionRequest,
 };
 
 mod files;
@@ -34,6 +35,8 @@ pub struct SessionInfo {
     pub config_options: Option<Vec<SessionConfigOption>>,
     /// Legacy mode picker, when supported.
     pub modes: Option<SessionModeState>,
+    /// Commands that can be invoked through ordinary slash-prefixed prompts.
+    pub available_commands: Option<Vec<AvailableCommand>>,
 }
 
 fn unsupported() -> protocol::Error {

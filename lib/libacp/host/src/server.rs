@@ -198,15 +198,26 @@ impl AgentServer {
                     };
                     let backend = backend.clone();
                     let opening = opening.clone();
+                    let connection = cx.clone();
                     cx.spawn(async move {
                         let native = match backend.new_session(request).await {
                             Ok(native) => native,
                             Err(error) => return responder.respond_with_error(error),
                         };
-                        let (id, _guard, info) = match opening.open(native, permit, None).await {
+                        let (id, guard, info) = match opening.open(native, permit, None).await {
                             Ok(opened) => opened,
                             Err(error) => return responder.respond_with_error(error),
                         };
+                        if let Err(error) = operations::publish_commands(
+                            &info,
+                            &guard.context(&opening, &id, connection),
+                        )
+                        .await
+                        {
+                            guard.slot.invalidate();
+                            opening.shutdown_slot(&guard.slot).await?;
+                            return responder.respond_with_error(error);
+                        }
                         responder.respond(
                             NewSessionResponse::new(id)
                                 .config_options(info.config_options)

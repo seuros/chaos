@@ -18,6 +18,7 @@ struct FileStamp {
     requested: PathBuf,
     canonical: PathBuf,
     metadata: std::fs::Metadata,
+    created: bool,
 }
 
 async fn checked_path(
@@ -25,13 +26,27 @@ async fn checked_path(
     path: &Path,
     cwd: &Path,
     write: bool,
+    create: bool,
 ) -> io::Result<FileStamp> {
     let denied =
         || io::Error::other("editor path is unavailable under the native filesystem policy");
     if !path.is_absolute() || !chaos_parole::sandbox::can_read_path(policy, path, cwd) {
         return Err(denied());
     }
-    let canonical = tokio::fs::canonicalize(path).await?;
+    let canonical = if create {
+        match tokio::fs::symlink_metadata(path).await {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            _ => {
+                return Err(io::Error::other(
+                    "creation target already exists or is unavailable",
+                ));
+            }
+        }
+        let parent = tokio::fs::canonicalize(path.parent().ok_or_else(denied)?).await?;
+        parent.join(path.file_name().ok_or_else(denied)?)
+    } else {
+        tokio::fs::canonicalize(path).await?
+    };
     let parent = canonical.parent().ok_or_else(denied)?;
     if !chaos_parole::sandbox::can_read_path(policy, &canonical, cwd)
         || !chaos_parole::sandbox::can_read_path(policy, parent, cwd)
@@ -41,8 +56,8 @@ async fn checked_path(
     {
         return Err(denied());
     }
-    let metadata = tokio::fs::metadata(&canonical).await?;
-    if !metadata.is_file() {
+    let metadata = tokio::fs::metadata(if create { parent } else { &canonical }).await?;
+    if (create && !metadata.is_dir()) || (!create && !metadata.is_file()) {
         return Err(io::Error::other(
             "editor access requires an existing regular file",
         ));
@@ -51,12 +66,13 @@ async fn checked_path(
         requested: path.to_path_buf(),
         canonical,
         metadata,
+        created: create,
     })
 }
 
 impl FileStamp {
     async fn recheck(&self, policy: &VfsPolicy, cwd: &Path, write: bool) -> io::Result<()> {
-        let fresh = checked_path(policy, &self.requested, cwd, write).await?;
+        let fresh = checked_path(policy, &self.requested, cwd, write, self.created).await?;
         #[cfg(unix)]
         let same = {
             use std::os::unix::fs::MetadataExt;
@@ -93,7 +109,7 @@ pub(crate) async fn read(
     let path = chaos_arsenal::tools::read_file::requested_path(arguments)?;
     let snapshot = session.permission_snapshot(turn).await;
     let policy = effective_vfs_policy(&snapshot.vfs_policy, snapshot.granted_permissions.as_ref());
-    let stamp = checked_path(&policy, &path, &turn.cwd, false)
+    let stamp = checked_path(&policy, &path, &turn.cwd, false, false)
         .await
         .map_err(|error| error.to_string())?;
     let text = bounded_read(access, &stamp.canonical)
@@ -115,7 +131,7 @@ pub(crate) async fn read(
 pub(crate) struct PreparedPatch {
     access: Arc<dyn EditorFileAccess>,
     stamp: FileStamp,
-    original: String,
+    original: Option<String>,
 }
 
 impl std::fmt::Debug for PreparedPatch {
@@ -134,23 +150,25 @@ pub(crate) async fn prepare_patch(
     if !access.can_write() {
         return Err("the editor negotiated read-only text access".into());
     }
-    let path = chaos_diff::text_update_path(patch, &turn.cwd).map_err(|error| error.to_string())?;
+    let (path, create) =
+        chaos_diff::text_patch_path(patch, &turn.cwd).map_err(|error| error.to_string())?;
     let snapshot = session.permission_snapshot(turn).await;
     let policy = effective_vfs_policy(&snapshot.vfs_policy, snapshot.granted_permissions.as_ref());
-    let stamp = checked_path(&policy, &path, &turn.cwd, false)
+    let stamp = checked_path(&policy, &path, &turn.cwd, false, create)
         .await
         .map_err(|e| e.to_string())?;
-    let original = bounded_read(access.as_ref(), &stamp.canonical)
+    let original = patch_original(access.as_ref(), &stamp.canonical, create)
         .await
         .map_err(|e| e.to_string())?;
     stamp
         .recheck(&policy, &turn.cwd, false)
         .await
         .map_err(|e| e.to_string())?;
-    let action = chaos_diff::prepare_text_update(patch, &turn.cwd, original.clone())
+    let action = chaos_diff::prepare_text_patch(patch, &turn.cwd, original.clone())
         .map_err(|error| error.to_string())?;
     let size = action.changes().values().find_map(|change| match change {
         chaos_diff::ApplyPatchFileChange::Update { new_content, .. } => Some(new_content.len()),
+        chaos_diff::ApplyPatchFileChange::Add { content } => Some(content.len()),
         _ => None,
     });
     if size.is_none_or(|size| size > TEXT_BYTES) {
@@ -164,6 +182,21 @@ pub(crate) async fn prepare_patch(
             original,
         },
     ))
+}
+
+async fn patch_original(
+    access: &dyn EditorFileAccess,
+    path: &Path,
+    create: bool,
+) -> io::Result<Option<String>> {
+    match bounded_read(access, path).await {
+        Ok(_) if create => Err(io::Error::other(
+            "creation target already exists in the editor",
+        )),
+        Ok(text) => Ok(Some(text)),
+        Err(error) if create && error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 impl PreparedPatch {
@@ -181,9 +214,13 @@ impl PreparedPatch {
             .recheck(&policy, attempt.sandbox_cwd, true)
             .await
             .map_err(rejected)?;
-        let current = bounded_read(self.access.as_ref(), &self.stamp.canonical)
-            .await
-            .map_err(rejected)?;
+        let current = patch_original(
+            self.access.as_ref(),
+            &self.stamp.canonical,
+            self.stamp.created,
+        )
+        .await
+        .map_err(rejected)?;
         if current != self.original {
             return Err(ToolError::Rejected(
                 "editor text changed after patch preparation; no write was sent".into(),
@@ -193,26 +230,39 @@ impl PreparedPatch {
             .recheck(&policy, attempt.sandbox_cwd, true)
             .await
             .map_err(rejected)?;
-        let Some(chaos_diff::ApplyPatchFileChange::Update {
-            new_content,
-            move_path: None,
-            ..
-        }) = req.action.changes().values().next()
-        else {
-            return Err(ToolError::Rejected(
-                "unsupported editor patch action".into(),
-            ));
+        let (content, created) = match req.action.changes().values().next() {
+            Some(chaos_diff::ApplyPatchFileChange::Update {
+                new_content,
+                move_path: None,
+                ..
+            }) if !self.stamp.created => (new_content, false),
+            Some(chaos_diff::ApplyPatchFileChange::Add { content }) if self.stamp.created => {
+                (content, true)
+            }
+            _ => {
+                return Err(ToolError::Rejected(
+                    "unsupported editor patch action".into(),
+                ));
+            }
         };
         let start = Instant::now();
         self.access
-            .write(&self.stamp.canonical, new_content.clone())
+            .write(&self.stamp.canonical, content.clone())
             .await
             .map_err(rejected)?;
         let mut summary = Vec::new();
         chaos_diff::print_summary(
             &chaos_diff::AffectedPaths {
-                added: vec![],
-                modified: vec![self.stamp.canonical.clone()],
+                added: if created {
+                    vec![self.stamp.canonical.clone()]
+                } else {
+                    vec![]
+                },
+                modified: if created {
+                    vec![]
+                } else {
+                    vec![self.stamp.canonical.clone()]
+                },
                 deleted: vec![],
             },
             &mut summary,

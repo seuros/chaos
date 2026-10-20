@@ -45,6 +45,17 @@ catalog; mode choices obey the current native policy. Controls are idle-only.
 Images/audio, interactive login, editor terminals and remote ACP transports
 are not advertised.
 
+Slash commands are advertised with `available_commands_update` on new/load/
+resume and refreshed with prompts. Send them as ordinary `session/prompt`
+text: `/help`, `/status`, `/model [id]`, `/mode [id]` (`/collab`),
+`/plan [task]`, `/compact`, `/review [instructions]`, `/rename <name>` and
+enabled `/prompts:<name>` documents. Model/mode changes obey the same native
+policy as ACP selectors. Custom prompt arguments use the console's named
+(`KEY="value"`) and positional quoting/expansion rules, without importing the
+terminal UI. Unknown/unsupported commands and argument errors return a local
+message, never an LLM interpretation. UI commands such as `/quit`, `/theme`,
+`/permissions` and account pickers are not proxied.
+
 ACP session IDs are native journal UUIDs. New-session success confirms native
 metadata and controls before returning the ID. Only typed ACP-owned sessions
 in the selected provider/runtime database are restorable; old generic API
@@ -59,8 +70,12 @@ When the editor negotiates text reads, foreground `read_file` reads unsaved
 editor text through the usual slice/indentation formatting. Files must already
 exist as regular files and pass native lexical/canonical path and VFS checks.
 With text writes negotiated, `apply_patch` supports one existing-file text
-update after native admission, mode checks and any required approval. Create,
-delete, rename, multi-file actions and shell-intercepted patches are rejected
+update or one file creation after native admission, mode checks and any
+required approval. Creation requires an existing parent directory, an absent
+native target (including no dangling symlink), and an explicit ACP
+resource-not-found response from the editor. A generic read error is not
+absence; even an empty unsaved buffer conflicts. Parent identity and absence
+are rechecked after approval. Delete, rename, multi-file actions and shell-intercepted patches are rejected
 in editor mode. Read-only clients receive no write requests. Other shell tools
 still have their ordinary native disk semantics; this is not a virtual filesystem.
 
@@ -72,8 +87,9 @@ client filesystem, so client-controlled persistence may save the file; a
 buffer-only/no-save guarantee is not part of the protocol.
 Before an approved write, file identity/policy and current editor text
 are rechecked; an observed conflict rejects the write. ACP provides no atomic
-revision/CAS operation, so typing or filesystem changes after that last check
-remain a race. An unacknowledged sent write invalidates the session with an
+revision/CAS or create-exclusive operation, so typing or filesystem changes
+after that last check remain a race, including a newly appeared file. An
+unacknowledged sent write invalidates the session with an
 unknown outcome and is never retried.
 
 Cancellation keeps the session busy until the native turn and its cancellation

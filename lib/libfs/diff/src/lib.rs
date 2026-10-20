@@ -21,7 +21,7 @@ use thiserror::Error;
 pub use invocation::maybe_parse_apply_patch_verified;
 pub use invocation::{MaybeApplyPatch, maybe_parse_apply_patch};
 pub use standalone_executable::main;
-pub use text::{prepare_text_update, text_update_path};
+pub use text::{prepare_text_patch, prepare_text_update, text_patch_path, text_update_path};
 
 use crate::invocation::ExtractHeredocError;
 
@@ -130,8 +130,6 @@ pub enum MaybeApplyPatchVerified {
 /// construction, all paths should be absolute paths.
 #[derive(Debug, PartialEq)]
 pub struct ApplyPatchAction {
-    changes: HashMap<PathBuf, ApplyPatchFileChange>,
-
     /// The raw patch argument that can be used with `apply_patch` as an exec
     /// call. i.e., if the original arg was parsed in "lenient" mode with a
     /// heredoc, this should be the value without the heredoc wrapper.
@@ -139,6 +137,7 @@ pub struct ApplyPatchAction {
 
     /// The working directory that was used to resolve relative paths in the patch.
     pub cwd: PathBuf,
+    changes: HashMap<PathBuf, ApplyPatchFileChange>,
 }
 
 impl ApplyPatchAction {

@@ -13,6 +13,7 @@ use chaos_kern::config::{Config, ConfigBuilder, ConfigOverrides};
 
 mod approvals;
 mod backend;
+mod commands;
 mod config;
 mod controls;
 mod files;

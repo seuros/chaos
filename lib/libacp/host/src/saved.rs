@@ -47,13 +47,16 @@ pub(crate) async fn open(
         SavedRequest::Resume(request) => backend.resume_session(request).await?,
     };
     let (_, guard, info) = state.open(native, permit, Some(&id)).await?;
-    if replay {
-        let context = guard.context(&state, &id, connection);
-        if let Err(error) = guard.slot.native.replay(context).await {
-            guard.slot.invalidate();
-            state.shutdown_slot(&guard.slot).await?;
-            return Err(error);
-        }
+    let context = guard.context(&state, &id, connection);
+    if let Err(error) = crate::operations::publish_commands(&info, &context).await {
+        guard.slot.invalidate();
+        state.shutdown_slot(&guard.slot).await?;
+        return Err(error);
+    }
+    if replay && let Err(error) = guard.slot.native.replay(context).await {
+        guard.slot.invalidate();
+        state.shutdown_slot(&guard.slot).await?;
+        return Err(error);
     }
     drop(guard);
     Ok(info)

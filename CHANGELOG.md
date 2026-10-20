@@ -9,6 +9,20 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- ACP slash-command discovery and native dispatch for session controls,
+  compaction, reviews, renaming and stored custom prompts. Custom prompt
+  argument expansion is shared with the console; console-only UI actions
+  are not advertised.
+- ACP editor-backed single-file creation, with existing-parent policy and
+  identity checks, confirmed absence on disk and in the editor, and native
+  approval. Creation never falls back to a disk write or retries an
+  unacknowledged client write.
+
+### Fixed
+- Native session renaming targets the session's mounted runtime store rather
+  than the first store mounted in the process.
+
 ## [47.14.1] - 2026-10-20
 
 ### Added

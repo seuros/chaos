@@ -17,7 +17,9 @@ use wiremock::MockServer;
 
 #[cfg(unix)]
 mod cancellation;
+mod commands;
 mod controls;
+mod creation;
 mod file_faults;
 mod files;
 mod history;
@@ -169,6 +171,13 @@ async fn sdk_continued_turns_and_two_native_sessions() {
         assert_eq!(result.stop_reason, StopReason::EndTurn);
         let mut text = String::new();
         while let Ok(update) = updates.try_recv() {
+            if matches!(
+                update.update,
+                acp_host::protocol::schema::v1::SessionUpdate::AvailableCommandsUpdate(_)
+            ) {
+                assert!(update.session_id == first || update.session_id == second);
+                continue;
+            }
             assert_eq!(update.session_id, *id);
             let value = serde_json::to_value(update).unwrap();
             if value["update"]["sessionUpdate"] == "agent_message_chunk" {

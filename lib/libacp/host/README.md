@@ -26,6 +26,9 @@ Optional backend hooks expose caller-filtered model/mode selectors and durable
 session IDs, list/load/resume. Defaults remain unsupported. Load replays public
 updates with `update_wait` backpressure, without running previous work. Control
 changes and replay share the prompt's exclusive session-operation boundary.
+Backend `SessionInfo::available_commands` publishes the ACP slash-command
+catalog on new/load/resume. Invocation remains a normal text prompt handled
+by the backend; the host never interprets commands itself.
 
 Connection, session and turn lifecycles use explicit `state-machines` transitions.
 Transitions run synchronously under short locks, with I/O outside those locks.
@@ -41,3 +44,7 @@ There is no retry, separate save request, revision token or atomic compare-and-s
 ACP delegates writes to the client's filesystem API; buffer-only/no-save
 behavior is not guaranteed and persistence remains client-controlled.
 Backends must still validate native paths, permissions and approval before use.
+Read errors retain their ACP error codes, so a backend can distinguish an
+explicit resource-not-found response from other failures when creating a
+file. Creation uses the same write request and uncertain-write containment;
+the protocol does not provide exclusive-create or compare-and-swap.

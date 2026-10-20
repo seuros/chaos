@@ -178,12 +178,11 @@ async fn native_editor_edits_preserve_approval_mode_read_only_and_conflict_ceili
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn unsupported_editor_patch_shapes_fail_before_editor_requests_or_disk_effects() {
-    for shape in ["create", "delete", "rename", "multiple"] {
+    for shape in ["delete", "rename", "multiple"] {
         let fixture = Fixture::new().await;
         let (file, _) = fixture.patch("buffer.txt", "ignored");
         let other = fixture.cwd.path().join("other.txt");
         let body = match shape {
-            "create" => format!("*** Add File: {}\n+forbidden", other.display()),
             "delete" => format!("*** Delete File: {}", file.display()),
             "rename" => format!(
                 "*** Update File: {}\n*** Move to: {}\n-before\n+after",

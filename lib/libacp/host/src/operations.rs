@@ -1,7 +1,8 @@
 use std::sync::{Arc, PoisonError};
 
 use protocol::schema::v1::{
-    ConfigOptionUpdate, CurrentModeUpdate, SessionId, SessionUpdate, SetSessionConfigOptionRequest,
+    AvailableCommandsUpdate, ConfigOptionUpdate, CurrentModeUpdate, SessionId, SessionUpdate,
+    SetSessionConfigOptionRequest,
 };
 use protocol::{Client, ConnectionTo};
 use tokio::sync::OwnedSemaphorePermit;
@@ -127,6 +128,7 @@ impl Drop for Opening {
             let state = self.state.clone();
             let slot = self.slot.clone();
             runtime.spawn(async move {
+                // shutdown_slot records unconfirmed cleanup in the connection state.
                 let _ = state.shutdown_slot(&slot).await;
             });
         }
@@ -168,6 +170,21 @@ pub(crate) fn publish_info(info: &SessionInfo, context: &SessionContext) -> prot
             .update(SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(
                 modes.current_mode_id.clone(),
             )))?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn publish_commands(
+    info: &SessionInfo,
+    context: &SessionContext,
+) -> protocol::Result<()> {
+    if let Some(commands) = &info.available_commands {
+        context
+            .client()
+            .update_wait(SessionUpdate::AvailableCommandsUpdate(
+                AvailableCommandsUpdate::new(commands.clone()),
+            ))
+            .await?;
     }
     Ok(())
 }

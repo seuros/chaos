@@ -30,6 +30,13 @@ pub enum ProcessControlError {
 }
 
 impl Process {
+    /// Enabled user prompts from this process's runtime database, never editor
+    /// supplied files or configuration.
+    pub async fn custom_prompts(&self) -> Vec<chaos_ipc::custom_prompts::CustomPrompt> {
+        let config = self.chaos.session.effective_config_for_spawn().await;
+        crate::custom_prompts::discover_prompts(&config.chaos_home).await
+    }
+
     /// Read the session's native mode policy and the selected provider's cached catalog.
     pub async fn session_controls(&self) -> ProcessSessionControls {
         self.chaos.session.session_controls().await

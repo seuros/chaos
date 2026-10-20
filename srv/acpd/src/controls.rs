@@ -62,6 +62,7 @@ pub(crate) async fn info(process: &Process) -> SessionInfo {
         id: None,
         config_options: Some(options),
         modes: Some(SessionModeState::new(native.current_mode, modes)),
+        available_commands: Some(crate::commands::available(process).await),
     }
 }
 

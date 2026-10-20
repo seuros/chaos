@@ -175,6 +175,10 @@ async fn kernel_origin_mode_changes_update_the_picker_and_survive_restart() {
         .await;
     assert!(resumed["error"].is_null(), "{resumed}");
     assert_eq!(resumed["result"]["modes"]["currentModeId"], "plan");
-    assert!(updates.is_empty());
+    assert!(
+        updates
+            .iter()
+            .all(|frame| frame["params"]["update"]["sessionUpdate"] == "available_commands_update")
+    );
     peer.close().await;
 }

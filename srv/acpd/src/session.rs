@@ -101,11 +101,17 @@ impl NativeSession {
         request: PromptRequest,
         context: SessionContext,
     ) -> protocol::Result<PromptResponse> {
-        let input = input(request.prompt)?;
         if context.is_cancelled() {
             return Ok(PromptResponse::new(StopReason::Cancelled));
         }
-        let op = self.process.user_turn(input, None).await;
+        let op = match crate::commands::dispatch(&self.process, request.prompt, &context).await? {
+            crate::commands::Dispatch::Done => return Ok(PromptResponse::new(StopReason::EndTurn)),
+            crate::commands::Dispatch::Prompt(content) => {
+                self.process.user_turn(input(content)?, None).await
+            }
+            crate::commands::Dispatch::Native(op) => *op,
+        };
+        let renaming = matches!(op, Op::SetProcessName { .. });
         let mut editor_scope = None;
         let submission = if let Some(editor) = crate::files::Editor::negotiated(&context)? {
             let id = format!("acp-{}", ProcessId::new());
@@ -160,6 +166,17 @@ impl NativeSession {
                 continue;
             }
             match &event.msg {
+                EventMsg::ProcessNameUpdated(event) if renaming => {
+                    crate::commands::message(
+                        &context,
+                        format!(
+                            "Session renamed: {}",
+                            event.process_name.as_deref().unwrap_or("")
+                        ),
+                    )
+                    .await?;
+                    return Ok(PromptResponse::new(StopReason::EndTurn));
+                }
                 EventMsg::ExecApprovalRequest(request) => {
                     approvals::exec(&self.process, &context, &mut projection, request).await?;
                 }
@@ -222,6 +239,7 @@ impl NativeSession {
                     .await?;
                 }
                 EventMsg::Error(error) => {
+                    tracing::error!(message = %error.message, "native ACP operation failed");
                     if matches!(
                         error.chaos_error_info,
                         Some(
@@ -294,8 +312,10 @@ impl AgentSession for NativeSession {
             *self.active.lock().unwrap_or_else(PoisonError::into_inner) = Some(finished.clone());
             let _guard = Completion(finished);
             let result = self.run(request, context).await;
-            if result.is_err() {
-                let _ = self.owner.shutdown().await;
+            if result.is_err()
+                && let Err(error) = self.owner.shutdown().await
+            {
+                tracing::error!(?error, "native ACP error cleanup remained unconfirmed");
             }
             result
         })

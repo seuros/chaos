@@ -12,9 +12,10 @@ pub type EditorFileFuture<'a, T> = Pin<Box<dyn Future<Output = io::Result<T>> + 
 
 /// Optional process-local editor text transport, not a policy authority.
 pub trait EditorFileAccess: Send + Sync {
-    /// Whether replacement of an existing text buffer was negotiated.
+    /// Whether text replacement or creation was negotiated.
     fn can_write(&self) -> bool;
-    /// Read current UTF-8 editor text, without saving it.
+    /// Read current UTF-8 editor text, without saving it. Only a confirmed
+    /// absent resource may return `io::ErrorKind::NotFound`.
     fn read<'a>(&'a self, path: &'a Path) -> EditorFileFuture<'a, String>;
     /// Replace editor text. Failure after dispatch means an unknown outcome.
     fn write<'a>(&'a self, path: &'a Path, content: String) -> EditorFileFuture<'a, ()>;

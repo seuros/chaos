@@ -134,7 +134,12 @@ async fn list_load_and_resume_keep_identity_controls_history_and_native_ownershi
         .request("session/resume", params(&session, fixture.cwd.path()))
         .await;
     assert!(resumed["error"].is_null(), "{resumed}");
-    assert!(updates.is_empty(), "resume must not replay the transcript");
+    assert!(
+        updates
+            .iter()
+            .all(|frame| frame["params"]["update"]["sessionUpdate"] == "available_commands_update"),
+        "resume must not replay the transcript"
+    );
     let turn = third.prompt(&session, "fresh input after restart").await;
     third.finish(&session, turn, "end_turn").await;
     let body = requests.requests()[2].body_json();
@@ -239,7 +244,7 @@ async fn durable_metadata_exists_before_first_prompt_and_paging_is_bounded() {
         .request("session/load", params(&first, fixture.cwd.path()))
         .await;
     assert!(restored["error"].is_null(), "{restored}");
-    assert!(updates.is_empty());
+    super::commands::assert_only_commands(&updates);
     peer.close().await;
 }
 
@@ -332,7 +337,7 @@ async fn restore_does_not_recover_previous_goal_or_background_continuations() {
         .request("session/load", params(&session, fixture.cwd.path()))
         .await;
     assert!(loaded["error"].is_null(), "{loaded}");
-    assert!(updates.is_empty());
+    super::commands::assert_only_commands(&updates);
     peer.close().await;
 }
 

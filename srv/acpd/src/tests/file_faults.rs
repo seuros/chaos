@@ -30,7 +30,7 @@ async fn mount_cancellable(
         .await;
 }
 
-async fn wait_method(peer: &mut Peer, session: &Value, method: &str) -> Value {
+pub(super) async fn wait_method(peer: &mut Peer, session: &Value, method: &str) -> Value {
     loop {
         let frame = peer.receive().await;
         assert_eq!(frame["params"]["sessionId"], *session, "{frame}");
@@ -114,9 +114,23 @@ async fn cancelled_editor_read_ignores_late_text_and_allows_a_fresh_turn() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelled_unacknowledged_editor_write_is_unknown_not_success_and_never_retried() {
+    unknown_write(false).await;
+    unknown_write(true).await;
+}
+
+async fn unknown_write(create: bool) {
     let mut fixture = Fixture::new().await;
     fixture.supervised();
-    let (file, patch) = fixture.patch("unknown-write.txt", "after");
+    let (file, patch) = if create {
+        let file = fixture.cwd.path().join("unknown-create.txt");
+        let patch = format!(
+            "*** Begin Patch\n*** Add File: {}\n+after\n*** End Patch",
+            file.display()
+        );
+        (file, patch)
+    } else {
+        fixture.patch("unknown-write.txt", "after")
+    };
     mount_cancellable(
         &fixture.server,
         tool_response(ev_apply_patch_custom_tool_call("unknown-edit", &patch)),
@@ -129,8 +143,12 @@ async fn cancelled_unacknowledged_editor_write_is_unknown_not_success_and_never_
         .await;
     for stage in 0..2 {
         let read = wait_method(&mut peer, &session, "fs/read_text_file").await;
-        peer.send(json!({"jsonrpc":"2.0","id":read["id"],"result":{"content":"before\n"}}))
-            .await;
+        let reply = if create {
+            json!({"jsonrpc":"2.0","id":read["id"],"error":{"code":-32002,"message":"absent"}})
+        } else {
+            json!({"jsonrpc":"2.0","id":read["id"],"result":{"content":"before\n"}})
+        };
+        peer.send(reply).await;
         if stage == 0 {
             let permission = wait_method(&mut peer, &session, "session/request_permission").await;
             peer.reply_permission(&permission, "allow").await;
@@ -159,7 +177,11 @@ async fn cancelled_unacknowledged_editor_write_is_unknown_not_success_and_never_
         .await;
     assert!(failed["error"].is_object(), "{failed}");
     assert!(updates.is_empty());
-    assert_eq!(std::fs::read_to_string(file).unwrap(), "before\n");
+    if create {
+        assert!(!file.exists());
+    } else {
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "before\n");
+    }
     peer.close().await;
 }
 

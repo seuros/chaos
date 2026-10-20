@@ -15,10 +15,16 @@ use protocol::schema::v1::{
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+#[path = "support/controls.rs"]
+mod controls;
 #[path = "support/faults.rs"]
 mod faults;
+#[path = "support/files.rs"]
+mod files;
 #[path = "support/permissions.rs"]
 mod permissions;
+#[path = "support/saved.rs"]
+mod saved;
 
 #[derive(Default)]
 struct Observations {
@@ -28,6 +34,8 @@ struct Observations {
     slow_cancel: AtomicBool,
     cancel_release: tokio::sync::Notify,
     fail_shutdown: AtomicBool,
+    wait_metadata: AtomicBool,
+    metadata_started: tokio::sync::Notify,
 }
 
 struct Backend(Arc<Observations>);
@@ -58,6 +66,16 @@ fn message(text: impl Into<String>) -> SessionUpdate {
 }
 
 impl AgentSession for NativeSession {
+    fn info(&self) -> protocol::BoxFuture<'_, protocol::Result<SessionInfo>> {
+        Box::pin(async move {
+            if self.observations.wait_metadata.load(Ordering::Acquire) {
+                self.observations.metadata_started.notify_one();
+                std::future::pending::<()>().await;
+            }
+            Ok(SessionInfo::default())
+        })
+    }
+
     fn prompt(
         &self,
         request: PromptRequest,
@@ -86,6 +104,25 @@ impl AgentSession for NativeSession {
             }
             if text == "oversized" {
                 context.client().update(message("x".repeat(4096)))?;
+            }
+            if text == "editor-read" {
+                let result = context
+                    .client()
+                    .read_text_file(std::path::Path::new("/workspace/buffer.rs"))
+                    .await;
+                if context.is_cancelled() {
+                    return Ok(PromptResponse::new(StopReason::Cancelled));
+                }
+                context.client().update(message(result?))?;
+            }
+            if text == "editor-write" {
+                context
+                    .client()
+                    .write_text_file(
+                        std::path::Path::new("/workspace/buffer.rs"),
+                        "replacement\n".into(),
+                    )
+                    .await?;
             }
             if text == "permission" {
                 let tool = serde_json::from_value(serde_json::json!({

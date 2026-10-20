@@ -68,6 +68,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::TurnAborted(_)
         | EventMsg::TurnStarted(_)
         | EventMsg::TurnComplete(_) => Some(EventPersistenceMode::Limited),
+        EventMsg::SessionModeChanged(_) => Some(EventPersistenceMode::Limited),
         EventMsg::ItemCompleted(event) => {
             if matches!(event.item, chaos_ipc::items::TurnItem::Plan(_)) {
                 Some(EventPersistenceMode::Limited)
@@ -93,7 +94,6 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::Warning(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::ParentEffortChanged(_)
-        | EventMsg::SessionModeChanged(_)
         | EventMsg::TurnProgress(_)
         | EventMsg::AgentReasoningSectionBreak(_)
         | EventMsg::RawResponseItem(_)

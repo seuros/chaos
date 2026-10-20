@@ -5,6 +5,7 @@ use chaos_ipc::protocol::SessionSource;
 pub const INTERACTIVE_SESSION_SOURCES: &[SessionSource] =
     &[SessionSource::Cli, SessionSource::VSCode];
 
+pub(crate) mod acp;
 pub(crate) mod error;
 pub mod health;
 pub mod list;

@@ -40,6 +40,18 @@ impl ToolHandler for CatalogModuleHandler {
 
         let arguments = extract_function_arguments(payload, &tool_name)?;
         let args_value = parse_json_arguments(&arguments)?;
+        if tool_name == "read_file"
+            && let Some(editor) = session
+                .services
+                .editor_files
+                .for_turn(&turn.sub_id)
+                .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?
+        {
+            let output = crate::tools::editor::read(&session, &turn, editor.as_ref(), &args_value)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+            return Ok(FunctionToolOutput::from_text(output, Some(true)));
+        }
 
         // Persistent shell execution needs trusted policy that the generic
         // catalog request (and model-supplied JSON) cannot provide.

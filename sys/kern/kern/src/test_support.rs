@@ -43,6 +43,20 @@ use crate::process_table;
 
 static ENABLE_ALL_TOOL_GROUPS_FOR_TESTS: AtomicBool = AtomicBool::new(false);
 
+/// Restrict an isolated integration fixture's mode policy before process startup.
+pub fn set_mode_policy_for_test(
+    config: &mut Config,
+    active: &str,
+    allowed: &[&str],
+    switching_allowed: bool,
+) {
+    config.mode_policy_override = Some(crate::modes::ModePolicy {
+        active_mode: active.to_string(),
+        allowed_modes: allowed.iter().map(|mode| (*mode).to_string()).collect(),
+        switching_allowed,
+    });
+}
+
 /// Build a provider-agnostic [`ModelInfo`] with sensible defaults for testing.
 pub fn test_model_info(slug: &str) -> ModelInfo {
     ModelInfo {

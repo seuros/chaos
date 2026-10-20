@@ -122,6 +122,22 @@ pub async fn execute_structured(
     execute_params_structured(params).await
 }
 
+/// Parse the same tool schema before an alternate, policy-checked text source.
+pub fn requested_path(arguments: &serde_json::Value) -> Result<PathBuf, String> {
+    let params: ReadFileParams = deserialize_tool_params(arguments)?;
+    validate(&params)?;
+    Ok(PathBuf::from(params.file_path))
+}
+
+/// Format editor text with precisely the native slice/indentation algorithms.
+pub async fn execute_editor_structured(
+    arguments: &serde_json::Value,
+    content: &str,
+) -> Result<serde_json::Value, String> {
+    let params: ReadFileParams = deserialize_tool_params(arguments)?;
+    execute_params_source(params, Some(content)).await
+}
+
 /// Shared logic for both MCP handler and JSON adapter paths.
 async fn execute_params(params: ReadFileParams) -> Result<String, String> {
     let structured = execute_params_structured(params).await?;
@@ -133,6 +149,27 @@ async fn execute_params(params: ReadFileParams) -> Result<String, String> {
 }
 
 async fn execute_params_structured(params: ReadFileParams) -> Result<serde_json::Value, String> {
+    execute_params_source(params, None).await
+}
+
+fn validate(params: &ReadFileParams) -> Result<(), String> {
+    if params.offset == 0 {
+        return Err("offset must be a 1-indexed line number".to_string());
+    }
+    if params.limit == 0 {
+        return Err("limit must be greater than zero".to_string());
+    }
+    if !PathBuf::from(&params.file_path).is_absolute() {
+        return Err("file_path must be an absolute path".to_string());
+    }
+    Ok(())
+}
+
+async fn execute_params_source(
+    params: ReadFileParams,
+    content: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    validate(&params)?;
     let ReadFileParams {
         file_path,
         offset,
@@ -141,27 +178,27 @@ async fn execute_params_structured(params: ReadFileParams) -> Result<serde_json:
         indentation,
     } = params;
 
-    if offset == 0 {
-        return Err("offset must be a 1-indexed line number".to_string());
-    }
-    if limit == 0 {
-        return Err("limit must be greater than zero".to_string());
-    }
-
     let path = PathBuf::from(&file_path);
-    if !path.is_absolute() {
-        return Err("file_path must be an absolute path".to_string());
-    }
 
     let mode_name = match mode {
         ReadMode::Slice => "slice",
         ReadMode::Indentation => "indentation",
     };
-    let collected = match mode {
-        ReadMode::Slice => slice::read(&path, offset, limit).await?,
-        ReadMode::Indentation => {
+    let collected = match (mode, content) {
+        (ReadMode::Slice, None) => slice::read(&path, offset, limit).await?,
+        (ReadMode::Slice, Some(text)) => slice::read_from(text.as_bytes(), offset, limit).await?,
+        (ReadMode::Indentation, None) => {
             let opts = indentation.unwrap_or_default();
             indentation_mode::read_block(&path, offset, limit, opts).await?
+        }
+        (ReadMode::Indentation, Some(text)) => {
+            indentation_mode::read_block_from(
+                text.as_bytes(),
+                offset,
+                limit,
+                indentation.unwrap_or_default(),
+            )
+            .await?
         }
     };
 
@@ -243,66 +280,8 @@ fn trim_empty_lines(out: &mut VecDeque<&LineRecord>) {
 // Slice mode
 // ---------------------------------------------------------------------------
 
-pub mod slice {
-    use super::format_line;
-    use std::path::Path;
-    use tokio::fs::File;
-    use tokio::io::AsyncBufReadExt;
-    use tokio::io::BufReader;
-
-    pub async fn read(path: &Path, offset: usize, limit: usize) -> Result<Vec<String>, String> {
-        let file = File::open(path)
-            .await
-            .map_err(|err| format!("failed to read file: {err}"))?;
-
-        let mut reader = BufReader::new(file);
-        let mut collected = Vec::new();
-        let mut seen = 0usize;
-        let mut buffer = Vec::new();
-
-        loop {
-            buffer.clear();
-            let bytes_read = reader
-                .read_until(b'\n', &mut buffer)
-                .await
-                .map_err(|err| format!("failed to read file: {err}"))?;
-
-            if bytes_read == 0 {
-                break;
-            }
-
-            if buffer.last() == Some(&b'\n') {
-                buffer.pop();
-                if buffer.last() == Some(&b'\r') {
-                    buffer.pop();
-                }
-            }
-
-            seen += 1;
-
-            if seen < offset {
-                continue;
-            }
-
-            if collected.len() == limit {
-                break;
-            }
-
-            let formatted = format_line(&buffer);
-            collected.push(format!("L{seen}: {formatted}"));
-
-            if collected.len() == limit {
-                break;
-            }
-        }
-
-        if seen < offset {
-            return Err("offset exceeds file length".to_string());
-        }
-
-        Ok(collected)
-    }
-}
+#[path = "read_file/slice.rs"]
+pub mod slice;
 
 // ---------------------------------------------------------------------------
 // Indentation mode
@@ -325,6 +304,18 @@ pub mod indentation_mode {
         limit: usize,
         options: IndentationParams,
     ) -> Result<Vec<String>, String> {
+        let file = File::open(path)
+            .await
+            .map_err(|err| format!("failed to read file: {err}"))?;
+        read_block_from(BufReader::new(file), offset, limit, options).await
+    }
+
+    pub(super) async fn read_block_from(
+        reader: impl tokio::io::AsyncBufRead + Unpin,
+        offset: usize,
+        limit: usize,
+        options: IndentationParams,
+    ) -> Result<Vec<String>, String> {
         let anchor_line = options.anchor_line.unwrap_or(offset);
         if anchor_line == 0 {
             return Err("anchor_line must be a 1-indexed line number".to_string());
@@ -335,7 +326,7 @@ pub mod indentation_mode {
             return Err("max_lines must be greater than zero".to_string());
         }
 
-        let collected = collect_file_lines(path).await?;
+        let collected = collect_file_lines(reader).await?;
         if collected.is_empty() || anchor_line > collected.len() {
             return Err("anchor_line exceeds file length".to_string());
         }
@@ -364,7 +355,7 @@ pub mod indentation_mode {
         let mut i_counter_min_indent = 0;
         let mut j_counter_min_indent = 0;
 
-        let mut out = VecDeque::with_capacity(limit);
+        let mut out = VecDeque::with_capacity(final_limit);
         out.push_back(&collected[anchor_index]);
 
         while out.len() < final_limit {
@@ -434,12 +425,9 @@ pub mod indentation_mode {
             .collect())
     }
 
-    async fn collect_file_lines(path: &Path) -> Result<Vec<LineRecord>, String> {
-        let file = File::open(path)
-            .await
-            .map_err(|err| format!("failed to read file: {err}"))?;
-
-        let mut reader = BufReader::new(file);
+    async fn collect_file_lines(
+        mut reader: impl tokio::io::AsyncBufRead + Unpin,
+    ) -> Result<Vec<LineRecord>, String> {
         let mut buffer = Vec::new();
         let mut lines = Vec::new();
         let mut number = 0usize;

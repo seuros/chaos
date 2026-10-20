@@ -26,9 +26,13 @@ use tokio::sync::watch;
 
 use crate::runtime_db::RuntimeDbHandle;
 
+pub(crate) mod editor;
 mod resources;
+mod settings;
 pub(crate) mod workflows;
 
+pub use editor::{EditorFileAccess, EditorFileFuture, EditorFileScope};
+pub use settings::{ProcessControlError, ProcessMode, ProcessSessionControls};
 pub use workflows::WorkflowOwner;
 pub use workflows::WorkflowScope;
 

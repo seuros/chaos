@@ -17,6 +17,10 @@ use wiremock::MockServer;
 
 #[cfg(unix)]
 mod cancellation;
+mod controls;
+mod file_faults;
+mod files;
+mod history;
 mod journal;
 mod permissions;
 mod validation;
@@ -195,6 +199,8 @@ async fn join_server(task: JoinHandle<Result<(), acp_host::HostError>>) {
 }
 
 struct Peer {
+    initial: Value,
+    initialized: Value,
     reader: tokio::io::Lines<BufReader<ReadHalf<DuplexStream>>>,
     writer: WriteHalf<DuplexStream>,
     task: JoinHandle<Result<(), acp_host::HostError>>,
@@ -204,25 +210,37 @@ struct Peer {
 impl Peer {
     async fn open(config: Config) -> (Self, Value) {
         let cwd = config.cwd.clone();
-        let (a, task) = serve(config).await;
-        let (reader, writer) = tokio::io::split(a);
-        let mut peer = Self {
-            reader: BufReader::new(reader).lines(),
-            writer,
-            task,
-            next: 3,
-        };
-        peer.send(json!({"jsonrpc":"2.0","id":1,"method":"initialize",
-            "params":{"protocolVersion":1}}))
+        let mut peer = Self::connect(config).await;
+        let (result, _) = peer
+            .request("session/new", json!({"cwd":cwd,"mcpServers":[]}))
             .await;
-        assert!(peer.receive().await.get("error").is_none());
-        peer.send(json!({"jsonrpc":"2.0","id":2,"method":"session/new",
-            "params":{"cwd":cwd,"mcpServers":[]}}))
-            .await;
-        let result = peer.receive().await;
+        peer.initial = result.clone();
         let id = result["result"]["sessionId"].clone();
         assert!(id.is_string(), "{result}");
         (peer, id)
+    }
+
+    async fn connect(config: Config) -> Self {
+        Self::connect_capabilities(config, json!({})).await
+    }
+
+    async fn connect_capabilities(config: Config, capabilities: Value) -> Self {
+        let (a, task) = serve(config).await;
+        let (reader, writer) = tokio::io::split(a);
+        let mut peer = Self {
+            initial: Value::Null,
+            initialized: Value::Null,
+            reader: BufReader::new(reader).lines(),
+            writer,
+            task,
+            next: 2,
+        };
+        peer.send(json!({"jsonrpc":"2.0","id":1,"method":"initialize",
+            "params":{"protocolVersion":1,"clientCapabilities":capabilities}}))
+            .await;
+        peer.initialized = peer.receive().await;
+        assert!(peer.initialized.get("error").is_none());
+        peer
     }
 
     async fn send(&mut self, value: Value) {
@@ -247,6 +265,22 @@ impl Peer {
             "params":{"sessionId":session,"prompt":[{"type":"text","text":text}]}}))
             .await;
         id
+    }
+
+    async fn request(&mut self, method: &str, params: Value) -> (Value, Vec<Value>) {
+        let id = self.next;
+        self.next += 1;
+        self.send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .await;
+        let mut updates = Vec::new();
+        loop {
+            let frame = self.receive().await;
+            if frame["id"] == id {
+                return (frame, updates);
+            }
+            assert_eq!(frame["method"], "session/update", "{frame}");
+            updates.push(frame);
+        }
     }
 
     async fn cancel(&mut self, session: &Value) {

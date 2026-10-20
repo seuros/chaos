@@ -3,9 +3,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::schema::v1::{NewSessionRequest, PromptCapabilities, PromptRequest, PromptResponse};
+use protocol::schema::v1::{
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, NewSessionRequest,
+    PromptCapabilities, PromptRequest, PromptResponse, ResumeSessionRequest, SessionCapabilities,
+    SessionConfigOption, SessionId, SessionModeState, SetSessionConfigOptionRequest,
+};
 
+mod files;
 mod framing;
+mod lifecycle;
+mod operations;
+mod saved;
 mod server;
 mod state;
 
@@ -14,8 +22,60 @@ pub use agent_client_protocol as protocol;
 pub use server::{AgentServer, AgentServerBuilder};
 pub use state::{ClientHandle, SessionContext};
 
+/// Maximum UTF-8 editor text admitted by the host, before JSON framing.
+pub const MAX_EDITOR_TEXT_BYTES: usize = 256 * 1024;
+
+/// Backend-owned identity and the current, caller-filtered session controls.
+#[derive(Clone, Default)]
+pub struct SessionInfo {
+    /// Stable native identity, or `None` to use a connection-local random ID.
+    pub id: Option<SessionId>,
+    /// Configuration selectors supported by this session.
+    pub config_options: Option<Vec<SessionConfigOption>>,
+    /// Legacy mode picker, when supported.
+    pub modes: Option<SessionModeState>,
+}
+
+fn unsupported() -> protocol::Error {
+    protocol::Error::invalid_params().data("ACP backend does not support this operation")
+}
+
 /// Backend-owned creation of isolated native sessions.
 pub trait AgentBackend: Send + Sync + 'static {
+    /// Optional lifecycle capabilities. Defaults advertise none.
+    fn session_capabilities(&self) -> SessionCapabilities {
+        SessionCapabilities::new()
+    }
+
+    /// Whether this backend can load and publicly replay saved conversations.
+    fn load_session_supported(&self) -> bool {
+        false
+    }
+
+    /// Open a saved session without executing its previous work.
+    fn load_session(
+        &self,
+        _request: LoadSessionRequest,
+    ) -> protocol::BoxFuture<'_, protocol::Result<Arc<dyn AgentSession>>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
+    /// Open a saved session without replaying its transcript to the client.
+    fn resume_session(
+        &self,
+        _request: ResumeSessionRequest,
+    ) -> protocol::BoxFuture<'_, protocol::Result<Arc<dyn AgentSession>>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
+    /// List only sessions this backend is authorized to expose.
+    fn list_sessions(
+        &self,
+        _request: ListSessionsRequest,
+    ) -> protocol::BoxFuture<'_, protocol::Result<ListSessionsResponse>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
     /// Additional prompt content supported by this backend.
     fn prompt_capabilities(&self) -> PromptCapabilities {
         PromptCapabilities::new()
@@ -34,6 +94,25 @@ pub trait AgentBackend: Send + Sync + 'static {
 
 /// One native conversation. The host serializes its prompts.
 pub trait AgentSession: Send + Sync + 'static {
+    /// Read current controls and optional durable identity without side effects.
+    fn info(&self) -> protocol::BoxFuture<'_, protocol::Result<SessionInfo>> {
+        Box::pin(async { Ok(SessionInfo::default()) })
+    }
+
+    /// Apply an idle-only change through native policy, then return confirmed state.
+    fn set_config_option(
+        &self,
+        _request: SetSessionConfigOptionRequest,
+        _context: SessionContext,
+    ) -> protocol::BoxFuture<'_, protocol::Result<SessionInfo>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
+    /// Replay only public history, without executing tools or provider calls.
+    fn replay(&self, _context: SessionContext) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
     /// Return only after native execution has reached the reported terminal state.
     fn prompt(
         &self,

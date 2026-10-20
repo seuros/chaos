@@ -1,6 +1,7 @@
 mod accessors;
 mod completions;
 mod context;
+mod controls;
 mod event;
 mod history;
 mod init;

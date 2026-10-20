@@ -2,6 +2,7 @@ mod invocation;
 mod parser;
 mod seek_sequence;
 mod standalone_executable;
+mod text;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -18,7 +19,9 @@ use similar::TextDiff;
 use thiserror::Error;
 
 pub use invocation::maybe_parse_apply_patch_verified;
+pub use invocation::{MaybeApplyPatch, maybe_parse_apply_patch};
 pub use standalone_executable::main;
+pub use text::{prepare_text_update, text_update_path};
 
 use crate::invocation::ExtractHeredocError;
 
@@ -45,7 +48,8 @@ pub enum ApplyPatchError {
     ComputeReplacements(String),
     /// A raw patch body was provided without an explicit `apply_patch` invocation.
     #[error(
-        "patch detected without explicit call to apply_patch. Rerun as [\"apply_patch\", \"<patch>\"]"
+        "patch detected without explicit call to apply_patch. \
+         Rerun as [\"apply_patch\", \"<patch>\"]"
     )]
     ImplicitInvocation,
 }
@@ -375,8 +379,15 @@ fn derive_new_contents_from_chunks(
         }
     };
 
-    let mut original_lines: Vec<String> = original_contents.split('\n').map(String::from).collect();
+    derive_new_contents_from_text(path, chunks, original_contents)
+}
 
+fn derive_new_contents_from_text(
+    path: &Path,
+    chunks: &[UpdateFileChunk],
+    original_contents: String,
+) -> std::result::Result<AppliedPatch, ApplyPatchError> {
+    let mut original_lines: Vec<String> = original_contents.split('\n').map(String::from).collect();
     // Drop the trailing empty element that results from the final newline so
     // that line counts match the behaviour of standard `diff`.
     if original_lines.last().is_some_and(String::is_empty) {

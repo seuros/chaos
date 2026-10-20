@@ -1,16 +1,23 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use protocol::schema::v1::{
-    PermissionOption, PermissionOptionKind, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SessionId, SessionNotification, SessionUpdate, ToolCallUpdate,
+    ClientCapabilities, PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SessionId, SessionNotification,
+    SessionUpdate, ToolCallUpdate,
 };
 use protocol::{Client, ConnectionTo};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use crate::{AgentSession, ConnectionLimits, HostError, protocol};
+use crate::lifecycle::{Connection, Session};
+use crate::{AgentSession, ConnectionLimits, protocol};
+
+mod connection;
+mod turn;
+
+pub(crate) use turn::{Turn, TurnGuard};
 
 pub(crate) fn error(message: &'static str) -> protocol::Error {
     protocol::Error::internal_error().data(message)
@@ -21,46 +28,30 @@ pub(crate) fn invalid(message: &'static str) -> protocol::Error {
 }
 
 pub(crate) struct State {
+    pub client_capabilities: OnceLock<ClientCapabilities>,
     pub limits: ConnectionLimits,
-    pub initialized: AtomicBool,
     pub stop: CancellationToken,
     pub sessions: Mutex<HashMap<SessionId, Arc<Slot>>>,
     pub session_permits: Arc<Semaphore>,
     pub requests: Arc<Semaphore>,
     pub inbound: AtomicUsize,
-    pub failure: Mutex<Option<&'static str>>,
-    cleanup_started: AtomicBool,
+    connection: Mutex<Connection>,
+    cleanup_done: CancellationToken,
 }
 
 impl State {
     pub fn new(limits: ConnectionLimits) -> Arc<Self> {
         Arc::new(Self {
+            client_capabilities: OnceLock::new(),
             session_permits: Arc::new(Semaphore::new(limits.max_sessions)),
             requests: Arc::new(Semaphore::new(limits.pending_requests)),
             limits,
-            initialized: AtomicBool::new(false),
             stop: CancellationToken::new(),
             sessions: Mutex::new(HashMap::new()),
             inbound: AtomicUsize::new(0),
-            failure: Mutex::new(None),
-            cleanup_started: AtomicBool::new(false),
+            connection: Mutex::new(Connection::default()),
+            cleanup_done: CancellationToken::new(),
         })
-    }
-
-    pub fn fail(&self, reason: &'static str) {
-        self.failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert(reason);
-        self.stop.cancel();
-    }
-
-    pub fn ready(&self) -> protocol::Result<()> {
-        if self.stop.is_cancelled() || !self.initialized.load(Ordering::Acquire) {
-            Err(invalid("ACP connection must be initialized and open"))
-        } else {
-            Ok(())
-        }
     }
 
     pub fn find(&self, id: &SessionId) -> protocol::Result<Arc<Slot>> {
@@ -80,57 +71,43 @@ impl State {
                 Some(n.saturating_sub(1))
             });
     }
-
-    pub async fn cleanup(&self) -> Result<(), HostError> {
-        if self.cleanup_started.swap(true, Ordering::AcqRel) {
-            return Ok(());
-        }
-        self.stop.cancel();
-        let sessions =
-            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(PoisonError::into_inner));
-        for slot in sessions.values() {
-            if let Some(turn) = slot.lock_turn().as_ref() {
-                turn.cancel.cancel();
-            }
-        }
-        let cleanup =
-            futures::future::join_all(sessions.values().map(|slot| slot.native.shutdown()));
-        match tokio::time::timeout(self.limits.shutdown_timeout, cleanup).await {
-            Ok(results) if results.iter().all(Result::is_ok) => Ok(()),
-            _ => Err(HostError::ShutdownUnconfirmed),
-        }
-    }
 }
 
 pub(crate) struct Slot {
     pub native: Arc<dyn AgentSession>,
-    pub turn: Mutex<Option<Arc<Turn>>>,
     pub queued: AtomicUsize,
-    pub invalid: AtomicBool,
+    pub queue_changed: tokio::sync::Notify,
     pub _permit: OwnedSemaphorePermit,
+    lifecycle: Mutex<Session>,
 }
 
 impl Slot {
-    pub fn lock_turn(&self) -> MutexGuard<'_, Option<Arc<Turn>>> {
-        self.turn.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-pub(crate) struct Turn {
-    pub cancel: CancellationToken,
-    pub live: AtomicBool,
-    pub cancel_started: AtomicBool,
-    pub cancel_done: CancellationToken,
-}
-
-impl Turn {
-    pub fn new() -> Arc<Self> {
+    pub fn opening(
+        native: Arc<dyn AgentSession>,
+        turn: Arc<Turn>,
+        permit: OwnedSemaphorePermit,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            cancel: CancellationToken::new(),
-            live: AtomicBool::new(true),
-            cancel_started: AtomicBool::new(false),
-            cancel_done: CancellationToken::new(),
+            native,
+            lifecycle: Mutex::new(Session::opening(turn)),
+            queued: AtomicUsize::new(0),
+            queue_changed: tokio::sync::Notify::new(),
+            _permit: permit,
         })
+    }
+
+    pub fn lock(&self) -> MutexGuard<'_, Session> {
+        self.lifecycle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn invalidate(&self) {
+        self.lock().invalidate();
+    }
+
+    pub fn is_invalid(&self) -> bool {
+        self.lock().is_invalid()
     }
 }
 
@@ -186,7 +163,37 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
-    fn ready(&self) -> protocol::Result<(Arc<State>, Arc<Slot>)> {
+    /// Capabilities negotiated on this connection, never inferred from a reply.
+    pub fn capabilities(&self) -> protocol::Result<ClientCapabilities> {
+        let (state, _) = self.ready()?;
+        Ok(state.client_capabilities.get().cloned().unwrap_or_default())
+    }
+
+    /// Replay an update with bounded backpressure instead of buffering a whole history.
+    pub async fn update_wait(&self, update: SessionUpdate) -> protocol::Result<()> {
+        let (state, slot) = self.ready()?;
+        loop {
+            let changed = slot.queue_changed.notified();
+            {
+                let active = slot.lock();
+                self.check_ready(&state, &active)?;
+                if slot.queued.load(Ordering::Acquire) < state.limits.update_capacity {
+                    slot.queued.fetch_add(1, Ordering::AcqRel);
+                    return self.connection.send_notification(SessionNotification::new(
+                        self.session_id.clone(),
+                        update,
+                    ));
+                }
+            }
+            tokio::select! {
+                _ = changed => {},
+                _ = state.stop.cancelled() => return Err(error("ACP connection closed")),
+                _ = self.turn.cancel.cancelled() => return Err(error("ACP operation cancelled")),
+            }
+        }
+    }
+
+    pub(crate) fn ready(&self) -> protocol::Result<(Arc<State>, Arc<Slot>)> {
         let state = self
             .state
             .upgrade()
@@ -195,18 +202,20 @@ impl ClientHandle {
             .slot
             .upgrade()
             .ok_or_else(|| error("ACP session closed"))?;
-        state.ready()?;
-        if !self.turn.live.load(Ordering::Acquire) || slot.invalid.load(Ordering::Acquire) {
-            return Err(error("ACP prompt is no longer active"));
-        }
+        self.check_ready(&state, &slot.lock())?;
         Ok((state, slot))
+    }
+
+    pub(crate) fn check_ready(&self, state: &State, session: &Session) -> protocol::Result<()> {
+        state.ready()?;
+        session.check(&self.turn)
     }
 
     /// Queue an ordered update. Overflow fails the connection closed.
     pub fn update(&self, update: SessionUpdate) -> protocol::Result<()> {
         let (state, slot) = self.ready()?;
-        let _active = slot.lock_turn();
-        self.ready()?;
+        let active = slot.lock();
+        self.check_ready(&state, &active)?;
         if slot.queued.fetch_add(1, Ordering::AcqRel) >= state.limits.update_capacity {
             state.fail("ACP update queue overflow");
             return Err(error("ACP update queue overflow"));
@@ -249,8 +258,8 @@ impl ClientHandle {
         let (raw_tx, raw_rx) = tokio::sync::oneshot::channel();
         let received = state.clone();
         {
-            let _active = slot.lock_turn();
-            self.ready()?;
+            let active = slot.lock();
+            self.check_ready(&state, &active)?;
             self.connection
                 .prepare_request(request)
                 .on_receiving_result(async move |reply| {
@@ -294,24 +303,11 @@ impl ClientHandle {
     }
 }
 
-pub(crate) struct TurnGuard {
-    pub slot: Arc<Slot>,
-    pub turn: Arc<Turn>,
-}
-
-impl Drop for TurnGuard {
-    fn drop(&mut self) {
-        self.turn.live.store(false, Ordering::Release);
-        self.turn.cancel.cancel();
-        self.slot.lock_turn().take();
-    }
-}
-
 pub(crate) struct ServeGuard(pub Arc<State>);
 
 impl Drop for ServeGuard {
     fn drop(&mut self) {
-        self.0.stop.cancel();
+        self.0.close();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             let state = self.0.clone();
             runtime.spawn(async move {
@@ -320,3 +316,6 @@ impl Drop for ServeGuard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

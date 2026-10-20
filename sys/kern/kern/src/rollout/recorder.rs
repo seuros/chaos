@@ -68,6 +68,7 @@ pub struct RolloutRecorder {
     tx: UnboundedSender<RolloutCmd>,
     runtime_db: Option<RuntimeDbHandle>,
     event_persistence_mode: EventPersistenceMode,
+    persist_acp_user_items: bool,
     live_rollout_items: Arc<Mutex<Vec<RolloutItem>>>,
     writer_status: watch::Receiver<JournalWriterStatus>,
 }
@@ -339,6 +340,16 @@ impl RolloutRecorder {
         // Capture the session ID before consuming params so we can register
         // it as the default session in the background.
         let session_id_for_default = params.conversation_id();
+        let persist_acp_user_items = matches!(
+            &params,
+            RolloutRecorderParams::Create {
+                source: SessionSource::Acp,
+                ..
+            } | RolloutRecorderParams::Resume {
+                source: SessionSource::Acp,
+                ..
+            }
+        );
         let update_default_session = !config.unattended_recovery();
 
         let (meta, event_persistence_mode, journal_sink, persisted) = match params {
@@ -534,6 +545,7 @@ impl RolloutRecorder {
             tx,
             runtime_db: runtime_db_ctx,
             event_persistence_mode,
+            persist_acp_user_items,
             live_rollout_items: Arc::new(Mutex::new(Vec::new())),
             writer_status,
         })
@@ -549,7 +561,13 @@ impl RolloutRecorder {
             // Note that function calls may look a bit strange if they are
             // "fully qualified MCP tool calls," so we could consider
             // reformatting them in that case.
-            if is_persisted_response_item(item, self.event_persistence_mode) {
+            let public_user = self.persist_acp_user_items
+                && matches!(
+                    item,
+                    RolloutItem::EventMsg(EventMsg::ItemCompleted(event))
+                        if matches!(event.item, chaos_ipc::items::TurnItem::UserMessage(_))
+                );
+            if public_user || is_persisted_response_item(item, self.event_persistence_mode) {
                 filtered.push(sanitize_rollout_item_for_persistence(
                     item.clone(),
                     self.event_persistence_mode,
@@ -638,7 +656,8 @@ impl RolloutRecorder {
             }
             Err(err) => {
                 return Err(IoError::other(format!(
-                    "failed to load resume history from the active journal backend for {process_id}: {err}"
+                    "failed to load resume history from the active journal backend \
+                     for {process_id}: {err}"
                 )));
             }
         };
@@ -1350,8 +1369,10 @@ impl ActiveJournalWriter {
             }
             Err(err) => {
                 if matches!(&err, JournalClientError::Remote(payload)
-                    if matches!(payload.code, JournalErrorCode::InvalidLease | JournalErrorCode::LeaseConflict))
-                {
+                if matches!(
+                    payload.code,
+                    JournalErrorCode::InvalidLease | JournalErrorCode::LeaseConflict
+                )) {
                     self.lease.apply(WriterLeaseEvent::Fence);
                 }
                 Err(format!("heartbeat_lease failed: {err}"))
@@ -1372,8 +1393,10 @@ impl ActiveJournalWriter {
             Ok(lease) => lease,
             Err(error) => {
                 if matches!(&error, JournalClientError::Remote(payload)
-                    if matches!(payload.code, JournalErrorCode::LeaseConflict | JournalErrorCode::InvalidLease))
-                {
+                if matches!(
+                    payload.code,
+                    JournalErrorCode::LeaseConflict | JournalErrorCode::InvalidLease
+                )) {
                     self.lease.apply(WriterLeaseEvent::Fence);
                 }
                 return Err(format!("journal lease recovery failed: {error}"));
@@ -1483,7 +1506,8 @@ pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, Strin
             .map_err(|err| format!("env-provided journald hello failed: {err}"))?;
         if !chaos_journald::hello_is_compatible(&hello) {
             return Err(format!(
-                "env-provided journald at {} reports server {} version {} protocol {}; this client requires {} version {} protocol {}",
+                "env-provided journald at {} reports server {} version {} protocol {}; \
+                 this client requires {} version {} protocol {}",
                 client.socket_path().display(),
                 hello.server_name,
                 hello.server_version,

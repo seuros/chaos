@@ -1,13 +1,15 @@
-use std::process::Stdio;
 use std::time::Duration;
 
 use core_test_support::responses::{
     ev_assistant_message, ev_completed, ev_response_created, mount_sse_sequence, sse,
     start_mock_server,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 use tempfile::TempDir;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+#[path = "acp_stdio/peer.rs"]
+mod peer;
+use peer::Peer;
 
 struct JournalFixture(tokio::task::JoinHandle<anyhow::Result<()>>);
 
@@ -40,19 +42,23 @@ async fn journal(home: &std::path::Path) -> (JournalFixture, std::path::PathBuf)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cli_stdio_is_protocol_only_and_exits_after_native_sessions_close() {
     let server = start_mock_server().await;
-    let responses = ["CLI first response", "CLI continued response"]
-        .into_iter()
-        .enumerate()
-        .map(|(index, text)| {
-            let id = format!("cli-r{index}");
-            sse(vec![
-                ev_response_created(&id),
-                ev_assistant_message(&id, text),
-                ev_completed(&id),
-            ])
-        })
-        .collect();
-    mount_sse_sequence(&server, responses).await;
+    let responses = [
+        "CLI first response",
+        "CLI continued response",
+        "CLI restored response",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, text)| {
+        let id = format!("cli-r{index}");
+        sse(vec![
+            ev_response_created(&id),
+            ev_assistant_message(&id, text),
+            ev_completed(&id),
+        ])
+    })
+    .collect();
+    let requests = mount_sse_sequence(&server, responses).await;
     let home = TempDir::new_in("/tmp").unwrap();
     let cwd = TempDir::new().unwrap();
     let (_journal, journal_socket) = journal(home.path()).await;
@@ -60,7 +66,10 @@ async fn cli_stdio_is_protocol_only_and_exits_after_native_sessions_close() {
     std::fs::write(
         &catalog,
         serde_json::to_vec(&json!({
-            "models":[chaos_kern::test_support::test_model_info("mock-model")]
+            "models":[
+                chaos_kern::test_support::test_model_info("mock-model"),
+                chaos_kern::test_support::test_model_info("mock-second")
+            ]
         }))
         .unwrap(),
     )
@@ -88,7 +97,8 @@ stream_max_retries = 0
     )
     .await
     .unwrap();
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_chaos"))
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_chaos"));
+    command
         .args([
             "--provider",
             "acp-fixture",
@@ -105,90 +115,82 @@ stream_max_retries = 0
         .env("CHAOS_HOME", home.path())
         .env("CHAOS_JOURNALD_SOCKET", journal_socket)
         .env("RUST_LOG", "error")
-        .current_dir(cwd.path())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let mut writer = child.stdin.take().unwrap();
-    let mut reader = BufReader::new(child.stdout.take().unwrap()).lines();
-    let deadline = Duration::from_secs(20);
-    let initialize = json!({"jsonrpc":"2.0","id":1,"method":"initialize",
-        "params":{"protocolVersion":1}});
-    writer
-        .write_all(format!("{initialize}\n").as_bytes())
-        .await
-        .unwrap();
-    let initialized: Value = serde_json::from_str(
-        &tokio::time::timeout(deadline, reader.next_line())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap(),
-    )
-    .expect("stdout must contain only ACP JSON frames");
-    assert_eq!(initialized["result"]["agentInfo"]["name"], "chaos");
-    assert_eq!(
-        initialized["result"]["agentInfo"]["version"],
-        env!("CARGO_PKG_VERSION")
-    );
-    let new = json!({"jsonrpc":"2.0","id":2,"method":"session/new",
-        "params":{"cwd":cwd.path(),"mcpServers":[]}});
-    writer
-        .write_all(format!("{new}\n").as_bytes())
-        .await
-        .unwrap();
-    let session: Value = serde_json::from_str(
-        &tokio::time::timeout(deadline, reader.next_line())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap(),
-    )
-    .unwrap();
+        .current_dir(cwd.path());
+    let mut peer = Peer::open(&mut command).await;
+    let (session, _) = peer
+        .request(
+            2,
+            "session/new",
+            json!({
+                "cwd":cwd.path(),"mcpServers":[]
+            }),
+        )
+        .await;
     let session = session["result"]["sessionId"].clone();
     assert!(session.is_string());
-    for (id, expected) in [(3, "CLI first response"), (4, "CLI continued response")] {
-        let prompt = json!({"jsonrpc":"2.0","id":id,"method":"session/prompt",
-            "params":{"sessionId":session,"prompt":[{"type":"text","text":"fixture prompt"}]}});
-        writer
-            .write_all(format!("{prompt}\n").as_bytes())
-            .await
-            .unwrap();
-        let mut text = String::new();
-        loop {
-            let frame: Value = serde_json::from_str(
-                &tokio::time::timeout(deadline, reader.next_line())
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .unwrap(),
-            )
-            .expect("stdout must contain only ACP JSON frames");
-            if frame["id"] == id {
-                assert_eq!(frame["result"]["stopReason"], "end_turn", "{frame}");
-                break;
-            }
-            assert_eq!(frame["params"]["sessionId"], session);
-            if frame["params"]["update"]["sessionUpdate"] == "agent_message_chunk" {
-                text.push_str(
-                    frame["params"]["update"]["content"]["text"]
-                        .as_str()
-                        .unwrap(),
-                );
-            }
-        }
-        assert_eq!(text, expected);
-    }
-    drop(writer);
+    let (selected, _) = peer
+        .request(
+            10,
+            "session/set_config_option",
+            json!({
+                "sessionId":session,"configId":"model","value":"mock-second"
+            }),
+        )
+        .await;
+    assert!(selected["error"].is_null(), "{selected}");
+    let (mode, _) = peer
+        .request(
+            11,
+            "session/set_mode",
+            json!({
+                "sessionId":session,"modeId":"plan"
+            }),
+        )
+        .await;
+    assert!(mode["error"].is_null(), "{mode}");
+    peer.prompt(3, &session, "CLI first response").await;
+    peer.prompt(4, &session, "CLI continued response").await;
+    assert_eq!(requests.requests()[0].body_json()["model"], "mock-second");
+    peer.close().await;
+
+    // A new OS process reloads the existing native journal, not in-memory host state.
+    let mut peer = Peer::open(&mut command).await;
+    let (listed, _) = peer.request(2, "session/list", json!({})).await;
     assert!(
-        tokio::time::timeout(Duration::from_secs(6), child.wait())
-            .await
+        listed["result"]["sessions"]
+            .as_array()
             .unwrap()
-            .unwrap()
-            .success()
+            .iter()
+            .any(|row| row["sessionId"] == session)
     );
-    assert!(reader.next_line().await.unwrap().is_none());
+    let (loaded, updates) = peer
+        .request(
+            3,
+            "session/load",
+            json!({
+                "sessionId":session,"cwd":cwd.path(),"mcpServers":[]
+            }),
+        )
+        .await;
+    assert!(loaded["error"].is_null(), "{loaded}");
+    assert_eq!(loaded["result"]["modes"]["currentModeId"], "plan");
+    assert!(
+        loaded["result"]["configOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|option| option["id"] == "model" && option["currentValue"] == "mock-second")
+    );
+    let replay = serde_json::to_string(&updates).unwrap();
+    assert!(replay.contains("CLI first response") && replay.contains("CLI continued response"));
+    assert_eq!(
+        requests.requests().len(),
+        2,
+        "load must not call the provider"
+    );
+    peer.prompt(4, &session, "CLI restored response").await;
+    let continued = requests.requests()[2].body_json();
+    assert_eq!(continued["model"], "mock-second");
+    assert!(continued.to_string().contains("CLI first response"));
+    peer.close().await;
 }

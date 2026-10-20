@@ -24,6 +24,7 @@ use mcp_host::prelude::{ToolGroupCatalog, ToolGroupState};
 use tokio::sync::Mutex;
 
 pub(crate) struct SessionServices {
+    pub(crate) editor_files: crate::process::editor::EditorFiles,
     /// Live workflow/synopsis ownership and budgets; never restored from history.
     pub(crate) workflow_runs: chaos_synopsis::runs::RunRegistry,
     pub(crate) external_workflow_owner: std::sync::OnceLock<crate::process::WorkflowOwner>,

@@ -69,6 +69,7 @@ pub(crate) fn outgoing<W: AsyncWrite + Unpin>(
                     .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                         Some(n.saturating_sub(1))
                     });
+                slot.queue_changed.notify_one();
             }
             Ok(line)
         }

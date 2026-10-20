@@ -1,18 +1,18 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
 
 use protocol::schema::ProtocolVersion;
 use protocol::schema::v1::{
     AgentCapabilities, AuthenticateRequest, CancelNotification, ContentBlock, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    SessionId,
+    InitializeRequest, InitializeResponse, ListSessionsRequest, LoadSessionRequest,
+    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
+    ResumeSessionRequest, ResumeSessionResponse, SetSessionConfigOptionRequest,
+    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
 };
 use protocol::{Agent, Lines};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::state::{ClientHandle, ServeGuard, Slot, State, Turn, TurnGuard, error, invalid};
-use crate::{AgentBackend, ConnectionLimits, HostError, SessionContext, framing, protocol};
+use crate::state::{ServeGuard, State, error, invalid};
+use crate::{AgentBackend, ConnectionLimits, HostError, framing, operations, protocol, saved};
 
 /// A reusable ACP agent host. Native execution belongs to its backend.
 pub struct AgentServer {
@@ -56,24 +56,118 @@ impl AgentServer {
         let prompting = state.clone();
         let cancelling = state.clone();
         let auth = state.clone();
+        let configuring = state.clone();
+        let modes = state.clone();
+        let loading = state.clone();
+        let resuming = state.clone();
+        let listing = state.clone();
+        let load_backend = self.backend.clone();
+        let resume_backend = self.backend.clone();
+        let list_backend = self.backend.clone();
         let backend = self.backend.clone();
         let prompt_capabilities = self.backend.prompt_capabilities();
-        let capabilities =
-            AgentCapabilities::new().prompt_capabilities(prompt_capabilities.clone());
+        let session_capabilities = self.backend.session_capabilities();
+        let can_list = session_capabilities.list.is_some();
+        let can_resume = session_capabilities.resume.is_some();
+        let can_load = self.backend.load_session_supported();
+        let capabilities = AgentCapabilities::new()
+            .prompt_capabilities(prompt_capabilities.clone())
+            .load_session(can_load)
+            .session_capabilities(session_capabilities);
         let info = self.info.clone();
         let builder = Agent
             .builder()
             .name("acp-host")
             .on_receive_request(
-                async move |_request: InitializeRequest, responder, _cx| {
-                    if init.initialized.swap(true, Ordering::AcqRel) {
-                        return responder.respond_with_error(invalid("ACP already initialized"));
+                async move |request: InitializeRequest, responder, _cx| {
+                    if let Err(error) = init.initialize(request.client_capabilities) {
+                        return responder.respond_with_error(error);
                     }
                     responder.respond(
                         InitializeResponse::new(ProtocolVersion::V1)
                             .agent_capabilities(capabilities.clone())
                             .agent_info(info.clone()),
                     )
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: ListSessionsRequest, responder, cx| {
+                    if let Err(error) = listing.ready() {
+                        return responder.respond_with_error(error);
+                    }
+                    if !can_list {
+                        return responder
+                            .respond_with_error(invalid("ACP session listing is unsupported"));
+                    }
+                    let backend = list_backend.clone();
+                    cx.spawn(async move {
+                        responder.respond_with_result(backend.list_sessions(request).await)
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: LoadSessionRequest, responder, cx| {
+                    if !can_load {
+                        return responder
+                            .respond_with_error(invalid("ACP session loading is unsupported"));
+                    }
+                    let permit = match saved::admit(&loading, &request.session_id) {
+                        Ok(permit) => permit,
+                        Err(error) => return responder.respond_with_error(error),
+                    };
+                    let state = loading.clone();
+                    let backend = load_backend.clone();
+                    let connection = cx.clone();
+                    cx.spawn(async move {
+                        let result = saved::open(
+                            state,
+                            backend,
+                            saved::SavedRequest::Load(request),
+                            permit,
+                            connection,
+                        )
+                        .await
+                        .map(|info| {
+                            LoadSessionResponse::new()
+                                .config_options(info.config_options)
+                                .modes(info.modes)
+                        });
+                        responder.respond_with_result(result)
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: ResumeSessionRequest, responder, cx| {
+                    if !can_resume {
+                        return responder
+                            .respond_with_error(invalid("ACP session resume is unsupported"));
+                    }
+                    let permit = match saved::admit(&resuming, &request.session_id) {
+                        Ok(permit) => permit,
+                        Err(error) => return responder.respond_with_error(error),
+                    };
+                    let state = resuming.clone();
+                    let backend = resume_backend.clone();
+                    let connection = cx.clone();
+                    cx.spawn(async move {
+                        let result = saved::open(
+                            state,
+                            backend,
+                            saved::SavedRequest::Resume(request),
+                            permit,
+                            connection,
+                        )
+                        .await
+                        .map(|info| {
+                            ResumeSessionResponse::new()
+                                .config_options(info.config_options)
+                                .modes(info.modes)
+                        });
+                        responder.respond_with_result(result)
+                    })
                 },
                 protocol::on_receive_request!(),
             )
@@ -109,24 +203,57 @@ impl AgentServer {
                             Ok(native) => native,
                             Err(error) => return responder.respond_with_error(error),
                         };
-                        let id = SessionId::new(uuid::Uuid::new_v4().to_string());
-                        let slot = Arc::new(Slot {
-                            native,
-                            turn: Mutex::new(None),
-                            queued: AtomicUsize::new(0),
-                            invalid: AtomicBool::new(false),
-                            _permit: permit,
-                        });
-                        if opening.stop.is_cancelled() {
-                            slot.native.shutdown().await?;
-                            return responder.respond_with_error(error("ACP connection closed"));
-                        }
-                        opening
-                            .sessions
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .insert(id.clone(), slot);
-                        responder.respond(NewSessionResponse::new(id))
+                        let (id, _guard, info) = match opening.open(native, permit, None).await {
+                            Ok(opened) => opened,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
+                        responder.respond(
+                            NewSessionResponse::new(id)
+                                .config_options(info.config_options)
+                                .modes(info.modes),
+                        )
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: SetSessionConfigOptionRequest, responder, cx| {
+                    let (context, guard) =
+                        match configuring.operation(&request.session_id, cx.clone(), false) {
+                            Ok(operation) => operation,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
+                    cx.spawn(async move {
+                        let result =
+                            operations::configure(request, context, guard)
+                                .await
+                                .map(|info| {
+                                    SetSessionConfigOptionResponse::new(
+                                        info.config_options.unwrap_or_default(),
+                                    )
+                                });
+                        responder.respond_with_result(result)
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: SetSessionModeRequest, responder, cx| {
+                    let (context, guard) =
+                        match modes.operation(&request.session_id, cx.clone(), false) {
+                            Ok(operation) => operation,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
+                    cx.spawn(async move {
+                        let change = SetSessionConfigOptionRequest::new(
+                            request.session_id,
+                            "mode",
+                            request.mode_id.0.as_ref(),
+                        );
+                        let result = operations::configure(change, context, guard)
+                            .await
+                            .map(|_| SetSessionModeResponse::new());
+                        responder.respond_with_result(result)
                     })
                 },
                 protocol::on_receive_request!(),
@@ -143,46 +270,24 @@ impl AgentServer {
                     if !supported {
                         return responder.respond_with_error(invalid("unsupported prompt content"));
                     }
-                    let slot = match prompting.find(&request.session_id) {
-                        Ok(slot) => slot,
-                        Err(error) => return responder.respond_with_error(error),
-                    };
-                    if slot.invalid.load(Ordering::Acquire) {
-                        return responder.respond_with_error(error("ACP session is invalid"));
-                    }
-                    let turn = Turn::new();
-                    {
-                        let mut active = slot.lock_turn();
-                        if active.is_some() {
-                            return responder.respond_with_error(error("ACP session is busy"));
-                        }
-                        *active = Some(turn.clone());
-                    }
-                    let context = SessionContext {
-                        client: ClientHandle {
-                            session_id: request.session_id.clone(),
-                            connection: cx.clone(),
-                            state: Arc::downgrade(&prompting),
-                            slot: Arc::downgrade(&slot),
-                            turn: turn.clone(),
-                        },
-                    };
-                    let guard = TurnGuard {
-                        slot: slot.clone(),
-                        turn,
-                    };
+                    let (context, guard) =
+                        match prompting.operation(&request.session_id, cx.clone(), true) {
+                            Ok(operation) => operation,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
                     cx.spawn(async move {
-                        let result = slot.native.prompt(request, context).await;
-                        if result.is_err() {
-                            slot.invalid.store(true, Ordering::Release);
+                        let slot = &guard.slot;
+                        let mut result = slot.native.prompt(request, context).await;
+                        if result.is_ok() && slot.is_invalid() {
+                            result =
+                                Err(error("ACP session has an unconfirmed editor write outcome"));
                         }
-                        {
-                            let _active = slot.lock_turn();
-                            guard.turn.live.store(false, Ordering::Release);
+                        if result.is_err() {
+                            slot.invalidate();
                         }
                         // A late cancellation callback must never interrupt the next
                         // turn. Keep this session busy until that callback has joined.
-                        if guard.turn.cancel_started.load(Ordering::Acquire) {
+                        if guard.complete() {
                             guard.turn.cancel_done.cancelled().await;
                         }
                         drop(guard);
@@ -195,16 +300,8 @@ impl AgentServer {
                 async move |request: CancelNotification, cx| {
                     cancelling.acknowledge_inbound();
                     if let Ok(slot) = cancelling.find(&request.session_id) {
-                        let active = slot
-                            .lock_turn()
-                            .as_ref()
-                            .filter(|turn| {
-                                turn.live.load(Ordering::Acquire)
-                                    && !turn.cancel_started.swap(true, Ordering::AcqRel)
-                            })
-                            .cloned();
+                        let active = slot.lock().request_cancel();
                         if let Some(turn) = active {
-                            turn.cancel.cancel();
                             let state = cancelling.clone();
                             cx.spawn(async move {
                                 let result = tokio::time::timeout(
@@ -215,7 +312,7 @@ impl AgentServer {
                                 if !matches!(result, Ok(Ok(()))) {
                                     state.fail("ACP native cancellation is unconfirmed");
                                 }
-                                turn.cancel_done.cancel();
+                                turn.cancel_finished();
                                 Ok(())
                             })?;
                         }
@@ -233,7 +330,7 @@ impl AgentServer {
             _ = state.stop.cancelled() => Ok(()),
         };
         state.cleanup().await?;
-        if let Some(reason) = *state.failure.lock().unwrap_or_else(PoisonError::into_inner) {
+        if let Some(reason) = state.failure_reason() {
             return Err(HostError::Closed(reason));
         }
         result

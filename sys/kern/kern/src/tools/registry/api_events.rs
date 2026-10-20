@@ -16,7 +16,10 @@ pub(super) struct ToolEvents(McpInvocation);
 impl ToolEvents {
     pub async fn start(invocation: &ToolInvocation, public_input: &str) -> Option<Self> {
         if matches!(invocation.payload, ToolPayload::Mcp { .. })
-            || invocation.session.session_source().await != SessionSource::Api
+            || !matches!(
+                invocation.session.session_source().await,
+                SessionSource::Api | SessionSource::Acp
+            )
         {
             return None;
         }

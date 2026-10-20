@@ -14,6 +14,7 @@ include = ["src/**", "examples/**", "Cargo.toml", "README.md"]
 agent-client-protocol = { workspace = true }
 futures = { workspace = true, features = ["std", "async-await"] }
 serde_json = { workspace = true }
+state-machines = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["codec", "rt"] }

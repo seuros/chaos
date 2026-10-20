@@ -11,6 +11,7 @@ fn observation(thermal: chaos_machine::ThermalState) -> MachineStatus {
         thermal: ThermalInfo {
             state: thermal,
             cpu_temperatures: vec![],
+            ..Default::default()
         },
     };
     MachineStatus {

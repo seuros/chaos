@@ -1,4 +1,5 @@
 pub mod context;
+pub(crate) mod editor;
 pub mod events;
 pub(crate) mod groups;
 pub(crate) mod handlers;

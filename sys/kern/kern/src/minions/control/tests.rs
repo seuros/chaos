@@ -31,13 +31,19 @@ async fn test_config_with_cli_overrides(
 ) -> (TempDir, Config) {
     let home = TempDir::new().expect("create temp dir");
     crate::test_support::bootstrap_sqlite(home.path()).expect("bootstrap sqlite");
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .cli_overrides(cli_overrides)
         .loader_overrides(LoaderOverrides::default())
         .build()
         .await
         .expect("load default test config");
+    // Operations are captured, not sent to a model. A speculative connection
+    // would still contact the real provider with dummy credentials at startup.
+    config.model_provider.supports_websockets = false;
+    for provider in config.model_providers.values_mut() {
+        provider.supports_websockets = false;
+    }
     (home, config)
 }
 
@@ -483,8 +489,9 @@ async fn planning_child_attachment_is_explicit_even_when_forking_history() -> an
             );
             if attached {
                 let event = rx.try_recv()?;
-                assert!(
-                    matches!(event.msg, EventMsg::PlanUpdate(snapshot) if snapshot.plan_id == plan.id)
+                assert_matches!(
+                    event.msg,
+                    EventMsg::PlanUpdate(snapshot) if snapshot.plan_id == plan.id
                 );
             }
             assert!(
@@ -551,8 +558,26 @@ async fn spawn_agent_options_attach_the_final_output_schema_to_initial_input() {
     );
 }
 
-#[tokio::test]
-async fn spawn_agent_can_fork_parent_thread_history() {
+#[test]
+fn spawn_agent_can_fork_parent_thread_history() {
+    // Match Linux libtest's stack even on macOS, whose larger default hid the
+    // speculative WebSocket connection's debug-build stack overflow.
+    std::thread::Builder::new()
+        .name("fork-history-ci-stack".to_string())
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime")
+                .block_on(Box::pin(fork_parent_thread_history()));
+        })
+        .expect("spawn bounded-stack thread")
+        .join()
+        .expect("fork-history test panicked");
+}
+
+async fn fork_parent_thread_history() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;
     let db = parent_thread.runtime_db().expect("parent database");

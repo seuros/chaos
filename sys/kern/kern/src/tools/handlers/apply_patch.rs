@@ -158,7 +158,27 @@ impl ToolHandler for ApplyPatchHandler {
         // Avoid building temporary ExecParams/command vectors; derive directly from inputs.
         let cwd = turn.cwd.clone();
         let command = vec!["apply_patch".to_string(), patch_input.clone()];
-        match chaos_diff::maybe_parse_apply_patch_verified(&command, &cwd) {
+        let editor = session
+            .services
+            .editor_files
+            .for_turn(&turn.sub_id)
+            .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
+        let (verified, editor_patch) = if let Some(editor) = editor {
+            let (action, prepared) =
+                crate::tools::editor::prepare_patch(&session, &turn, editor, &patch_input)
+                    .await
+                    .map_err(FunctionCallError::RespondToModel)?;
+            (
+                chaos_diff::MaybeApplyPatchVerified::Body(action),
+                Some(prepared),
+            )
+        } else {
+            (
+                chaos_diff::maybe_parse_apply_patch_verified(&command, &cwd),
+                None,
+            )
+        };
+        match verified {
             chaos_diff::MaybeApplyPatchVerified::Body(changes) => {
                 let (file_paths, effective_additional_permissions, vfs_policy) =
                     effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
@@ -180,6 +200,7 @@ impl ToolHandler for ApplyPatchHandler {
                         emitter.begin(event_ctx).await;
 
                         let req = ApplyPatchRequest {
+                            editor: editor_patch,
                             action: apply.action,
                             file_paths,
                             changes,
@@ -245,12 +266,28 @@ pub(crate) async fn intercept_apply_patch(
     call_id: &str,
     tool_name: &str,
 ) -> Result<Option<FunctionToolOutput>, FunctionCallError> {
+    if session
+        .services
+        .editor_files
+        .for_turn(&turn.sub_id)
+        .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?
+        .is_some()
+        && !matches!(
+            chaos_diff::maybe_parse_apply_patch(command),
+            chaos_diff::MaybeApplyPatch::NotApplyPatch
+        )
+    {
+        return Err(FunctionCallError::RespondToModel(
+            "editor patches must use the apply_patch tool, not shell interception".into(),
+        ));
+    }
     match chaos_diff::maybe_parse_apply_patch_verified(command, cwd) {
         chaos_diff::MaybeApplyPatchVerified::Body(changes) => {
             session
                 .record_model_warning(
                     format!(
-                        "apply_patch was requested via {tool_name}. Use the apply_patch tool instead of exec_command."
+                        "apply_patch was requested via {tool_name}. \
+                         Use the apply_patch tool instead of exec_command."
                     ),
                     turn.as_ref(),
                 )
@@ -274,6 +311,7 @@ pub(crate) async fn intercept_apply_patch(
                     emitter.begin(event_ctx).await;
 
                     let req = ApplyPatchRequest {
+                        editor: None,
                         action: apply.action,
                         file_paths: approval_keys,
                         changes,
@@ -349,7 +387,8 @@ pub(crate) fn create_apply_patch_json_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "apply_patch".to_string(),
         description: r#"Use the `apply_patch` tool to edit files.
-Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
+Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse
+and safe to apply. You can think of it as a high‑level envelope:
 
 *** Begin Patch
 [ one or more file sections ]
@@ -368,18 +407,24 @@ Then one or more “hunks”, each introduced by @@ (optionally followed by a hu
 Within a hunk each line starts with:
 
 For instructions on [context_before] and [context_after]:
-- By default, show 3 lines of code immediately above and 3 lines immediately below each change. If a change is within 3 lines of a previous change, do NOT duplicate the first change’s [context_after] lines in the second change’s [context_before] lines.
-- If 3 lines of context is insufficient to uniquely identify the snippet of code within the file, use the @@ operator to indicate the class or function to which the snippet belongs. For instance, we might have:
+- By default, show 3 lines of code immediately above and 3 lines immediately below each change.
+  If a change is within 3 lines of a previous change, do NOT duplicate the first change’s
+  [context_after] lines in the second change’s [context_before] lines.
+- If 3 lines of context is insufficient to uniquely identify the snippet of code within the file,
+  use the @@ operator to indicate the class or function to which the snippet belongs.
+  For instance, we might have:
 @@ class BaseClass
 [3 lines of pre-context]
 - [old_code]
 + [new_code]
 [3 lines of post-context]
 
-- If a code block is repeated so many times in a class or function such that even a single `@@` statement and 3 lines of context cannot uniquely identify the snippet of code, you can use multiple `@@` statements to jump to the right context. For instance:
+- If a code block is repeated so many times in a class or function such that even a single
+  `@@` statement and 3 lines of context cannot uniquely identify the snippet of code, you can
+  use multiple `@@` statements to jump to the right context. For instance:
 
 @@ class BaseClass
-@@ 	 def method():
+@@      def method():
 [3 lines of pre-context]
 - [old_code]
 + [new_code]

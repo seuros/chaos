@@ -117,6 +117,7 @@ pub enum SessionSource {
     Exec,
     Mcp,
     Api,
+    Acp,
     SubAgent(SubAgentSource),
     #[serde(other)]
     Unknown,
@@ -147,6 +148,7 @@ impl fmt::Display for SessionSource {
             SessionSource::Exec => f.write_str("exec"),
             SessionSource::Mcp => f.write_str("mcp"),
             SessionSource::Api => f.write_str("api"),
+            SessionSource::Acp => f.write_str("acp"),
             SessionSource::SubAgent(sub_source) => write!(f, "subagent_{sub_source}"),
             SessionSource::Unknown => f.write_str("unknown"),
         }

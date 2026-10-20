@@ -1,4 +1,6 @@
 use super::*;
+use chaos_ipc::custom_prompts::{CustomPrompt, PROMPTS_CMD_PREFIX};
+use chaos_ipc::user_input::{ByteRange, TextElement};
 use pretty_assertions::assert_eq;
 
 pub(crate) fn prompt_args_suite() {

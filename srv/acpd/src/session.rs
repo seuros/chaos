@@ -46,7 +46,7 @@ impl OwnerGuard {
         }
     }
 
-    async fn shutdown(&self) -> protocol::Result<()> {
+    pub(crate) async fn shutdown(&self) -> protocol::Result<()> {
         if self.closed.load(Ordering::Acquire) {
             return Ok(());
         }
@@ -77,6 +77,7 @@ pub(crate) struct NativeSession {
     id: ProcessId,
     owner: OwnerGuard,
     active: Mutex<Option<CancellationToken>>,
+    history: Mutex<Option<Vec<chaos_ipc::protocol::RolloutItem>>>,
 }
 
 impl NativeSession {
@@ -86,7 +87,13 @@ impl NativeSession {
             id,
             owner,
             active: Mutex::new(None),
+            history: Mutex::new(None),
         }
+    }
+
+    pub fn with_history(self, history: Vec<chaos_ipc::protocol::RolloutItem>) -> Self {
+        *self.history.lock().unwrap_or_else(PoisonError::into_inner) = Some(history);
+        self
     }
 
     async fn run(
@@ -94,17 +101,45 @@ impl NativeSession {
         request: PromptRequest,
         context: SessionContext,
     ) -> protocol::Result<PromptResponse> {
-        let input = input(request.prompt)?;
         if context.is_cancelled() {
             return Ok(PromptResponse::new(StopReason::Cancelled));
         }
-        let op = self.process.user_turn(input, None).await;
-        let submission = submit(
-            &self.process,
-            op,
-            "native ACP prompt submission failed; outcome may be unknown",
-        )
-        .await?;
+        let op = match crate::commands::dispatch(&self.process, request.prompt, &context).await? {
+            crate::commands::Dispatch::Done => return Ok(PromptResponse::new(StopReason::EndTurn)),
+            crate::commands::Dispatch::Prompt(content) => {
+                self.process.user_turn(input(content)?, None).await
+            }
+            crate::commands::Dispatch::Native(op) => *op,
+        };
+        let renaming = matches!(op, Op::SetProcessName { .. });
+        let mut editor_scope = None;
+        let submission = if let Some(editor) = crate::files::Editor::negotiated(&context)? {
+            let id = format!("acp-{}", ProcessId::new());
+            editor_scope = Some(
+                self.process
+                    .bind_editor_files(id.clone(), Arc::new(editor))
+                    .map_err(|_| internal("native ACP editor binding failed"))?,
+            );
+            self.process
+                .submit_with_id(chaos_ipc::protocol::Submission {
+                    id: id.clone(),
+                    op,
+                    trace: None,
+                })
+                .await
+                .map_err(|_| {
+                    internal("native ACP prompt submission failed; outcome may be unknown")
+                })?;
+            id
+        } else {
+            submit(
+                &self.process,
+                op,
+                "native ACP prompt submission failed; outcome may be unknown",
+            )
+            .await?
+        };
+        let _editor_scope = editor_scope;
         if context.is_cancelled() {
             submit(
                 &self.process,
@@ -119,12 +154,29 @@ impl NativeSession {
                 self.process.next_event().await.map_err(|_| {
                     internal("native ACP event stream closed; outcome may be unknown")
                 })?;
+            if let EventMsg::SessionModeChanged(mode) = &event.msg
+                && mode.session_id == self.id
+            {
+                crate::controls::publish(&self.process, &context).await?;
+                continue;
+            }
             // No other frontend consumes this process. Ignore prior/startup and
             // unrelated background events rather than attributing them to a turn.
             if event.id != submission {
                 continue;
             }
             match &event.msg {
+                EventMsg::ProcessNameUpdated(event) if renaming => {
+                    crate::commands::message(
+                        &context,
+                        format!(
+                            "Session renamed: {}",
+                            event.process_name.as_deref().unwrap_or("")
+                        ),
+                    )
+                    .await?;
+                    return Ok(PromptResponse::new(StopReason::EndTurn));
+                }
                 EventMsg::ExecApprovalRequest(request) => {
                     approvals::exec(&self.process, &context, &mut projection, request).await?;
                 }
@@ -187,6 +239,7 @@ impl NativeSession {
                     .await?;
                 }
                 EventMsg::Error(error) => {
+                    tracing::error!(message = %error.message, "native ACP operation failed");
                     if matches!(
                         error.chaos_error_info,
                         Some(
@@ -203,10 +256,12 @@ impl NativeSession {
                     ));
                 }
                 EventMsg::TurnComplete(event) => {
+                    context.client().capabilities()?;
                     projection.finish_text(&context, event.last_agent_message.as_deref())?;
                     return Ok(PromptResponse::new(StopReason::EndTurn));
                 }
                 EventMsg::TurnAborted(_) => {
+                    context.client().capabilities()?;
                     projection.cancelled(&context)?;
                     return Ok(PromptResponse::new(StopReason::Cancelled));
                 }
@@ -222,6 +277,31 @@ impl NativeSession {
 }
 
 impl AgentSession for NativeSession {
+    fn info(&self) -> protocol::BoxFuture<'_, protocol::Result<acp_host::SessionInfo>> {
+        Box::pin(async move {
+            let mut info = crate::controls::info(&self.process).await;
+            info.id = Some(protocol::schema::v1::SessionId::new(self.id.to_string()));
+            Ok(info)
+        })
+    }
+
+    fn replay(&self, context: SessionContext) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+        let history = self
+            .history
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        Box::pin(async move { crate::replay::history(history.unwrap_or_default(), &context).await })
+    }
+
+    fn set_config_option(
+        &self,
+        request: protocol::schema::v1::SetSessionConfigOptionRequest,
+        _context: SessionContext,
+    ) -> protocol::BoxFuture<'_, protocol::Result<acp_host::SessionInfo>> {
+        Box::pin(crate::controls::set(&self.process, request))
+    }
+
     fn prompt(
         &self,
         request: PromptRequest,
@@ -232,8 +312,10 @@ impl AgentSession for NativeSession {
             *self.active.lock().unwrap_or_else(PoisonError::into_inner) = Some(finished.clone());
             let _guard = Completion(finished);
             let result = self.run(request, context).await;
-            if result.is_err() {
-                let _ = self.owner.shutdown().await;
+            if result.is_err()
+                && let Err(error) = self.owner.shutdown().await
+            {
+                tracing::error!(?error, "native ACP error cleanup remained unconfirmed");
             }
             result
         })

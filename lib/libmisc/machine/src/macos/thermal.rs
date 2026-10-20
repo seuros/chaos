@@ -1,4 +1,4 @@
-use crate::ThermalState;
+use crate::{MacosThermalDiagnostics, ThermalInfo, ThermalState};
 
 #[cfg(target_os = "macos")]
 pub(crate) fn read() -> crate::ThermalInfo {
@@ -13,10 +13,21 @@ pub(crate) fn read() -> crate::ThermalInfo {
     let pressure = objc2_foundation::NSProcessInfo::processInfo()
         .thermalState()
         .0;
-    crate::ThermalInfo {
+    from_raw(result, level, pressure)
+}
+
+fn from_raw(result: i32, level: u32, pressure: isize) -> ThermalInfo {
+    ThermalInfo {
         state: with_pressure(warning_state(result, level), pressure),
+        macos: Some(MacosThermalDiagnostics {
+            iopm_return_code: result,
+            // An unsuccessful query does not establish that its out parameter
+            // contains a reading (it may still contain our initialization sentinel).
+            iopm_warning_level: (result == 0).then_some(level),
+            ns_process_info_thermal_state: pressure,
+        }),
         // No stable public API for CPU Celsius readings; no private SMC keys.
-        ..crate::ThermalInfo::default()
+        ..ThermalInfo::default()
     }
 }
 

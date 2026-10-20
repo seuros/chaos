@@ -72,7 +72,8 @@ impl ProcessNameStore for SqlitePool {
         source: ProcessNameSource,
     ) -> std::io::Result<bool> {
         let result = sqlx::query(
-            "UPDATE processes SET process_name = ?, process_name_source = ?, updated_at = ? WHERE id = ?",
+            "UPDATE processes SET process_name = ?, process_name_source = ?, \
+             updated_at = ? WHERE id = ?",
         )
         .bind(process_name)
         .bind(source.as_str())
@@ -89,7 +90,8 @@ impl ProcessNameStore for SqlitePool {
         process_id: ProcessId,
     ) -> std::io::Result<Option<ProcessNameRecord>> {
         let row = sqlx::query(
-            "SELECT process_name, process_name_source FROM processes WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
+            "SELECT process_name, process_name_source FROM processes \
+             WHERE id = ? AND process_name IS NOT NULL AND trim(process_name) <> ''",
         )
         .bind(process_id.to_string())
         .fetch_optional(self)
@@ -117,7 +119,8 @@ impl ProcessNameStore for SqlitePool {
         }
 
         let mut builder = QueryBuilder::<Sqlite>::new(
-            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL AND trim(process_name) <> '' AND id IN (",
+            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL \
+             AND trim(process_name) <> '' AND id IN (",
         );
         {
             let mut separated = builder.separated(", ");
@@ -151,7 +154,8 @@ impl ProcessNameStore for SqlitePool {
         }
 
         let row = sqlx::query(
-            "SELECT id FROM processes WHERE process_name = ? ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+            "SELECT id FROM processes WHERE process_name = ? \
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1",
         )
         .bind(name)
         .fetch_optional(self)
@@ -170,7 +174,8 @@ impl ProcessNameStore for SqlitePool {
         name: &str,
     ) -> std::io::Result<Option<ProcessId>> {
         let row = sqlx::query(
-            "SELECT id FROM processes WHERE process_name = ? AND archived_at IS NULL ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+            "SELECT id FROM processes WHERE process_name = ? AND archived_at IS NULL \
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1",
         )
         .bind(name)
         .fetch_optional(self)
@@ -193,7 +198,8 @@ impl ProcessNameStore for PgPool {
         source: ProcessNameSource,
     ) -> std::io::Result<bool> {
         let result = sqlx::query(
-            "UPDATE processes SET process_name = $1, process_name_source = $2, updated_at = $3 WHERE id = $4",
+            "UPDATE processes SET process_name = $1, process_name_source = $2, \
+             updated_at = $3 WHERE id = $4",
         )
         .bind(process_name)
         .bind(source.as_str())
@@ -210,7 +216,8 @@ impl ProcessNameStore for PgPool {
         process_id: ProcessId,
     ) -> std::io::Result<Option<ProcessNameRecord>> {
         let row = sqlx::query(
-            "SELECT process_name, process_name_source FROM processes WHERE id = $1 AND process_name IS NOT NULL AND btrim(process_name) <> ''",
+            "SELECT process_name, process_name_source FROM processes \
+             WHERE id = $1 AND process_name IS NOT NULL AND btrim(process_name) <> ''",
         )
         .bind(process_id.to_string())
         .fetch_optional(self)
@@ -238,7 +245,8 @@ impl ProcessNameStore for PgPool {
         }
 
         let mut builder = QueryBuilder::<Postgres>::new(
-            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL AND btrim(process_name) <> '' AND id IN (",
+            "SELECT id, process_name FROM processes WHERE process_name IS NOT NULL \
+             AND btrim(process_name) <> '' AND id IN (",
         );
         {
             let mut separated = builder.separated(", ");
@@ -272,7 +280,8 @@ impl ProcessNameStore for PgPool {
         }
 
         let row = sqlx::query(
-            "SELECT id FROM processes WHERE process_name = $1 ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+            "SELECT id FROM processes WHERE process_name = $1 \
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1",
         )
         .bind(name)
         .fetch_optional(self)
@@ -291,7 +300,8 @@ impl ProcessNameStore for PgPool {
         name: &str,
     ) -> std::io::Result<Option<ProcessId>> {
         let row = sqlx::query(
-            "SELECT id FROM processes WHERE process_name = $1 AND archived_at IS NULL ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+            "SELECT id FROM processes WHERE process_name = $1 AND archived_at IS NULL \
+             ORDER BY updated_at DESC, created_at DESC LIMIT 1",
         )
         .bind(name)
         .fetch_optional(self)
@@ -326,13 +336,40 @@ pub(crate) async fn append_process_name_with_source(
     name: &str,
     source: ProcessNameSource,
 ) -> std::io::Result<()> {
-    let updated = with_store(|pool| async move {
-        match pool {
-            Vfs::Sqlite(p) => p.set_process_name(process_id, Some(name), source).await,
-            Vfs::Postgres(p) => p.set_process_name(process_id, Some(name), source).await,
-        }
-    })
-    .await?;
+    append_name_to_pool(
+        chaos_vfs::pool().map_err(std::io::Error::other)?,
+        process_id,
+        name,
+        source,
+    )
+    .await
+}
+
+pub(crate) async fn append_process_name_for_home(
+    home: &std::path::Path,
+    process_id: ProcessId,
+    name: &str,
+    source: ProcessNameSource,
+) -> std::io::Result<()> {
+    append_name_to_pool(
+        chaos_vfs::pool_for(home).map_err(std::io::Error::other)?,
+        process_id,
+        name,
+        source,
+    )
+    .await
+}
+
+async fn append_name_to_pool(
+    pool: Vfs,
+    process_id: ProcessId,
+    name: &str,
+    source: ProcessNameSource,
+) -> std::io::Result<()> {
+    let updated = match pool {
+        Vfs::Sqlite(p) => p.set_process_name(process_id, Some(name), source).await,
+        Vfs::Postgres(p) => p.set_process_name(process_id, Some(name), source).await,
+    }?;
     if updated {
         Ok(())
     } else {

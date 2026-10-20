@@ -35,6 +35,7 @@ use std::time::Instant;
 #[derive(Debug)]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct ApplyPatchRequest {
+    pub(crate) editor: Option<crate::tools::editor::PreparedPatch>,
     pub action: ApplyPatchAction,
     pub file_paths: Vec<AbsolutePathBuf>,
     pub changes: HashMap<PathBuf, FileChange>,
@@ -169,6 +170,9 @@ impl ToolRuntime<ApplyPatchRequest, ExecToolCallOutput> for ApplyPatchRuntime {
         attempt: &SandboxAttempt<'_>,
         _ctx: &ToolCtx,
     ) -> Result<ExecToolCallOutput, ToolError> {
+        if let Some(editor) = &req.editor {
+            return editor.run(req, attempt).await;
+        }
         // When the orchestrator retries with SandboxType::None (e.g. after an
         // approved escalation), skip sandboxing entirely.
         if attempt.sandbox == crate::exec::SandboxType::None {

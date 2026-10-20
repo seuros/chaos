@@ -124,3 +124,41 @@ async fn machine_resource_propagates_observation_failure_without_a_snapshot() {
     .expect_err("failed observations must not become machine measurements");
     assert_eq!(error, "probe unavailable");
 }
+
+#[tokio::test]
+async fn machine_resource_preserves_fresh_raw_thermal_diagnostics() {
+    use chaos_machine::{MacosThermalDiagnostics, ThermalState};
+    let config = crate::config::test_config();
+    let cwd = Path::new("/active");
+    for (index, (level, pressure, state)) in [
+        (100, 0, ThermalState::Warning),
+        (0, 0, ThermalState::Normal),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let observed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(index as u64);
+        let text = machine_json_with_observer(&config, cwd, |_| {
+            let mut status = observation(&config, cwd, observed_at);
+            status.machine.thermal.state = state;
+            status.machine.thermal.macos = Some(MacosThermalDiagnostics {
+                iopm_return_code: 0,
+                iopm_warning_level: Some(level),
+                ns_process_info_thermal_state: pressure,
+            });
+            ready(Ok(status))
+        })
+        .await
+        .unwrap();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["machine"]["observed_at"], json!(observed_at));
+        assert_eq!(value["machine"]["thermal"]["state"], json!(state));
+        assert_eq!(
+            value["machine"]["thermal"]["macos"],
+            json!({
+                "iopm_return_code":0, "iopm_warning_level":level,
+                "ns_process_info_thermal_state":pressure,
+            })
+        );
+    }
+}

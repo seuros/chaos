@@ -67,7 +67,8 @@ impl Session {
                 .contains(mode_id)
             {
                 return Err(format!(
-                    "mode `{mode_id}` is not allowed for this session; read chaos://modes for the caller-filtered catalog"
+                    "mode `{mode_id}` is not allowed for this session; \
+                     read chaos://modes for the caller-filtered catalog"
                 ));
             }
             let previous_mode = session_configuration.mode_policy.active_mode.clone();
@@ -102,13 +103,18 @@ impl Session {
         };
 
         let transition = DeveloperInstructions::new(format!(
-            "<mode_switch>\nChaOS switched this session from `{previous_mode}` to `{mode_id}`. The following collaboration mode instructions are authoritative for subsequent samples, including the next sample in this user turn.\n</mode_switch>"
+            "<mode_switch>\nChaOS switched this session from `{previous_mode}` to `{mode_id}`. \
+             The following collaboration mode instructions are authoritative for \
+             subsequent samples, including the next sample in this user turn.\n</mode_switch>"
         ));
         let instructions = DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
             .map_or(transition.clone(), |mode| transition.concat(mode));
         let item: ResponseItem = instructions.into();
         self.record_conversation_items(turn_context, std::slice::from_ref(&item))
             .await;
+        self.confirm_session_controls()
+            .await
+            .map_err(|error| error.to_string())?;
         if sync_main_ui {
             self.send_transient_event(
                 turn_context,

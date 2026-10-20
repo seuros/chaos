@@ -219,7 +219,7 @@ impl Projection {
     }
 }
 
-fn tool_preview(result: &Result<chaos_ipc::mcp::CallToolResult, String>) -> String {
+pub(crate) fn tool_preview(result: &Result<chaos_ipc::mcp::CallToolResult, String>) -> String {
     let result = match result {
         Ok(result) => result,
         Err(message) => return preview(message),
@@ -247,7 +247,7 @@ fn tool_preview(result: &Result<chaos_ipc::mcp::CallToolResult, String>) -> Stri
     }
 }
 
-fn preview(value: &str) -> String {
+pub(crate) fn preview(value: &str) -> String {
     let mut end = value.len().min(16 * 1024);
     while !value.is_char_boundary(end) {
         end -= 1;

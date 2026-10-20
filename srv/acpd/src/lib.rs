@@ -5,19 +5,21 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use acp_host::{AgentBackend, AgentServer, AgentSession, protocol};
+use acp_host::{AgentServer, protocol};
 use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::CHAOS_VERSION;
-use chaos_ipc::protocol::SessionSource;
 use chaos_kern::config::{Config, ConfigBuilder, ConfigOverrides};
-use chaos_kern::models_manager::CollaborationModesConfig;
-use chaos_kern::{AuthManager, ProcessTable};
-use protocol::schema::v1::NewSessionRequest;
 
 mod approvals;
+mod backend;
+mod commands;
 mod config;
+mod controls;
+mod files;
+mod history;
 mod projection;
+mod replay;
 mod session;
 
 #[cfg(test)]
@@ -35,6 +37,7 @@ fn internal(message: &'static str) -> protocol::Error {
 enum ConfigSource {
     Fixed(Arc<Config>),
     Project {
+        base: Arc<Config>,
         home: PathBuf,
         overrides: Vec<(String, toml::Value)>,
         profile: Option<String>,
@@ -46,18 +49,27 @@ impl ConfigSource {
     async fn load(&self, cwd: &std::path::Path) -> protocol::Result<Config> {
         match self {
             Self::Fixed(config) => {
-                if cwd != config.cwd {
+                let cwd = tokio::fs::canonicalize(cwd)
+                    .await
+                    .map_err(|_| invalid("ACP cwd is unavailable"))?;
+                let configured = tokio::fs::canonicalize(&config.cwd)
+                    .await
+                    .map_err(|_| invalid("trusted ACP workspace is unavailable"))?;
+                if cwd != configured {
                     return Err(invalid(
                         "ACP cwd differs from the embedded trusted workspace",
                     ));
                 }
-                Ok(config.as_ref().clone())
+                let mut config = config.as_ref().clone();
+                config.cwd = cwd;
+                Ok(config)
             }
             Self::Project {
                 home,
                 overrides,
                 profile,
                 alcatraz,
+                base,
             } => ConfigBuilder::default()
                 .chaos_home(home.clone())
                 .cli_overrides(overrides.clone())
@@ -69,52 +81,26 @@ impl ConfigSource {
                 })
                 .build()
                 .await
-                .map_err(|_| internal("Chaos project configuration could not be loaded")),
+                .map_err(|_| internal("Chaos project configuration could not be loaded"))
+                .and_then(|config| {
+                    if config.model_provider_id != base.model_provider_id {
+                        Err(invalid(
+                            "ACP project configuration changes the selected provider",
+                        ))
+                    } else {
+                        Ok(config)
+                    }
+                }),
+        }
+    }
+    fn base(&self) -> &Config {
+        match self {
+            Self::Fixed(config) | Self::Project { base: config, .. } => config,
         }
     }
 }
 
 struct Backend(ConfigSource);
-
-impl AgentBackend for Backend {
-    fn new_session(
-        &self,
-        request: NewSessionRequest,
-    ) -> protocol::BoxFuture<'_, protocol::Result<Arc<dyn AgentSession>>> {
-        Box::pin(async move {
-            if !request.cwd.is_absolute()
-                || !tokio::fs::metadata(&request.cwd)
-                    .await
-                    .is_ok_and(|entry| entry.is_dir())
-            {
-                return Err(invalid("ACP cwd must be an existing absolute directory"));
-            }
-            let config = self.0.load(&request.cwd).await?;
-            config::validate_mcp(&config, &request.mcp_servers)?;
-            let auth = AuthManager::shared(
-                config.chaos_home.clone(),
-                false,
-                config.cli_auth_credentials_store_mode,
-            );
-            let table = Arc::new(ProcessTable::new(
-                &config,
-                auth,
-                SessionSource::Api,
-                CollaborationModesConfig {
-                    default_mode_request_user_input: false,
-                },
-            ));
-            // Installed before the first spawn await. A cancelled session/new
-            // cannot abandon a kernel process that never reached ACP ownership.
-            let guard = session::OwnerGuard::new(table.clone());
-            let created = table.start_process(config).await.map_err(|_| {
-                internal("Chaos session startup failed; check provider configuration")
-            })?;
-            let (id, process, _) = created.into_parts();
-            Ok(Arc::new(session::NativeSession::new(process, id, guard)) as Arc<dyn AgentSession>)
-        })
-    }
-}
 
 fn server(source: ConfigSource) -> io::Result<AgentServer> {
     AgentServer::builder(Backend(source))
@@ -155,6 +141,7 @@ pub async fn run_main(
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init();
     let host = server(ConfigSource::Project {
+        base: Arc::new(config.clone()),
         home: config.chaos_home,
         overrides,
         profile,

@@ -22,6 +22,7 @@ async fn goal_checkpoint_waits_for_confirm_and_reconciles_a_failed_ack() {
         tx,
         runtime_db: None,
         event_persistence_mode: EventPersistenceMode::Limited,
+        persist_acp_user_items: false,
         live_rollout_items: Arc::default(),
         writer_status: watch::channel(JournalWriterStatus::Ready).1,
     });

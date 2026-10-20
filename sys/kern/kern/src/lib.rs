@@ -35,6 +35,8 @@ pub use process::Process;
 pub use process::ProcessConfigSnapshot;
 pub use process::WorkflowOwner;
 pub use process::WorkflowScope;
+pub use process::{EditorFileAccess, EditorFileFuture, EditorFileScope};
+pub use process::{ProcessControlError, ProcessMode, ProcessSessionControls};
 mod chaos_delegate;
 mod command_canonicalization;
 pub mod config;

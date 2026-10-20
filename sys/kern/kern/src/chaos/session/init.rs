@@ -83,7 +83,8 @@ impl Session {
             .with_exec_policy_network_rules(exec_policy)
             .map_err(|err| {
                 tracing::warn!(
-                    "failed to apply execpolicy network rules to managed proxy; continuing with configured network policy: {err}"
+                    "failed to apply execpolicy network rules to managed proxy; \
+                     continuing with configured network policy: {err}"
                 );
                 err
             })
@@ -289,6 +290,28 @@ impl Session {
             error!("failed to initialize rollout recorder: {e:#}");
             e
         })?;
+        // Reload only after acquiring the writer lease. ACP restores conversation
+        // context, never old background executors or goal recovery state.
+        if session_configuration.session_source == SessionSource::Acp
+            && matches!(&initial_history, InitialHistory::Resumed(_))
+        {
+            let restored = if rollout_recorder.is_some() {
+                crate::rollout::acp::restore(&config, conversation_id, &initial_history).await
+            } else {
+                Err(std::io::Error::other(
+                    "ACP resume requires a durable journal",
+                ))
+            };
+            match restored {
+                Ok(history) => initial_history = history,
+                Err(error) => {
+                    if let Some(recorder) = rollout_recorder {
+                        let _ = recorder.shutdown().await;
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
         Arc::make_mut(&mut session_configuration.mode_registry).configure_planning(
             state_db_ctx
                 .as_ref()
@@ -532,6 +555,7 @@ impl Session {
         .context("failed to initialize tool groups for session")?;
         let (mcp_notification_tx, mcp_notification_rx) = async_channel::bounded(256);
         let services = SessionServices {
+            editor_files: Default::default(),
             workflow_runs: chaos_synopsis::runs::RunRegistry::default(),
             external_workflow_owner: std::sync::OnceLock::new(),
             workflow_control: crate::process::workflows::WorkflowControl::default(),
@@ -653,7 +677,9 @@ impl Session {
         }
         sess.send_attached_plan().await?;
 
-        if let InitialHistory::Resumed(_) = &initial_history {
+        if session_configuration.session_source != SessionSource::Acp
+            && let InitialHistory::Resumed(_) = &initial_history
+        {
             if sess.services.rollout.lock().await.is_some() {
                 initial_history =
                     RolloutRecorder::get_rollout_history_for_process(conversation_id).await?;
@@ -763,7 +789,9 @@ impl Session {
             }
         };
 
-        if let InitialHistory::Resumed(_) = &initial_history {
+        if session_configuration.session_source != SessionSource::Acp
+            && let InitialHistory::Resumed(_) = &initial_history
+        {
             if config.unattended_recovery
                 && let Err(error) = crate::background_recovery::validate_claimed(
                     &config,

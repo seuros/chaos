@@ -231,9 +231,15 @@ pub(crate) async fn persist_process_name(
         ));
     }
 
-    process_names::append_process_name_with_source(sess.conversation_id, &name, source)
-        .await
-        .map_err(|e| format!("Failed to set process name: {e}"))?;
+    let config = sess.effective_config_for_spawn().await;
+    process_names::append_process_name_for_home(
+        &config.storage_home,
+        sess.conversation_id,
+        &name,
+        source,
+    )
+    .await
+    .map_err(|e| format!("Failed to set process name: {e}"))?;
 
     {
         let mut state = sess.state.lock().await;

@@ -9,6 +9,39 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- Raw macOS IOPM return code/warning level and NSProcessInfo thermal state
+  in `chaos://machine` under `machine.thermal.macos`, so sessions reporting
+  different merged thermal states can identify the source without changing
+  warning or recovery policy.
+- ACP slash-command discovery and native dispatch for session controls,
+  compaction, reviews, renaming and stored custom prompts. Custom prompt
+  argument expansion is shared with the console; console-only UI actions
+  are not advertised.
+- ACP editor-backed single-file creation, with existing-parent policy and
+  identity checks, confirmed absence on disk and in the editor, and native
+  approval. Creation never falls back to a disk write or retries an
+  unacknowledged client write.
+
+### Fixed
+- Native session renaming targets the session's mounted runtime store rather
+  than the first store mounted in the process.
+
+## [47.14.1] - 2026-10-20
+
+### Added
+- ACP model/mode selectors and durable session list/load/resume, with public
+  history replay and native policy checks before restoring a session.
+- Capability-negotiated editor text reads and approved single-file text
+  updates through ACP, including unsaved text and bounded client requests.
+- Optional `acp-host` backend hooks for session controls, durable sessions,
+  and typed editor text access.
+
+### Fixed
+- ACP cancellation keeps sessions busy until cleanup joins; uncertain prompts
+  and unacknowledged editor writes invalidate the session without retries or
+  falling back to disk writes.
+
 ## [47.14.0] - 2026-10-20
 
 ### Removed (MAJOR: read before upgrading)
@@ -425,7 +458,8 @@ See the Drivers section of `man/chaos-install.7.md`.
   access for the model now comes from skipper.
 - `git://branches` resource template.
 
-[Unreleased]: https://github.com/seuros/chaos/compare/v47.14.0...HEAD
+[Unreleased]: https://github.com/seuros/chaos/compare/v47.14.1...HEAD
+[47.14.1]: https://github.com/seuros/chaos/compare/v47.14.0...v47.14.1
 [47.14.0]: https://github.com/seuros/chaos/compare/v47.13.2...v47.14.0
 [47.13.2]: https://github.com/seuros/chaos/compare/v47.13.1...v47.13.2
 [47.13.1]: https://github.com/seuros/chaos/compare/v47.13.0...v47.13.1

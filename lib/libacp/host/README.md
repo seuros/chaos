@@ -14,10 +14,13 @@ retries a prompt, automatically approves an action, or equates a cancellation
 request with confirmed termination.
 
 Connections bound encoded messages, admitted requests, sessions, queued updates
-and pending client requests. Slow/closed peers fail closed rather than
-silently losing updates. Permission responses are tied to their originating
-turn and checked against the offered options. A backend must finish its prompt
+and pending client requests. Update overflow and transport failures close the
+connection rather than silently losing updates. Permission responses are tied to
+their originating turn and checked against the offered options. A backend must finish its prompt
 only after native work has actually reached the reported terminal state.
+Permission deadlines deny the request; editor deadlines fail the operation, not
+the connection. An unacknowledged write still invalidates its session. Unanswered
+requests retain their admission credits until a reply or disconnection.
 
 Logs must not be written to the protocol writer. Embedders retain responsibility
 for driving shutdown and containing any work whose termination is unconfirmed.

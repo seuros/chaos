@@ -82,7 +82,7 @@ pub enum GuestError {
     /// The peer rejected a request, or the protocol/transport failed.
     #[error("ACP error: {0}")]
     Protocol(#[from] agent_client_protocol::Error),
-    /// The request may already have reached the agent. This connection is closed.
+    /// The request timed out; its remote execution outcome may be unknown.
     #[error("ACP request timed out; execution outcome may be unknown")]
     Timeout,
     /// A closed or uncertain connection cannot accept another request.
@@ -159,8 +159,8 @@ pub struct AcpClient {
 }
 
 impl AcpClient {
-    /// Send a typed request exactly once. Timeout or future cancellation closes
-    /// the connection; no request is automatically retried.
+    /// Send a typed request once. Timeout leaves the connection open; dropping
+    /// the future closes it. Requests are never retried.
     pub async fn request<R: JsonRpcRequest>(&self, request: R) -> Result<R::Response, GuestError> {
         self.state.ensure_open()?;
         let mut guard = RequestGuard(Some(self.state.clone()));
@@ -168,10 +168,11 @@ impl AcpClient {
             self.request_timeout,
             self.connection.send_request(request).block_task(),
         )
-        .await
-        .map_err(|_| GuestError::Timeout)?;
+        .await;
         guard.0 = None;
-        result.map_err(GuestError::Protocol)
+        result
+            .map_err(|_| GuestError::Timeout)?
+            .map_err(GuestError::Protocol)
     }
 
     /// Queue a typed notification. Success does not acknowledge peer processing.
@@ -182,7 +183,7 @@ impl AcpClient {
             .map_err(GuestError::Protocol)
     }
 
-    /// Whether the driver has closed or a request outcome became uncertain.
+    /// Whether the driver has closed.
     pub fn is_closed(&self) -> bool {
         self.state.closed.load(Ordering::Acquire)
     }

@@ -199,7 +199,8 @@ fn sanitize_mcp_tool_result_for_model(
                     {
                         return serde_json::json!({
                             "type": "text",
-                            "text": "<image content omitted because you do not support image input>",
+                            "text": "<image content omitted because \
+                                you do not support image input>",
                         });
                     }
 
@@ -459,15 +460,8 @@ async fn maybe_request_mcp_tool_approval(
     let annotations = metadata.and_then(|metadata| metadata.annotations.as_ref());
     let approval_required = requires_mcp_tool_approval(annotations);
     let mut monitor_reason = None;
-    let monitored = crate::arc_monitor::monitoring_required(&turn_context.config);
-    if monitored || (approval_mode == AppToolApproval::Approve && approval_required) {
+    if crate::arc_monitor::monitoring_required(&turn_context.config) {
         let outcome = monitor_mcp_tool_call(sess, turn_context, invocation, metadata).await;
-        let outcome = match outcome {
-            ArcMonitorOutcome::Disabled if monitored => {
-                ArcMonitorOutcome::Unavailable("required_monitor_disabled")
-            }
-            other => other,
-        };
         match monitor_approval(
             outcome,
             turn_context.approval_policy.value(),
@@ -547,19 +541,7 @@ async fn maybe_request_mcp_tool_approval(
             Some(ReviewDecision::ApprovedForSession)
         );
         if persisted || remembered {
-            if monitored {
-                return Some(McpToolApprovalDecision::Accept);
-            }
-            let outcome = monitor_mcp_tool_call(sess, turn_context, invocation, metadata).await;
-            match monitor_approval(
-                outcome,
-                turn_context.approval_policy.value(),
-                tui_safety_elicitation_available(turn_context),
-            ) {
-                Ok(None) => return Some(McpToolApprovalDecision::Accept),
-                Ok(reason) => monitor_reason = reason,
-                Err(decision) => return Some(decision),
-            }
+            return Some(McpToolApprovalDecision::Accept);
         }
     }
     if monitor_reason.is_some() {
@@ -655,7 +637,8 @@ async fn maybe_request_mcp_tool_approval(
             let result = persist_bound_mcp_approval(turn_context, &bound).await;
             if let Err(err) = result {
                 return Some(McpToolApprovalDecision::BlockedBySafetyMonitor(format!(
-                    "Approval was not saved and the call was not executed: {err}. Retry and explicitly choose Allow for a one-shot authorization."
+                    "Approval was not saved and the call was not executed: {err}. \
+                     Retry and explicitly choose Allow for a one-shot authorization."
                 )));
             }
         } else if matches!(decision, McpToolApprovalDecision::AcceptForSession) {
@@ -683,16 +666,15 @@ fn monitor_approval(
     tui_attached: bool,
 ) -> Result<Option<String>, McpToolApprovalDecision> {
     let reason = match outcome {
-        ArcMonitorOutcome::Ok | ArcMonitorOutcome::Disabled => return Ok(None),
+        ArcMonitorOutcome::Ok | ArcMonitorOutcome::Disabled | ArcMonitorOutcome::Unavailable(_) => {
+            return Ok(None);
+        }
         ArcMonitorOutcome::SteerModel(reason) => {
             return Err(McpToolApprovalDecision::BlockedBySafetyMonitor(
                 arc_monitor_interrupt_message(&reason),
             ));
         }
         ArcMonitorOutcome::AskUser(reason) => reason,
-        ArcMonitorOutcome::Unavailable(category) => format!(
-            "Safety check unavailable ({category}). One-time approval is required to run this tool."
-        ),
     };
     let prompts_allowed = match policy {
         ApprovalPolicy::Headless => tui_attached,

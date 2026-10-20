@@ -157,27 +157,78 @@ async fn streams_updates_and_denies_permission_while_prompt_is_pending() {
 }
 
 #[tokio::test]
-async fn request_timeout_closes_connection_and_never_replays() {
+async fn request_timeout_keeps_connection_open_and_discards_late_reply_without_replay() {
     let options = ConnectionOptions {
         request_timeout: Duration::from_millis(100),
         ..Default::default()
     };
-    let (connection, _updates, mut peer) = connect(options).await;
+    let (connection, mut updates, mut peer) = connect(options).await;
     let client = connection.client();
     let (result, submitted) = tokio::join!(
         client.request(NewSessionRequest::new(PathBuf::from("/workspace"))),
         peer.receive(),
     );
-    assert_eq!(submitted.expect("one submission")["method"], "session/new");
-    assert!(matches!(result, Err(GuestError::Timeout)));
-    assert!(matches!(
-        client
-            .request(NewSessionRequest::new(PathBuf::from("/workspace")))
-            .await,
-        Err(GuestError::Disconnected)
-    ));
-    drop(connection);
-    assert!(peer.receive().await.is_none(), "no second submission");
+    let submitted = submitted.expect("one submission");
+    assert_eq!(submitted["method"], "session/new");
+    std::assert_matches!(result, Err(GuestError::Timeout));
+    assert!(!client.is_closed());
+    let cancel = peer.receive().await.expect("SDK request cancellation");
+    assert_eq!(cancel["method"], "$/cancel_request");
+    assert_eq!(cancel["params"]["requestId"], submitted["id"]);
+
+    peer.send(json!({
+        "jsonrpc": "2.0", "id": submitted["id"],
+        "result": { "sessionId": "late-session" }
+    }))
+    .await;
+    peer.send(update("still connected")).await;
+    assert!(
+        updates.recv().await.is_some(),
+        "updates survive the deadline"
+    );
+    let (response, ()) = tokio::join!(
+        client.request(NewSessionRequest::new(PathBuf::from("/workspace"))),
+        async {
+            let next = peer.receive().await.expect("new submission, not a replay");
+            assert_eq!(next["method"], "session/new");
+            assert_ne!(next["id"], submitted["id"]);
+            peer.send(json!({
+                "jsonrpc": "2.0", "id": next["id"],
+                "result": { "sessionId": "fresh-session" }
+            }))
+            .await;
+        }
+    );
+    assert_eq!(
+        response.expect("fresh response").session_id,
+        SessionId::new("fresh-session")
+    );
+    connection.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn initialization_timeout_still_closes_the_transport() {
+    let (stream, server) = tokio::io::duplex(4096);
+    let (reader, writer) = tokio::io::split(stream);
+    let mut peer = Peer::new(server);
+    let (result, ()) = tokio::join!(
+        AcpConnection::connect(
+            reader,
+            writer,
+            ConnectionOptions {
+                request_timeout: Duration::from_millis(100),
+                ..Default::default()
+            },
+        ),
+        async {
+            assert_eq!(
+                peer.receive().await.expect("initialize")["method"],
+                "initialize"
+            );
+            while peer.receive().await.is_some() {}
+        }
+    );
+    std::assert_matches!(result.map(|_| ()), Err(GuestError::Timeout));
 }
 
 #[tokio::test]

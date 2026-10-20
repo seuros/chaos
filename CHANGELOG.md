@@ -27,6 +27,15 @@ should. There is no patch level; the build timestamp is the patch.
 - Native session renaming targets the session's mounted runtime store rather
   than the first store mounted in the process.
 
+## [47.14.2] - 2026-10-20
+
+### Fixed
+- Unconfigured or unavailable reflex checks no longer block MCP calls or add
+  approval prompts; ordinary tool approval and sandbox rules still apply.
+- ACP request timeouts no longer close established connections or replay
+  requests. Permission deadlines deny access; uncertain editor writes still
+  invalidate their session.
+
 ## [47.14.1] - 2026-10-20
 
 ### Added

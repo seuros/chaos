@@ -951,6 +951,10 @@ async fn approve_mode_blocks_when_arc_returns_interrupt_for_model() {
     use wiremock::matchers::path;
 
     let server = MockServer::start().await;
+    let _endpoint = crate::test_support::EnvVarGuard::set(
+        "CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE",
+        std::ffi::OsStr::new(&format!("{}/chaos/safety/arc", server.uri())),
+    );
     Mock::given(method("POST"))
         .and(path("/chaos/safety/arc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1021,6 +1025,86 @@ fn require_unavailable_monitor(context: &mut TurnContext, policy: ApprovalPolicy
     context.approval_policy = chaos_sysctl::Constrained::allow_any(policy);
 }
 
+#[tokio::test]
+#[serial]
+async fn unconfigured_reflex_does_not_call_an_implicit_remote_monitor() {
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .respond_with(wiremock::ResponseTemplate::new(401))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let (session, mut context) = make_session_and_context().await;
+    context.auth_manager = Some(crate::test_support::auth_manager_from_auth(
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
+    ));
+    let config = Arc::make_mut(&mut context.config);
+    config.reflex.clear();
+    config.chatgpt_base_url = server.uri();
+    assert!(!crate::arc_monitor::monitoring_required(config));
+    let session = Arc::new(session);
+    let context = Arc::new(context);
+    let invocation = McpInvocation {
+        server: Some("test".into()),
+        tool: "test-tool".into(),
+        arguments: None,
+    };
+    assert_eq!(
+        maybe_request_mcp_tool_approval(
+            &session,
+            &context,
+            "test",
+            &invocation,
+            None,
+            AppToolApproval::Approve,
+        )
+        .await,
+        None,
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rejected_reflex_credentials_do_not_block_headless_tool_approval() {
+    use crate::test_support::EnvVarGuard;
+    use std::ffi::OsStr;
+    let _key = EnvVarGuard::set("CHAOS_TEST_MCP_REFLEX_KEY", OsStr::new("wrong-key"));
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/systemone"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer wrong-key",
+        ))
+        .respond_with(wiremock::ResponseTemplate::new(401))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let (session, mut context) = make_session_and_context().await;
+    require_unavailable_monitor(&mut context, ApprovalPolicy::Headless);
+    let settings = Arc::make_mut(&mut context.config)
+        .reflex
+        .values_mut()
+        .next()
+        .unwrap();
+    settings.base_url = Some(server.uri());
+    settings.env_key = Some("CHAOS_TEST_MCP_REFLEX_KEY".into());
+    let session = Arc::new(session);
+    let context = Arc::new(context);
+    let invocation = McpInvocation {
+        server: Some("test".into()),
+        tool: "test-tool".into(),
+        arguments: None,
+    };
+    for mode in [AppToolApproval::Approve, AppToolApproval::Auto] {
+        assert_eq!(
+            maybe_request_mcp_tool_approval(&session, &context, "test", &invocation, None, mode,)
+                .await,
+            None,
+        );
+    }
+}
+
 #[test]
 fn monitor_outcomes_respect_prompt_policy() {
     use chaos_ipc::protocol::GranularApprovalConfig;
@@ -1035,9 +1119,22 @@ fn monitor_outcomes_respect_prompt_policy() {
         (ApprovalPolicy::Headless, true, true),
         (no_mcp_prompts, false, false),
         (no_mcp_prompts, true, false),
+        (ApprovalPolicy::Interactive, false, true),
+        (ApprovalPolicy::Supervised, false, true),
     ] {
+        for category in [
+            "deadline",
+            "remote_http",
+            "remote_credentials",
+            "credentials_or_configuration",
+            "backend_initialization",
+        ] {
+            assert_eq!(
+                monitor_approval(ArcMonitorOutcome::Unavailable(category), policy, tui),
+                Ok(None),
+            );
+        }
         for outcome in [
-            ArcMonitorOutcome::Unavailable("deadline"),
             ArcMonitorOutcome::AskUser("review this action".into()),
             ArcMonitorOutcome::SteerModel("unsafe".into()),
         ] {
@@ -1045,14 +1142,6 @@ fn monitor_outcomes_respect_prompt_policy() {
             assert_eq!(monitor_approval(outcome, policy, tui).is_ok(), allowed);
         }
     }
-    std::assert_matches!(
-        monitor_approval(
-            ArcMonitorOutcome::Unavailable("remote_http"),
-            ApprovalPolicy::Interactive,
-            false,
-        ),
-        Ok(Some(reason)) if reason.contains("One-time approval")
-    );
 }
 
 #[test]
@@ -1143,7 +1232,7 @@ async fn task_completion_preserves_results_and_events() {
 
 #[tokio::test]
 #[serial]
-async fn required_monitor_precedes_headless_annotation_and_approval_shortcuts() {
+async fn unavailable_monitor_preserves_headless_annotation_and_approval_shortcuts() {
     let (session, mut context) = make_session_and_context().await;
     require_unavailable_monitor(&mut context, ApprovalPolicy::Headless);
     let bound = test_bound_approval(&context, None);
@@ -1156,34 +1245,104 @@ async fn required_monitor_precedes_headless_annotation_and_approval_shortcuts() 
         .put(bound, ReviewDecision::ApprovedForSession);
     let session = Arc::new(session);
     let context = Arc::new(context);
+    let mut unconfigured = (*context).clone();
+    Arc::make_mut(&mut unconfigured.config).reflex.clear();
+    let unconfigured = Arc::new(unconfigured);
     let invocation = McpInvocation {
         server: Some("test".into()),
         tool: "test-tool".into(),
         arguments: None,
     };
-    for mode in [
-        AppToolApproval::Approve,
-        AppToolApproval::Auto,
-        AppToolApproval::Prompt,
-    ] {
+    for mode in [AppToolApproval::Approve, AppToolApproval::Auto] {
         for read_only in [true, false] {
             let mut metadata = approval_metadata(None, None, None, None, None);
             metadata.annotations = Some(annotations(Some(read_only), None, None));
-            std::assert_matches!(
-                maybe_request_mcp_tool_approval(
-                    &session, &context, "test", &invocation, Some(&metadata), mode,
-                ).await,
-                Some(McpToolApprovalDecision::BlockedBySafetyMonitor(reason))
-                    if reason.contains("Safety check unavailable")
-                        && reason.contains("Approval prompts are disabled")
-            );
+            let baseline = maybe_request_mcp_tool_approval(
+                &session,
+                &unconfigured,
+                "test",
+                &invocation,
+                Some(&metadata),
+                mode,
+            )
+            .await;
+            let unavailable = maybe_request_mcp_tool_approval(
+                &session,
+                &context,
+                "test",
+                &invocation,
+                Some(&metadata),
+                mode,
+            )
+            .await;
+            assert_eq!(unavailable, baseline);
+            assert_eq!(unavailable, None);
+            assert!(!format!("{unavailable:?}").contains("Safety check unavailable"));
         }
     }
 }
 
 #[tokio::test]
 #[serial]
-async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence() {
+async fn unavailable_monitor_preserves_explicit_tool_approval_prompts() {
+    let (session, mut context, events) = crate::chaos::make_session_and_context_with_rx().await;
+    require_unavailable_monitor(
+        Arc::get_mut(&mut context).unwrap(),
+        ApprovalPolicy::Interactive,
+    );
+    *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+    let invocation = McpInvocation {
+        server: Some("test".into()),
+        tool: "test-tool".into(),
+        arguments: None,
+    };
+    let approval = maybe_request_mcp_tool_approval(
+        &session,
+        &context,
+        "explicit",
+        &invocation,
+        None,
+        AppToolApproval::Prompt,
+    );
+    let respond = async {
+        loop {
+            let event = events.recv().await.unwrap();
+            let EventMsg::ElicitationRequest(request) = event.msg else {
+                continue;
+            };
+            let chaos_ipc::approvals::ElicitationRequest::Form { message, .. } = request.request
+            else {
+                panic!("expected tool approval form");
+            };
+            assert!(!message.contains("Safety check unavailable"));
+            session
+                .resolve_elicitation(
+                    "test".into(),
+                    chaos_mcp_runtime::McpRequestId::string(format!(
+                        "{MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}_explicit"
+                    )),
+                    ElicitationResponse {
+                        action: ElicitationAction::Decline,
+                        content: None,
+                        meta: None,
+                    },
+                )
+                .await
+                .unwrap();
+            break;
+        }
+    };
+    let (decision, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(approval, respond)
+    })
+    .await
+    .expect("ordinary approval prompt");
+    assert_eq!(decision, Some(McpToolApprovalDecision::Decline));
+}
+
+#[tokio::test]
+#[serial]
+async fn risky_monitor_approval_is_one_shot_even_with_forged_persistence() {
     use crate::chaos::make_session_and_context_with_rx;
     use chaos_ipc::protocol::{SessionSource, SubAgentSource};
     let (session, mut context, events) = make_session_and_context_with_rx().await;
@@ -1191,7 +1350,31 @@ async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence()
         Arc::get_mut(&mut context).unwrap(),
         ApprovalPolicy::Headless,
     );
+    let server = wiremock::MockServer::start().await;
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/chaos/safety/arc"))
+        .respond_with(
+            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "outcome": "ask-user", "short_reason": "review this action",
+                "rationale": "review this action", "risk_score": 60,
+                "risk_level": "medium", "evidence": []
+            })),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
     let turn = Arc::get_mut(&mut context).unwrap();
+    turn.auth_manager = Some(crate::test_support::auth_manager_from_auth(
+        crate::ChaosAuth::create_dummy_chatgpt_auth_for_testing(),
+    ));
+    let config = Arc::make_mut(&mut turn.config);
+    config.chatgpt_base_url = server.uri();
+    config
+        .reflex
+        .values_mut()
+        .next()
+        .unwrap()
+        .allow_remote_fallback = true;
     assert!(!tui_safety_elicitation_available(turn));
     turn.app_server_client_name = Some("chaos-console".into());
     for (source, expected) in [
@@ -1234,7 +1417,7 @@ async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence()
                 else {
                     panic!("expected form")
                 };
-                assert!(message.contains("Safety check unavailable"));
+                assert!(message.contains("review this action"));
                 assert!(meta.unwrap().get(MCP_TOOL_APPROVAL_PERSIST_KEY).is_none());
                 session
                     .resolve_elicitation(
@@ -1283,13 +1466,12 @@ async fn unavailable_monitor_approval_is_one_shot_even_with_forged_persistence()
 
 #[tokio::test]
 #[serial]
-async fn unavailable_monitor_stops_sync_async_and_cancel_before_dispatch() {
+async fn unavailable_monitor_allows_sync_async_and_cancel_to_reach_dispatch() {
     let (session, mut context, events) = crate::chaos::make_session_and_context_with_rx().await;
     require_unavailable_monitor(
         Arc::get_mut(&mut context).unwrap(),
         ApprovalPolicy::Headless,
     );
-    // Dispatch would fail with unknown-server, not monitor denial.
     let result = handle_mcp_tool_call(
         session.clone(),
         &context,
@@ -1299,11 +1481,7 @@ async fn unavailable_monitor_stops_sync_async_and_cancel_before_dispatch() {
         "{}".into(),
     )
     .await;
-    assert!(
-        serde_json::to_string(&result)
-            .unwrap()
-            .contains("Safety check unavailable")
-    );
+    assert!(serde_json::to_string(&result).unwrap().contains("unknown"));
     let error = handle_mcp_tool_call_async(
         session.clone(),
         &context,
@@ -1315,7 +1493,7 @@ async fn unavailable_monitor_stops_sync_async_and_cancel_before_dispatch() {
     )
     .await
     .unwrap_err();
-    assert!(error.to_string().contains("Safety check unavailable"));
+    assert!(error.to_string().contains("unknown"), "{error}");
     let error = handle_mcp_cancel_task(
         session,
         &context,
@@ -1325,13 +1503,12 @@ async fn unavailable_monitor_stops_sync_async_and_cancel_before_dispatch() {
     )
     .await
     .unwrap_err();
-    assert!(error.to_string().contains("Safety check unavailable"));
+    assert!(error.to_string().contains("unknown"), "{error}");
 
     let mut skipped = Vec::new();
     while let Ok(event) = events.try_recv() {
         if let EventMsg::McpToolCallEnd(end) = event.msg {
-            assert_eq!(end.duration, Duration::ZERO);
-            assert!(end.result.unwrap_err().contains("Safety check unavailable"));
+            assert!(end.result.unwrap_err().contains("unknown"));
             skipped.push(end.call_id);
         }
     }

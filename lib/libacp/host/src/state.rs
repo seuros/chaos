@@ -250,10 +250,9 @@ impl ClientHandle {
                 "permission options must be unique once-only decisions",
             ));
         }
-        let permit = state.requests.clone().try_acquire_owned().map_err(|_| {
-            state.fail("ACP client request limit exceeded");
-            error("ACP client request limit exceeded")
-        })?;
+        let Ok(permit) = state.requests.clone().try_acquire_owned() else {
+            return Ok(deny());
+        };
         let request = RequestPermissionRequest::new(self.session_id.clone(), tool_call, options);
         let (raw_tx, raw_rx) = tokio::sync::oneshot::channel();
         let received = state.clone();
@@ -264,6 +263,7 @@ impl ClientHandle {
                 .prepare_request(request)
                 .on_receiving_result(async move |reply| {
                     received.acknowledge_inbound();
+                    drop(permit);
                     let _ = raw_tx.send(reply);
                     Ok(())
                 })?;
@@ -271,14 +271,9 @@ impl ClientHandle {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let watching = state.clone();
         self.connection.spawn(async move {
-            // Retain the permit even if the prompt is cancelled. An unanswered
-            // editor request remains accounted for until its reply or deadline.
-            let _permit = permit;
-            match tokio::time::timeout(watching.limits.approval_timeout, raw_rx).await {
-                Ok(reply) => {
-                    let _ = tx.send(reply);
-                }
-                Err(_) => watching.fail("ACP permission response timed out"),
+            if let Ok(reply) = tokio::time::timeout(watching.limits.approval_timeout, raw_rx).await
+            {
+                let _ = tx.send(reply);
             }
             Ok(())
         })?;

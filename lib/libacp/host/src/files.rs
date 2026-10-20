@@ -98,6 +98,7 @@ impl ClientHandle {
                 .prepare_request(request)
                 .on_receiving_result(async move |reply| {
                     received.acknowledge_inbound();
+                    drop(permit);
                     // The caller may have cancelled; reply accounting still completes.
                     let _ = raw_tx.send(reply);
                     Ok(())
@@ -107,9 +108,7 @@ impl ClientHandle {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let watching = state.clone();
         self.connection.spawn(async move {
-            // Cancellation does not erase an outstanding client request credit.
-            let _permit = permit;
-            match tokio::time::timeout(
+            if let Ok(reply) = tokio::time::timeout(
                 watching
                     .limits
                     .approval_timeout
@@ -118,11 +117,7 @@ impl ClientHandle {
             )
             .await
             {
-                Ok(reply) => {
-                    // A cancelled caller no longer needs the already-accounted reply.
-                    let _ = tx.send(reply);
-                }
-                Err(_) => watching.fail("ACP editor response timed out"),
+                let _ = tx.send(reply);
             }
             Ok(())
         })?;

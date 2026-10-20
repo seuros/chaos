@@ -131,14 +131,15 @@ headless mode. This applies to synchronous calls, asynchronous calls, and task
 cancellation. Runtime checks share a 30-second deadline for credentials, retries,
 and fallback.
 
-Missing credentials, timeouts, and invalid verdicts require one-time approval;
-if prompts are disabled, the call is blocked. Remote fallback requires
+Missing credentials, timeouts, and invalid verdicts leave the check unavailable;
+they do not block execution or add approval prompts. Ordinary tool approval and
+sandbox rules still apply. Remote fallback requires
 `allow_remote_fallback = true`; the live diagnostic never uses it. Fallback uses
 ChatGPT authentication or `CHAOS_ARC_MONITOR_TOKEN`, and optionally
 `CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE`. An explicit remote token or endpoint also
-requires a check before approval shortcuts. Without an action-risk backend or
-explicit remote monitor, existing monitor selection and approval rules apply;
-no available monitor means disabled, not a successful safety verdict.
+enables a check before approval shortcuts. Without an action-risk backend or
+explicit remote monitor, checks are skipped and ordinary approval rules apply;
+no configured monitor means disabled, not a successful safety verdict.
 
 | Signal | Threshold | Outcome |
 |--------|-----------|---------|

@@ -119,26 +119,56 @@ async fn cancelled_unacknowledged_write_invalidates_session_even_after_late_succ
 }
 
 #[tokio::test]
-async fn unanswered_editor_request_has_a_finite_deadline_and_native_cleanup() {
-    let (mut peer, task, observations, id) = open(
-        true,
-        true,
-        ConnectionLimits {
-            approval_timeout: Duration::from_millis(20),
-            ..Default::default()
-        },
-    )
-    .await;
-    peer.prompt(3, &id, "editor-write").await;
-    assert_eq!(peer.receive().await["method"], "fs/write_text_file");
-    assert!(
-        tokio::time::timeout(Duration::from_secs(2), task)
-            .await
-            .unwrap()
-            .unwrap()
-            .is_err()
-    );
-    assert_eq!(observations.shutdowns.load(Ordering::Acquire), 1);
+async fn editor_deadline_fails_the_prompt_without_closing_the_connection() {
+    for write in [false, true] {
+        let (mut peer, task, observations, id) = open(
+            true,
+            true,
+            ConnectionLimits {
+                approval_timeout: Duration::from_millis(20),
+                ..Default::default()
+            },
+        )
+        .await;
+        let text = if write { "editor-write" } else { "editor-read" };
+        peer.prompt(3, &id, text).await;
+        let old = peer.receive().await;
+        assert_eq!(
+            old["method"],
+            if write {
+                "fs/write_text_file"
+            } else {
+                "fs/read_text_file"
+            }
+        );
+        let failed = peer.receive().await;
+        assert_eq!(failed["id"], 3);
+        assert!(failed["error"].is_object());
+        assert_eq!(observations.shutdowns.load(Ordering::Acquire), 0);
+        peer.send(json!({
+            "jsonrpc":"2.0", "id":old["id"],
+            "result":if write { json!({}) } else { json!({"content":"late"}) }
+        }))
+        .await;
+        peer.prompt(4, &id, "fresh").await;
+        assert!(peer.receive().await["error"].is_object());
+        peer.send(json!({
+            "jsonrpc":"2.0","id":5,"method":"session/new",
+            "params":{"cwd":"/workspace","mcpServers":[]}
+        }))
+        .await;
+        let fresh = peer.receive().await["result"]["sessionId"].clone();
+        assert!(fresh.is_string());
+        peer.prompt(6, &fresh, "other-session").await;
+        assert_eq!(
+            peer.receive().await["params"]["update"]["content"]["text"],
+            "1:other-session"
+        );
+        assert_eq!(peer.receive().await["result"]["stopReason"], "end_turn");
+        drop(peer);
+        assert!(task.await.unwrap().is_ok());
+        assert_eq!(observations.shutdowns.load(Ordering::Acquire), 2);
+    }
 }
 
 #[tokio::test]

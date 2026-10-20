@@ -13,7 +13,8 @@ enabled. Tokio owns I/O; the embedding application owns process execution.
   `PermissionHandler` can decide individual requests. No filesystem or terminal
   access is advertised.
 - Bounds incoming/outgoing JSON lines and unread session updates.
-- Closes on update overflow, request timeout or dropped request future.
+- Closes on update overflow or a dropped request future. Request timeouts return
+  an error without closing an established connection; late replies are discarded.
 - Never retries a prompt, authenticates through an API-key fallback, or treats
   cancellation/disconnection as evidence that remote tools have stopped.
 

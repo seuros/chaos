@@ -77,6 +77,11 @@ impl Session {
                 let previous_turn_settings = self
                     .apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
+                crate::tools::groups::restore_from_rollout(
+                    &self.services.tool_group_catalog,
+                    self.tool_group_state(),
+                    &rollout_items,
+                );
 
                 let curr: &str = turn_context.model_info.slug.as_str();
                 if let Some(prev) = previous_turn_settings

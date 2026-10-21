@@ -521,6 +521,8 @@ fn classify_error(error: Error) -> ApiError {
         ApiError::InvalidRequest { message }
     } else if is_server_overloaded_error(&error) {
         ApiError::ServerOverloaded
+    } else if is_response_protection_unavailable(&error) {
+        ApiError::ServiceUnavailable
     } else {
         let delay = try_parse_retry_after(&error);
         let message = error.message.unwrap_or_default();
@@ -555,6 +557,17 @@ fn is_invalid_prompt_error(error: &Error) -> bool {
 fn is_server_overloaded_error(error: &Error) -> bool {
     error.code.as_deref() == Some("server_is_overloaded")
         || error.code.as_deref() == Some("slow_down")
+}
+
+fn is_response_protection_unavailable(error: &Error) -> bool {
+    // The backend can report this outage without a distinct error code.
+    // Match the specific message, not arbitrary response-protection failures.
+    error.message.as_deref().is_some_and(|message| {
+        message
+            .trim()
+            .trim_end_matches('.')
+            .eq_ignore_ascii_case("response protection is unavailable")
+    })
 }
 
 fn rate_limit_regex() -> &'static regex_lite::Regex {

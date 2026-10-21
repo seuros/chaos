@@ -123,6 +123,61 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
         .collect()
 }
 
+#[tokio::test]
+async fn resumed_history_restores_web_search_activation_before_first_request() {
+    let (session, _) = make_session_and_context().await;
+    assert!(
+        !session
+            .services
+            .tool_group_catalog
+            .is_tool_visible(session.tool_group_state(), "web_search")
+    );
+    let history = [
+        json!({
+            "type": "function_call",
+            "call_id": "enable_web",
+            "name": "enable_tools",
+            "arguments": r#"{"groups":["web"]}"#,
+        }),
+        json!({
+            "type": "function_call_output",
+            "call_id": "enable_web",
+            "output": json!({
+                "changed_groups": ["web"],
+                "unchanged_groups": [],
+                "tools_added": ["web_search", "image_generation"],
+                "tools_removed": [],
+            }).to_string(),
+        }),
+        json!({
+            "type": "web_search_call",
+            "status": "completed",
+            "action": {"type": "search", "query": "fixture"},
+        }),
+    ]
+    .into_iter()
+    .map(|item| RolloutItem::ResponseItem(serde_json::from_value(item).expect("response item")))
+    .collect();
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: session.conversation_id,
+            history,
+        }))
+        .await;
+    assert!(
+        session
+            .services
+            .tool_group_catalog
+            .is_tool_visible(session.tool_group_state(), "web_search")
+    );
+    assert!(
+        !session
+            .services
+            .tool_group_catalog
+            .is_tool_visible(session.tool_group_state(), "apply_patch")
+    );
+}
+
 #[test]
 fn initial_replay_event_msgs_converts_response_items_for_resume() {
     let process_id = ProcessId::new();

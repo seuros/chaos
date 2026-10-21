@@ -372,6 +372,39 @@ async fn error_when_error_event() {
 }
 
 #[tokio::test]
+async fn response_protection_outage_is_service_unavailable() {
+    for kind in ["response.failed", "error"] {
+        for error in [
+            json!({"message": "response protection is unavailable"}),
+            json!({
+                "type": "server_error",
+                "code": "server_error",
+                "message": "Response protection is unavailable.",
+            }),
+            json!({
+                "type": "invalid_request_error",
+                "code": null,
+                "message": " response protection is unavailable ",
+            }),
+        ] {
+            let event = if kind == "response.failed" {
+                json!({"type": kind, "response": {"error": error}})
+            } else {
+                json!({"type": kind, "error": error})
+            };
+            let sse = format!("event: {kind}\ndata: {event}\n\n");
+            let events = collect_events(&[sse.as_bytes()]).await;
+            assert_eq!(events.len(), 1, "input: {event}");
+            assert_matches!(
+                events[0],
+                Err(ApiError::ServiceUnavailable),
+                "input: {event}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn context_window_error_is_fatal() {
     let raw_error = r#"{"type":"response.failed","sequence_number":3,"response":{"id":"resp_5c66275b97b9baef1ed95550adb3b7ec13b17aafd1d2f11b","object":"response","created_at":1759510079,"status":"failed","background":false,"error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."},"usage":null,"user":null,"metadata":{}}}"#;
 
@@ -708,6 +741,10 @@ async fn error_events_are_classified() {
         (
             r#"{"type":"error","error":{"message":"The server had an error.","type":"server_error","code":null}}"#,
             "retryable error: The server had an error.",
+        ),
+        (
+            r#"{"type":"error","error":{"message":"response protection rejected the request","type":"invalid_request_error","code":null}}"#,
+            "invalid request: response protection rejected the request",
         ),
         (r#"{"type":"error"}"#, "stream error: error event received"),
     ];

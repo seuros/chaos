@@ -9,6 +9,8 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.3] - 2026-10-21
+
 ### Added
 - Raw macOS IOPM return code/warning level and NSProcessInfo thermal state
   in `chaos://machine` under `machine.thermal.macos`, so sessions reporting
@@ -24,6 +26,11 @@ should. There is no patch level; the build timestamp is the patch.
   unacknowledged client write.
 
 ### Fixed
+- Resuming a conversation restores acknowledged tool-group activation,
+  including web-search declarations required to replay native search history.
+  Failed, incomplete, or malformed activation calls are not replayed.
+- Provider "response protection is unavailable" errors use retryable
+  service-unavailable handling instead of generic stream-disconnect errors.
 - Native session renaming targets the session's mounted runtime store rather
   than the first store mounted in the process.
 

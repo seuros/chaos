@@ -1,7 +1,12 @@
+use chaos_ipc::models::{FunctionCallOutputBody, ResponseItem};
+use chaos_ipc::protocol::RolloutItem;
 use chaos_traits::catalog::CatalogRegistration;
 use mcp_host::prelude::{
-    ToolExposure, ToolGroupCatalog, ToolGroupDefinition, ToolGroupError, ToolGroupState,
+    ToolExposure, ToolGroupCatalog, ToolGroupChange, ToolGroupDefinition, ToolGroupError,
+    ToolGroupState,
 };
+use serde::Deserialize;
+use std::collections::{BTreeSet, HashMap};
 
 pub(crate) const SHELL: &str = "shell";
 pub(crate) const FILESYSTEM: &str = "filesystem";
@@ -237,6 +242,81 @@ pub(crate) fn new_state(
         catalog.set_groups_enabled(&state, disabled_groups, true)?;
     }
     Ok(state)
+}
+
+/// Restore discovery state, not permissions or tool execution. Replay only
+/// acknowledged controls from the full journal so compaction does not erase
+/// activation. In particular, native web-search history needs its declaration
+/// on the first resumed request, before the model can call enable_tools again.
+pub(crate) fn restore_from_rollout(
+    catalog: &ToolGroupCatalog,
+    state: &ToolGroupState,
+    items: &[RolloutItem],
+) {
+    #[derive(Deserialize)]
+    struct Args {
+        groups: BTreeSet<String>,
+    }
+
+    let available: BTreeSet<_> = catalog.definitions().into_iter().map(|g| g.id).collect();
+    let mut pending = HashMap::new();
+    for item in items {
+        let RolloutItem::ResponseItem(item) = item else {
+            continue;
+        };
+        match item {
+            ResponseItem::FunctionCall {
+                name,
+                namespace,
+                arguments,
+                call_id,
+                ..
+            } => {
+                pending.remove(call_id);
+                let enabled = match (namespace.as_deref(), name.as_str()) {
+                    (None, "enable_tools") => true,
+                    (None, "disable_tools") => false,
+                    _ => continue,
+                };
+                if let Ok(args) = serde_json::from_str::<Args>(arguments)
+                    && !args.groups.is_empty()
+                {
+                    pending.insert(call_id.clone(), (args.groups, enabled));
+                }
+            }
+            ResponseItem::FunctionCallOutput {
+                call_id, output, ..
+            } => {
+                let Some((requested, enabled)) = pending.remove(call_id) else {
+                    continue;
+                };
+                if output.success == Some(false) {
+                    continue;
+                }
+                let FunctionCallOutputBody::Text(text) = &output.body else {
+                    continue;
+                };
+                let Ok(change) = serde_json::from_str::<ToolGroupChange>(text) else {
+                    continue;
+                };
+                let acknowledged: BTreeSet<_> = change
+                    .changed_groups
+                    .into_iter()
+                    .chain(change.unchanged_groups)
+                    .collect();
+                if acknowledged != requested {
+                    continue;
+                }
+                // A removed group must not prevent restoring other groups
+                // from a valid control recorded by an older catalog.
+                let groups = acknowledged.intersection(&available).cloned();
+                if let Err(error) = catalog.set_groups_enabled(state, groups, enabled) {
+                    tracing::warn!(%error, "could not restore tool group activation");
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Side-effect-free preflight, before a capability group can prepare assets.

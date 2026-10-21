@@ -76,8 +76,11 @@ fn map_api_error_maps_service_errors() {
 
     std::assert_matches!(err, ChaosErr::ServerOverloaded);
 
-    let err = map_api_error(ApiError::ServiceUnavailable);
+    let err = map_api_error(abi_error_to_api_error(AbiError::from(
+        ApiError::ServiceUnavailable,
+    )));
     std::assert_matches!(err, ChaosErr::InternalServerError);
+    assert!(err.is_retryable());
     assert_eq!(
         err.to_chaos_ipc_error(),
         chaos_ipc::protocol::ChaosErrorInfo::InternalServerError

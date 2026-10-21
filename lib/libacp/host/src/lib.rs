@@ -10,6 +10,7 @@ use protocol::schema::v1::{
     SetSessionConfigOptionRequest,
 };
 
+mod capabilities;
 mod files;
 mod framing;
 mod lifecycle;
@@ -46,6 +47,7 @@ fn unsupported() -> protocol::Error {
 /// Backend-owned creation of isolated native sessions.
 pub trait AgentBackend: Send + Sync + 'static {
     /// Optional lifecycle capabilities. Defaults advertise none.
+    /// Only list, resume and additional-directory support are exposed by this host.
     fn session_capabilities(&self) -> SessionCapabilities {
         SessionCapabilities::new()
     }
@@ -102,7 +104,10 @@ pub trait AgentSession: Send + Sync + 'static {
         Box::pin(async { Ok(SessionInfo::default()) })
     }
 
-    /// Apply an idle-only change through native policy, then return confirmed state.
+    /// Apply a change through native policy, then return confirmed state.
+    ///
+    /// Changes are serialized with each other, but may run concurrently with a
+    /// prompt. Backends must synchronize their own configuration and native work.
     fn set_config_option(
         &self,
         _request: SetSessionConfigOptionRequest,
@@ -141,7 +146,7 @@ pub struct ConnectionLimits {
     pub update_capacity: usize,
     /// Maximum outstanding client permission requests and inbound requests.
     pub pending_requests: usize,
-    /// Permission response deadline. Expiration denies and closes the connection.
+    /// Permission response deadline. Expiration denies that request.
     pub approval_timeout: Duration,
     /// Maximum time to join native cancellation/shutdown.
     pub shutdown_timeout: Duration,

@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use protocol::schema::v1::{LoadSessionRequest, ResumeSessionRequest, SessionId};
@@ -10,6 +11,13 @@ use crate::{AgentBackend, SessionInfo, protocol};
 pub(crate) enum SavedRequest {
     Load(LoadSessionRequest),
     Resume(ResumeSessionRequest),
+}
+
+pub(crate) fn validate_paths(cwd: &Path, additional: &[PathBuf]) -> protocol::Result<()> {
+    if !cwd.is_absolute() || additional.iter().any(|path| !path.is_absolute()) {
+        return Err(invalid("ACP workspace paths must be absolute"));
+    }
+    Ok(())
 }
 
 impl SavedRequest {

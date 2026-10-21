@@ -18,20 +18,35 @@ pub(crate) fn incoming<R: AsyncRead + Unpin>(
         reader,
         LinesCodec::new_with_max_length(state.limits.max_message_bytes),
     )
-    .map(move |line| {
-        let line = line.map_err(io::Error::other)?;
-        let frame: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
-        if !frame.is_object() {
-            return Err(io::Error::other("ACP requires individual JSON objects"));
+    .filter_map(move |line| {
+        let state = state.clone();
+        async move {
+            let result = (|| {
+                let line = line.map_err(io::Error::other)?;
+                let frame: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
+                if !frame.is_object() {
+                    return Err(io::Error::other("ACP requires individual JSON objects"));
+                }
+                if frame.get("id").is_none() && frame.get("method").is_some() {
+                    // Unknown notifications have no responder to release an admission
+                    // credit. Discard them here, before any SDK queues. Known
+                    // cancellation notifications do not create unbounded native work.
+                    return Ok(matches!(
+                        frame["method"].as_str(),
+                        Some("session/cancel" | "$/cancel_request")
+                    )
+                    .then_some(line));
+                }
+                // Requests and replies retain their credit until the SDK responds or
+                // consumes the matching reply. Unknown replies still fail boundedly.
+                if state.inbound.fetch_add(1, Ordering::AcqRel) >= state.limits.pending_requests {
+                    state.fail("ACP inbound admission limit exceeded");
+                    return Err(io::Error::other("ACP inbound admission limit exceeded"));
+                }
+                Ok(Some(line))
+            })();
+            result.transpose()
         }
-        // Every frame needs a credit, including malformed/unknown replies.
-        // SDK callbacks or the actual outgoing responder release credits;
-        // unread/unsupported floods cannot fill its internal channels forever.
-        if state.inbound.fetch_add(1, Ordering::AcqRel) >= state.limits.pending_requests {
-            state.fail("ACP inbound admission limit exceeded");
-            return Err(io::Error::other("ACP inbound admission limit exceeded"));
-        }
-        Ok(line)
     })
 }
 

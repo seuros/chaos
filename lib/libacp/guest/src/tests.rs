@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
 
+mod permissions;
+
 struct Peer {
     reader: tokio::io::Lines<BufReader<ReadHalf<DuplexStream>>>,
     writer: WriteHalf<DuplexStream>,

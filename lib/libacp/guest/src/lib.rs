@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    InitializeRequest, InitializeResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SessionNotification,
+    CancelNotification, InitializeRequest, InitializeResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SessionNotification,
 };
 use agent_client_protocol::{
     Agent, Client, ConnectionTo, JsonRpcNotification, JsonRpcRequest, Lines,
@@ -22,10 +22,14 @@ use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
 /// Protocol types and traits from the official SDK, without native transports.
 pub use agent_client_protocol as protocol;
 
+mod permissions;
+
 /// Application-owned permission decisions. This is not an agent sandbox:
 /// callers must independently contain agents and their native tool execution.
 pub trait PermissionHandler: std::fmt::Debug + Send + Sync {
     /// Handle one permission request. No automatic approval or retry is added.
+    /// The future is dropped when its session is cancelled or disconnected.
+    /// It must be cancellation-safe and must not perform the proposed action.
     fn request_permission(
         &self,
         request: RequestPermissionRequest,
@@ -156,6 +160,7 @@ pub struct AcpClient {
     connection: ConnectionTo<Agent>,
     state: ConnectionState,
     request_timeout: Duration,
+    permissions: permissions::PendingPermissions,
 }
 
 impl AcpClient {
@@ -178,6 +183,16 @@ impl AcpClient {
     /// Queue a typed notification. Success does not acknowledge peer processing.
     pub fn notify<N: JsonRpcNotification>(&self, notification: N) -> Result<(), GuestError> {
         self.state.ensure_open()?;
+        let message = notification.to_untyped_message()?;
+        if message.method == "session/cancel" {
+            let cancel: CancelNotification = serde_json::from_value(message.params)
+                .map_err(|_| protocol::Error::invalid_params())?;
+            return self.permissions.cancel_and_send(&cancel.session_id, || {
+                self.connection
+                    .send_notification(notification)
+                    .map_err(GuestError::Protocol)
+            });
+        }
         self.connection
             .send_notification(notification)
             .map_err(GuestError::Protocol)
@@ -257,6 +272,8 @@ impl AcpConnection {
         let notification_state = state.clone();
         let driver_state = state.clone();
         let permissions = Arc::clone(&options.permissions);
+        let pending_permissions = permissions::PendingPermissions::default();
+        let incoming_permissions = pending_permissions.clone();
         let (ready, pending) = oneshot::channel();
         let task = tokio::spawn(async move {
             let result = Client
@@ -274,8 +291,19 @@ impl AcpConnection {
                     agent_client_protocol::on_receive_notification!(),
                 )
                 .on_receive_request(
-                    async move |request: RequestPermissionRequest, responder, _cx| {
-                        responder.respond(permissions.request_permission(request).await?)
+                    async move |request: RequestPermissionRequest, responder, cx| {
+                        let pending = incoming_permissions.register(request.session_id.clone());
+                        let permissions = permissions.clone();
+                        cx.spawn(async move {
+                            let result = tokio::select! {
+                                biased;
+                                _ = pending.cancelled() => Ok(RequestPermissionResponse::new(
+                                    RequestPermissionOutcome::Cancelled,
+                                )),
+                                result = permissions.request_permission(request) => result,
+                            };
+                            pending.respond(responder, result)
+                        })
                     },
                     agent_client_protocol::on_receive_request!(),
                 )
@@ -316,6 +344,7 @@ impl AcpConnection {
             connection,
             state,
             request_timeout: options.request_timeout,
+            permissions: pending_permissions,
         };
         let initialized = match client
             .request(InitializeRequest::new(ProtocolVersion::V1))

@@ -12,6 +12,9 @@ enabled. Tokio owns I/O; the embedding application owns process execution.
 - Denies permission requests by default; an explicit application-owned
   `PermissionHandler` can decide individual requests. No filesystem or terminal
   access is advertised.
+- Sending `session/cancel` resolves pending permission requests for that session
+  as cancelled and drops their application-policy futures. Policy futures must
+  therefore be cancellation-safe; late approvals cannot escape cancellation.
 - Bounds incoming/outgoing JSON lines and unread session updates.
 - Closes on update overflow or a dropped request future. Request timeouts return
   an error without closing an established connection; late replies are discarded.

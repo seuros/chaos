@@ -172,6 +172,9 @@ impl ClientHandle {
     /// Replay an update with bounded backpressure instead of buffering a whole history.
     pub async fn update_wait(&self, update: SessionUpdate) -> protocol::Result<()> {
         let (state, slot) = self.ready()?;
+        let Some(update) = state.filter_update(update) else {
+            return Ok(());
+        };
         loop {
             let changed = slot.queue_changed.notified();
             {
@@ -214,6 +217,9 @@ impl ClientHandle {
     /// Queue an ordered update. Overflow fails the connection closed.
     pub fn update(&self, update: SessionUpdate) -> protocol::Result<()> {
         let (state, slot) = self.ready()?;
+        let Some(update) = state.filter_update(update) else {
+            return Ok(());
+        };
         let active = slot.lock();
         self.check_ready(&state, &active)?;
         if slot.queued.fetch_add(1, Ordering::AcqRel) >= state.limits.update_capacity {

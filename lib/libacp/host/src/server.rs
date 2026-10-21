@@ -5,8 +5,9 @@ use protocol::schema::v1::{
     AgentCapabilities, AuthenticateRequest, CancelNotification, ContentBlock, Implementation,
     InitializeRequest, InitializeResponse, ListSessionsRequest, LoadSessionRequest,
     LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    ResumeSessionRequest, ResumeSessionResponse, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
+    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionConfigOptionValue,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse,
 };
 use protocol::{Agent, Lines};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -66,7 +67,14 @@ impl AgentServer {
         let list_backend = self.backend.clone();
         let backend = self.backend.clone();
         let prompt_capabilities = self.backend.prompt_capabilities();
-        let session_capabilities = self.backend.session_capabilities();
+        let backend_capabilities = self.backend.session_capabilities();
+        // Do not forward close/delete (or future methods) without dispatch and
+        // lifecycle implementations. Backend declarations are not handlers.
+        let session_capabilities = SessionCapabilities::new()
+            .list(backend_capabilities.list)
+            .resume(backend_capabilities.resume)
+            .additional_directories(backend_capabilities.additional_directories)
+            .meta(backend_capabilities.meta);
         let can_list = session_capabilities.list.is_some();
         let can_resume = session_capabilities.resume.is_some();
         let can_load = self.backend.load_session_supported();
@@ -113,6 +121,11 @@ impl AgentServer {
                         return responder
                             .respond_with_error(invalid("ACP session loading is unsupported"));
                     }
+                    if let Err(error) =
+                        saved::validate_paths(&request.cwd, &request.additional_directories)
+                    {
+                        return responder.respond_with_error(error);
+                    }
                     let permit = match saved::admit(&loading, &request.session_id) {
                         Ok(permit) => permit,
                         Err(error) => return responder.respond_with_error(error),
@@ -144,6 +157,11 @@ impl AgentServer {
                     if !can_resume {
                         return responder
                             .respond_with_error(invalid("ACP session resume is unsupported"));
+                    }
+                    if let Err(error) =
+                        saved::validate_paths(&request.cwd, &request.additional_directories)
+                    {
+                        return responder.respond_with_error(error);
                     }
                     let permit = match saved::admit(&resuming, &request.session_id) {
                         Ok(permit) => permit,
@@ -186,8 +204,10 @@ impl AgentServer {
                     if let Err(error) = opening.ready() {
                         return responder.respond_with_error(error);
                     }
-                    if !request.cwd.is_absolute() {
-                        return responder.respond_with_error(invalid("ACP cwd must be absolute"));
+                    if let Err(error) =
+                        saved::validate_paths(&request.cwd, &request.additional_directories)
+                    {
+                        return responder.respond_with_error(error);
                     }
                     let permit = match opening.session_permits.clone().try_acquire_owned() {
                         Ok(permit) => permit,
@@ -229,6 +249,13 @@ impl AgentServer {
             )
             .on_receive_request(
                 async move |request: SetSessionConfigOptionRequest, responder, cx| {
+                    if matches!(request.value, SessionConfigOptionValue::Boolean { .. })
+                        && !configuring.supports_boolean()
+                    {
+                        return responder.respond_with_error(invalid(
+                            "boolean configuration is unsupported by this client",
+                        ));
+                    }
                     let (context, guard) =
                         match configuring.operation(&request.session_id, cx.clone(), false) {
                             Ok(operation) => operation,
@@ -309,7 +336,6 @@ impl AgentServer {
             )
             .on_receive_notification(
                 async move |request: CancelNotification, cx| {
-                    cancelling.acknowledge_inbound();
                     if let Ok(slot) = cancelling.find(&request.session_id) {
                         let active = slot.lock().request_cancel();
                         if let Some(turn) = active {

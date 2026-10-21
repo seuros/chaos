@@ -43,6 +43,7 @@ impl<C, S> SessionLifecycle<C, S> {
 
 pub(crate) struct Session {
     machine: DynamicSessionLifecycle<()>,
+    control: Option<Arc<Turn>>,
 }
 
 impl Session {
@@ -51,6 +52,7 @@ impl Session {
             machine: SessionLifecycle::new(())
                 .with_opening_data(turn)
                 .into_dynamic(),
+            control: None,
         }
     }
 
@@ -77,6 +79,20 @@ impl Session {
             .map_err(|_| invalid("ACP session is busy"))
     }
 
+    pub fn begin_control(&mut self, turn: Arc<Turn>) -> protocol::Result<()> {
+        if self.is_invalid() {
+            return Err(error("ACP session is invalid"));
+        }
+        if self.machine.current_state() == SessionLifecycleState::Opening {
+            return Err(invalid("ACP session is opening"));
+        }
+        if self.control.is_some() {
+            return Err(invalid("ACP session configuration is busy"));
+        }
+        self.control = Some(turn);
+        Ok(())
+    }
+
     pub fn invalidate(&mut self) {
         let active = self.active().cloned();
         let _ = self
@@ -85,6 +101,14 @@ impl Session {
     }
 
     pub fn release(&mut self, turn: &Arc<Turn>) {
+        if self
+            .control
+            .as_ref()
+            .is_some_and(|control| Arc::ptr_eq(control, turn))
+        {
+            self.control = None;
+            return;
+        }
         if self
             .active()
             .is_some_and(|active| Arc::ptr_eq(active, turn))
@@ -98,9 +122,13 @@ impl Session {
 
     pub fn check(&self, turn: &Arc<Turn>) -> protocol::Result<()> {
         if self.is_invalid()
-            || !self
+            || !(self
                 .active()
                 .is_some_and(|active| Arc::ptr_eq(active, turn))
+                || self
+                    .control
+                    .as_ref()
+                    .is_some_and(|control| Arc::ptr_eq(control, turn)))
             || !turn.is_live()
         {
             return Err(error("ACP prompt is no longer active"));
@@ -114,62 +142,4 @@ impl Session {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn opening_and_replay_remain_exclusive_until_the_guard_releases() {
-        let setup = Turn::new_operation(false);
-        let prompt = Turn::new_operation(true);
-        let mut session = Session::opening(setup.clone());
-        assert!(session.check(&setup).is_ok());
-        assert!(session.begin(prompt.clone()).is_err());
-        assert!(session.request_cancel().is_none());
-        session.release(&setup);
-        assert!(session.check(&setup).is_err());
-        session.begin(prompt.clone()).unwrap();
-        // A delayed old guard must never clear a newer turn.
-        session.release(&setup);
-        assert!(session.check(&prompt).is_ok());
-        assert!(session.begin(setup).is_err());
-        assert!(session.request_cancel().is_some());
-        assert!(session.request_cancel().is_none());
-    }
-
-    #[test]
-    fn invalidation_retains_cleanup_identity_but_never_readmits_work() {
-        for opening in [false, true] {
-            let setup = Turn::new_operation(false);
-            let turn = Turn::new_operation(true);
-            let mut session = Session::opening(setup.clone());
-            let active = if opening {
-                setup
-            } else {
-                session.release(&setup);
-                session.begin(turn.clone()).unwrap();
-                turn
-            };
-            session.invalidate();
-            session.invalidate();
-            assert!(session.is_invalid());
-            assert!(Arc::ptr_eq(session.active().unwrap(), &active));
-            assert!(session.check(&active).is_err());
-            session.release(&active);
-            assert!(session.active().is_none());
-            assert!(session.is_invalid());
-            session.invalidate();
-            assert!(session.begin(Turn::new_operation(true)).is_err());
-        }
-    }
-
-    #[test]
-    fn an_idle_session_can_be_invalidated_without_an_active_turn() {
-        let turn = Turn::new_operation(false);
-        let mut session = Session::opening(turn.clone());
-        session.release(&turn);
-        session.invalidate();
-        assert!(session.is_invalid());
-        assert!(session.active().is_none());
-        assert!(session.begin(Turn::new_operation(true)).is_err());
-    }
-}
+mod tests;

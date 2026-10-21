@@ -120,6 +120,17 @@ async fn update_permissions_changes_running_turn_without_waiting_for_completion(
         let previous = session.permission_snapshot(&turn).await;
         let expected_vfs = VfsPolicy::from_sandbox_policy(&sandbox_policy, &turn.cwd);
         let expected_socket = SocketPolicy::from(&sandbox_policy);
+        // Background monitor events may precede the submission's response.
+        // Queue one explicitly so this cannot depend on the host's health.
+        session
+            .send_event_raw(Event {
+                id: "machine-recovery".to_string(),
+                msg: EventMsg::Warning(chaos_ipc::protocol::WarningEvent {
+                    message: "Machine recovery monitoring unavailable; stability window reset."
+                        .to_string(),
+                }),
+            })
+            .await;
         tx_sub
             .send(Submission {
                 id: "permissions".to_string(),
@@ -135,11 +146,16 @@ async fn update_permissions_changes_running_turn_without_waiting_for_completion(
             .await
             .expect("submit live permission update");
 
-        let event = tokio::time::timeout(StdDuration::from_secs(2), rx.recv())
-            .await
-            .expect("permission update must not wait for the running turn")
-            .expect("permission update event");
-        assert_eq!(event.id, "permissions");
+        let event = tokio::time::timeout(StdDuration::from_secs(2), async {
+            loop {
+                let event = rx.recv().await.expect("permission update event");
+                if event.id == "permissions" {
+                    break event;
+                }
+            }
+        })
+        .await
+        .expect("permission update must not wait for the running turn");
         let EventMsg::PermissionsUpdated(updated) = event.msg else {
             panic!("expected permissions_updated, got {:?}", event.msg);
         };

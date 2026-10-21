@@ -75,6 +75,45 @@ impl PostgresJournalStore {
 }
 
 impl JournalStore for PostgresJournalStore {
+    async fn archive_idle_process(
+        &self,
+        request: crate::ArchiveIdleProcessRequest,
+    ) -> Result<(), JournalError> {
+        let mut tx = self.pool.begin().await?;
+        // The same process-row lock fences acquire/heartbeat/append.
+        let row = sqlx::query(process_select_sql!("WHERE p.id = $1 FOR UPDATE"))
+            .bind(request.process_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(row) = row else { return Ok(()) };
+        let record = process_row_to_record(&row)?;
+        if record.source != request.source
+            || record.cwd != request.cwd
+            || record.model_provider != request.model_provider
+        {
+            return Err(JournalError::InvalidRequest(
+                "archive scope mismatch".into(),
+            ));
+        }
+        let now = jiff::Timestamp::now();
+        if let Some(row) = sqlx::query(
+            "SELECT owner_id, expires_at FROM process_leases WHERE process_id = $1 AND expires_at > $2"
+        ).bind(request.process_id.to_string()).bind(now.as_second()).fetch_optional(&mut *tx).await? {
+            return Err(JournalError::LeaseConflict {
+                process_id: request.process_id,
+                current_owner_id: row.get("owner_id"),
+                expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
+            });
+        }
+        sqlx::query("UPDATE processes SET archived_at = COALESCE(archived_at, $1) WHERE id = $2")
+            .bind(now.as_second())
+            .bind(request.process_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn execution(
         &self,
         request: crate::ExecutionRequest,
@@ -334,11 +373,11 @@ impl JournalStore for PostgresJournalStore {
         owner_id: &OwnerId,
         ttl: Duration,
     ) -> Result<Lease, JournalError> {
-        let now = jiff::Timestamp::now();
-        let expires_at = timestamp_after(now, ttl)?;
         let lease_token = Uuid::now_v7().to_string();
         let mut tx = self.pool.begin().await?;
         lock_process(&mut tx, process_id).await?;
+        let now = jiff::Timestamp::now();
+        let expires_at = timestamp_after(now, ttl)?;
 
         let existing = sqlx::query(
             "SELECT owner_id, lease_token, expires_at
@@ -394,10 +433,10 @@ impl JournalStore for PostgresJournalStore {
         lease_token: &str,
         ttl: Duration,
     ) -> Result<Lease, JournalError> {
-        let now = jiff::Timestamp::now();
-        let expires_at = timestamp_after(now, ttl)?;
         let mut tx = self.pool.begin().await?;
         lock_process(&mut tx, process_id).await?;
+        let now = jiff::Timestamp::now();
+        let expires_at = timestamp_after(now, ttl)?;
         let lease = load_valid_lease_in_tx(&mut tx, process_id, owner_id, lease_token, now).await?;
 
         sqlx::query(
@@ -447,9 +486,9 @@ impl JournalStore for PostgresJournalStore {
         input: AppendBatchInput,
     ) -> Result<AppendBatchResult, JournalError> {
         validate_batch_sequences(&input)?;
-        let now = jiff::Timestamp::now();
         let mut tx = self.pool.begin().await?;
         lock_process(&mut tx, &input.process_id).await?;
+        let now = jiff::Timestamp::now();
         load_valid_lease_in_tx(
             &mut tx,
             &input.process_id,

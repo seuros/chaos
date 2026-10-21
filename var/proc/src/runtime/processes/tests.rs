@@ -11,6 +11,8 @@ use chaos_ipc::protocol::SessionSource;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 
+mod archive;
+
 #[tokio::test]
 async fn list_processes_includes_rows_without_derived_user_message() {
     let chaos_home = unique_temp_dir();

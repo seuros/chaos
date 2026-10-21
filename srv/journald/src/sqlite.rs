@@ -51,6 +51,49 @@ impl SqliteJournalStore {
 }
 
 impl JournalStore for SqliteJournalStore {
+    async fn archive_idle_process(
+        &self,
+        request: crate::ArchiveIdleProcessRequest,
+    ) -> Result<(), JournalError> {
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let row = sqlx::query(
+            "SELECT p.id, p.parent_process_id, p.fork_at_seq, p.source_json,
+                COALESCE((SELECT json_extract(j.payload_json, '$.payload.cwd')
+                    FROM journal_entries j WHERE j.process_id = p.id AND j.item_type = 'turn_context'
+                    ORDER BY j.seq DESC LIMIT 1), p.cwd) AS cwd,
+                p.created_at, p.updated_at, p.archived_at, p.title, p.model_provider,
+                p.cli_version, p.agent_nickname, p.agent_role
+             FROM processes p WHERE p.id = ?",
+        ).bind(request.process_id.to_string()).fetch_optional(&mut *tx).await?;
+        let Some(row) = row else { return Ok(()) };
+        let record = process_row_to_record(&row)?;
+        if record.source != request.source
+            || record.cwd != request.cwd
+            || record.model_provider != request.model_provider
+        {
+            return Err(JournalError::InvalidRequest(
+                "archive scope mismatch".into(),
+            ));
+        }
+        let now = jiff::Timestamp::now();
+        if let Some(row) = sqlx::query(
+            "SELECT owner_id, expires_at FROM process_leases WHERE process_id = ? AND expires_at > ?"
+        ).bind(request.process_id.to_string()).bind(now.as_second()).fetch_optional(&mut *tx).await? {
+            return Err(JournalError::LeaseConflict {
+                process_id: request.process_id,
+                current_owner_id: row.get("owner_id"),
+                expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
+            });
+        }
+        sqlx::query("UPDATE processes SET archived_at = COALESCE(archived_at, ?) WHERE id = ?")
+            .bind(now.as_second())
+            .bind(request.process_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn execution(
         &self,
         request: crate::ExecutionRequest,
@@ -558,10 +601,15 @@ impl JournalStore for SqliteJournalStore {
         &self,
         input: AppendBatchInput,
     ) -> Result<AppendBatchResult, JournalError> {
-        ensure_process_exists(&self.pool, &input.process_id).await?;
+        validate_batch_sequences(&input)?;
+        // Fence validation and append under one write reservation. A deferred
+        // read-to-write upgrade can fail with SQLITE_BUSY despite busy_timeout,
+        // and an out-of-transaction lease check can race archival or takeover.
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        ensure_process_exists_in_tx(&mut tx, &input.process_id).await?;
         let now = jiff::Timestamp::now();
-        let _lease = load_valid_lease(
-            &self.pool,
+        let _lease = load_valid_lease_in_tx(
+            &mut tx,
             &input.process_id,
             &input.owner_id,
             &input.lease_token,
@@ -569,9 +617,6 @@ impl JournalStore for SqliteJournalStore {
         )
         .await?;
 
-        validate_batch_sequences(&input)?;
-
-        let mut tx = self.pool.begin().await?;
         let actual_next_seq = next_seq_in_tx(&mut tx, &input.process_id).await?;
         if actual_next_seq != input.expected_next_seq {
             return Err(JournalError::SequenceConflict {
@@ -799,24 +844,6 @@ async fn ensure_process_exists_in_tx(
         return Ok(());
     }
     Err(JournalError::ProcessNotFound(*process_id))
-}
-
-async fn load_valid_lease(
-    pool: &SqlitePool,
-    process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
-    let row = sqlx::query(
-        "SELECT owner_id, lease_token, expires_at
-         FROM process_leases
-         WHERE process_id = ?",
-    )
-    .bind(process_id.to_string())
-    .fetch_optional(pool)
-    .await?;
-    validate_lease_row(row, process_id, owner_id, lease_token, now)
 }
 
 async fn load_valid_lease_in_tx(

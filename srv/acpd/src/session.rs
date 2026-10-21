@@ -149,6 +149,7 @@ impl NativeSession {
             .await?;
         }
         let mut projection = Projection::default();
+        let mut url_elicitations = std::collections::HashMap::new();
         loop {
             let event =
                 self.process.next_event().await.map_err(|_| {
@@ -158,6 +159,41 @@ impl NativeSession {
                 && mode.session_id == self.id
             {
                 crate::controls::publish(&self.process, &context).await?;
+                continue;
+            }
+            if let EventMsg::ElicitationComplete(complete) = &event.msg {
+                if let Some(id) = url_elicitations.remove(&(
+                    complete.server_name.clone(),
+                    complete.elicitation_id.clone(),
+                )) {
+                    context.client().complete_elicitation(id)?;
+                }
+                continue;
+            }
+            // MCP handlers use a session-owned event ID, not this submission's.
+            if let EventMsg::ElicitationRequest(request) = &event.msg {
+                let (decision, content) = crate::elicitation::request(&context, request).await;
+                if matches!(decision, chaos_ipc::protocol::ElicitationAction::Accept)
+                    && let chaos_ipc::approvals::ElicitationRequest::Url { elicitation_id, .. } =
+                        &request.request
+                {
+                    url_elicitations.insert(
+                        (request.server_name.clone(), elicitation_id.clone()),
+                        crate::elicitation::url_id(&context, &request.server_name, elicitation_id),
+                    );
+                }
+                submit(
+                    &self.process,
+                    Op::ResolveElicitation {
+                        server_name: request.server_name.clone(),
+                        request_id: request.id.clone(),
+                        decision,
+                        content,
+                        meta: None,
+                    },
+                    "failed to resolve ACP elicitation",
+                )
+                .await?;
                 continue;
             }
             // No other frontend consumes this process. Ignore prior/startup and
@@ -183,30 +219,15 @@ impl NativeSession {
                 EventMsg::ApplyPatchApprovalRequest(request) => {
                     approvals::patch(&self.process, &context, &mut projection, request).await?;
                 }
-                EventMsg::ElicitationRequest(request) => {
-                    submit(
-                        &self.process,
-                        Op::ResolveElicitation {
-                            server_name: request.server_name.clone(),
-                            request_id: request.id.clone(),
-                            decision: chaos_ipc::protocol::ElicitationAction::Cancel,
-                            content: None,
-                            meta: None,
-                        },
-                        "failed to deny unsupported ACP elicitation",
-                    )
-                    .await?;
-                }
                 EventMsg::RequestUserInput(request) => {
+                    let response = crate::elicitation::user_input(&context, request).await;
                     submit(
                         &self.process,
                         Op::UserInputAnswer {
                             id: request.turn_id.clone(),
-                            response: chaos_ipc::request_user_input::RequestUserInputResponse {
-                                answers: Default::default(),
-                            },
+                            response,
                         },
-                        "failed to deny unsupported ACP user input",
+                        "failed to resolve ACP user input",
                     )
                     .await?;
                 }

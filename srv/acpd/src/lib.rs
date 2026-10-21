@@ -16,6 +16,7 @@ mod backend;
 mod commands;
 mod config;
 mod controls;
+mod elicitation;
 mod files;
 mod history;
 mod projection;

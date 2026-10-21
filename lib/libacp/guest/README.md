@@ -10,10 +10,10 @@ enabled. Tokio owns I/O; the embedding application owns process execution.
 
 - Negotiates stable ACP v1, without automatically authenticating.
 - Denies permission requests by default; an explicit application-owned
-  `PermissionHandler` can decide individual requests. No filesystem or terminal
-  access is advertised.
+  `PermissionHandler` can decide individual requests. Optional services are off
+  by default.
 - Sending `session/cancel` resolves pending permission requests for that session
-  as cancelled and drops their application-policy futures. Policy futures must
+  and elicitation requests as cancelled and drops their application-policy futures. Policy futures must
   therefore be cancellation-safe; late approvals cannot escape cancellation.
 - Bounds incoming/outgoing JSON lines and unread session updates.
 - Closes on update overflow or a dropped request future. Request timeouts return
@@ -53,6 +53,29 @@ observer.await?;
 The transport owner must kill and reap a failed agent and independently account
 for any external work. A fresh connection is not permission to replay uncertain
 input. Loading saved history is capability-dependent and is never automatic.
+
+## Opt-in client services
+
+`ConnectionOptions` accepts application-owned `FileReader`, `FileWriter`,
+`TerminalHandler` and `ElicitationHandler` implementations. Read/write
+capabilities are independent; terminal support requires all five lifecycle
+methods. Elicitation advertises only the handler's form/URL modes.
+Handlers run concurrently outside protocol dispatch, with bounded admission
+and deadlines. No disk fallback, shell execution or URL opening is installed.
+
+The application authorizes session/request identities, canonical paths and
+terminal handles, enforces execution/secret policy and owns process cleanup.
+Use per-connection policy/UI adapters bound to the verified agent identity;
+neither a session ID nor the peer's `agentInfo` authenticates a caller. Do not
+share an unscoped service handler across different agents or users.
+Form UIs must never request credentials and must allow review/edit, decline and
+cancel before submission. URL UIs must show the full URL and host, obtain
+consent and open a secure context inaccessible to the agent/model. The library
+ignores unknown/already-completed URL IDs; consent is not external completion.
+Terminal output must respect UTF-8 byte limits. Futures must be cancellation-safe:
+a timed-out write or terminal creation may have taken effect, and disconnect
+does not prove processes stopped. Terminal owners must kill, release and reap
+their resources even when an individual request future is dropped.
 
 ## Antigravity acceptance goal
 

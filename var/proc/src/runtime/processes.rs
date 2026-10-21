@@ -13,6 +13,21 @@ fn serialize_process_source_json(source: &str) -> String {
 }
 
 impl StateRuntime {
+    /// Project a confirmed journal archive into the listing index. Never
+    /// unarchive or replace the first tombstone with a later metadata snapshot.
+    pub async fn archive_process_metadata(
+        &self,
+        id: ProcessId,
+        archived_at: jiff::Timestamp,
+    ) -> anyhow::Result<()> {
+        sqlx::query("UPDATE processes SET archived_at = COALESCE(archived_at, ?) WHERE id = ?")
+            .bind(archived_at.as_second())
+            .bind(id.to_string())
+            .execute(self.pool.as_ref())
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_process(
         &self,
         id: ProcessId,
@@ -301,7 +316,7 @@ ON CONFLICT(id) DO UPDATE SET
     approval_mode = excluded.approval_mode,
     tokens_used = excluded.tokens_used,
     first_user_message = excluded.first_user_message,
-    archived_at = excluded.archived_at,
+    archived_at = COALESCE(processes.archived_at, excluded.archived_at),
     git_sha = excluded.git_sha,
     git_branch = excluded.git_branch,
     git_origin_url = excluded.git_origin_url

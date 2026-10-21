@@ -42,17 +42,21 @@ impl Process {
         self.chaos.session.session_controls().await
     }
 
-    /// Change only the model of an idle session, never its provider or permissions.
+    /// Change only the session model, never its provider or permissions.
+    /// In-flight model requests finish normally; subsequent samples use the change.
     pub async fn set_session_model(&self, model: &str) -> Result<(), ProcessControlError> {
         self.chaos
             .session
-            .set_idle_controls(Some(model), None)
+            .set_session_controls(Some(model), None, false)
             .await
     }
 
-    /// Switch an idle session through the same native authority as `switch_mode`.
+    /// Switch through the same native authority as `switch_mode`, including mid-turn.
     pub async fn set_session_mode(&self, mode: &str) -> Result<(), ProcessControlError> {
-        self.chaos.session.set_idle_controls(None, Some(mode)).await
+        self.chaos
+            .session
+            .set_session_controls(None, Some(mode), false)
+            .await
     }
 
     /// Restore only identifiers under current native policy, never old grants.
@@ -63,7 +67,7 @@ impl Process {
     ) -> Result<(), ProcessControlError> {
         self.chaos
             .session
-            .set_idle_controls(Some(model), Some(mode))
+            .set_session_controls(Some(model), Some(mode), true)
             .await
     }
 

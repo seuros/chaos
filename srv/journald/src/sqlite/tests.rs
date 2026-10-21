@@ -18,6 +18,8 @@ use crate::model::InitializeProcessInput;
 use crate::model::JournalEntry;
 use crate::store::JournalStore;
 
+mod archive;
+
 fn message(role: &str, text: &str) -> RolloutItem {
     let content = match role {
         "assistant" => vec![ContentItem::OutputText {

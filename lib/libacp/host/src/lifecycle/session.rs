@@ -44,6 +44,7 @@ impl<C, S> SessionLifecycle<C, S> {
 pub(crate) struct Session {
     machine: DynamicSessionLifecycle<()>,
     control: Option<Arc<Turn>>,
+    closing: bool,
 }
 
 impl Session {
@@ -53,6 +54,7 @@ impl Session {
                 .with_opening_data(turn)
                 .into_dynamic(),
             control: None,
+            closing: false,
         }
     }
 
@@ -70,19 +72,25 @@ impl Session {
         )
     }
 
-    pub fn begin(&mut self, turn: Arc<Turn>) -> protocol::Result<()> {
+    pub fn check_open(&self) -> protocol::Result<()> {
+        if self.closing {
+            return Err(invalid("ACP session is closing"));
+        }
         if self.is_invalid() {
             return Err(error("ACP session is invalid"));
         }
+        Ok(())
+    }
+
+    pub fn begin(&mut self, turn: Arc<Turn>) -> protocol::Result<()> {
+        self.check_open()?;
         self.machine
             .handle(SessionLifecycleEvent::Begin(turn))
             .map_err(|_| invalid("ACP session is busy"))
     }
 
     pub fn begin_control(&mut self, turn: Arc<Turn>) -> protocol::Result<()> {
-        if self.is_invalid() {
-            return Err(error("ACP session is invalid"));
-        }
+        self.check_open()?;
         if self.machine.current_state() == SessionLifecycleState::Opening {
             return Err(invalid("ACP session is opening"));
         }
@@ -138,6 +146,18 @@ impl Session {
 
     pub fn request_cancel(&self) -> Option<Arc<Turn>> {
         self.active().filter(|turn| turn.request_cancel()).cloned()
+    }
+
+    pub fn begin_close(&mut self) -> protocol::Result<()> {
+        if self.closing || self.machine.current_state() == SessionLifecycleState::Opening {
+            return Err(invalid("ACP session is opening or closing"));
+        }
+        self.closing = true;
+        Ok(())
+    }
+
+    pub fn occupied(&self) -> bool {
+        self.active().is_some() || self.control.is_some()
     }
 }
 

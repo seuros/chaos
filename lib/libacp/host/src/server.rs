@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use protocol::schema::ProtocolVersion;
 use protocol::schema::v1::{
-    AgentCapabilities, AuthenticateRequest, CancelNotification, ContentBlock, Implementation,
-    InitializeRequest, InitializeResponse, ListSessionsRequest, LoadSessionRequest,
-    LoadSessionResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    ResumeSessionRequest, ResumeSessionResponse, SessionCapabilities, SessionConfigOptionValue,
+    AgentCapabilities, AuthenticateRequest, CancelNotification, CloseSessionRequest,
+    CloseSessionResponse, ContentBlock, DeleteSessionRequest, Implementation, InitializeRequest,
+    InitializeResponse, ListSessionsRequest, LoadSessionRequest, LoadSessionResponse,
+    NewSessionRequest, NewSessionResponse, PromptRequest, ResumeSessionRequest,
+    ResumeSessionResponse, SessionCapabilities, SessionCloseCapabilities, SessionConfigOptionValue,
     SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
     SetSessionModeResponse,
 };
@@ -56,26 +57,31 @@ impl AgentServer {
         let opening = state.clone();
         let prompting = state.clone();
         let cancelling = state.clone();
+        let closing = state.clone();
         let auth = state.clone();
         let configuring = state.clone();
         let modes = state.clone();
         let loading = state.clone();
         let resuming = state.clone();
         let listing = state.clone();
+        let deleting = state.clone();
+        let delete_backend = self.backend.clone();
         let load_backend = self.backend.clone();
         let resume_backend = self.backend.clone();
         let list_backend = self.backend.clone();
         let backend = self.backend.clone();
         let prompt_capabilities = self.backend.prompt_capabilities();
         let backend_capabilities = self.backend.session_capabilities();
-        // Do not forward close/delete (or future methods) without dispatch and
-        // lifecycle implementations. Backend declarations are not handlers.
+        // Only expose capabilities with concrete dispatch and lifecycle support.
         let session_capabilities = SessionCapabilities::new()
+            .close(SessionCloseCapabilities::new())
+            .delete(backend_capabilities.delete)
             .list(backend_capabilities.list)
             .resume(backend_capabilities.resume)
             .additional_directories(backend_capabilities.additional_directories)
             .meta(backend_capabilities.meta);
         let can_list = session_capabilities.list.is_some();
+        let can_delete = session_capabilities.delete.is_some();
         let can_resume = session_capabilities.resume.is_some();
         let can_load = self.backend.load_session_supported();
         let capabilities = AgentCapabilities::new()
@@ -86,6 +92,45 @@ impl AgentServer {
         let builder = Agent
             .builder()
             .name("acp-host")
+            .on_receive_request(
+                async move |request: DeleteSessionRequest, responder, cx| {
+                    if let Err(error) = deleting.ready() {
+                        return responder.respond_with_error(error);
+                    }
+                    if !can_delete {
+                        return responder
+                            .respond_with_error(invalid("ACP session deletion is unsupported"));
+                    }
+                    if deleting.find(&request.session_id).is_ok() {
+                        return responder.respond_with_error(invalid(
+                            "close the ACP session before deleting it",
+                        ));
+                    }
+                    let backend = delete_backend.clone();
+                    cx.spawn(async move {
+                        responder.respond_with_result(backend.delete_session(request).await)
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
+            .on_receive_request(
+                async move |request: CloseSessionRequest, responder, cx| {
+                    let operation =
+                        match crate::closing::Closing::begin(closing.clone(), request.session_id) {
+                            Ok(operation) => operation,
+                            Err(error) => return responder.respond_with_error(error),
+                        };
+                    cx.spawn(async move {
+                        responder.respond_with_result(
+                            operation
+                                .finish()
+                                .await
+                                .map(|()| CloseSessionResponse::new()),
+                        )
+                    })
+                },
+                protocol::on_receive_request!(),
+            )
             .on_receive_request(
                 async move |request: InitializeRequest, responder, _cx| {
                     if let Err(error) = init.initialize(request.client_capabilities) {
@@ -328,8 +373,17 @@ impl AgentServer {
                         if guard.complete() {
                             guard.turn.cancel_done.cancelled().await;
                         }
+                        // Queue the terminal reply before close can observe an
+                        // idle slot. Submission and admission release share the
+                        // same short lock, even on multi-threaded executors.
+                        let response = {
+                            let mut session = guard.slot.lock();
+                            let response = responder.respond_with_result(result);
+                            session.release(&guard.turn);
+                            response
+                        };
                         drop(guard);
-                        responder.respond_with_result(result)
+                        response
                     })
                 },
                 protocol::on_receive_request!(),

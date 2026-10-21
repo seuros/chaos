@@ -178,6 +178,25 @@ impl Session {
                 state.session_configuration.mode_policy.clone(),
             )
         };
+        // A model picker change can arrive while a prompt is running. Rebuild
+        // model metadata and model-dependent tools at the next sample, without
+        // cancelling/replaying an in-flight request or changing its provider.
+        let refreshed = if base.model_info.slug != collaboration_mode.model() {
+            Some(Arc::new(
+                base.with_model(
+                    collaboration_mode.model().to_string(),
+                    &self.services.models_manager,
+                )
+                .await,
+            ))
+        } else {
+            None
+        };
+        let collaboration_mode = match &refreshed {
+            Some(turn) => collaboration_mode.with_updates(None, Some(turn.reasoning_effort), None),
+            None => collaboration_mode,
+        };
+        let base = refreshed.as_ref().unwrap_or(base);
         let permission_snapshot = self.permission_actor.snapshot(base.sub_id.clone()).await?;
         let effective_vfs_policy = permission_snapshot.effective_vfs_policy();
         let effective_socket_policy = permission_snapshot.effective_socket_policy();

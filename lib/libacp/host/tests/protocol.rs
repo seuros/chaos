@@ -15,8 +15,12 @@ use protocol::schema::v1::{
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+#[path = "support/closing.rs"]
+mod closing;
 #[path = "support/controls.rs"]
 mod controls;
+#[path = "support/elicitation.rs"]
+mod elicitation;
 #[path = "support/faults.rs"]
 mod faults;
 #[path = "support/files.rs"]
@@ -123,6 +127,12 @@ impl AgentSession for NativeSession {
                         "replacement\n".into(),
                     )
                     .await?;
+            }
+            if text == "elicit" {
+                elicitation::ask(&context).await?;
+                if context.is_cancelled() {
+                    return Ok(PromptResponse::new(StopReason::Cancelled));
+                }
             }
             if text == "permission" {
                 let tool = serde_json::from_value(serde_json::json!({

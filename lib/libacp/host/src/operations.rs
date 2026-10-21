@@ -12,7 +12,23 @@ use crate::{AgentSession, SessionContext, SessionInfo, protocol};
 
 impl State {
     pub(crate) async fn shutdown_slot(&self, slot: &Slot) -> protocol::Result<()> {
-        match tokio::time::timeout(self.limits.shutdown_timeout, slot.native.shutdown()).await {
+        let shutdown = async {
+            let mut confirmed = slot.shutdown.lock().await;
+            if let Some(result) = *confirmed {
+                return if result {
+                    Ok(())
+                } else {
+                    Err(error("ACP native cleanup is unconfirmed"))
+                };
+            }
+            // Cancellation of this future cannot turn unknown cleanup into success,
+            // nor cause a concurrent caller to start shutdown a second time.
+            *confirmed = Some(false);
+            slot.native.shutdown().await?;
+            *confirmed = Some(true);
+            Ok(())
+        };
+        match tokio::time::timeout(self.limits.shutdown_timeout, shutdown).await {
             Ok(Ok(())) => Ok(()),
             _ => {
                 self.fail("ACP native cleanup is unconfirmed");

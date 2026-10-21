@@ -82,7 +82,7 @@ impl State {
             }
         }
         let cleanup =
-            futures::future::join_all(sessions.values().map(|slot| slot.native.shutdown()));
+            futures::future::join_all(sessions.values().map(|slot| self.shutdown_slot(slot)));
         let confirmed = matches!(
             tokio::time::timeout(self.limits.shutdown_timeout, cleanup).await,
             Ok(results) if results.iter().all(Result::is_ok)

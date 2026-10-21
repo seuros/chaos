@@ -11,6 +11,8 @@ use crate::JournalEntry;
 
 const TEST_DATABASE_URL_ENV: &str = "TEST_DATABASE_URL";
 
+mod archive;
+
 fn postgres_test_url() -> Option<String> {
     std::env::var(TEST_DATABASE_URL_ENV)
         .ok()

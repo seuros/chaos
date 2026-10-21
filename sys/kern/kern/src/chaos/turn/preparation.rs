@@ -14,16 +14,25 @@ use super::super::TurnContext;
 pub(super) async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
+    previous_context: Option<&Arc<TurnContext>>,
+    initial_context_injection: InitialContextInjection,
 ) -> ChaosResult<()> {
     if sess.compaction_requested(turn_context).await {
-        run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+        run_auto_compact(sess, turn_context, initial_context_injection).await?;
         return Ok(());
     }
-    if maybe_run_previous_model_inline_compact(sess, turn_context).await? {
+    if maybe_run_previous_model_inline_compact(
+        sess,
+        turn_context,
+        previous_context,
+        initial_context_injection,
+    )
+    .await?
+    {
         return Ok(());
     }
     if sess.allotment_status(turn_context).await.limit_reached {
-        run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+        run_auto_compact(sess, turn_context, initial_context_injection).await?;
     }
     Ok(())
 }
@@ -37,15 +46,22 @@ pub(super) async fn run_pre_sampling_compact(
 async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
+    previous_context: Option<&Arc<TurnContext>>,
+    initial_context_injection: InitialContextInjection,
 ) -> ChaosResult<bool> {
-    let Some(previous_turn_settings) = sess.previous_turn_settings().await else {
-        return Ok(false);
+    let previous_model_turn_context = match previous_context {
+        Some(previous) => Arc::clone(previous),
+        None => {
+            let Some(previous_turn_settings) = sess.previous_turn_settings().await else {
+                return Ok(false);
+            };
+            Arc::new(
+                turn_context
+                    .with_model(previous_turn_settings.model, &sess.services.models_manager)
+                    .await,
+            )
+        }
     };
-    let previous_model_turn_context = Arc::new(
-        turn_context
-            .with_model(previous_turn_settings.model, &sess.services.models_manager)
-            .await,
-    );
 
     let Some(old_context_window) = previous_model_turn_context.model_context_window() else {
         return Ok(false);
@@ -60,7 +76,7 @@ async fn maybe_run_previous_model_inline_compact(
         match run_auto_compact(
             sess,
             &previous_model_turn_context,
-            InitialContextInjection::DoNotInject,
+            initial_context_injection,
         )
         .await
         {
@@ -80,7 +96,7 @@ async fn maybe_run_previous_model_inline_compact(
                     /*inc*/ 1,
                     &[("reason", "invalid_request")],
                 );
-                run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+                run_auto_compact(sess, turn_context, initial_context_injection).await?;
                 return Ok(true);
             }
             Err(err) => return Err(err),

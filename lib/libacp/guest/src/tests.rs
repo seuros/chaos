@@ -6,7 +6,9 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
 
+mod elicitation;
 mod permissions;
+mod services;
 
 struct Peer {
     reader: tokio::io::Lines<BufReader<ReadHalf<DuplexStream>>>,
@@ -44,14 +46,19 @@ async fn connect(
     let (client, server) = tokio::io::duplex(16 * 1024);
     let (reader, writer) = tokio::io::split(client);
     let mut peer = Peer::new(server);
+    let terminal = options.terminals.is_some();
+    let read = options.file_reader.is_some();
     let (connected, ()) = tokio::join!(AcpConnection::connect(reader, writer, options), async {
         let initialize = peer.receive().await.expect("initialize request");
         assert_eq!(initialize["method"], "initialize");
         assert_eq!(initialize["params"]["protocolVersion"], 1);
-        assert_ne!(initialize["params"]["clientCapabilities"]["terminal"], true);
-        assert_ne!(
+        assert_eq!(
+            initialize["params"]["clientCapabilities"]["terminal"],
+            terminal
+        );
+        assert_eq!(
             initialize["params"]["clientCapabilities"]["fs"]["readTextFile"],
-            true
+            read
         );
         peer.send(json!({
             "jsonrpc": "2.0", "id": initialize["id"],

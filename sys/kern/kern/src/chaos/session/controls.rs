@@ -33,13 +33,16 @@ impl Session {
         }
     }
 
-    pub(crate) async fn set_idle_controls(
+    pub(crate) async fn set_session_controls(
         &self,
         model: Option<&str>,
         mode: Option<&str>,
+        idle_only: bool,
     ) -> Result<(), ProcessControlError> {
-        let idle = self.active_turn.lock().await;
-        if idle.is_some() {
+        // Keep the selected turn alive until its history/checkpoint updates are
+        // confirmed, and exclude a new turn from racing an idle control change.
+        let active = self.active_turn.lock().await;
+        if idle_only && active.is_some() {
             return Err(ProcessControlError::Rejected(
                 "native session is busy".into(),
             ));
@@ -73,21 +76,33 @@ impl Session {
                 .await
                 .map_err(ProcessControlError::Unconfirmed);
         }
-        let turn = self.new_default_turn().await;
+        let current = active.as_ref().and_then(|turn| {
+            turn.tasks
+                .values()
+                .next()
+                .map(|task| task.turn_context.clone())
+        });
+        let temporary = current.is_none();
+        let turn = match current {
+            Some(turn) => turn,
+            None => self.new_default_turn().await,
+        };
         let result = self
             .switch_mode(mode, &turn)
             .await
             .map(|_| ())
             .map_err(|error| ProcessControlError::Unconfirmed(std::io::Error::other(error)));
-        turn.turn_metadata_state.cancel_git_enrichment_task();
-        self.permission_actor
-            .remove_turn(turn.sub_id.clone())
-            .await
-            .map_err(|_| {
-                ProcessControlError::Unconfirmed(std::io::Error::other(
-                    "native mode control cleanup is unconfirmed",
-                ))
-            })?;
+        if temporary {
+            turn.turn_metadata_state.cancel_git_enrichment_task();
+            self.permission_actor
+                .remove_turn(turn.sub_id.clone())
+                .await
+                .map_err(|_| {
+                    ProcessControlError::Unconfirmed(std::io::Error::other(
+                        "native mode control cleanup is unconfirmed",
+                    ))
+                })?;
+        }
         result
     }
 

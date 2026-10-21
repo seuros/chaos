@@ -38,10 +38,13 @@ MCP declarations are rejected, not executed or persisted.
 
 V1 supports new sessions, continued prompts, text/resource references,
 public streamed text and tool previews, once-only approvals and cancellation,
-model/mode selectors, and durable session list/load/resume.
+model/mode selectors, durable session list/load/resume, close/delete and
+negotiated form/URL elicitation.
 Resource references are untrusted user context, not automatic privileged file
 or network reads. Model choices stay within the selected provider's cached
-catalog; mode choices obey the current native policy. Controls are idle-only.
+catalog; mode choices obey the current native policy. Controls may change
+during a prompt and take effect at the next model sample, without replaying
+an in-flight request. Restoration still requires an idle native session.
 Images/audio, interactive login, editor terminals and remote ACP transports
 are not advertised.
 
@@ -65,6 +68,18 @@ policy and exclusive native writer ownership. Load replays only public text
 and bounded tool previews; resume does not replay. Neither reexecutes old work,
 restores approval grants, or revives prior background/goal executors. An
 unfinished foreground turn is rejected because its execution outcome is unknown.
+
+Close stops and joins native work before acknowledging, but preserves history.
+Delete requires a closed session and archives its durable history and listing
+metadata. Workspace/provider/source checks and the native writer lease exclude
+unauthorized or active-session deletion, including on other connections.
+Archived sessions cannot be loaded or resumed.
+
+Native structured questions and MCP elicitations use only explicitly
+negotiated client modes. Missing support, cancellation and timeouts never
+become acceptance. Secret questions are not sent through forms, and URL consent
+does not establish completion of an external authentication flow. URL
+completion IDs remain bound to their client connection and originating session.
 
 When the editor negotiates text reads, foreground `read_file` reads unsaved
 editor text through the usual slice/indentation formatting. Files must already

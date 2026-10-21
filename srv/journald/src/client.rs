@@ -72,6 +72,19 @@ pub struct JournalRpcClient {
 }
 
 impl JournalRpcClient {
+    pub async fn archive_idle_process(
+        &self,
+        request: crate::ArchiveIdleProcessRequest,
+    ) -> Result<(), JournalClientError> {
+        match self
+            .send_request(JournalRequest::ArchiveIdleProcess(request))
+            .await?
+        {
+            JournalResponse::ArchiveIdleProcess(_) => Ok(()),
+            other => Err(unexpected_variant("archive_idle_process", &other)),
+        }
+    }
+
     pub async fn execution(
         &self,
         request: crate::ExecutionRequest,
@@ -369,6 +382,7 @@ fn response_variant_name(response: &JournalResponse) -> &'static str {
         JournalResponse::InitializeProcess(_) => "initialize_process",
         JournalResponse::GetProcess(_) => "get_process",
         JournalResponse::ListProcesses(_) => "list_processes",
+        JournalResponse::ArchiveIdleProcess(_) => "archive_idle_process",
         JournalResponse::AcquireLease(_) => "acquire_lease",
         JournalResponse::HeartbeatLease(_) => "heartbeat_lease",
         JournalResponse::ReleaseLease(_) => "release_lease",

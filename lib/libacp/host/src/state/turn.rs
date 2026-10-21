@@ -81,5 +81,6 @@ impl Drop for TurnGuard {
             session.release(&self.turn);
         }
         self.turn.cancel.cancel();
+        self.slot.released.notify_waiters();
     }
 }

@@ -39,7 +39,7 @@ use crate::protocol::SetDefaultProcessResponse;
 pub const JOURNAL_RPC_PATH: &str = "/rpc";
 pub const SERVER_NAME: &str = "chaos_journald";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 pub struct JournalRpcServer<S> {
     store: Arc<S>,
@@ -123,6 +123,11 @@ where
     async fn dispatch(&self, envelope: RequestEnvelope) -> ResponseEnvelope {
         let request_id = envelope.id;
         let outcome = match envelope.request {
+            JournalRequest::ArchiveIdleProcess(request) => {
+                self.store.archive_idle_process(request).await.map(|()| {
+                    JournalResponse::ArchiveIdleProcess(crate::ArchiveIdleProcessResponse {})
+                })
+            }
             JournalRequest::Execution(request) => self
                 .store
                 .execution(request)

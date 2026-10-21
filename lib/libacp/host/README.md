@@ -37,6 +37,12 @@ Backend `SessionInfo::available_commands` publishes the ACP slash-command
 catalog on new/load/resume. Invocation remains a normal text prompt handled
 by the backend; the host never interprets commands itself.
 
+`session/close` gates new work, cancels an active prompt, joins native shutdown
+and releases admission only after confirmation. History remains available.
+`session/delete` is an optional backend hook and rejects open sessions: close
+first. Backends must authorize durable deletion and atomically exclude writers
+on other connections.
+
 Connection, session and turn lifecycles use explicit `state-machines` transitions.
 Transitions run synchronously under short locks, with I/O outside those locks.
 Cancellation delivery and prompt completion are separate: a session stays busy
@@ -55,3 +61,11 @@ Read errors retain their ACP error codes, so a backend can distinguish an
 explicit resource-not-found response from other failures when creating a
 file. Creation uses the same write request and uncertain-write containment;
 the protocol does not provide exclusive-create or compare-and-swap.
+
+`ClientHandle::create_elicitation` supports explicitly negotiated form/URL modes
+in the current session/turn. Cancellation, timeout and unknown actions never
+become acceptance. Backends must validate accepted content against their form
+schema, and never request secrets through forms. Accepted URL IDs belong to the
+session, so a retained handle can complete them after the originating turn ends,
+but not after the session or connection closes. Failed requests release their
+URL reservations, including when their futures are dropped.

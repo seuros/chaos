@@ -79,6 +79,7 @@ pub use protocol::RequestEnvelope;
 pub use protocol::ResponseEnvelope;
 pub use protocol::SetDefaultProcessRequest;
 pub use protocol::SetDefaultProcessResponse;
+pub use protocol::{ArchiveIdleProcessRequest, ArchiveIdleProcessResponse};
 pub use rama_http::JOURNAL_RPC_PATH;
 pub use rama_http::JournalRpcServer;
 pub use rama_http::PROTOCOL_VERSION as JOURNAL_PROTOCOL_VERSION;

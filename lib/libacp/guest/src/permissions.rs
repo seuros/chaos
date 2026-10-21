@@ -59,15 +59,26 @@ impl PendingPermission {
         responder: Responder<RequestPermissionResponse>,
         result: protocol::Result<RequestPermissionResponse>,
     ) -> protocol::Result<()> {
+        self.respond_with(responder, result, || {
+            Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ))
+        })
+    }
+
+    pub fn respond_with<T: protocol::JsonRpcResponse>(
+        &self,
+        responder: Responder<T>,
+        result: protocol::Result<T>,
+        cancelled: impl FnOnce() -> protocol::Result<T>,
+    ) -> protocol::Result<()> {
         let _sessions = self
             .pending
             .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let result = if *self.cancel.borrow() {
-            Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ))
+            cancelled()
         } else {
             result
         };

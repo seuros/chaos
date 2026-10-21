@@ -4,13 +4,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use protocol::schema::v1::{
-    AvailableCommand, ListSessionsRequest, ListSessionsResponse, LoadSessionRequest,
-    NewSessionRequest, PromptCapabilities, PromptRequest, PromptResponse, ResumeSessionRequest,
-    SessionCapabilities, SessionConfigOption, SessionId, SessionModeState,
-    SetSessionConfigOptionRequest,
+    AvailableCommand, DeleteSessionRequest, DeleteSessionResponse, ListSessionsRequest,
+    ListSessionsResponse, LoadSessionRequest, NewSessionRequest, PromptCapabilities, PromptRequest,
+    PromptResponse, ResumeSessionRequest, SessionCapabilities, SessionConfigOption, SessionId,
+    SessionModeState, SetSessionConfigOptionRequest,
 };
 
 mod capabilities;
+mod closing;
+mod elicitation;
 mod files;
 mod framing;
 mod lifecycle;
@@ -46,8 +48,17 @@ fn unsupported() -> protocol::Error {
 
 /// Backend-owned creation of isolated native sessions.
 pub trait AgentBackend: Send + Sync + 'static {
+    /// Delete durable history without executing it. The host rejects open sessions.
+    /// Implementations must also exclude writers on other connections atomically.
+    fn delete_session(
+        &self,
+        _request: DeleteSessionRequest,
+    ) -> protocol::BoxFuture<'_, protocol::Result<DeleteSessionResponse>> {
+        Box::pin(async { Err(unsupported()) })
+    }
+
     /// Optional lifecycle capabilities. Defaults advertise none.
-    /// Only list, resume and additional-directory support are exposed by this host.
+    /// Close is implemented by the host; other capabilities require backend support.
     fn session_capabilities(&self) -> SessionCapabilities {
         SessionCapabilities::new()
     }

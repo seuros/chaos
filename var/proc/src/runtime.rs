@@ -472,6 +472,7 @@ impl RuntimeDbHandle {
     }
 
     chaos_dispatch::backend_dispatch! {
+        pub async fn archive_process_metadata(&self, id: ProcessId, archived_at: jiff::Timestamp) -> anyhow::Result<()>;
         pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>>;
         pub async fn find_process_ids_by_parent_and_role(
             &self,
@@ -723,6 +724,19 @@ pub async fn open_runtime_db_postgres_url(database_url: &str) -> anyhow::Result<
 }
 
 impl PostgresRuntime {
+    async fn archive_process_metadata(
+        &self,
+        id: ProcessId,
+        archived_at: jiff::Timestamp,
+    ) -> anyhow::Result<()> {
+        sqlx::query("UPDATE processes SET archived_at = COALESCE(archived_at, $1) WHERE id = $2")
+            .bind(archived_at.as_second())
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     async fn get_project_trust(&self, project_path: &Path) -> anyhow::Result<Option<TrustLevel>> {
         let row = sqlx::query(
             r#"
@@ -1253,7 +1267,7 @@ ON CONFLICT(id) DO UPDATE SET
     approval_mode = excluded.approval_mode,
     tokens_used = excluded.tokens_used,
     first_user_message = excluded.first_user_message,
-    archived_at = excluded.archived_at,
+    archived_at = COALESCE(processes.archived_at, excluded.archived_at),
     git_sha = excluded.git_sha,
     git_branch = excluded.git_branch,
     git_origin_url = excluded.git_origin_url

@@ -7,8 +7,9 @@ use chaos_kern::config::Config;
 use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_kern::{AuthManager, ProcessTable};
 use protocol::schema::v1::{
-    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, McpServer, NewSessionRequest,
-    ResumeSessionRequest, SessionCapabilities, SessionListCapabilities, SessionResumeCapabilities,
+    DeleteSessionRequest, DeleteSessionResponse, ListSessionsRequest, ListSessionsResponse,
+    LoadSessionRequest, McpServer, NewSessionRequest, ResumeSessionRequest, SessionCapabilities,
+    SessionDeleteCapabilities, SessionListCapabilities, SessionResumeCapabilities,
 };
 
 use crate::{Backend, config, history, internal, invalid, session};
@@ -129,10 +130,71 @@ impl AgentBackend for Backend {
         SessionCapabilities::new()
             .list(SessionListCapabilities::new())
             .resume(SessionResumeCapabilities::new())
+            .delete(SessionDeleteCapabilities::new())
     }
 
     fn load_session_supported(&self) -> bool {
         true
+    }
+
+    fn delete_session(
+        &self,
+        request: DeleteSessionRequest,
+    ) -> protocol::BoxFuture<'_, protocol::Result<DeleteSessionResponse>> {
+        Box::pin(async move {
+            let id = chaos_ipc::ProcessId::from_string(&request.session_id.0)
+                .map_err(|_| invalid("invalid saved ACP session id"))?;
+            let journal = chaos_kern::journal_client_for_mounted_backend()
+                .await
+                .map_err(|_| internal("native ACP journal is unavailable"))?;
+            let Some(record) = journal
+                .get_process(id)
+                .await
+                .map_err(|_| internal("native ACP metadata could not be read"))?
+            else {
+                return Ok(DeleteSessionResponse::new());
+            };
+            if record.source != SessionSource::Acp
+                || record.model_provider != self.0.base().model_provider_id
+            {
+                return Err(invalid("session does not belong to this ACP provider"));
+            }
+            let cwd = match &self.0 {
+                crate::ConfigSource::Fixed(config) => &config.cwd,
+                crate::ConfigSource::Project { .. } => &record.cwd,
+            };
+            let config = self.checked_config(cwd, &[], &[]).await?;
+            journal
+                .archive_idle_process(chaos_journald::ArchiveIdleProcessRequest {
+                    process_id: id,
+                    source: SessionSource::Acp,
+                    cwd: config.cwd.clone(),
+                    model_provider: config.model_provider_id.clone(),
+                })
+                .await
+                .map_err(|_| {
+                    invalid("ACP session is active or outside the authorized workspace")
+                })?;
+            // SQLite can use a journal sidecar distinct from the mounted listing
+            // index. Confirm both durable states; retries repair a failed
+            // projection without resurrecting or reexecuting the conversation.
+            let archived_at = journal
+                .get_process(id)
+                .await
+                .map_err(|_| internal("ACP archive confirmation failed"))?
+                .and_then(|record| record.archived_at)
+                .ok_or_else(|| internal("ACP archive confirmation is missing"))?;
+            let runtime = chaos_kern::runtime_db::get_runtime_db_for(
+                &config.storage_home,
+                &config.model_provider_id,
+            )
+            .ok_or_else(|| internal("ACP session index is unavailable"))?;
+            runtime
+                .archive_process_metadata(id, archived_at)
+                .await
+                .map_err(|_| internal("ACP archive index confirmation failed"))?;
+            Ok(DeleteSessionResponse::new())
+        })
     }
 
     fn new_session(

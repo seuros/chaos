@@ -29,6 +29,19 @@ pub enum JournalClient {
 }
 
 impl JournalClient {
+    pub async fn archive_idle_process(
+        &self,
+        request: crate::ArchiveIdleProcessRequest,
+    ) -> Result<(), JournalClientError> {
+        match self {
+            Self::Rpc(client) => client.archive_idle_process(request).await,
+            Self::Postgres(store) => store
+                .archive_idle_process(request)
+                .await
+                .map_err(store_error),
+        }
+    }
+
     pub async fn execution(
         &self,
         request: crate::ExecutionRequest,

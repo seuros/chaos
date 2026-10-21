@@ -30,6 +30,7 @@ pub enum JournalRequest {
     InitializeProcess(InitializeProcessInput),
     GetProcess(GetProcessRequest),
     ListProcesses(ListProcessesRequest),
+    ArchiveIdleProcess(ArchiveIdleProcessRequest),
     AcquireLease(AcquireLeaseRequest),
     HeartbeatLease(HeartbeatLeaseRequest),
     ReleaseLease(ReleaseLeaseRequest),
@@ -58,6 +59,7 @@ pub enum JournalResponse {
     InitializeProcess(Box<InitializeProcessResult>),
     GetProcess(Box<GetProcessResponse>),
     ListProcesses(ListProcessesResponse),
+    ArchiveIdleProcess(ArchiveIdleProcessResponse),
     AcquireLease(Lease),
     HeartbeatLease(Lease),
     ReleaseLease(ReleaseLeaseResponse),
@@ -84,6 +86,19 @@ pub struct ListProcessesRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived: Option<bool>,
 }
+
+/// Archive only an unowned process in the expected authorization scope.
+/// Scope comparison and writer-lease exclusion are one storage transaction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveIdleProcessRequest {
+    pub process_id: ProcessId,
+    pub source: chaos_ipc::protocol::SessionSource,
+    pub cwd: std::path::PathBuf,
+    pub model_provider: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchiveIdleProcessResponse {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeartbeatLeaseRequest {

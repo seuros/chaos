@@ -224,11 +224,11 @@ impl Peer {
 }
 
 #[tokio::test]
-async fn unimplemented_capabilities_are_never_advertised() {
+async fn lifecycle_capabilities_match_host_dispatch_and_backend_opt_in() {
     let (peer, initialized) = Peer::new(json!({})).await;
     let capabilities = &initialized["result"]["agentCapabilities"]["sessionCapabilities"];
-    assert!(capabilities.get("close").is_none());
-    assert!(capabilities.get("delete").is_none());
+    assert_eq!(capabilities["close"], json!({}));
+    assert_eq!(capabilities["delete"], json!({}));
     assert_eq!(capabilities["list"], json!({}));
     assert_eq!(capabilities["resume"], json!({}));
     peer.finish().await;

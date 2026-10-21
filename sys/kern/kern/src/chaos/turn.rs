@@ -257,7 +257,7 @@ pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 ///
 pub(crate) async fn run_turn(
     task_context: Arc<crate::tasks::SessionTaskContext>,
-    turn_context: Arc<TurnContext>,
+    mut turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
     origin: crate::tasks::RegularTask,
     prewarmed_client_session: Option<ModelClientSession>,
@@ -280,9 +280,14 @@ pub(crate) async fn run_turn(
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
-    if run_pre_sampling_compact(&sess, &turn_context)
-        .await
-        .is_err()
+    if run_pre_sampling_compact(
+        &sess,
+        &turn_context,
+        None,
+        InitialContextInjection::DoNotInject,
+    )
+    .await
+    .is_err()
     {
         error!("Failed to run pre-sampling compact");
         return None;
@@ -485,12 +490,30 @@ pub(crate) async fn run_turn(
         // the mutable session policy before every sample so the immediate
         // follow-up request receives the new instructions and tool surface.
         let sampling_turn_context = sess.effective_turn_context(&turn_context).await;
+        if sampling_turn_context.model_info.slug != turn_context.model_info.slug
+            // Distillation carries a large future; keep the extra boundary
+            // check out of the turn task's inline stack state.
+            && Box::pin(run_pre_sampling_compact(
+                &sess,
+                &sampling_turn_context,
+                Some(&turn_context),
+                InitialContextInjection::BeforeLastUserMessage,
+            ))
+            .await
+            .is_err()
+        {
+            error!("Failed to compact at model-change sampling boundary");
+            return None;
+        }
+        // Subsequent allotment checks and compaction must use the model that
+        // actually sampled, including across repeated model switches.
+        turn_context = sampling_turn_context;
 
         // Construct the input that we will send to the model.
         let sampling_request_input: Vec<ResponseItem> = {
             sess.clone_history()
                 .await
-                .for_prompt(&sampling_turn_context.model_info.input_modalities)
+                .for_prompt(&turn_context.model_info.input_modalities)
         };
 
         let sampling_request_input_messages = sampling_request_input
@@ -501,12 +524,10 @@ pub(crate) async fn run_turn(
             })
             .map(|user_message| user_message.message())
             .collect::<Vec<String>>();
-        let turn_metadata_header = sampling_turn_context
-            .turn_metadata_state
-            .current_header_value();
+        let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
         match Box::pin(run_sampling_request(
             Arc::clone(&sess),
-            Arc::clone(&sampling_turn_context),
+            Arc::clone(&turn_context),
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
             &mut turn_progress,

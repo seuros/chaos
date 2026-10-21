@@ -23,6 +23,8 @@ use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
 pub use agent_client_protocol as protocol;
 
 mod permissions;
+mod services;
+pub use services::{ElicitationHandler, FileReader, FileWriter, TerminalHandler};
 
 /// Application-owned permission decisions. This is not an agent sandbox:
 /// callers must independently contain agents and their native tool execution.
@@ -53,7 +55,7 @@ impl PermissionHandler for DenyPermissions {
     }
 }
 
-/// Connection limits and policy. No filesystem or terminal capability is advertised.
+/// Connection limits and explicit application-owned services.
 #[derive(Clone, Debug)]
 pub struct ConnectionOptions {
     /// Deadline for an individual request, including initialization.
@@ -66,6 +68,16 @@ pub struct ConnectionOptions {
     pub notification_capacity: usize,
     /// Explicit application policy; defaults to denying all requests.
     pub permissions: Arc<dyn PermissionHandler>,
+    /// Optional editor reads. The application authorizes paths and session scope.
+    pub file_reader: Option<Arc<dyn FileReader>>,
+    /// Optional editor writes. No disk fallback is installed.
+    pub file_writer: Option<Arc<dyn FileWriter>>,
+    /// Optional complete terminal service. Never automatically runs a shell.
+    pub terminals: Option<Arc<dyn TerminalHandler>>,
+    /// Optional form/URL UI. No automatic approval or credential handling.
+    pub elicitation: Option<Arc<dyn ElicitationHandler>>,
+    /// Bound on concurrent incoming service requests.
+    pub pending_services: usize,
 }
 
 impl Default for ConnectionOptions {
@@ -76,6 +88,11 @@ impl Default for ConnectionOptions {
             max_message_bytes: 1024 * 1024,
             notification_capacity: 256,
             permissions: Arc::new(DenyPermissions),
+            file_reader: None,
+            file_writer: None,
+            terminals: None,
+            elicitation: None,
+            pending_services: 32,
         }
     }
 }
@@ -206,8 +223,8 @@ impl AcpClient {
 
 /// Owns one Tokio-driven ACP connection, not the agent's subprocess.
 ///
-/// Permission requests are denied by default. Filesystem and terminal requests
-/// are unsupported. An embedding application retains responsibility for launching,
+/// All optional services are disabled by default.
+/// An embedding application retains responsibility for launching,
 /// authenticating, sandboxing, killing and reaping its agent.
 pub struct AcpConnection {
     client: AcpClient,
@@ -235,6 +252,8 @@ impl AcpConnection {
             || options.shutdown_timeout.is_zero()
             || options.max_message_bytes == 0
             || options.notification_capacity == 0
+            || options.pending_services == 0
+            || options.pending_services > tokio::sync::Semaphore::MAX_PERMITS
         {
             return Err(GuestError::InvalidOptions);
         }
@@ -274,11 +293,15 @@ impl AcpConnection {
         let permissions = Arc::clone(&options.permissions);
         let pending_permissions = permissions::PendingPermissions::default();
         let incoming_permissions = pending_permissions.clone();
+        let services =
+            services::Services::new(&options, pending_permissions.clone(), state.clone());
+        let capabilities = services.capabilities();
         let (ready, pending) = oneshot::channel();
         let task = tokio::spawn(async move {
             let result = Client
                 .builder()
                 .name("acp-guest")
+                .with_connection_builder(services.builder())
                 .on_receive_notification(
                     async move |notification: SessionNotification, _cx| {
                         if updates.try_send(notification).is_err() {
@@ -347,7 +370,7 @@ impl AcpConnection {
             permissions: pending_permissions,
         };
         let initialized = match client
-            .request(InitializeRequest::new(ProtocolVersion::V1))
+            .request(InitializeRequest::new(ProtocolVersion::V1).client_capabilities(capabilities))
             .await
         {
             Ok(response) if response.protocol_version == ProtocolVersion::V1 => response,

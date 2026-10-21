@@ -27,7 +27,7 @@ impl ClientHandle {
             ));
         }
         let reply = self
-            .file_request(
+            .client_request(
                 ReadTextFileRequest::new(self.session_id.clone(), path),
                 false,
             )
@@ -51,7 +51,7 @@ impl ClientHandle {
         if content.len() > MAX_EDITOR_TEXT_BYTES {
             return Err(invalid("editor text exceeds the byte budget"));
         }
-        self.file_request(
+        self.client_request(
             WriteTextFileRequest::new(self.session_id.clone(), path, content),
             true,
         )
@@ -59,10 +59,25 @@ impl ClientHandle {
         Ok(())
     }
 
-    async fn file_request<R: JsonRpcRequest>(
+    pub(crate) async fn client_request<R: JsonRpcRequest>(
         &self,
         request: R,
         write: bool,
+    ) -> protocol::Result<R::Response> {
+        let (state, _) = self.ready()?;
+        self.client_request_with_timeout(
+            request,
+            write,
+            state.limits.approval_timeout.min(Duration::from_secs(15)),
+        )
+        .await
+    }
+
+    pub(crate) async fn client_request_with_timeout<R: JsonRpcRequest>(
+        &self,
+        request: R,
+        write: bool,
+        timeout: Duration,
     ) -> protocol::Result<R::Response> {
         let (state, slot) = self.ready()?;
         let message = request.to_untyped_message()?;
@@ -106,17 +121,9 @@ impl ClientHandle {
         }
         let mut unknown = UnconfirmedWrite(write.then_some(slot));
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let watching = state.clone();
         self.connection.spawn(async move {
-            if let Ok(reply) = tokio::time::timeout(
-                watching
-                    .limits
-                    .approval_timeout
-                    .min(Duration::from_secs(15)),
-                raw_rx,
-            )
-            .await
-            {
+            if let Ok(reply) = tokio::time::timeout(timeout, raw_rx).await {
+                // The caller may already have cancelled or dropped its receiver.
                 let _ = tx.send(reply);
             }
             Ok(())

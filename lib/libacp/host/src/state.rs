@@ -3,9 +3,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use protocol::schema::v1::{
-    ClientCapabilities, PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SessionId, SessionNotification,
-    SessionUpdate, ToolCallUpdate,
+    ClientCapabilities, ElicitationId, PermissionOption, PermissionOptionKind,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, SessionId,
+    SessionNotification, SessionUpdate, ToolCallUpdate,
 };
 use protocol::{Client, ConnectionTo};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -35,6 +35,7 @@ pub(crate) struct State {
     pub session_permits: Arc<Semaphore>,
     pub requests: Arc<Semaphore>,
     pub inbound: AtomicUsize,
+    pub url_elicitations: Mutex<HashMap<ElicitationId, UrlElicitation>>,
     connection: Mutex<Connection>,
     cleanup_done: CancellationToken,
 }
@@ -49,6 +50,7 @@ impl State {
             stop: CancellationToken::new(),
             sessions: Mutex::new(HashMap::new()),
             inbound: AtomicUsize::new(0),
+            url_elicitations: Mutex::new(HashMap::new()),
             connection: Mutex::new(Connection::default()),
             cleanup_done: CancellationToken::new(),
         })
@@ -73,10 +75,17 @@ impl State {
     }
 }
 
+pub(crate) struct UrlElicitation {
+    pub slot: Weak<Slot>,
+    pub ticket: Arc<()>,
+}
+
 pub(crate) struct Slot {
     pub native: Arc<dyn AgentSession>,
     pub queued: AtomicUsize,
     pub queue_changed: tokio::sync::Notify,
+    pub released: tokio::sync::Notify,
+    pub shutdown: tokio::sync::Mutex<Option<bool>>,
     pub _permit: OwnedSemaphorePermit,
     lifecycle: Mutex<Session>,
 }
@@ -92,6 +101,8 @@ impl Slot {
             lifecycle: Mutex::new(Session::opening(turn)),
             queued: AtomicUsize::new(0),
             queue_changed: tokio::sync::Notify::new(),
+            released: tokio::sync::Notify::new(),
+            shutdown: tokio::sync::Mutex::new(None),
             _permit: permit,
         })
     }
@@ -209,6 +220,23 @@ impl ClientHandle {
         Ok((state, slot))
     }
 
+    pub(crate) fn session_ready(&self) -> protocol::Result<(Arc<State>, Arc<Slot>)> {
+        let state = self
+            .state
+            .upgrade()
+            .ok_or_else(|| error("ACP connection closed"))?;
+        let slot = state.find(&self.session_id)?;
+        if !self
+            .slot
+            .upgrade()
+            .is_some_and(|owner| Arc::ptr_eq(&owner, &slot))
+        {
+            return Err(error("ACP session closed"));
+        }
+        slot.lock().check_open()?;
+        Ok((state, slot))
+    }
+
     pub(crate) fn check_ready(&self, state: &State, session: &Session) -> protocol::Result<()> {
         state.ready()?;
         session.check(&self.turn)
@@ -238,7 +266,7 @@ impl ClientHandle {
         tool_call: ToolCallUpdate,
         options: Vec<PermissionOption>,
     ) -> protocol::Result<RequestPermissionResponse> {
-        let (state, slot) = self.ready()?;
+        let (state, _) = self.ready()?;
         let deny = || RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled);
         if self.turn.cancel.is_cancelled() {
             return Ok(deny());
@@ -256,49 +284,19 @@ impl ClientHandle {
                 "permission options must be unique once-only decisions",
             ));
         }
-        let Ok(permit) = state.requests.clone().try_acquire_owned() else {
-            return Ok(deny());
-        };
         let request = RequestPermissionRequest::new(self.session_id.clone(), tool_call, options);
-        let (raw_tx, raw_rx) = tokio::sync::oneshot::channel();
-        let received = state.clone();
+        match self
+            .client_request_with_timeout(request, false, state.limits.approval_timeout)
+            .await
         {
-            let active = slot.lock();
-            self.check_ready(&state, &active)?;
-            self.connection
-                .prepare_request(request)
-                .on_receiving_result(async move |reply| {
-                    received.acknowledge_inbound();
-                    drop(permit);
-                    let _ = raw_tx.send(reply);
-                    Ok(())
-                })?;
-        }
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let watching = state.clone();
-        self.connection.spawn(async move {
-            if let Ok(reply) = tokio::time::timeout(watching.limits.approval_timeout, raw_rx).await
-            {
-                let _ = tx.send(reply);
-            }
-            Ok(())
-        })?;
-        let result = tokio::select! {
-            _ = self.turn.cancel.cancelled() => return Ok(deny()),
-            _ = state.stop.cancelled() => return Ok(deny()),
-            response = rx => response,
-        };
-        match result {
-            Ok(Ok(Ok(reply))) if self.ready().is_ok() && !self.turn.cancel.is_cancelled() => {
-                match &reply.outcome {
-                    RequestPermissionOutcome::Selected(selected)
-                        if ids.contains(&selected.option_id) =>
-                    {
-                        Ok(reply)
-                    }
-                    _ => Ok(deny()),
+            Ok(reply) => match &reply.outcome {
+                RequestPermissionOutcome::Selected(selected)
+                    if ids.contains(&selected.option_id) =>
+                {
+                    Ok(reply)
                 }
-            }
+                _ => Ok(deny()),
+            },
             _ => Ok(deny()),
         }
     }

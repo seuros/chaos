@@ -7,6 +7,7 @@ use core_test_support::responses::{
 use serde_json::json;
 use tempfile::TempDir;
 
+#[cfg(test)]
 #[path = "acp_stdio/peer.rs"]
 mod peer;
 use peer::Peer;

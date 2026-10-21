@@ -15,15 +15,18 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHal
 use tokio::task::JoinHandle;
 use wiremock::MockServer;
 
+mod active_controls;
 #[cfg(unix)]
 mod cancellation;
 mod commands;
 mod controls;
 mod creation;
+mod elicitation;
 mod file_faults;
 mod files;
 mod history;
 mod journal;
+mod lifecycle;
 mod permissions;
 mod validation;
 

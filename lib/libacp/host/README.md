@@ -27,8 +27,12 @@ for driving shutdown and containing any work whose termination is unconfirmed.
 
 Optional backend hooks expose caller-filtered model/mode selectors and durable
 session IDs, list/load/resume. Defaults remain unsupported. Load replays public
-updates with `update_wait` backpressure, without running previous work. Control
-changes and replay share the prompt's exclusive session-operation boundary.
+updates with `update_wait` backpressure, without running previous work. Opening
+and replay exclude both prompts and control changes. Controls have a separate,
+serialized operation boundary and can run during prompts; backends must
+synchronize configuration changes with native work. Only implemented lifecycle
+capabilities are advertised. Boolean configuration and optional notice/compaction
+updates are filtered against the client's negotiated capabilities, including replay.
 Backend `SessionInfo::available_commands` publishes the ACP slash-command
 catalog on new/load/resume. Invocation remains a normal text prompt handled
 by the backend; the host never interprets commands itself.

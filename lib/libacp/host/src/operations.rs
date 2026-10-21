@@ -36,13 +36,14 @@ impl State {
             slot: slot.clone(),
             armed: true,
         };
-        let info = match slot.native.info().await {
+        let mut info = match slot.native.info().await {
             Ok(info) => info,
             Err(error) => {
                 opening.shutdown().await?;
                 return Err(error);
             }
         };
+        self.filter_info(&mut info);
         let id = info
             .id
             .clone()
@@ -79,7 +80,11 @@ impl State {
         {
             let mut session = slot.lock();
             self.ready()?;
-            session.begin(turn.clone())?;
+            if prompt {
+                session.begin(turn.clone())?;
+            } else {
+                session.begin_control(turn.clone())?;
+            }
         }
         let guard = TurnGuard { slot, turn };
         Ok((guard.context(self, id, connection), guard))
@@ -151,7 +156,8 @@ pub(crate) async fn configure(
     {
         guard.slot.invalidate();
     }
-    let info = result?;
+    let mut info = result?;
+    context.client().ready()?.0.filter_info(&mut info);
     publish_info(&info, &context)?;
     Ok(info)
 }

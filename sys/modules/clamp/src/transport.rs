@@ -13,6 +13,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
 use futures::future::BoxFuture;
+use mcp_host::protocol::types::JsonRpcError;
+use mcp_host::protocol::types::JsonRpcRequest;
+use mcp_host::protocol::types::JsonRpcResponse;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::io::AsyncBufReadExt;
@@ -54,8 +57,11 @@ pub type HookCallbackHandler = Arc<
 >;
 
 /// Async callback for Claude Code `mcp_message` requests.
-pub type McpMessageHandler =
-    Arc<dyn Fn(String, Value) -> BoxFuture<'static, Result<Value, String>> + Send + Sync>;
+pub type McpMessageHandler = Arc<
+    dyn Fn(String, JsonRpcRequest) -> BoxFuture<'static, Result<JsonRpcResponse, String>>
+        + Send
+        + Sync,
+>;
 
 /// Configuration for spawning the Claude Code subprocess.
 #[derive(Clone)]
@@ -833,12 +839,14 @@ impl ClampTransport {
                     .get("server_name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
-                let mcp_message = request.get("message").cloned().unwrap_or(Value::Null);
+                let mcp_message = JsonRpcRequest::from_value(
+                    request.get("message").cloned().unwrap_or(Value::Null),
+                )?;
 
                 debug!(server_name, "MCP message from claude");
 
                 let mcp_response = if let Some(handler) = &self.mcp_message_handler {
-                    handler(server_name.to_string(), mcp_message.clone())
+                    handler(server_name.to_string(), mcp_message)
                         .await
                         .map_err(ClampError::ControlError)?
                 } else {
@@ -847,7 +855,7 @@ impl ClampTransport {
 
                 let response = ControlResponse::success(
                     request_id,
-                    serde_json::json!({"mcp_response": mcp_response}),
+                    serde_json::json!({"mcp_response": serde_json::to_value(mcp_response)?}),
                 );
                 self.write_json(&serde_json::to_value(response)?).await?;
             }
@@ -917,15 +925,16 @@ fn default_tool_permission_response(
     }
 }
 
-fn default_mcp_error_response(server_name: &str, request_message: &Value) -> Value {
-    serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": request_message.get("id"),
-        "error": {
-            "code": -32601,
-            "message": format!("MCP routing not yet implemented for server '{server_name}'")
-        }
-    })
+fn default_mcp_error_response(
+    server_name: &str,
+    request_message: &JsonRpcRequest,
+) -> JsonRpcResponse {
+    JsonRpcResponse::error(
+        request_message.id.clone(),
+        JsonRpcError::method_not_found(format!(
+            "MCP routing not yet implemented for server '{server_name}'"
+        )),
+    )
 }
 
 /// Background task: read stdout line-by-line, parse JSON, send to channel.

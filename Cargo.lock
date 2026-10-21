@@ -1264,6 +1264,7 @@ dependencies = [
  "chaos-realpath",
  "futures",
  "libc",
+ "mcp-host",
  "rama",
  "serde",
  "serde_json",

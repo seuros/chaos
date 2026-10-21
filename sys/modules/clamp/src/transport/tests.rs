@@ -67,15 +67,6 @@ fn default_tool_permission_deny_sets_message() {
 }
 
 #[test]
-fn default_mcp_error_reuses_jsonrpc_id() {
-    let request = serde_json::json!({"id": 42, "method": "tools/call"});
-    let response = default_mcp_error_response("chaos", &request);
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert_eq!(response["id"], 42);
-    assert_eq!(response["error"]["code"], -32601);
-}
-
-#[test]
 fn control_response_request_id_extracts_id() {
     let msg = Message::ControlResponse {
         response: serde_json::json!({

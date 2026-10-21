@@ -19,6 +19,7 @@ chaos-ipc = { workspace = true }
 chaos-pf = { workspace = true }
 chaos-realpath = { workspace = true }
 futures = { workspace = true }
+mcp-host = { workspace = true }
 rama = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

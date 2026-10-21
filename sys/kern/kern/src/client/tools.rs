@@ -15,6 +15,10 @@ use crate::chaos::turn::hook_permission_mode;
 use chaos_parole::sandbox::can_read_path;
 use chaos_parole::sandbox::can_write_path;
 use chaos_realpath::AbsolutePathBuf;
+use mcp_host::protocol::types::CallToolRequestParams;
+use mcp_host::protocol::types::JsonRpcError;
+use mcp_host::protocol::types::JsonRpcRequest;
+use mcp_host::protocol::types::JsonRpcResponse;
 use serde_json::Value;
 
 use crate::client_common::Prompt;
@@ -295,33 +299,24 @@ pub(crate) async fn active_clamp_turn_context(
 pub(crate) async fn handle_clamp_mcp_message(
     session: Weak<crate::chaos::Session>,
     server_name: String,
-    message: Value,
-) -> std::result::Result<Value, String> {
+    message: JsonRpcRequest,
+) -> std::result::Result<JsonRpcResponse, String> {
     let Some(session) = session.upgrade() else {
         return Err("session closed".to_string());
     };
 
-    let id = message.get("id").cloned().unwrap_or(Value::Null);
-    let method = message
-        .get("method")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "missing MCP method".to_string())?;
+    let id = message
+        .id
+        .ok_or_else(|| "missing MCP request id".to_string())?;
 
-    match method {
+    match message.method.as_str() {
         "tools/call" => {
             let params = message
-                .get("params")
-                .and_then(|v| v.as_object())
+                .params
                 .ok_or_else(|| "missing MCP params".to_string())?;
-            let tool_name = params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "missing MCP tool name".to_string())?
-                .to_string();
-            let arguments = params
-                .get("arguments")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
+            let params = CallToolRequestParams::from_value(params)
+                .map_err(|err| format!("invalid MCP tool call params: {err}"))?;
+            let arguments = params.arguments.unwrap_or_default();
             let raw_arguments = serde_json::to_string(&arguments)
                 .map_err(|err| format!("failed to serialize MCP arguments: {err}"))?;
             let turn_context = active_clamp_turn_context(&session)
@@ -333,26 +328,18 @@ pub(crate) async fn handle_clamp_mcp_message(
                 &turn_context,
                 call_id,
                 server_name,
-                tool_name,
+                params.name,
                 raw_arguments,
             )
             .await;
             let result_value = serde_json::to_value(&result)
                 .map_err(|err| format!("failed to serialize MCP result: {err}"))?;
-            Ok(serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": result_value
-            }))
+            Ok(JsonRpcResponse::success(id, result_value))
         }
-        _ => Ok(serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32601,
-                "message": format!("unsupported clamp MCP method: {method}")
-            }
-        })),
+        method => Ok(JsonRpcResponse::error(
+            Some(id),
+            JsonRpcError::method_not_found(format!("unsupported clamp MCP method: {method}")),
+        )),
     }
 }
 

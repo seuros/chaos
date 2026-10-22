@@ -22,7 +22,9 @@ jobs:
   tests:
     name: Tests — ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 30
+    # The CLI feature matrix rebuilds several kernel dependency graphs before
+    # the full PostgreSQL/SQLite suites; 30 minutes cuts off the full test run.
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash

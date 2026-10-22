@@ -3,11 +3,9 @@ use super::super::*;
 
 impl ChatWidget {
     pub(crate) fn lower_cost_preset(&self) -> Option<ModelPreset> {
-        let models = self.models_manager.try_list_models().ok()?;
-        models
-            .iter()
-            .find(|preset| preset.show_in_picker && preset.model == NUDGE_MODEL_SLUG)
-            .cloned()
+        self.models_manager
+            .try_selected_model(NUDGE_MODEL_SLUG, &self.config.model_provider_id)
+            .filter(|preset| preset.show_in_picker)
     }
 
     pub(crate) fn rate_limit_switch_prompt_hidden(&self) -> bool {
@@ -38,7 +36,7 @@ impl ChatWidget {
 
     pub(crate) fn open_rate_limit_switch_prompt(&mut self, preset: ModelPreset) {
         let switch_model = preset.model;
-        let switch_model_for_events = switch_model.clone();
+        let switch_model_for_events = preset.id;
         let default_effort: ReasoningEffortConfig = preset.default_reasoning_effort;
 
         let switch_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
@@ -55,8 +53,7 @@ impl ChatWidget {
                 collaboration_mode: None,
                 personality: None,
             }));
-            tx.send(AppEvent::UpdateModel(switch_model_for_events.clone()));
-            tx.send(AppEvent::UpdateReasoningEffort(Some(default_effort)));
+            Self::queue_model_and_effort(tx, switch_model_for_events.clone(), Some(default_effort));
         })];
 
         let keep_actions: Vec<SelectionAction> = Vec::new();

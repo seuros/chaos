@@ -63,7 +63,10 @@ impl Session {
         }
         let (session_configuration, previous_cwd, session_source) = {
             let mut state = self.state.lock().await;
-            match state.session_configuration.clone().apply(&updates) {
+            match self
+                .apply_configuration_update(&state.session_configuration, &updates)
+                .await
+            {
                 Ok(next) => {
                     let previous_cwd = state.session_configuration.cwd.clone();
                     let session_source = next.session_source.clone();
@@ -156,23 +159,30 @@ impl Session {
         final_output_json_schema: Option<Option<serde_json::Value>>,
     ) -> TurnContext {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
-
-        let model_info = self
+        let models_manager = self
             .services
             .models_manager
+            .for_config(&per_turn_config)
+            .await;
+
+        let model_info = models_manager
             .get_model_info(
                 session_configuration.collaboration_mode.model(),
                 &per_turn_config,
             )
             .await;
         let mut turn_context: TurnContext = make_turn_context(
-            Some(Arc::clone(&self.services.auth_manager)),
+            Some(
+                self.services
+                    .auth_manager
+                    .for_provider(&per_turn_config.model_provider_id),
+            ),
             &self.services.session_telemetry,
             session_configuration.provider.clone(),
             &session_configuration,
             per_turn_config,
             model_info,
-            &self.services.models_manager,
+            &models_manager,
             self.services
                 .network_proxy
                 .as_ref()

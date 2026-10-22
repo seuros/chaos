@@ -1,5 +1,14 @@
 use super::*;
+use chaos_kern::models_manager::catalog::ModelSelection;
 use chaos_kern::test_support::test_model_info;
+
+fn model_id(provider: &str, model: &str) -> String {
+    ModelSelection {
+        provider_id: provider.into(),
+        model: model.into(),
+    }
+    .id()
+}
 
 fn option<'a>(response: &'a Value, id: &str) -> &'a Value {
     response["result"]["configOptions"]
@@ -8,6 +17,159 @@ fn option<'a>(response: &'a Value, id: &str) -> &'a Value {
         .iter()
         .find(|option| option["id"] == id)
         .unwrap()
+}
+
+async fn catalog_fixture() -> (Fixture, MockServer) {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, ResponseTemplate};
+    let mut fixture = Fixture::new().await;
+    let other = MockServer::start().await;
+    fixture.config.model = Some("shared-model".into());
+    fixture.config.model_catalog = None;
+    let mut other_provider = fixture.config.model_provider.clone();
+    other_provider.base_url = Some(format!("{}/v1", other.uri()));
+    other_provider.experimental_bearer_token = Some("other-account-key".into());
+    let mut locked = other_provider.clone();
+    locked.experimental_bearer_token = None;
+    locked.auth = Some(chaos_kern::ProviderAuthCapabilities {
+        methods: vec![chaos_kern::ProviderAuthMethod::ApiKey],
+    });
+    fixture.config.model_providers = std::collections::HashMap::from([
+        ("acp-fixture".into(), fixture.config.model_provider.clone()),
+        ("other".into(), other_provider),
+        ("locked".into(), locked),
+    ]);
+    for server in [&fixture.server, &other] {
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "object":"list",
+                "data":[
+                    {"id":"shared-model","object":"model","owned_by":"fixture"},
+                    {"id":"shared-model","object":"model","owned_by":"fixture"}
+                ]
+            })))
+            .mount(server)
+            .await;
+    }
+    (fixture, other)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn model_catalog_exposes_all_accounts_without_requiring_a_prompt() {
+    let (fixture, _other) = catalog_fixture().await;
+    let (mut peer, session) = fixture.peer().await;
+    let original = model_id("acp-fixture", "shared-model");
+    let selected = model_id("other", "shared-model");
+    let options = option(&peer.initial, "model")["options"]
+        .as_array()
+        .unwrap();
+    assert_eq!(options.len(), 2, "logged-out accounts must not appear");
+    assert!(options.iter().any(|entry| entry["value"] == original));
+    assert!(options.iter().any(|entry| entry["value"] == selected));
+    let (changed, _) = peer
+        .request(
+            "session/set_config_option",
+            json!({"sessionId":session,"configId":"model","value":selected}),
+        )
+        .await;
+    assert_eq!(option(&changed, "model")["currentValue"], selected);
+    peer.close().await;
+
+    for method in ["session/load", "session/resume"] {
+        let mut peer = Peer::connect(fixture.config.clone()).await;
+        let (opened, _) = peer
+            .request(
+                method,
+                json!({"sessionId":session,"cwd":fixture.cwd.path(),"mcpServers":[]}),
+            )
+            .await;
+        assert!(opened["error"].is_null(), "{opened}");
+        let models = option(&opened, "model");
+        assert_eq!(models["currentValue"], selected);
+        assert_eq!(models["options"].as_array().unwrap().len(), 2);
+        peer.close().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn model_catalog_selects_and_restores_other_accounts_without_sending_picker_ids() {
+    let (fixture, other) = catalog_fixture().await;
+    let requests = mount_sse_sequence(
+        &other,
+        vec![
+            response("other-r1", "other account"),
+            response("other-r2", "restored account"),
+        ],
+    )
+    .await;
+    let (mut peer, session) = fixture.peer().await;
+    let original = model_id("acp-fixture", "shared-model");
+    let selected = model_id("other", "shared-model");
+    let options = option(&peer.initial, "model")["options"]
+        .as_array()
+        .unwrap();
+    assert_eq!(options.len(), 2, "logged-out accounts must not appear");
+    assert!(options.iter().any(|entry| entry["value"] == original));
+    assert!(options.iter().any(|entry| entry["value"] == selected));
+    assert_eq!(option(&peer.initial, "model")["currentValue"], original);
+    let (changed, _) = peer
+        .request(
+            "session/set_config_option",
+            json!({
+                "sessionId":session,"configId":"model","value":selected
+            }),
+        )
+        .await;
+    assert_eq!(
+        option(&changed, "model")["currentValue"],
+        selected,
+        "{changed}"
+    );
+    let (rejected, _) = peer
+        .request(
+            "session/set_config_option",
+            json!({
+                "sessionId":session,"configId":"model","value":model_id("locked","shared-model")
+            }),
+        )
+        .await;
+    assert!(rejected["error"].is_object());
+    let turn = peer.prompt(&session, "use the other account").await;
+    peer.finish(&session, turn, "end_turn").await;
+    assert_eq!(requests.requests()[0].body_json()["model"], "shared-model");
+    let received = other.received_requests().await.unwrap();
+    assert!(
+        received
+            .iter()
+            .filter(|request| request.url.path() == "/v1/responses")
+            .all(|request| request.headers.get("authorization").unwrap()
+                == "Bearer other-account-key")
+    );
+    peer.close().await;
+
+    let mut resumed = Peer::connect(fixture.config.clone()).await;
+    let (loaded, _) = resumed
+        .request(
+            "session/load",
+            json!({
+                "sessionId":session,"cwd":fixture.cwd.path(),"mcpServers":[]
+            }),
+        )
+        .await;
+    assert!(loaded["error"].is_null(), "{loaded}");
+    assert_eq!(option(&loaded, "model")["currentValue"], selected);
+    assert_eq!(
+        requests.requests().len(),
+        1,
+        "restoring controls never replays inference"
+    );
+    let turn = resumed
+        .prompt(&session, "continue on the restored account")
+        .await;
+    resumed.finish(&session, turn, "end_turn").await;
+    assert_eq!(requests.requests()[1].body_json()["model"], "shared-model");
+    resumed.close().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -25,7 +187,10 @@ async fn model_mode_controls_are_native_confirmed_and_session_local() {
     )
     .await;
     let (mut peer, session) = fixture.peer().await;
-    assert_eq!(option(&peer.initial, "model")["currentValue"], "mock-model");
+    assert_eq!(
+        option(&peer.initial, "model")["currentValue"],
+        model_id("acp-fixture", "mock-model")
+    );
     assert_eq!(peer.initial["result"]["modes"]["currentModeId"], "default");
     let (changed, updates) = peer
         .request(
@@ -33,7 +198,10 @@ async fn model_mode_controls_are_native_confirmed_and_session_local() {
             json!({"sessionId":session,"configId":"model","value":"mock-second"}),
         )
         .await;
-    assert_eq!(option(&changed, "model")["currentValue"], "mock-second");
+    assert_eq!(
+        option(&changed, "model")["currentValue"],
+        model_id("acp-fixture", "mock-second")
+    );
     assert!(
         updates
             .iter()
@@ -78,7 +246,10 @@ async fn model_mode_controls_are_native_confirmed_and_session_local() {
             json!({"cwd":fixture.cwd.path(),"mcpServers":[]}),
         )
         .await;
-    assert_eq!(option(&second, "model")["currentValue"], "mock-model");
+    assert_eq!(
+        option(&second, "model")["currentValue"],
+        model_id("acp-fixture", "mock-model")
+    );
     assert_eq!(second["result"]["modes"]["currentModeId"], "default");
     let id = peer
         .prompt(&session, "use the confirmed model and mode")

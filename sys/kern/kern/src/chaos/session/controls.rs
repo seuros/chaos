@@ -5,10 +5,18 @@ use super::Session;
 
 impl Session {
     pub(crate) async fn session_controls(&self) -> ProcessSessionControls {
-        let state = self.state.lock().await;
-        let config = &state.session_configuration;
+        let config = self.state.lock().await.session_configuration.clone();
+        let model_catalog = self
+            .services
+            .models_manager
+            .model_picker_catalog(
+                &config.original_config_do_not_use.model_providers,
+                &config.original_config_do_not_use.model_provider_id,
+                crate::models_manager::RefreshStrategy::Offline,
+            )
+            .await;
         ProcessSessionControls {
-            model: config.collaboration_mode.model().to_string(),
+            model: config.model_selection_id(),
             current_mode: config.mode_policy.active_mode.clone(),
             modes: config
                 .mode_policy
@@ -22,14 +30,7 @@ impl Session {
                 })
                 .collect(),
             switching_allowed: config.mode_policy.switching_allowed,
-            models: self
-                .services
-                .models_manager
-                .try_list_models()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|model| model.show_in_picker && model.supported_in_api)
-                .collect(),
+            model_catalog,
         }
     }
 
@@ -48,11 +49,23 @@ impl Session {
             ));
         }
         let controls = self.session_controls().await;
-        let model = model.unwrap_or(&controls.model);
+        let requested_model = model.unwrap_or(&controls.model);
+        let current = crate::models_manager::catalog::ModelSelection::from_id(&controls.model)
+            .expect("native model identity must be qualified");
+        let model = if crate::models_manager::catalog::ModelSelection::same_model(
+            requested_model,
+            &controls.model,
+            &current.provider_id,
+        ) {
+            controls.model.as_str()
+        } else {
+            requested_model
+        };
         let mode = mode.unwrap_or(&controls.current_mode);
-        if model != controls.model && !controls.models.iter().any(|entry| entry.model == model) {
+        let choice = controls.model_catalog.find(model, &current.provider_id);
+        if model != controls.model && choice.is_none() {
             return Err(ProcessControlError::Rejected(
-                "model is not available in the selected provider catalog".into(),
+                "model/account choice is not available".into(),
             ));
         }
         let mode_changed = mode != controls.current_mode;
@@ -64,11 +77,18 @@ impl Session {
             ));
         }
         let mut state = self.state.lock().await;
-        let config = &mut state.session_configuration;
-        config.collaboration_mode =
-            config
-                .collaboration_mode
-                .with_updates(Some(model.to_string()), None, None);
+        if model != controls.model {
+            let mut next = state.session_configuration.clone();
+            next.collaboration_mode = next.collaboration_mode.with_updates(
+                Some(choice.expect("validated model choice").id.clone()),
+                None,
+                None,
+            );
+            self.resolve_model_configuration(&mut next)
+                .await
+                .map_err(|error| ProcessControlError::Rejected(error.to_string()))?;
+            state.session_configuration = next;
+        }
         drop(state);
         if !mode_changed {
             return self
@@ -122,7 +142,7 @@ impl Session {
                 mode_id: mode.id.clone(),
                 mode_title: mode.title.clone(),
                 mode_kind: config.collaboration_mode.mode,
-                model: config.collaboration_mode.model().to_string(),
+                model: config.model_selection_id(),
                 reasoning_effort: config.collaboration_mode.reasoning_effort(),
             }
         };

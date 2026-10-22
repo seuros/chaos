@@ -1,9 +1,19 @@
 //! Model selection popup methods.
 use chaos_ipc::product::OS_NAME;
+use chaos_kern::models_manager::catalog::ModelPickerCatalog;
 
 use super::super::*;
 
+#[cfg(test)]
+#[path = "../tests/model_catalog.rs"]
+mod tests;
+
 impl ChatWidget {
+    #[cfg(test)]
+    pub(crate) async fn model_catalog_test_suite() {
+        tests::run().await;
+    }
+
     /// Open a popup to choose a quick auto model. Selecting "All models"
     /// opens the full picker with every available preset.
     pub fn open_model_popup(&mut self) {
@@ -37,17 +47,25 @@ impl ChatWidget {
             }
             presets
         } else {
-            match self.models_manager.try_list_models() {
-                Ok(models) => models,
-                Err(_) => {
-                    self.add_info_message(
-                        "Models are being updated; please try /model again in a moment."
-                            .to_string(),
-                        /*hint*/ None,
-                    );
-                    return;
-                }
-            }
+            let manager = self.models_manager.clone();
+            let providers = self.config.model_providers.clone();
+            let provider_id = self.config.model_provider_id.clone();
+            let tx = self.app_event_tx.clone();
+            let process_id = self.process_id;
+            tokio::spawn(async move {
+                let catalog = manager
+                    .model_picker_catalog(
+                        &providers,
+                        &provider_id,
+                        chaos_kern::models_manager::RefreshStrategy::OnlineIfUncached,
+                    )
+                    .await;
+                tx.send(AppEvent::OpenModelPopup {
+                    process_id,
+                    models: catalog.into_models(),
+                });
+            });
+            return;
         };
         self.open_model_popup_with_presets(presets);
     }
@@ -163,15 +181,11 @@ impl ChatWidget {
     }
 
     pub fn open_model_popup_with_presets(&mut self, presets: Vec<ModelPreset>) {
-        let presets: Vec<ModelPreset> = presets
-            .into_iter()
-            .filter(|preset| preset.show_in_picker)
-            .collect();
+        let presets = ModelPickerCatalog::new(presets).into_models();
 
-        let current_model = self.current_model();
         let current_label = presets
             .iter()
-            .find(|preset| preset.model.as_str() == current_model)
+            .find(|preset| self.model_choice_is_current(&preset.id))
             .map(|preset| preset.model.to_string())
             .unwrap_or_else(|| self.model_display_name().to_string());
 
@@ -190,7 +204,7 @@ impl ChatWidget {
             .map(|preset| {
                 let description =
                     (!preset.description.is_empty()).then_some(preset.description.clone());
-                let model = preset.model.clone();
+                let model = preset.id.clone();
                 let should_prompt_plan_mode_scope = self.should_prompt_plan_mode_reasoning_scope(
                     model.as_str(),
                     Some(preset.default_reasoning_effort),
@@ -201,9 +215,9 @@ impl ChatWidget {
                     should_prompt_plan_mode_scope,
                 );
                 SelectionItem {
-                    name: model.clone(),
+                    name: preset.display_name.clone(),
                     description,
-                    is_current: model.as_str() == current_model,
+                    is_current: self.model_choice_is_current(&model),
                     is_default: preset.is_default,
                     actions,
                     dismiss_on_select: true,
@@ -261,6 +275,7 @@ impl ChatWidget {
     }
 
     pub fn open_all_models_popup(&mut self, presets: Vec<ModelPreset>) {
+        let presets = ModelPickerCatalog::new(presets).into_models();
         if presets.is_empty() {
             self.add_info_message(
                 "No additional models are available right now.".to_string(),
@@ -273,7 +288,7 @@ impl ChatWidget {
         for preset in presets.into_iter() {
             let description =
                 (!preset.description.is_empty()).then_some(preset.description.to_string());
-            let is_current = preset.model.as_str() == self.current_model();
+            let is_current = self.model_choice_is_current(&preset.id);
             let single_supported_effort = preset.supported_reasoning_efforts.len() == 1;
             let preset_for_action = preset.clone();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
@@ -283,7 +298,7 @@ impl ChatWidget {
                 });
             })];
             items.push(SelectionItem {
-                name: preset.model.clone(),
+                name: preset.display_name.clone(),
                 description,
                 is_current,
                 is_default: preset.is_default,
@@ -356,33 +371,36 @@ impl ChatWidget {
         should_prompt_plan_mode_scope: bool,
     ) -> Vec<SelectionAction> {
         vec![Box::new(move |tx| {
-            if should_prompt_plan_mode_scope {
-                tx.send(AppEvent::OpenPlanReasoningScopePrompt {
-                    model: model_for_action.clone(),
-                    effort: effort_for_action,
-                });
-                return;
-            }
-
-            tx.send(AppEvent::UpdateModel(model_for_action.clone()));
-            tx.send(AppEvent::UpdateReasoningEffort(effort_for_action));
-            Self::queue_persist_model_selection(
+            Self::queue_model_selection(
                 tx,
                 model_for_action.clone(),
                 effort_for_action,
-                crate::theme::is_clamped(),
+                should_prompt_plan_mode_scope,
             );
         })]
     }
 
-    pub(crate) fn apply_model_and_effort_without_persist(
-        &self,
+    pub(crate) fn queue_model_selection(
+        tx: &AppEventSender,
+        model: String,
+        effort: Option<ReasoningEffortConfig>,
+        should_prompt_plan_mode_scope: bool,
+    ) {
+        if should_prompt_plan_mode_scope {
+            tx.send(AppEvent::OpenPlanReasoningScopePrompt { model, effort });
+            return;
+        }
+        Self::queue_model_and_effort(tx, model.clone(), effort);
+        Self::queue_persist_model_selection(tx, model, effort, crate::theme::is_clamped());
+    }
+
+    pub(crate) fn queue_model_and_effort(
+        tx: &AppEventSender,
         model: String,
         effort: Option<ReasoningEffortConfig>,
     ) {
-        self.app_event_tx.send(AppEvent::UpdateModel(model));
-        self.app_event_tx
-            .send(AppEvent::UpdateReasoningEffort(effort));
+        tx.send(AppEvent::UpdateModel(model));
+        tx.send(AppEvent::UpdateReasoningEffort(effort));
     }
 
     pub(crate) fn queue_persist_model_selection(
@@ -396,20 +414,6 @@ impl ChatWidget {
         }
 
         tx.send(AppEvent::PersistModelSelection { model, effort });
-    }
-
-    pub(crate) fn apply_model_and_effort(
-        &self,
-        model: String,
-        effort: Option<ReasoningEffortConfig>,
-    ) {
-        self.apply_model_and_effort_without_persist(model.clone(), effort);
-        Self::queue_persist_model_selection(
-            &self.app_event_tx,
-            model,
-            effort,
-            crate::theme::is_clamped(),
-        );
     }
 
     pub(crate) fn capture_pre_clamp_selection(&mut self) {

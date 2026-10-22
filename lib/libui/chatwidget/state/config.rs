@@ -79,6 +79,16 @@ impl ChatWidget {
 
     /// Set the model in the widget's config copy and stored collaboration mode.
     pub fn set_model(&mut self, model: &str) {
+        if let Some(selection) = chaos_kern::models_manager::catalog::ModelSelection::from_id(model)
+        {
+            let provider = self
+                .models_manager
+                .provider_for_selection(&self.config, &selection);
+            if let Some(provider) = provider {
+                self.config.model_provider_id = selection.provider_id;
+                self.config.model_provider = provider;
+            }
+        }
         self.current_collaboration_mode = self.current_collaboration_mode.with_updates(
             Some(model.to_string()),
             /*effort*/ None,
@@ -104,6 +114,15 @@ impl ChatWidget {
             .unwrap_or_else(|| self.current_collaboration_mode.model())
     }
 
+    pub(crate) fn model_choice_is_current(&self, id: &str) -> bool {
+        self.model_choices_match(self.current_model(), id)
+    }
+
+    pub(crate) fn model_choices_match(&self, left: &str, right: &str) -> bool {
+        use chaos_kern::models_manager::catalog::ModelSelection;
+        ModelSelection::same_model(left, right, &self.config.model_provider_id)
+    }
+
     /// Lock the slash-command surface to logged-out-safe commands when no
     /// account is connected and the active model resolves to an empty slug.
     ///
@@ -120,14 +139,8 @@ impl ChatWidget {
     pub(crate) fn current_model_supports_personality(&self) -> bool {
         let model = self.current_model();
         self.models_manager
-            .try_list_models()
-            .ok()
-            .and_then(|models| {
-                models
-                    .into_iter()
-                    .find(|preset| preset.model == model)
-                    .map(|preset| preset.supports_personality)
-            })
+            .try_selected_model(model, &self.config.model_provider_id)
+            .map(|preset| preset.supports_personality)
             .unwrap_or(false)
     }
 
@@ -138,14 +151,8 @@ impl ChatWidget {
     pub(crate) fn current_model_supports_images(&self) -> bool {
         let model = self.current_model();
         self.models_manager
-            .try_list_models()
-            .ok()
-            .and_then(|models| {
-                models
-                    .into_iter()
-                    .find(|preset| preset.model == model)
-                    .map(|preset| preset.input_modalities.contains(&InputModality::Image))
-            })
+            .try_selected_model(model, &self.config.model_provider_id)
+            .map(|preset| preset.input_modalities.contains(&InputModality::Image))
             .unwrap_or(true)
     }
 
@@ -230,7 +237,9 @@ impl ChatWidget {
 
     pub(crate) fn refresh_model_display(&mut self) {
         let effective = self.effective_collaboration_mode();
-        self.session_header.set_model(effective.model());
+        self.session_header.set_model(
+            chaos_kern::models_manager::catalog::ModelSelection::wire_model(effective.model()),
+        );
         // Keep composer paste affordances aligned with the currently effective model.
         self.sync_image_paste_enabled();
         self.update_collaboration_mode_indicator();
@@ -244,7 +253,7 @@ impl ChatWidget {
         if model.is_empty() {
             DEFAULT_MODEL_DISPLAY_NAME
         } else {
-            model
+            chaos_kern::models_manager::catalog::ModelSelection::wire_model(model)
         }
     }
 
@@ -286,7 +295,8 @@ impl ChatWidget {
         } else if effective_mode.model().is_empty() {
             DEFAULT_MODEL_DISPLAY_NAME.to_string()
         } else {
-            effective_mode.model().to_string()
+            chaos_kern::models_manager::catalog::ModelSelection::wire_model(effective_mode.model())
+                .to_string()
         };
         Some(CollaborationModeIndicator::new_with_label(
             kind,

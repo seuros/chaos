@@ -116,7 +116,13 @@ async fn list_load_and_resume_keep_identity_controls_history_and_native_ownershi
             .as_array()
             .unwrap()
             .iter()
-            .any(|option| option["id"] == "model" && option["currentValue"] == "mock-second")
+            .any(|option| option["id"] == "model"
+                && option["currentValue"]
+                    == chaos_kern::models_manager::catalog::ModelSelection {
+                        provider_id: "acp-fixture".into(),
+                        model: "mock-second".into(),
+                    }
+                    .id())
     );
     assert_eq!(
         requests.requests().len(),

@@ -9,7 +9,7 @@ impl ChatWidget {
     ) -> bool {
         if !self.collaboration_modes_enabled()
             || self.active_mode_kind() != ModeKind::Plan
-            || selected_model != self.current_model()
+            || !self.model_choice_is_current(selected_model)
         {
             return false;
         }
@@ -18,7 +18,7 @@ impl ChatWidget {
         // 1) the active Plan-mode effective reasoning, and
         // 2) the stored global defaults that would be updated by the fallback path.
         selected_effort != self.effective_reasoning_effort()
-            || selected_model != self.current_collaboration_mode.model()
+            || !self.model_choices_match(selected_model, self.current_collaboration_mode.model())
             || selected_effort != self.current_collaboration_mode.reasoning_effort()
     }
 
@@ -71,8 +71,7 @@ impl ChatWidget {
             }
         })];
         let all_modes_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-            tx.send(AppEvent::UpdateModel(model.clone()));
-            tx.send(AppEvent::UpdateReasoningEffort(effort));
+            Self::queue_model_and_effort(tx, model.clone(), effort);
             tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
             tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
             Self::queue_persist_model_selection(
@@ -160,16 +159,15 @@ impl ChatWidget {
 
         if choices.len() == 1 {
             let selected_effort = choices.first().and_then(|c| c.stored);
-            let selected_model = preset.model;
-            if self.should_prompt_plan_mode_reasoning_scope(&selected_model, selected_effort) {
-                self.app_event_tx
-                    .send(AppEvent::OpenPlanReasoningScopePrompt {
-                        model: selected_model,
-                        effort: selected_effort,
-                    });
-            } else {
-                self.apply_model_and_effort(selected_model, selected_effort);
-            }
+            let selected_model = preset.id;
+            let should_prompt =
+                self.should_prompt_plan_mode_reasoning_scope(&selected_model, selected_effort);
+            Self::queue_model_selection(
+                &self.app_event_tx,
+                selected_model,
+                selected_effort,
+                should_prompt,
+            );
             return;
         }
 
@@ -181,8 +179,9 @@ impl ChatWidget {
             .or_else(|| choices.iter().find_map(|choice| choice.stored))
             .or(Some(default_effort));
 
-        let model_slug = preset.model.to_string();
-        let is_current_model = self.current_model() == preset.model.as_str();
+        let model_slug = preset.id;
+        let model_label = preset.display_name;
+        let is_current_model = self.model_choice_is_current(&model_slug);
         let highlight_choice = if is_current_model {
             if in_plan_mode {
                 self.config
@@ -232,27 +231,14 @@ impl ChatWidget {
                 None
             };
 
-            let model_for_action = model_slug.clone();
             let choice_effort = choice.stored;
             let should_prompt_plan_mode_scope =
                 self.should_prompt_plan_mode_reasoning_scope(model_slug.as_str(), choice_effort);
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                if should_prompt_plan_mode_scope {
-                    tx.send(AppEvent::OpenPlanReasoningScopePrompt {
-                        model: model_for_action.clone(),
-                        effort: choice_effort,
-                    });
-                } else {
-                    tx.send(AppEvent::UpdateModel(model_for_action.clone()));
-                    tx.send(AppEvent::UpdateReasoningEffort(choice_effort));
-                    Self::queue_persist_model_selection(
-                        tx,
-                        model_for_action.clone(),
-                        choice_effort,
-                        crate::theme::is_clamped(),
-                    );
-                }
-            })];
+            let actions = Self::model_selection_actions(
+                model_slug.clone(),
+                choice_effort,
+                should_prompt_plan_mode_scope,
+            );
 
             items.push(SelectionItem {
                 name: effort_label,
@@ -267,7 +253,7 @@ impl ChatWidget {
 
         let mut header = ColumnRenderable::new();
         header.push(Line::from(
-            format!("Select Reasoning Level for {model_slug}").bold(),
+            format!("Select Reasoning Level for {model_label}").bold(),
         ));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {

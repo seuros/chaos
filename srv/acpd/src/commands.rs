@@ -32,7 +32,7 @@ pub(crate) async fn available(process: &Process) -> Vec<AvailableCommand> {
         command("status", "Show the native session's model and mode", None),
         command(
             "model",
-            "Show or select a model from the current provider",
+            "Show or select a model from a logged-in account",
             Some("[model]"),
         ),
         command(
@@ -213,9 +213,10 @@ pub(crate) async fn dispatch(
                     (
                         controls.model,
                         controls
-                            .models
+                            .model_catalog
+                            .into_models()
                             .into_iter()
-                            .map(|model| model.model)
+                            .map(|model| format!("{} ({})", model.display_name, model.id))
                             .collect::<Vec<_>>(),
                     )
                 } else {

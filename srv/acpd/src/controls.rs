@@ -10,17 +10,19 @@ use protocol::schema::v1::{
 pub(crate) async fn info(process: &Process) -> SessionInfo {
     let native = process.session_controls().await;
     let mut models = native
-        .models
+        .model_catalog
+        .models()
         .iter()
         .map(|model| {
-            SessionConfigSelectOption::new(model.model.clone(), model.display_name.clone())
+            SessionConfigSelectOption::new(model.id.clone(), model.display_name.clone())
                 .description(model.description.clone())
         })
         .collect::<Vec<_>>();
     if !native
-        .models
+        .model_catalog
+        .models()
         .iter()
-        .any(|model| model.model == native.model)
+        .any(|model| model.id == native.model)
     {
         models.insert(
             0,

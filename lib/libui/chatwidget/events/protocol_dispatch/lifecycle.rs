@@ -36,6 +36,10 @@ impl ChatWidget {
         self.forked_from = event.forked_from_id;
         self.current_cwd = Some(event.cwd.clone());
         self.config.cwd = event.cwd.clone();
+        if let Some(provider) = self.config.model_providers.get(&event.model_provider_id) {
+            self.config.model_provider_id = event.model_provider_id.clone();
+            self.config.model_provider = provider.clone();
+        }
         if let Err(err) = self
             .config
             .permissions

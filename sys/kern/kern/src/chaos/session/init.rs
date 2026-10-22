@@ -114,6 +114,7 @@ impl Session {
     pub(crate) fn build_per_turn_config(session_configuration: &SessionConfiguration) -> Config {
         let config = session_configuration.original_config_do_not_use.clone();
         let mut per_turn_config = (*config).clone();
+        per_turn_config.model = Some(session_configuration.collaboration_mode.model().to_string());
         per_turn_config.cwd = session_configuration.cwd.clone();
         per_turn_config.model_reasoning_effort =
             session_configuration.collaboration_mode.reasoning_effort();

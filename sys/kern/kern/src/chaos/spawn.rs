@@ -164,6 +164,7 @@ impl Chaos {
             .map_err(|err| ChaosErr::Fatal(format!("failed to load rules: {err}")))?
             .with_storage(&config.chaos_home, &config.cwd);
 
+        models_manager.resolve_model_selection(&mut config).await?;
         let config = Arc::new(config);
         let auth_manager = auth_manager.for_provider(&config.model_provider_id);
         // The host's manager is bound to whichever provider it started on. A

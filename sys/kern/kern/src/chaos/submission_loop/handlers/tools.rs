@@ -19,15 +19,10 @@ use crate::client_common::tools::ToolSpec;
 use crate::config::Config;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::collect_mcp_snapshot_from_registry;
-use crate::models_manager::manager::RefreshStrategy;
 
 pub async fn list_models(sess: &Session, sub_id: String) {
     // Listing is local-only. Provider discovery/refresh has separate entry points.
-    let models = sess
-        .services
-        .models_manager
-        .list_models(RefreshStrategy::Offline)
-        .await;
+    let models = sess.session_controls().await.model_catalog.into_models();
     sess.send_event_raw(Event {
         id: sub_id,
         msg: EventMsg::ListModelsResponse(ListModelsResponseEvent { models }),

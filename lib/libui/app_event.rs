@@ -254,6 +254,8 @@ pub enum AppEvent {
 
     OpenReflexPopup,
 
+    SetReflexEnabled(bool),
+
     OpenReflexSetup {
         name: String,
         settings: chaos_kern::config::ReflexBackendSettings,

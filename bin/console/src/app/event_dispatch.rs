@@ -886,7 +886,8 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "Failed to save Plan mode reasoning effort for profile `{profile}`: {err}"
+                            "Failed to save Plan mode reasoning effort \
+                             for profile `{profile}`: {err}"
                         ));
                     } else {
                         self.chat_widget.add_error_message(format!(
@@ -966,6 +967,20 @@ impl App {
             AppEvent::OpenReflexPopup => {
                 let view = self.chat_widget.reflex_picker_view();
                 self.open_overlay(tui, Overlay::new_settings("reflex", view));
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::SetReflexEnabled(enabled) => {
+                match chaos_kern::reflex::configuration::set_enabled(&self.config, enabled).await {
+                    Ok(()) => {
+                        self.config.reflex_enabled = enabled;
+                        self.chat_widget.reflex_enabled_saved(enabled);
+                        self.chat_widget.submit_op(Op::ReloadUserConfig);
+                    }
+                    Err(err) => self.chat_widget.add_error_message(format!(
+                        "Could not save reflex preference: {err}. \
+                         Use /reflex on or /reflex off to retry."
+                    )),
+                }
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::OpenReflexSetup { name, settings } => {

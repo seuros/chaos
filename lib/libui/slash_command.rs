@@ -92,7 +92,7 @@ impl SlashCommand {
                 "manage provider accounts and connections (disconnect via CLI)".into()
             }
             SlashCommand::Reflex => {
-                "configure reflex backends and keys, or run /reflex test".into()
+                "configure reflex backends, toggle /reflex on|off, or run /reflex test".into()
             }
         }
     }

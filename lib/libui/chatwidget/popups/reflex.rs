@@ -10,6 +10,20 @@ use chaos_kern::reflex::diagnostics;
 use std::sync::Arc;
 
 impl ChatWidget {
+    pub fn reflex_enabled_saved(&mut self, enabled: bool) {
+        self.config.reflex_enabled = enabled;
+        let status = if enabled { "on" } else { "off" };
+        self.add_info_message(
+            format!("Reflex {status}. Changes apply from the next turn."),
+            Some(
+                "Saved backends and credentials are preserved. \
+                 Normal approvals and sandbox rules still apply."
+                    .into(),
+            ),
+        );
+        self.request_redraw();
+    }
+
     pub(crate) fn test_reflex(&mut self) {
         let config = self.config.clone();
         let auth = self.auth_manager.clone();
@@ -83,8 +97,13 @@ impl ChatWidget {
                 title: Some("Reflex backends".into()),
                 subtitle: Some("Settings in the database · new keys in the OS keyring".into()),
                 footer_note: Some(
-                    "Action-risk checks send conversation and tool arguments to the backend."
-                        .into(),
+                    if self.config.reflex_enabled {
+                        "Checks on · sends conversation and tool arguments · \
+                         /reflex off disables checks."
+                    } else {
+                        "Checks off · /reflex on enables automatic action-risk checks."
+                    }
+                    .into(),
                 ),
                 footer_hint: Some("↑/↓ choose · Enter configure · Esc close".into()),
                 items,

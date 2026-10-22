@@ -90,6 +90,39 @@ fn risk_answers(risk_score: f64, confidence: f64, exfiltrates: f64) -> serde_jso
     })
 }
 
+#[tokio::test]
+#[serial]
+async fn reflex_off_skips_backend_and_explicit_remote_monitor() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let _key = EnvVarGuard::set(TEST_ENV_KEY, OsStr::new("test-key"));
+    let _token = EnvVarGuard::set("CHAOS_ARC_MONITOR_TOKEN", OsStr::new("remote-token"));
+    let _endpoint = EnvVarGuard::set(
+        "CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE",
+        OsStr::new(&server.uri()),
+    );
+    let (session, mut context) = monitor_context(&server).await;
+    let config = Arc::make_mut(&mut context.config);
+    config.reflex_enabled = false;
+    config.reflex.get_mut("jev").unwrap().allow_remote_fallback = true;
+    assert!(!crate::arc_monitor::monitoring_required(config));
+    assert_eq!(
+        monitor_action(&session, &context, json!({"tool": "test"})).await,
+        ArcMonitorOutcome::Disabled
+    );
+    // Even malformed actions are ignored while disabled.
+    assert_eq!(
+        monitor_action(&session, &context, json!(null)).await,
+        ArcMonitorOutcome::Disabled
+    );
+    Arc::make_mut(&mut context.config).reflex_enabled = true;
+    assert!(crate::arc_monitor::monitoring_required(&context.config));
+}
+
 #[test]
 fn decide_allows_calm_confident_verdicts() {
     let outcome = decide(&verdict(

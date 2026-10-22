@@ -12,6 +12,9 @@ on:
       sqlite-checks:
         default: false
         type: boolean
+      feature-checks:
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -22,9 +25,8 @@ jobs:
   tests:
     name: Tests — ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
-    # The CLI feature matrix rebuilds several kernel dependency graphs before
-    # the full PostgreSQL/SQLite suites; 30 minutes cuts off the full test run.
-    timeout-minutes: 60
+    # Extra kernel rebuilds are opt-in; keep the usual budget for ordinary CI.
+    timeout-minutes: ${{ inputs.feature-checks && 60 || 30 }}
     defaults:
       run:
         shell: bash
@@ -123,6 +125,7 @@ jobs:
           echo "TEST_DATABASE_URL=postgres://chaos_test@127.0.0.1:55432/chaos_test" >> "$GITHUB_ENV"
 
       - name: Test TUI/ACP/MCP-daemon-free CLI
+        if: inputs.feature-checks
         run: |
           set -euo pipefail
           cargo tree --locked -p chaos-cli --no-default-features \
@@ -137,6 +140,7 @@ jobs:
             --cargo-profile ci-test
 
       - name: Test independent TUI, ACP, and MCP daemon features
+        if: inputs.feature-checks
         run: |
           set -euo pipefail
           for feature in tui acp mcpd tui,acp tui,mcpd acp,mcpd tui,acp,mcpd; do

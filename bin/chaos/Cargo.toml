@@ -14,11 +14,17 @@ path = "src/main.rs"
 name = "chaos_boot"
 path = "src/lib.rs"
 
+[[test]]
+name = "acp_stdio"
+required-features = ["acp"]
+
 [lints]
 workspace = true
 
 [features]
-default = ["tui"]
+default = ["tui", "acp"]
+# Omit the ACP stdio agent and protocol stack from builds that do not need it.
+acp = ["dep:chaos-acpd"]
 # `chaos update` from GitHub releases; only the GitHub release build enables it.
 self-update = ["dep:flate2", "dep:sha2", "dep:tar"]
 # Omit the interactive console and renderer from headless/server builds.
@@ -39,7 +45,7 @@ chaos-fork = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-mcpd = { workspace = true }
-chaos-acpd = { workspace = true }
+chaos-acpd = { workspace = true, optional = true }
 chaos-httpd = { workspace = true }
 chaos-taskd = { workspace = true }
 chaos-pwd = { workspace = true }

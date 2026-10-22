@@ -142,13 +142,21 @@ just bigbang
 just build
 ```
 
-### Build without the TUI
+### Build without the TUI or ACP
 
-The `chaos-cli` package enables its `tui` feature by default. Disable it to
-exclude `chaos-console`, `libui`, Ratatui, and crossterm from the build:
+The `chaos-cli` package enables independent `tui` and `acp` features by default.
+Disable both to exclude the interactive console and ACP stdio agent, including
+`chaos-console`, `libui`, Ratatui, crossterm, `chaos-acpd`, `acp-host`, and
+`agent-client-protocol`, from the binary's dependency graph:
 
 ```bash
 cargo build --release --locked -p chaos-cli --bin chaos --no-default-features
+
+# Keep only the TUI (no ACP agent).
+cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --features tui
+
+# Keep only the ACP agent (no TUI).
+cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --features acp
 
 # HTTP daemon; configure provider credentials first and supply a bearer token.
 # CHAOS_BEARER_TOKEN must be set in the service environment.
@@ -157,7 +165,8 @@ cargo build --release --locked -p chaos-cli --bin chaos --no-default-features
 
 The headless binary retains `serve`, `mcp serve`, `taskd`, `exec` (including
 `exec resume`), review, account/configuration management, models, and completions.
-It omits the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
+With neither feature enabled, it omits `acp` from commands, help, and completions,
+as well as the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
 Running it without a subcommand returns an explanatory error, not a daemon.
 Use launchd/systemd to supervise the chosen foreground service.
 
@@ -165,9 +174,10 @@ This changes build contents, not server permissions or protocols: HTTP remains
 an authenticated, one-request/one-response trigger API, and MCP uses stdio.
 See [chaos-httpd.8](./chaos-httpd.8.md) and [chaos-mcp.7](./chaos-mcp.7.md).
 
-Build only `-p chaos-cli`; a workspace-wide build still builds the console
-workspace members. `--all-features` or `--features tui` enables the TUI again.
-The runtime `--headless` approval flag is separate from this Cargo feature.
+Build only `-p chaos-cli`; a workspace-wide build still builds the console and
+ACP workspace members. `--all-features` enables both again. Features are additive:
+use `--no-default-features` before selecting just `tui` or `acp`.
+The runtime `--headless` approval flag is separate from these Cargo features.
 
 ### Shared build cache
 

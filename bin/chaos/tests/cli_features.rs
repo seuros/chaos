@@ -25,6 +25,10 @@ fn stdout(home: &TempDir, args: &[&str]) -> Result<String> {
 fn cli_feature_surface_suite() -> Result<()> {
     let home = TempDir::new()?;
     let help = stdout(&home, &["--help"])?;
+    assert_eq!(
+        help.contains("Expose Chaos as an ACP agent over stdio"),
+        cfg!(feature = "acp")
+    );
     for text in [
         "--no-alt-screen",
         "Resume a previous interactive session",
@@ -45,6 +49,20 @@ fn cli_feature_surface_suite() -> Result<()> {
     }
 
     assert!(stdout(&home, &["completion", "bash"])?.contains("__complete_word__"));
+
+    let acp_completion = stdout(
+        &home,
+        &["__complete_word__", "--shell", "bash", "--line", "chaos ac"],
+    )?;
+    assert_eq!(
+        acp_completion.lines().any(|line| line == "acp"),
+        cfg!(feature = "acp"),
+        "{acp_completion}"
+    );
+    #[cfg(feature = "acp")]
+    assert!(stdout(&home, &["acp", "--help"])?.contains("ACP agent"));
+    #[cfg(not(any(feature = "acp", feature = "tui")))]
+    command(&home).arg("acp").assert().failure();
 
     let completion = stdout(
         &home,

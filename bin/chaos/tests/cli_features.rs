@@ -41,7 +41,12 @@ fn cli_feature_surface_suite() -> Result<()> {
     for args in [
         &["--version"][..],
         &["serve", "--help"][..],
-        &["mcp", "serve", "--help"][..],
+        &["mcp", "list", "--help"][..],
+        &["mcp", "get", "--help"][..],
+        &["mcp", "add", "--help"][..],
+        &["mcp", "remove", "--help"][..],
+        &["mcp", "login", "--help"][..],
+        &["mcp", "logout", "--help"][..],
         &["taskd", "--help"][..],
         &["exec", "--help"][..],
     ] {
@@ -92,5 +97,67 @@ fn cli_feature_surface_suite() -> Result<()> {
             .failure()
             .stderr(contains("bearer token is required"));
     }
+    Ok(())
+}
+
+#[test]
+fn mcp_daemon_feature_surface_suite() -> Result<()> {
+    let home = TempDir::new()?;
+    let mcp_help = stdout(&home, &["mcp", "--help"])?;
+    assert_eq!(
+        mcp_help.contains("Start Chaos as an MCP server"),
+        cfg!(feature = "mcpd")
+    );
+    let serve_help = stdout(&home, &["serve", "--help"])?;
+    for flag in ["--mcp", "--mcp-allowed-origin"] {
+        assert_eq!(serve_help.contains(flag), cfg!(feature = "mcpd"), "{flag}");
+    }
+    for (line, candidate) in [
+        ("chaos mcp s", "serve"),
+        ("chaos serve --mcp", "--mcp"),
+        ("chaos serve --mcp", "--mcp-allowed-origin"),
+    ] {
+        let completion = stdout(
+            &home,
+            &["__complete_word__", "--shell", "bash", "--line", line],
+        )?;
+        assert_eq!(
+            completion.lines().any(|line| line == candidate),
+            cfg!(feature = "mcpd"),
+            "{candidate}: {completion}"
+        );
+    }
+    #[cfg(feature = "mcpd")]
+    assert!(stdout(&home, &["mcp", "serve", "--help"])?.contains("MCP server"));
+    #[cfg(not(feature = "mcpd"))]
+    {
+        command(&home).args(["mcp", "serve"]).assert().failure();
+        command(&home).args(["serve", "--mcp"]).assert().failure();
+        command(&home)
+            .args(["serve", "--mcp-allowed-origin", "https://example.com"])
+            .assert()
+            .failure();
+        #[cfg(not(feature = "tui"))]
+        {
+            let error = command(&home).assert().failure();
+            assert!(!String::from_utf8_lossy(&error.get_output().stderr).contains("mcp serve"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn clamp_bridge_entrypoint_is_independent_of_mcpd() -> Result<()> {
+    let home = TempDir::new()?;
+    // Reaching bridge-specific configuration validation proves this is the
+    // real clamp entrypoint, even when the MCP daemon feature is disabled.
+    command(&home)
+        .arg("clamp-session-bridge")
+        .env_remove("CHAOS_CLAMP_MCP_SOCKET")
+        .env_remove("CHAOS_CLAMP_MCP_TOKEN")
+        .assert()
+        .failure()
+        .stdout(predicates::str::is_empty())
+        .stderr(predicates::str::contains("missing CHAOS_CLAMP_MCP_SOCKET"));
     Ok(())
 }

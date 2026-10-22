@@ -1,3 +1,5 @@
+//! Session-scoped tool bridge for clamp subprocesses, independent of MCP daemon serving.
+
 use std::collections::HashMap;
 use std::env;
 use std::fmt::Write;
@@ -37,6 +39,7 @@ use tokio::net::UnixStream;
 const SOCKET_ENV: &str = "CHAOS_CLAMP_MCP_SOCKET";
 const TOKEN_ENV: &str = "CHAOS_CLAMP_MCP_TOKEN";
 
+/// Run the clamp tool bridge over stdio using the session's socket and token.
 pub async fn run_main() -> IoResult<()> {
     let socket_path = env::var_os(SOCKET_ENV)
         .map(PathBuf::from)

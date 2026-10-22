@@ -4,6 +4,36 @@ use rama::futures::stream;
 use rama::http::body::util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(not(feature = "mcpd"))]
+#[tokio::test]
+async fn mcp_routes_are_absent_without_the_daemon_feature() {
+    let (_home, state) = server_state(8, false).await;
+    let polls = Arc::new(AtomicUsize::new(0));
+    for method in ["GET", "POST", "DELETE", "OPTIONS", "PUT"] {
+        for path in ["/mcp", "/mcp/", "/mcp/tools", "/mcpx"] {
+            let request = Request::builder()
+                .method(method)
+                .uri(path)
+                .header("authorization", "Bearer test-token")
+                .body(counting_body(&polls))
+                .unwrap();
+            let response = handle(state.clone(), request).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+            assert!(!response.headers().contains_key("mcp-session-id"));
+        }
+    }
+    assert_eq!(polls.load(Ordering::SeqCst), 0);
+    let response = handle(
+        state,
+        Request::builder()
+            .uri("/api/health")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     let (_home, state) = server_state(8, false).await;

@@ -186,7 +186,8 @@ chaos-arsenal = { path = "srv/arsenal" }
 chaos_journald = { path = "srv/journald" }
 chaos-pf = { path = "srv/pf" }
 chaos-cron = { path = "srv/cron" }
-chaos-httpd = { path = "srv/httpd" }
+# The CLI forwards its MCP daemon feature explicitly to the HTTP service.
+chaos-httpd = { path = "srv/httpd", default-features = false }
 chaos-taskd = { path = "srv/taskd" }
 
 # Internal — bin/

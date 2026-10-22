@@ -62,7 +62,7 @@ use chaos_sysinfo::terminal::TerminalName;
 )]
 #[cfg_attr(
     not(feature = "tui"),
-    doc = "Built without the TUI. Use serve, mcp serve, taskd, or exec for headless operation."
+    doc = "Built without the TUI. Use serve, taskd, or exec for headless operation."
 )]
 #[derive(Debug, usage::Cli)]
 #[cfg_attr(
@@ -496,7 +496,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         #[cfg(not(feature = "tui"))]
         None => anyhow::bail!(
-            "this build has no TUI; use `chaos serve`, `chaos mcp serve`, `chaos taskd`, \
+            "this build has no TUI; use `chaos serve`, `chaos taskd`, \
              or `chaos exec`. Rebuild with `--features tui` for interactive mode."
         ),
         Some(Subcommand::Exec(mut exec_cli)) => {
@@ -515,13 +515,16 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Acp) => {
             chaos_acpd::run_main(arg0_paths.clone(), root_config_overrides, models_profile).await?;
         }
+        #[cfg(feature = "mcpd")]
+        Some(Subcommand::Mcp(McpCli {
+            subcommand: crate::mcp_cmd::McpSubcommand::Serve,
+            ..
+        })) => {
+            chaos_mcpd::run_main(arg0_paths.clone(), root_config_overrides).await?;
+        }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
-            if matches!(mcp_cli.subcommand, crate::mcp_cmd::McpSubcommand::Serve) {
-                chaos_mcpd::run_main(arg0_paths.clone(), root_config_overrides).await?;
-            } else {
-                prepend_root_flags!(mcp_cli, root_config_overrides);
-                mcp_cli.run().await?;
-            }
+            prepend_root_flags!(mcp_cli, root_config_overrides);
+            mcp_cli.run().await?;
         }
         Some(Subcommand::Serve(serve_cli)) => {
             chaos_httpd::run_main(arg0_paths.clone(), root_config_overrides, serve_cli).await?;
@@ -582,7 +585,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         #[cfg(feature = "self-update")]
         Some(Subcommand::Update(command)) => update_cmd::run(command).await?,
         Some(Subcommand::ClampSessionBridge) => {
-            chaos_mcpd::run_clamp_session_bridge_main().await?;
+            chaos_clamp::run_session_bridge_main().await?;
         }
     }
 

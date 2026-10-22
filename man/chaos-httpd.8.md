@@ -25,6 +25,11 @@ with asynchronous turns, live steering and authenticated event replay/SSE.
 
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
+With the default-enabled `mcpd` build feature, `--mcp` additionally exposes
+authenticated MCP Streamable HTTP at `/mcp`; `--mcp-allowed-origin` configures
+allowed browser origins. Builds without `mcpd` omit both flags and the `/mcp`
+handler (404), without changing trigger, monitoring, or retained-session APIs.
+
 ## OPTIONS
 
 | Flag | Default | Notes |

@@ -1285,6 +1285,7 @@ dependencies = [
  "assert_cmd",
  "chaos-acpd",
  "chaos-argv",
+ "chaos-clamp",
  "chaos-client",
  "chaos-console",
  "chaos-fork",

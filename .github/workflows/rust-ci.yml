@@ -5,6 +5,11 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      feature-checks:
+        description: Run the expensive CLI feature combination checks
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ jobs:
       runner: ubuntu-24.04
       target: x86_64-unknown-linux-gnu
       sqlite-checks: true
+      feature-checks: ${{ github.event_name == 'workflow_dispatch' && inputs.feature-checks }}
 
   macos-tests:
     name: macOS — PostgreSQL
@@ -31,6 +37,7 @@ jobs:
     with:
       runner: macos-26
       target: aarch64-apple-darwin
+      feature-checks: ${{ github.event_name == 'workflow_dispatch' && inputs.feature-checks }}
 
   # Keep the required status name stable, and reject skipped downstream jobs.
   results:

@@ -1,7 +1,7 @@
 use super::*;
 use crate::auth::{AuthCredentialsStoreMode, login_with_provider_api_key};
 use crate::chaos::make_session_and_context_with_home;
-use crate::reflex::configuration::{presets, resolve_api_key, save_backend, validate};
+use crate::reflex::configuration::{presets, resolve_api_key, save_backend, set_enabled, validate};
 use chaos_sysctl::secrets;
 use pretty_assertions::assert_eq;
 
@@ -11,6 +11,64 @@ fn auth(config: &Config) -> crate::AuthManager {
         false,
         AuthCredentialsStoreMode::Ephemeral,
     )
+}
+
+#[test]
+fn reflex_enabled_defaults_on_and_loads_explicit_off() {
+    use crate::config::{ConfigOverrides, ConfigToml};
+
+    let home = tempfile::tempdir().unwrap();
+    for (settings, expected) in [("", true), ("reflex_enabled = false", false)] {
+        let config = Config::load_from_base_config_with_overrides(
+            toml::from_str::<ConfigToml>(settings).unwrap(),
+            ConfigOverrides::default(),
+            home.path().to_path_buf(),
+        )
+        .unwrap();
+        assert_eq!(config.reflex_enabled, expected);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn toggling_checks_persists_without_changing_backends_or_inflight_turns() {
+    let home = tempfile::tempdir().unwrap();
+    let (session, context) = make_session_and_context_with_home(home.path()).await;
+    assert!(context.config.reflex_enabled);
+    let (name, settings) = presets().into_iter().next().unwrap();
+    // Store a backend with unavailable credentials: switching off must not unlock
+    // the vault or require an otherwise working backend.
+    let document = toml::to_string(&settings)
+        .unwrap()
+        .parse::<toml_edit::DocumentMut>()
+        .unwrap();
+    crate::user_settings::install_persistence();
+    chaos_sysctl::edit::ConfigEditsBuilder::new(home.path())
+        .with_edits([chaos_sysctl::edit::ConfigEdit::SetPath {
+            segments: vec!["reflex".into(), name.into()],
+            value: document.as_item().clone(),
+        }])
+        .apply()
+        .await
+        .unwrap();
+    for enabled in [false, false, true] {
+        set_enabled(&context.config, enabled).await.unwrap();
+        let snapshot = crate::user_settings::snapshot(home.path()).await.unwrap();
+        assert_eq!(snapshot.settings["reflex_enabled"].as_bool(), Some(enabled));
+        let saved: ReflexBackendSettings = snapshot.settings["reflex"][name]
+            .clone()
+            .try_into()
+            .unwrap();
+        assert_eq!(saved, settings);
+        session.reload_user_config_layer().await;
+        let reloaded = session.get_config().await;
+        assert_eq!(reloaded.reflex_enabled, enabled);
+        assert_eq!(reloaded.reflex.get(name), Some(&settings));
+        assert!(
+            context.config.reflex_enabled,
+            "in-flight snapshot is unchanged"
+        );
+    }
 }
 
 #[tokio::test]

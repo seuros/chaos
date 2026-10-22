@@ -11,6 +11,8 @@ async fn live_check_uses_saved_key_and_only_sends_the_synthetic_action() {
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
     config.reflex = jev_settings(&server);
+    // An explicit diagnostic still works with automatic checks switched off.
+    config.reflex_enabled = false;
     let settings = config.reflex.get_mut("jev").unwrap();
     settings.env_key = None;
     settings.api_key =

@@ -41,6 +41,19 @@ in-flight turns keep their snapshot. No file edits or exported keys are needed.
 Setup checks configuration and credential availability, not remote inference.
 Both slash commands work while idle, even without a main-model account.
 
+### Turning automatic checks off
+
+Use **`/reflex off`** to disable automatic MCP action-risk checks, including the
+remote safety monitor and fallback. Use **`/reflex on`** to re-enable them.
+The preference is saved to the database as `reflex_enabled` (default `true`)
+and applies from the next turn; in-flight turns retain their snapshot.
+Saved backends and credentials are preserved. Saving backend settings does not
+re-enable checks. Ordinary approvals and sandbox rules remain enforced.
+The picker shows whether checks are on or off.
+
+This switch does not disable explicitly requested `/reflex test` diagnostics,
+opt-in goal checks, or library-only judgments.
+
 ## LIVE CHECKS
 
 Run **`/reflex test`**, or **`chaos reflex test`** from the CLI. It uses the saved

@@ -27,9 +27,10 @@ pub(crate) enum ArcMonitorOutcome {
 }
 
 pub(crate) fn monitoring_required(config: &crate::config::Config) -> bool {
-    crate::reflex::action_risk_settings(config).is_some()
-        || std::env::var_os(CHAOS_ARC_MONITOR_TOKEN).is_some()
-        || std::env::var_os(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).is_some()
+    config.reflex_enabled
+        && (crate::reflex::action_risk_settings(config).is_some()
+            || std::env::var_os(CHAOS_ARC_MONITOR_TOKEN).is_some()
+            || std::env::var_os(CHAOS_ARC_MONITOR_ENDPOINT_OVERRIDE).is_some())
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -108,6 +109,9 @@ pub(crate) async fn monitor_action(
     turn_context: &TurnContext,
     action: serde_json::Value,
 ) -> ArcMonitorOutcome {
+    if !turn_context.config.reflex_enabled {
+        return ArcMonitorOutcome::Disabled;
+    }
     let outcome = tokio::time::timeout(
         ARC_MONITOR_TIMEOUT,
         monitor_action_inner(sess, turn_context, action),

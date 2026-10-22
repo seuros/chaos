@@ -144,6 +144,20 @@ impl Session {
                 return;
             }
         }
+        let enabled = config
+            .config_layer_stack
+            .effective_config()
+            .get("reflex_enabled")
+            .cloned()
+            .map(toml::Value::try_into::<bool>)
+            .transpose();
+        match enabled {
+            Ok(enabled) => config.reflex_enabled = enabled.unwrap_or(true),
+            Err(_) => {
+                warn!("failed to reload reflex enabled setting");
+                return;
+            }
+        }
         state.session_configuration.original_config_do_not_use = Arc::new(config);
     }
 

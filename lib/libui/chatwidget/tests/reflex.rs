@@ -19,7 +19,13 @@ pub(super) async fn run() {
         assert!(ops.try_recv().is_err());
     }
 
-    for args in ["sk-do-not-record", "test sk-do-not-record", "unknown"] {
+    for args in [
+        "sk-do-not-record",
+        "test sk-do-not-record",
+        "off sk-do-not-record",
+        "on sk-do-not-record",
+        "unknown",
+    ] {
         chat.bottom_pane
             .set_composer_text(format!("/reflex {args}"), vec![], vec![]);
         chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -61,13 +67,31 @@ pub(super) async fn run() {
 
     chat.reflex_test_finished(Some(ProcessId::new()), Err("stale result".into()));
     assert!(rx.try_recv().is_err());
+    for (args, enabled) in [("off", false), ("on", true), (" off ", false)] {
+        let previous = chat.config.reflex_enabled;
+        chat.bottom_pane
+            .set_composer_text(format!("/reflex {args}"), vec![], vec![]);
+        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        assert!(chat.bottom_pane.composer_text().is_empty());
+        assert_matches!(
+            rx.try_recv().unwrap(),
+            AppEvent::SetReflexEnabled(value) if value == enabled
+        );
+        assert_eq!(chat.config.reflex_enabled, previous, "wait for persistence");
+        assert!(ops.try_recv().is_err());
+        chat.reflex_enabled_saved(enabled);
+        assert_eq!(chat.config.reflex_enabled, enabled);
+        assert!(!drain_insert_history(&mut rx).is_empty());
+    }
     chat.bottom_pane.set_task_running(true);
-    chat.dispatch_command_with_args(SlashCommand::Reflex, "test".into(), vec![]);
-    let text = drain_insert_history(&mut rx)
-        .into_iter()
-        .flatten()
-        .map(|line| line.to_string())
-        .collect::<String>();
-    assert!(text.contains("disabled"));
-    assert!(ops.try_recv().is_err());
+    for args in ["test", "off", "on"] {
+        chat.dispatch_command_with_args(SlashCommand::Reflex, args.into(), vec![]);
+        let text = drain_insert_history(&mut rx)
+            .into_iter()
+            .flatten()
+            .map(|line| line.to_string())
+            .collect::<String>();
+        assert!(text.contains("disabled"));
+        assert!(ops.try_recv().is_err());
+    }
 }

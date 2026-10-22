@@ -9,6 +9,18 @@ use url::Url;
 use crate::AuthManager;
 use crate::config::{Config, ReflexBackendSettings, ReflexKind};
 
+/// Toggle automatic checks without touching saved backends or credentials.
+pub async fn set_enabled(config: &Config, enabled: bool) -> anyhow::Result<()> {
+    crate::user_settings::install_persistence();
+    ConfigEditsBuilder::new(&config.chaos_home)
+        .with_edits([ConfigEdit::SetPath {
+            segments: vec!["reflex_enabled".into()],
+            value: enabled.into(),
+        }])
+        .apply()
+        .await
+}
+
 /// Interactive setup presets.
 pub fn presets() -> [(&'static str, ReflexBackendSettings); 4] {
     let settings = |kind, base_url: &str| ReflexBackendSettings {

@@ -132,7 +132,10 @@ impl ChatWidget {
             SlashCommand::Copy => {
                 let Some(text) = self.last_copyable_output.as_deref() else {
                     self.add_info_message(
-                        format!("`/copy` is unavailable before the first {OS_NAME} output or right after a rollback."),
+                        format!(
+                            "`/copy` is unavailable before the first {OS_NAME} output \
+                             or right after a rollback."
+                        ),
                         /*hint*/ None,
                     );
                     return;
@@ -143,7 +146,8 @@ impl ChatWidget {
                 match copy_result {
                     Ok(()) => {
                         let hint = self.agent_turn_running.then_some(
-                            "Current turn is still running; copied the latest completed output (not the in-progress response)."
+                            "Current turn is still running; copied the latest completed output \
+                             (not the in-progress response)."
                                 .to_string(),
                         );
                         self.add_info_message(
@@ -216,8 +220,10 @@ impl ChatWidget {
                 match trimmed {
                     "" => self.open_reflex_popup(),
                     "test" => self.test_reflex(),
+                    "off" => self.app_event_tx.send(AppEvent::SetReflexEnabled(false)),
+                    "on" => self.app_event_tx.send(AppEvent::SetReflexEnabled(true)),
                     _ => self.add_error_message(
-                        "Usage: /reflex or /reflex test. Enter keys only in the setup form.".into(),
+                        "Usage: /reflex [on|off|test]. Enter keys only in the setup form.".into(),
                     ),
                 }
             }

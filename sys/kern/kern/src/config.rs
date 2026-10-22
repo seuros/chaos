@@ -456,6 +456,9 @@ pub struct Config {
     /// Reflex backends keyed by name, in answer order.
     pub reflex: std::collections::BTreeMap<String, ReflexBackendSettings>,
 
+    /// Enable automatic MCP action-risk checks, including the remote monitor.
+    pub reflex_enabled: bool,
+
     /// Optional user-provided instructions (currently always `None`; a
     /// schema-based replacement for the removed AGENTS.md loader will
     /// repopulate this later).
@@ -920,6 +923,9 @@ pub struct ConfigToml {
     /// Reflex backends keyed by name. See chaos-providers(7).
     #[serde(default)]
     pub reflex: Option<std::collections::BTreeMap<String, ReflexBackendSettings>>,
+
+    /// Enable automatic MCP action-risk checks. Defaults to `true`.
+    pub reflex_enabled: Option<bool>,
 
     pub model_reasoning_effort: Option<ReasoningEffort>,
     /// Allow the parent model to change its own reasoning effort for subsequent turns.

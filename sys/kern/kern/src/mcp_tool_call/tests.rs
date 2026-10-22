@@ -1282,14 +1282,13 @@ async fn unavailable_monitor_preserves_headless_annotation_and_approval_shortcut
     }
 }
 
-#[tokio::test]
-#[serial]
-async fn unavailable_monitor_preserves_explicit_tool_approval_prompts() {
+async fn assert_monitor_preserves_explicit_tool_approval_prompts(enabled: bool) {
     let (session, mut context, events) = crate::chaos::make_session_and_context_with_rx().await;
     require_unavailable_monitor(
         Arc::get_mut(&mut context).unwrap(),
         ApprovalPolicy::Interactive,
     );
+    Arc::make_mut(&mut Arc::get_mut(&mut context).unwrap().config).reflex_enabled = enabled;
     *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
     let invocation = McpInvocation {
         server: Some("test".into()),
@@ -1338,6 +1337,18 @@ async fn unavailable_monitor_preserves_explicit_tool_approval_prompts() {
     .await
     .expect("ordinary approval prompt");
     assert_eq!(decision, Some(McpToolApprovalDecision::Decline));
+}
+
+#[tokio::test]
+#[serial]
+async fn unavailable_monitor_preserves_explicit_tool_approval_prompts() {
+    assert_monitor_preserves_explicit_tool_approval_prompts(true).await;
+}
+
+#[tokio::test]
+#[serial]
+async fn reflex_off_preserves_explicit_tool_approval_prompts() {
+    assert_monitor_preserves_explicit_tool_approval_prompts(false).await;
 }
 
 #[tokio::test]

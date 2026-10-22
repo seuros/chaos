@@ -706,6 +706,7 @@ impl Config {
             clamp_backend: cfg.clamp_backend.unwrap_or_default(),
             antigravity: cfg.antigravity.clone().unwrap_or_default(),
             reflex: cfg.reflex.clone().unwrap_or_default(),
+            reflex_enabled: cfg.reflex_enabled.unwrap_or(true),
             model_reasoning_effort: config_profile
                 .model_reasoning_effort
                 .or(cfg.model_reasoning_effort),

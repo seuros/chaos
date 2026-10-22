@@ -516,22 +516,34 @@ fn headless_commands_and_profile_are_available() {
     assert_eq!(serve.port, 4040);
     assert_eq!(serve.bearer_token.as_deref(), Some("test-token"));
 
-    let cli = try_parse_cli(&["chaos", "mcp", "serve"]).expect("MCP server should parse");
-    assert_matches!(
-        cli.subcommand,
-        Some(Subcommand::Mcp(McpCli {
-            subcommand: crate::mcp_cmd::McpSubcommand::Serve,
-            ..
-        }))
-    );
+    #[cfg(feature = "mcpd")]
+    {
+        let cli = try_parse_cli(&["chaos", "mcp", "serve"]).expect("MCP server should parse");
+        assert_matches!(
+            cli.subcommand,
+            Some(Subcommand::Mcp(McpCli {
+                subcommand: crate::mcp_cmd::McpSubcommand::Serve,
+                ..
+            }))
+        );
+    }
+    #[cfg(not(feature = "mcpd"))]
+    {
+        assert!(try_parse_cli(&["chaos", "mcp", "serve"]).is_err());
+        for flag in ["--mcp", "--mcp-allowed-origin"] {
+            assert!(try_parse_cli(&["chaos", "serve", flag]).is_err());
+        }
+    }
+    // Keep the name reserved even without mcpd so a clamp child cannot
+    // accidentally become a TUI prompt instead of failing closed.
+    let cli = try_parse_cli(&["chaos", "clamp-session-bridge"]).expect("bridge name is reserved");
+    assert_matches!(cli.subcommand, Some(Subcommand::ClampSessionBridge));
 
     let cli = try_parse_cli(&["chaos", "taskd", "--once"]).expect("task supervisor should parse");
     assert_matches!(
         cli.subcommand,
         Some(Subcommand::Taskd(chaos_taskd::TaskdCli { once: true }))
     );
-    let cli = try_parse_cli(&["chaos", "clamp-session-bridge"]).expect("bridge should parse");
-    assert_matches!(cli.subcommand, Some(Subcommand::ClampSessionBridge));
 
     for flag in ["--profile", "-p"] {
         let cli = try_parse_cli(&["chaos", flag, "server", "models"])

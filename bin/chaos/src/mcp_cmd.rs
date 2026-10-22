@@ -42,6 +42,7 @@ pub struct McpCli {
 #[derive(Debug, usage::Subcommands)]
 pub enum McpSubcommand {
     /// Start Chaos as an MCP server (stdio).
+    #[cfg(feature = "mcpd")]
     Serve,
     List(ListArgs),
     Get(GetArgs),
@@ -156,6 +157,7 @@ impl McpCli {
         } = self;
 
         match subcommand {
+            #[cfg(feature = "mcpd")]
             McpSubcommand::Serve => {
                 // Handled in main.rs before reaching here.
                 unreachable!("`chaos mcp serve` is dispatched in main");
@@ -620,7 +622,8 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
         }
 
         println!(
-            "{name:<name_w$}  {command:<cmd_w$}  {args:<args_w$}  {env:<env_w$}  {cwd:<cwd_w$}  {status:<status_w$}  {auth:<auth_w$}",
+            "{name:<name_w$}  {command:<cmd_w$}  {args:<args_w$}  {env:<env_w$}  \
+             {cwd:<cwd_w$}  {status:<status_w$}  {auth:<auth_w$}",
             name = "Name",
             command = "Command",
             args = "Args",
@@ -639,7 +642,8 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
         for row in &stdio_rows {
             println!(
-                "{name:<name_w$}  {command:<cmd_w$}  {args:<args_w$}  {env:<env_w$}  {cwd:<cwd_w$}  {status:<status_w$}  {auth:<auth_w$}",
+                "{name:<name_w$}  {command:<cmd_w$}  {args:<args_w$}  {env:<env_w$}  \
+                 {cwd:<cwd_w$}  {status:<status_w$}  {auth:<auth_w$}",
                 name = row[0].as_str(),
                 command = row[1].as_str(),
                 args = row[2].as_str(),
@@ -677,7 +681,8 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
         }
 
         println!(
-            "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  {status:<status_w$}  {auth:<auth_w$}",
+            "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  \
+             {status:<status_w$}  {auth:<auth_w$}",
             name = "Name",
             url = "Url",
             token = "Bearer Token",
@@ -692,7 +697,8 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
         for row in &http_rows {
             println!(
-                "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  {status:<status_w$}  {auth:<auth_w$}",
+                "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  \
+                 {status:<status_w$}  {auth:<auth_w$}",
                 name = row[0].as_str(),
                 url = row[1].as_str(),
                 token = row[2].as_str(),

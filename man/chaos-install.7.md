@@ -142,42 +142,55 @@ just bigbang
 just build
 ```
 
-### Build without the TUI or ACP
+### Build without the TUI, ACP, or MCP daemon
 
-The `chaos-cli` package enables independent `tui` and `acp` features by default.
-Disable both to exclude the interactive console and ACP stdio agent, including
-`chaos-console`, `libui`, Ratatui, crossterm, `chaos-acpd`, `acp-host`, and
-`agent-client-protocol`, from the binary's dependency graph:
+The `chaos-cli` package enables independent `tui`, `acp`, and `mcpd` features
+by default. Disable all three to exclude the interactive console, ACP agent,
+and MCP daemon, including `chaos-console`, `libui`, Ratatui, crossterm,
+`chaos-acpd`, `acp-host`, `agent-client-protocol`, and `chaos-mcpd`, from the
+binary's dependency graph:
 
 ```bash
 cargo build --release --locked -p chaos-cli --bin chaos --no-default-features
 
-# Keep only the TUI (no ACP agent).
+# Keep only the TUI (no ACP agent or MCP daemon).
 cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --features tui
 
-# Keep only the ACP agent (no TUI).
+# Keep only the ACP agent (no TUI or MCP daemon).
 cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --features acp
+
+# Keep only the MCP daemon (no TUI or ACP agent).
+cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --features mcpd
 
 # HTTP daemon; configure provider credentials first and supply a bearer token.
 # CHAOS_BEARER_TOKEN must be set in the service environment.
 ./target/release/chaos serve --bind 127.0.0.1 --port 4000
 ```
 
-The headless binary retains `serve`, `mcp serve`, `taskd`, `exec` (including
+The minimal binary retains `serve`, `taskd`, `exec` (including
 `exec resume`), review, account/configuration management, models, and completions.
-With neither feature enabled, it omits `acp` from commands, help, and completions,
-as well as the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
+Without `acp`, it omits `acp` from commands, help, and completions.
+MCP client commands (`mcp list/get/add/remove/login/logout`) and external MCP
+tools remain available; shared MCP libraries are still used internally.
+Without `mcpd`, it omits `mcp serve`, `serve --mcp`, and `--mcp-allowed-origin`,
+and disables the hidden clamp MCP bridge. The bridge name stays reserved so
+clamp subprocesses fail with a rebuild hint rather than starting a TUI prompt.
+Clamp integrations that invoke that bridge require `mcpd`.
+The HTTP `/mcp` route is not compiled in and returns
+404, while ordinary HTTP trigger/session APIs remain available.
+Without `tui`, it omits the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
 Running it without a subcommand returns an explanatory error, not a daemon.
 Use launchd/systemd to supervise the chosen foreground service.
 
 This changes build contents, not server permissions or protocols: HTTP remains
-an authenticated, one-request/one-response trigger API, and MCP uses stdio.
+authenticated, and enabling `mcpd` restores stdio and opt-in HTTP MCP serving.
 See [chaos-httpd.8](./chaos-httpd.8.md) and [chaos-mcp.7](./chaos-mcp.7.md).
 
 Build only `-p chaos-cli`; a workspace-wide build still builds the console and
-ACP workspace members. `--all-features` enables both again. Features are additive:
-use `--no-default-features` before selecting just `tui` or `acp`.
-The runtime `--headless` approval flag is separate from these Cargo features.
+ACP and MCP daemon workspace members. `--all-features` enables all three again.
+Features are additive: use `--no-default-features` before selecting any subset
+with `--features tui,acp,mcpd`. The runtime `--headless` approval flag is separate
+from these Cargo features.
 
 ### Shared build cache
 

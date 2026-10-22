@@ -46,6 +46,7 @@ pub(crate) async fn server_state(
         monitor: monitor::MonitorState::new(),
         sessions: retained_sessions
             .then(|| Arc::new(SessionManager::new(4, Duration::from_secs(60)))),
+        #[cfg(feature = "mcpd")]
         mcp: None,
     });
     (home, state)

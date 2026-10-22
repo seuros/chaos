@@ -120,28 +120,31 @@ jobs:
           createdb -h 127.0.0.1 -p 55432 -U chaos_test chaos_test
           echo "TEST_DATABASE_URL=postgres://chaos_test@127.0.0.1:55432/chaos_test" >> "$GITHUB_ENV"
 
-      - name: Test TUI/ACP-free CLI
+      - name: Test TUI/ACP/MCP-daemon-free CLI
         run: |
           set -euo pipefail
           cargo tree --locked -p chaos-cli --no-default-features \
             --target ${{ inputs.target }} --edges normal,build,dev --prefix none \
             --format '{p}' > "$RUNNER_TEMP/headless-dependencies.txt"
-          if grep -E '^(chaos-console|libui|ratatui(-[^ ]*)?|crossterm|chaos-termcap|chaos-highlight|chaos-acpd|acp-host|acp-guest|agent-client-protocol(-schema)?) ' "$RUNNER_TEMP/headless-dependencies.txt"; then
-            echo "TUI/ACP dependency leaked into the headless build" >&2
+          if grep -E '^(chaos-console|libui|ratatui(-[^ ]*)?|crossterm|chaos-termcap|chaos-highlight|chaos-acpd|acp-host|acp-guest|agent-client-protocol(-schema)?|chaos-mcpd) ' "$RUNNER_TEMP/headless-dependencies.txt"; then
+            echo "TUI/ACP/MCP daemon dependency leaked into the minimal build" >&2
             exit 1
           fi
           mbx nextest run --locked -p chaos-cli --no-default-features \
             --bin chaos --test cli_features --target ${{ inputs.target }} \
             --cargo-profile ci-test
 
-      - name: Test independent TUI and ACP features
+      - name: Test independent TUI, ACP, and MCP daemon features
         run: |
           set -euo pipefail
-          for feature in tui acp; do
+          for feature in tui acp mcpd tui,acp tui,mcpd acp,mcpd tui,acp,mcpd; do
             mbx nextest run --locked -p chaos-cli --no-default-features \
               --features "$feature" --bin chaos --test cli_features \
               --target ${{ inputs.target }} --cargo-profile ci-test
           done
+          mbx nextest run --locked -p chaos-httpd --no-default-features \
+            --lib -E 'test(api::tests::)' --target ${{ inputs.target }} \
+            --cargo-profile ci-test
 
       - name: Build and export runtime binaries for tests
         run: |

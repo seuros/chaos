@@ -22,9 +22,11 @@ required-features = ["acp"]
 workspace = true
 
 [features]
-default = ["tui", "acp"]
+default = ["tui", "acp", "mcpd"]
 # Omit the ACP stdio agent and protocol stack from builds that do not need it.
 acp = ["dep:chaos-acpd"]
+# Omit the MCP server transports and clamp bridge when only client access is needed.
+mcpd = ["dep:chaos-mcpd", "chaos-httpd/mcpd"]
 # `chaos update` from GitHub releases; only the GitHub release build enables it.
 self-update = ["dep:flate2", "dep:sha2", "dep:tar"]
 # Omit the interactive console and renderer from headless/server builds.
@@ -44,7 +46,7 @@ chaos-sysinfo = { workspace = true }
 chaos-fork = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
-chaos-mcpd = { workspace = true }
+chaos-mcpd = { workspace = true, optional = true }
 chaos-acpd = { workspace = true, optional = true }
 chaos-httpd = { workspace = true }
 chaos-taskd = { workspace = true }

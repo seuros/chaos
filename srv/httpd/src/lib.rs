@@ -10,6 +10,7 @@ mod api;
 mod auth;
 pub mod cli;
 mod ingress;
+#[cfg(feature = "mcpd")]
 mod mcp;
 mod monitor;
 pub mod protocol;
@@ -63,11 +64,13 @@ pub(crate) struct ServerState {
     body_limit: usize,
     monitor: monitor::MonitorState,
     sessions: Option<Arc<sessions::SessionManager>>,
+    #[cfg(feature = "mcpd")]
     mcp: Option<mcp::McpEndpoint>,
 }
 
 impl ServerState {
     async fn shutdown_sessions(&self) {
+        #[cfg(feature = "mcpd")]
         if let Some(mcp) = &self.mcp {
             mcp.shutdown().await;
         }
@@ -90,6 +93,7 @@ pub async fn run_main(
     cli_config_overrides: CliConfigOverrides,
     serve_cli: ServeCli,
 ) -> anyhow::Result<()> {
+    #[cfg(feature = "mcpd")]
     mcp::validate_cli(&serve_cli)?;
     // 1. Validate bearer token and numeric settings.
     let bearer_token: Arc<str> = match serve_cli.bearer_token.as_deref() {
@@ -254,6 +258,7 @@ pub async fn run_main(
     );
 
     let config = Arc::new(config);
+    #[cfg(feature = "mcpd")]
     let mcp = if serve_cli.mcp {
         let handle = chaos_mcpd::build_server(config.clone(), arg0_paths).await?;
         Some(mcp::McpEndpoint::new(handle, &serve_cli, &bearer_token)?)
@@ -316,6 +321,7 @@ pub async fn run_main(
         body_limit: serve_cli.body_limit,
         monitor: monitor::MonitorState::new(),
         sessions,
+        #[cfg(feature = "mcpd")]
         mcp,
     });
     for (session, commands, request) in recovered {

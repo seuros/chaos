@@ -38,6 +38,7 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     // The SDK owns protocol admission for every method, including OPTIONS and
     // unsupported methods. Never use the legacy bearer/header/body path here.
+    #[cfg(feature = "mcpd")]
     if path == "/mcp"
         && let Some(mcp) = &state.mcp
     {

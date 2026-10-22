@@ -35,10 +35,12 @@ pub struct ServeCli {
     pub sessions: bool,
 
     /// Enable authenticated MCP Streamable HTTP at the fixed /mcp endpoint.
+    #[cfg(feature = "mcpd")]
     #[usage(long = "mcp")]
     pub mcp: bool,
 
     /// Allow this browser Origin for MCP (repeatable).
+    #[cfg(feature = "mcpd")]
     #[usage(long = "mcp-allowed-origin", var)]
     pub mcp_allowed_origin: Vec<String>,
 

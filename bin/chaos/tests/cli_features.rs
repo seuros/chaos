@@ -137,16 +137,27 @@ fn mcp_daemon_feature_surface_suite() -> Result<()> {
             .args(["serve", "--mcp-allowed-origin", "https://example.com"])
             .assert()
             .failure();
-        command(&home)
-            .arg("clamp-session-bridge")
-            .assert()
-            .failure()
-            .stderr(predicates::str::contains("rebuild with `--features mcpd`"));
         #[cfg(not(feature = "tui"))]
         {
             let error = command(&home).assert().failure();
             assert!(!String::from_utf8_lossy(&error.get_output().stderr).contains("mcp serve"));
         }
     }
+    Ok(())
+}
+
+#[test]
+fn clamp_bridge_entrypoint_is_independent_of_mcpd() -> Result<()> {
+    let home = TempDir::new()?;
+    // Reaching bridge-specific configuration validation proves this is the
+    // real clamp entrypoint, even when the MCP daemon feature is disabled.
+    command(&home)
+        .arg("clamp-session-bridge")
+        .env_remove("CHAOS_CLAMP_MCP_SOCKET")
+        .env_remove("CHAOS_CLAMP_MCP_TOKEN")
+        .assert()
+        .failure()
+        .stdout(predicates::str::is_empty())
+        .stderr(predicates::str::contains("missing CHAOS_CLAMP_MCP_SOCKET"));
     Ok(())
 }

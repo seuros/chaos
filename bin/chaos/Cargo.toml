@@ -25,7 +25,7 @@ workspace = true
 default = ["tui", "acp", "mcpd"]
 # Omit the ACP stdio agent and protocol stack from builds that do not need it.
 acp = ["dep:chaos-acpd"]
-# Omit the MCP server transports and clamp bridge when only client access is needed.
+# Omit MCP daemon transports without disabling clients or clamp transports.
 mcpd = ["dep:chaos-mcpd", "chaos-httpd/mcpd"]
 # `chaos update` from GitHub releases; only the GitHub release build enables it.
 self-update = ["dep:flate2", "dep:sha2", "dep:tar"]
@@ -44,6 +44,7 @@ toml = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-sysinfo = { workspace = true }
 chaos-fork = { workspace = true }
+chaos-clamp = { workspace = true }
 chaos-selinux = { workspace = true }
 chaos-pam = { workspace = true }
 chaos-mcpd = { workspace = true, optional = true }

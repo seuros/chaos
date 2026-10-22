@@ -30,7 +30,6 @@ const CHAOS_MCPD_MAX_DEPTH: u32 = 1;
 mod builtin_resources;
 mod chaos_runner;
 mod chaos_tool;
-mod clamp_session_bridge;
 mod elicitation;
 mod exec_approval;
 mod factory;
@@ -42,7 +41,6 @@ mod workflow_app;
 mod workflows;
 
 pub use crate::chaos_tool::ChaosToolParams;
-pub use crate::clamp_session_bridge::run_main as run_clamp_session_bridge_main;
 pub use crate::elicitation::ApprovalElicitationAction;
 pub use crate::elicitation::ApprovalElicitationResponse;
 pub use crate::exec_approval::ExecApprovalElicitRequestMeta;

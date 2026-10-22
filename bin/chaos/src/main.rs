@@ -585,12 +585,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         #[cfg(feature = "self-update")]
         Some(Subcommand::Update(command)) => update_cmd::run(command).await?,
         Some(Subcommand::ClampSessionBridge) => {
-            #[cfg(feature = "mcpd")]
-            chaos_mcpd::run_clamp_session_bridge_main().await?;
-            #[cfg(not(feature = "mcpd"))]
-            anyhow::bail!(
-                "no MCP daemon in this build; rebuild with `--features mcpd` for the clamp bridge"
-            );
+            chaos_clamp::run_session_bridge_main().await?;
         }
     }
 

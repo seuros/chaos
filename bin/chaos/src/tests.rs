@@ -534,9 +534,9 @@ fn headless_commands_and_profile_are_available() {
             assert!(try_parse_cli(&["chaos", "serve", flag]).is_err());
         }
     }
-    // Keep the name reserved even without mcpd so a clamp child cannot
-    // accidentally become a TUI prompt instead of failing closed.
-    let cli = try_parse_cli(&["chaos", "clamp-session-bridge"]).expect("bridge name is reserved");
+    // Clamping owns its bridge independently of the optional MCP daemon.
+    let cli = try_parse_cli(&["chaos", "clamp-session-bridge"])
+        .expect("clamp bridge is independent of mcpd");
     assert_matches!(cli.subcommand, Some(Subcommand::ClampSessionBridge));
 
     let cli = try_parse_cli(&["chaos", "taskd", "--once"]).expect("task supervisor should parse");

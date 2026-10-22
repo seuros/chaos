@@ -173,9 +173,8 @@ Without `acp`, it omits `acp` from commands, help, and completions.
 MCP client commands (`mcp list/get/add/remove/login/logout`) and external MCP
 tools remain available; shared MCP libraries are still used internally.
 Without `mcpd`, it omits `mcp serve`, `serve --mcp`, and `--mcp-allowed-origin`,
-and disables the hidden clamp MCP bridge. The bridge name stays reserved so
-clamp subprocesses fail with a rebuild hint rather than starting a TUI prompt.
-Clamp integrations that invoke that bridge require `mcpd`.
+but clamping and its hidden `clamp-session-bridge` remain available. The bridge
+belongs to the clamp transport, not the MCP daemon.
 The HTTP `/mcp` route is not compiled in and returns
 404, while ordinary HTTP trigger/session APIs remain available.
 Without `tui`, it omits the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.

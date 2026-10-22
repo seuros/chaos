@@ -12,6 +12,7 @@ mod antigravity_sandbox;
 mod egress;
 mod protocol;
 mod proxy;
+mod session_bridge;
 mod transport;
 
 pub use antigravity::AntigravityBridgeConfig;
@@ -39,6 +40,7 @@ pub use proxy::FileWiretapSink;
 pub use proxy::WiretapExchange;
 pub use proxy::WiretapProxy;
 pub use proxy::WiretapSink;
+pub use session_bridge::run_main as run_session_bridge_main;
 pub use transport::ClampConfig;
 pub use transport::ClampError;
 pub use transport::ClampInfo;

@@ -145,6 +145,9 @@ jobs:
           mbx nextest run --locked -p chaos-httpd --no-default-features \
             --lib -E 'test(api::tests::)' --target ${{ inputs.target }} \
             --cargo-profile ci-test
+          mbx nextest run --locked -p chaos-clamp --lib \
+            -E 'test(session_bridge::tests::)' --target ${{ inputs.target }} \
+            --cargo-profile ci-test
 
       - name: Build and export runtime binaries for tests
         run: |

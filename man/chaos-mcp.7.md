@@ -131,9 +131,9 @@ chaos mcp add remote --url https://api.example.com/mcp \
 ## SERVER USAGE
 
 Server entry points require the default-enabled `mcpd` Cargo feature.
-Building `chaos-cli` with `--no-default-features` excludes `mcp serve`,
-`serve --mcp`, and the hidden clamp MCP bridge, without disabling MCP client
-commands or external tools. Add `--features tui` to retain the TUI without
+Building `chaos-cli` with `--no-default-features` excludes `mcp serve`
+and `serve --mcp`, without disabling MCP client commands, external tools, or
+clamping and its session bridge. Add `--features tui` to retain the TUI without
 the MCP daemon, or `--features mcpd` to retain serving without the TUI.
 See [build options](./chaos-install.7.md#build-without-the-tui-acp-or-mcp-daemon).
 

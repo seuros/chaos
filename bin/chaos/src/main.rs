@@ -173,6 +173,7 @@ enum Subcommand {
     Mcp(McpCli),
 
     /// Expose Chaos as an ACP agent over stdio.
+    #[cfg(feature = "acp")]
     Acp,
 
     /// Generate shell completion scripts.
@@ -510,6 +511,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_root_flags!(exec_cli, root_config_overrides);
             chaos_fork::run_main(exec_cli, arg0_paths.clone()).await?;
         }
+        #[cfg(feature = "acp")]
         Some(Subcommand::Acp) => {
             chaos_acpd::run_main(arg0_paths.clone(), root_config_overrides, models_profile).await?;
         }

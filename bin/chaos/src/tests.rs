@@ -482,10 +482,18 @@ fn global_config_order_and_duplicate_scalar_rejection_are_preserved() {
 }
 
 fn headless_commands_and_profile_are_available() {
-    let cli = try_parse_cli(&["chaos", "--provider", "fixture", "acp"])
-        .expect("ACP server should parse without a console");
-    assert_eq!(cli.provider.as_deref(), Some("fixture"));
-    assert_matches!(cli.subcommand, Some(Subcommand::Acp));
+    #[cfg(feature = "acp")]
+    {
+        let cli = try_parse_cli(&["chaos", "--provider", "fixture", "acp"])
+            .expect("ACP server should parse without a console");
+        assert_eq!(cli.provider.as_deref(), Some("fixture"));
+        assert_matches!(cli.subcommand, Some(Subcommand::Acp));
+    }
+    #[cfg(not(feature = "acp"))]
+    if let Ok(cli) = try_parse_cli(&["chaos", "acp"]) {
+        // With the TUI enabled, "acp" may still be a prompt, never a subcommand.
+        assert!(cli.subcommand.is_none());
+    }
 
     let cli = try_parse_cli(&[
         "chaos",

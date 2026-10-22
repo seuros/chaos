@@ -1,4 +1,4 @@
-use chaos_ipc::openai_models::ModelPreset;
+use crate::models_manager::catalog::ModelPickerCatalog;
 
 use super::Process;
 
@@ -13,11 +13,12 @@ pub struct ProcessMode {
 /// Public controls, without account secrets or unfiltered installation settings.
 #[derive(Clone, Debug)]
 pub struct ProcessSessionControls {
+    /// Account-qualified selection id; provider requests use the raw model slug.
     pub model: String,
     pub current_mode: String,
     pub modes: Vec<ProcessMode>,
     pub switching_allowed: bool,
-    pub models: Vec<ModelPreset>,
+    pub model_catalog: ModelPickerCatalog,
 }
 
 /// A rejected control has no effect; an unconfirmed control must not be replayed.
@@ -37,12 +38,13 @@ impl Process {
         crate::custom_prompts::discover_prompts(&config.chaos_home).await
     }
 
-    /// Read the session's native mode policy and the selected provider's cached catalog.
+    /// Read native mode policy and cached choices from every usable account.
     pub async fn session_controls(&self) -> ProcessSessionControls {
         self.chaos.session.session_controls().await
     }
 
-    /// Change only the session model, never its provider or permissions.
+    /// Select a cached model/account pair without changing permissions. Legacy
+    /// bare model slugs refer only to the currently selected account.
     /// In-flight model requests finish normally; subsequent samples use the change.
     pub async fn set_session_model(&self, model: &str) -> Result<(), ProcessControlError> {
         self.chaos

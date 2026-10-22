@@ -68,10 +68,11 @@ impl ModelClient {
                 .map(|directory| directory.join(format!("{conversation_id}.json"))),
         );
         Self {
+            provider_clients: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             state: Arc::new(ModelClientState {
-                pending_submissions: std::sync::atomic::AtomicUsize::new(0),
-                admission_epoch: std::sync::Mutex::new(None),
-                invocation_sink: std::sync::Mutex::new(None),
+                pending_submissions: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                admission_epoch: Arc::new(std::sync::Mutex::new(None)),
+                invocation_sink: Arc::new(std::sync::Mutex::new(None)),
                 auth_manager,
                 conversation_id,
                 provider_id,
@@ -99,11 +100,82 @@ impl ModelClient {
         }
     }
 
+    /// Reuse a transport for this account without sharing its auth breaker,
+    /// websocket routing, or wire detection with any other provider. Admission
+    /// and invocation accounting continue to belong to the owning session.
+    pub(crate) fn for_provider(
+        &self,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
+    ) -> Result<Self> {
+        if self.is_clamped()
+            || (self.state.provider_id == provider_id && &self.state.provider == provider)
+        {
+            return Ok(self.clone());
+        }
+        let mut clients = self
+            .provider_clients
+            .lock()
+            .map_err(|_| ChaosErr::Fatal("provider client registry is unavailable".into()))?;
+        if let Some(state) = clients.get(provider_id)
+            && &state.provider == provider
+        {
+            return Ok(Self {
+                state: state.clone(),
+                provider_clients: self.provider_clients.clone(),
+            });
+        }
+        let settings = self
+            .state
+            .clamp_settings
+            .lock()
+            .map_err(|_| ChaosErr::Fatal("clamp settings are unavailable".into()))?
+            .clone();
+        let mut client = Self::new(
+            self.state
+                .auth_manager
+                .as_ref()
+                .map(|auth| auth.for_provider(provider_id)),
+            self.state.conversation_id,
+            provider_id.to_string(),
+            provider.clone(),
+            self.state.session_source.clone(),
+            self.state.approval_policy,
+            self.state.model_verbosity,
+            self.state.enable_request_compression,
+            self.state.beta_features_header.clone(),
+            false,
+            settings,
+        );
+        let state = Arc::get_mut(&mut client.state)
+            .ok_or_else(|| ChaosErr::Fatal("new provider client is already shared".into()))?;
+        state.pending_submissions = self.state.pending_submissions.clone();
+        state.admission_epoch = self.state.admission_epoch.clone();
+        state.invocation_sink = self.state.invocation_sink.clone();
+        *state
+            .session
+            .lock()
+            .map_err(|_| ChaosErr::Fatal("session binding is unavailable".into()))? = self
+            .state
+            .session
+            .lock()
+            .map_err(|_| ChaosErr::Fatal("session binding is unavailable".into()))?
+            .clone();
+        clients.insert(provider_id.to_string(), client.state.clone());
+        client.provider_clients = self.provider_clients.clone();
+        Ok(client)
+    }
+
     /// Force the auth breaker closed after credentials change (e.g. a login),
     /// so the next turn probes the fresh auth state rather than waiting out the
     /// open-circuit backoff window.
     pub(crate) fn reset_auth_breaker(&self) {
         self.state.auth_breaker.reset();
+        if let Ok(clients) = self.provider_clients.lock() {
+            for client in clients.values() {
+                client.auth_breaker.reset();
+            }
+        }
     }
 
     pub(crate) fn bind_session(&self, session: &Arc<crate::chaos::Session>) {

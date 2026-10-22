@@ -112,7 +112,20 @@ impl TurnContext {
 
     pub(crate) async fn with_model(&self, model: String, models_manager: &ModelsManager) -> Self {
         let mut config = (*self.config).clone();
-        config.model = Some(model.clone());
+        config.model = Some(model);
+        self.with_model_config(config, models_manager).await
+    }
+
+    pub(crate) async fn with_model_config(
+        &self,
+        mut config: Config,
+        models_manager: &ModelsManager,
+    ) -> Self {
+        let model = config
+            .model
+            .clone()
+            .unwrap_or_else(|| self.model_info.slug.clone());
+        let models_manager = models_manager.for_config(&config).await;
         let model_info = models_manager.get_model_info(model.as_str(), &config).await;
         let truncation_policy = model_info.truncation_policy.into();
         let supported_reasoning_levels = model_info
@@ -120,7 +133,8 @@ impl TurnContext {
             .iter()
             .map(|preset| preset.effort)
             .collect::<Vec<_>>();
-        let reasoning_effort = if let Some(current_reasoning_effort) = self.reasoning_effort {
+        let reasoning_effort = if let Some(current_reasoning_effort) = config.model_reasoning_effort
+        {
             if supported_reasoning_levels.contains(&current_reasoning_effort) {
                 Some(current_reasoning_effort)
             } else {
@@ -171,17 +185,22 @@ impl TurnContext {
         .with_agent_roles(config.agent_roles.clone())
         .with_mode_policy(self.mode_capabilities, self.mode_policy.switching_allowed);
 
+        let auth_manager = self
+            .auth_manager
+            .as_ref()
+            .map(|auth| auth.for_provider(&config.model_provider_id));
+        let provider = config.model_provider.clone();
         Self {
             sub_id: self.sub_id.clone(),
             trace_id: self.trace_id.clone(),
             config: Arc::new(config),
-            auth_manager: self.auth_manager.clone(),
+            auth_manager,
             model_info: model_info.clone(),
             session_telemetry: self
                 .session_telemetry
                 .clone()
                 .with_model(model.as_str(), model_info.slug.as_str()),
-            provider: self.provider.clone(),
+            provider,
             reasoning_effort,
             reasoning_summary: self.reasoning_summary,
             session_source: self.session_source.clone(),
@@ -343,6 +362,14 @@ pub(crate) struct SessionConfiguration {
 }
 
 impl SessionConfiguration {
+    pub(crate) fn model_selection_id(&self) -> String {
+        crate::models_manager::catalog::ModelSelection {
+            provider_id: self.original_config_do_not_use.model_provider_id.clone(),
+            model: self.collaboration_mode.model().to_string(),
+        }
+        .id()
+    }
+
     pub(crate) fn user_turn(
         &self,
         items: Vec<chaos_ipc::user_input::UserInput>,

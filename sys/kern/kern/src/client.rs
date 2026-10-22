@@ -79,10 +79,10 @@ pub(super) const RESPONSES_ENDPOINT: &str = "/responses";
 /// Session-scoped state shared by all [`ModelClient`] clones.
 #[derive(Debug)]
 pub(super) struct ModelClientState {
-    pub(super) pending_submissions: std::sync::atomic::AtomicUsize,
-    pub(super) admission_epoch: StdMutex<Option<Arc<crate::invocation::AdmissionEpoch>>>,
+    pub(super) pending_submissions: Arc<std::sync::atomic::AtomicUsize>,
+    pub(super) admission_epoch: Arc<StdMutex<Option<Arc<crate::invocation::AdmissionEpoch>>>>,
     pub(super) invocation_sink:
-        StdMutex<Option<Arc<dyn crate::invocation::ProviderInvocationSink>>>,
+        Arc<StdMutex<Option<Arc<dyn crate::invocation::ProviderInvocationSink>>>>,
     pub(super) auth_manager: Option<Arc<crate::AuthManager>>,
     pub(super) conversation_id: ProcessId,
     pub(super) provider_id: String,
@@ -308,6 +308,9 @@ impl SseTelemetry for ApiTelemetry {
 #[derive(Debug, Clone)]
 pub struct ModelClient {
     pub(super) state: Arc<ModelClientState>,
+    /// Provider transport/auth state is isolated; session accounting is shared.
+    pub(super) provider_clients:
+        Arc<StdMutex<std::collections::HashMap<String, Arc<ModelClientState>>>>,
 }
 
 /// A turn-scoped streaming session created from a [`ModelClient`].

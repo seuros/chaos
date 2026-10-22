@@ -9,6 +9,13 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.4] - 2026-10-22
+
+### Fixed
+- `/model` and ACP share a catalog spanning authenticated provider accounts,
+  with account-qualified selections and provider-isolated credentials,
+  metadata, and transports.
+
 ## [47.14.3] - 2026-10-21
 
 ### Added

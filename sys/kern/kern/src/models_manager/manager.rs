@@ -176,6 +176,7 @@ enum CatalogMode {
 #[derive(Debug, Clone)]
 pub struct ModelsManager {
     remote_models: Arc<RwLock<Vec<ModelInfo>>>,
+    pub(super) picker_catalog: Arc<RwLock<super::catalog::ModelPickerCatalog>>,
     catalog_mode: CatalogMode,
     automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
@@ -251,6 +252,7 @@ impl ModelsManager {
             .unwrap_or_default();
         Self {
             remote_models: Arc::new(RwLock::new(remote_models)),
+            picker_catalog: Arc::default(),
             catalog_mode,
             automatic_catalog_refresh: true,
             collaboration_modes_config,
@@ -400,7 +402,8 @@ impl ModelsManager {
             // just its name: account sign-in and an API key route to different
             // hosts that serve different catalogs, and offering models from the
             // endpoint the caller cannot reach is worse than offering none.
-            let auth_mode = if active {
+            let bound = self.is_bound_to(provider_id, provider);
+            let auth_mode = if bound {
                 self.auth_manager.auth_mode()
             } else {
                 self.auth_manager
@@ -421,7 +424,7 @@ impl ModelsManager {
             // row. A host that has never fetched — mcpd, say — holds an empty
             // in-memory list, so fall back to the cache rather than claiming
             // the active provider serves nothing.
-            let mut models = if active {
+            let mut models = if bound {
                 self.build_available_models(self.get_remote_models().await)
             } else {
                 Vec::new()
@@ -456,12 +459,33 @@ impl ModelsManager {
         groups
     }
 
+    /// Load the exact cached binding, including stale metadata explicitly shown
+    /// by the offline picker. Never borrow another endpoint's catalog.
+    pub(super) async fn load_cached_catalog(&self) {
+        match self.cache_manager.load_all().await {
+            Ok(catalogs) => {
+                let scope = self.cache_scope();
+                if let Some(cache) = catalogs
+                    .into_iter()
+                    .find(|cache| cache.scope.as_ref() == Some(&scope))
+                {
+                    self.apply_cache_entry(cache).await;
+                }
+            }
+            Err(error) => error!("failed to load selected model catalog: {error}"),
+        }
+    }
+
     /// Whether credentials for `provider` resolve without prompting the user.
     ///
     /// Stored credentials are looked up per provider rather than through the
     /// session's active auth mode, so signing into one provider does not hide
     /// the others. Stored API keys do not require subscription-login support.
-    fn provider_is_usable(&self, provider_id: &str, provider: &ModelProviderInfo) -> bool {
+    pub(super) fn provider_is_usable(
+        &self,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
+    ) -> bool {
         if !provider.requires_managed_auth() {
             return true;
         }
@@ -500,6 +524,32 @@ impl ModelsManager {
     pub fn try_list_models(&self) -> Result<Vec<ModelPreset>, TryLockError> {
         let remote_models = self.try_get_remote_models()?;
         Ok(self.build_available_models(remote_models))
+    }
+
+    /// Read metadata for a UI identity without confusing equal slugs on
+    /// different accounts. Falls back only to this manager's own binding.
+    pub fn try_selected_model(&self, id: &str, provider_id: &str) -> Option<ModelPreset> {
+        let selection = super::catalog::ModelSelection::resolve(id, provider_id)?;
+        if let Some(preset) = self
+            .picker_catalog
+            .try_read()
+            .ok()
+            .and_then(|catalog| catalog.find(id, provider_id).cloned())
+        {
+            return Some(preset);
+        }
+        if selection.provider_id != self.provider_id {
+            return None;
+        }
+        let mut preset = self
+            .try_list_models()
+            .ok()?
+            .into_iter()
+            .find(|preset| preset.model == selection.model)?;
+        // Metadata lookups may become selections (e.g. the rate-limit picker).
+        // Keep their identities identical to the full picker catalog.
+        preset.id = selection.id();
+        Some(preset)
     }
 
     /// Refresh the active model catalog according to the specified strategy.
@@ -1010,9 +1060,13 @@ impl ModelsManager {
         let remote_models =
             Self::with_provider_model_family(remote_models, &self.provider_id, &self.provider);
 
-        let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
+        let presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
+        self.filter_available_presets(presets)
+    }
+
+    pub(super) fn filter_available_presets(&self, presets: Vec<ModelPreset>) -> Vec<ModelPreset> {
         let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));
-        presets = ModelPreset::filter_by_auth(presets, chatgpt_mode);
+        let mut presets = ModelPreset::filter_by_auth(presets, chatgpt_mode);
 
         ModelPreset::mark_default_by_picker_visibility(&mut presets);
 

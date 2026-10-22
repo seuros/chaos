@@ -60,20 +60,28 @@ impl Backend {
             },
         ));
         let guard = session::OwnerGuard::new(table.clone());
+        let manager = table.get_models_manager();
+        let catalog = manager
+            .model_picker_catalog(
+                &config.model_providers,
+                &config.model_provider_id,
+                chaos_kern::models_manager::RefreshStrategy::OnlineIfUncached,
+            )
+            .await;
         if let Some(saved) = &saved {
-            let models = table
-                .list_models(chaos_kern::models_manager::manager::RefreshStrategy::Offline)
-                .await;
             if config.model.as_deref() != Some(saved.model.as_str())
-                && !models.iter().any(|model| {
-                    model.model == saved.model && model.show_in_picker && model.supported_in_api
-                })
+                && catalog
+                    .find(&saved.model, &config.model_provider_id)
+                    .is_none()
             {
-                return Err(invalid(
-                    "saved model is unavailable in the selected provider",
-                ));
+                return Err(invalid("saved model/account choice is unavailable"));
             }
-            config.model = Some(saved.model.clone());
+            // Journal ownership belongs to the original ACP backend, not the
+            // mutable inference account. Restore the selection after opening it.
+            if chaos_kern::models_manager::catalog::ModelSelection::from_id(&saved.model).is_none()
+            {
+                config.model = Some(saved.model.clone());
+            }
         }
         let started = match &saved {
             Some(saved) => {

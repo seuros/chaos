@@ -1,3 +1,4 @@
+pub mod catalog;
 mod discovery;
 pub mod manager;
 pub mod model_info;

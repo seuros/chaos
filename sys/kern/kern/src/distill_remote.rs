@@ -193,7 +193,14 @@ async fn request_remote_compaction_v2(
     turn_context: &TurnContext,
     prompt: &Prompt,
 ) -> ChaosResult<ResponseItem> {
-    let mut client_session = sess.services.model_client.new_session();
+    let mut client_session = sess
+        .services
+        .model_client
+        .for_provider(
+            &turn_context.config.model_provider_id,
+            &turn_context.provider,
+        )?
+        .new_session();
     let max_retries = turn_context.provider.stream_max_retries();
     let mut retries = 0;
 

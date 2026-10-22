@@ -170,24 +170,34 @@ impl Session {
             },
             None => None,
         };
-        let (collaboration_mode, mode_registry, mode_policy) = {
+        let configuration = {
             let state = self.state.lock().await;
-            (
-                state.session_configuration.collaboration_mode.clone(),
-                Arc::clone(&state.session_configuration.mode_registry),
-                state.session_configuration.mode_policy.clone(),
-            )
+            state.session_configuration.clone()
         };
+        let collaboration_mode = configuration.collaboration_mode.clone();
+        let mode_registry = configuration.mode_registry.clone();
+        let mode_policy = configuration.mode_policy.clone();
+        // Preserve the owning turn's limits; a picker changes inference
+        // identity and effort, never the turn's permission/config snapshot.
+        let mut model_config = (*base.config).clone();
+        model_config.model_provider_id = configuration
+            .original_config_do_not_use
+            .model_provider_id
+            .clone();
+        model_config.model_provider = configuration.provider.clone();
+        model_config.model = Some(collaboration_mode.model().to_string());
+        model_config.model_reasoning_effort = collaboration_mode.reasoning_effort();
         // A model picker change can arrive while a prompt is running. Rebuild
         // model metadata and model-dependent tools at the next sample, without
-        // cancelling/replaying an in-flight request or changing its provider.
-        let refreshed = if base.model_info.slug != collaboration_mode.model() {
+        // cancelling/replaying an in-flight request. Provider transport state is
+        // rebound separately at the next sampling boundary.
+        let refreshed = if base.model_info.slug != collaboration_mode.model()
+            || base.config.model_provider_id != model_config.model_provider_id
+            || base.provider != model_config.model_provider
+        {
             Some(Arc::new(
-                base.with_model(
-                    collaboration_mode.model().to_string(),
-                    &self.services.models_manager,
-                )
-                .await,
+                base.with_model_config(model_config, &self.services.models_manager)
+                    .await,
             ))
         } else {
             None
@@ -221,15 +231,12 @@ impl Session {
             })
             .capabilities;
         let mut config = (*base.config).clone();
+        let models_manager = self.services.models_manager.for_config(&config).await;
         config.model_reasoning_effort = collaboration_mode.reasoning_effort();
         config.mode_policy_override = Some(mode_policy.clone());
         let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &base.model_info,
-            available_models: &self
-                .services
-                .models_manager
-                .try_list_models()
-                .unwrap_or_default(),
+            available_models: &models_manager.try_list_models().unwrap_or_default(),
             approval_policy: permission_snapshot.approval_policy,
             minion_jobs_allowed: config.minion_jobs_allowed,
             web_search_mode: base.tools_config.web_search_mode,

@@ -110,6 +110,7 @@ impl App {
         model: &str,
         reasoning_effort: Option<ReasoningEffortConfig>,
     ) -> Option<&'static str> {
+        let model = chaos_kern::models_manager::catalog::ModelSelection::wire_model(model);
         (!model.starts_with("chaos-auto-")).then(|| Self::reasoning_label(reasoning_effort))
     }
 

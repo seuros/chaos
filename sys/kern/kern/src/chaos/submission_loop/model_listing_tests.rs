@@ -1,5 +1,5 @@
 use super::*;
-use crate::models_manager::manager::{ModelsManager, RefreshStrategy};
+use crate::models_manager::manager::ModelsManager;
 use chaos_ipc::openai_models::{ModelInfo, ModelVisibility, ModelsResponse};
 use std::time::Duration;
 
@@ -27,11 +27,7 @@ async fn assert_catalog_submission(models: Vec<ModelInfo>) {
         .expect("test session has one owner")
         .services
         .models_manager = Arc::new(manager);
-    let expected = session
-        .services
-        .models_manager
-        .list_models(RefreshStrategy::Offline)
-        .await;
+    let expected = session.session_controls().await.model_catalog.into_models();
     assert_eq!(expected.len(), model_count);
 
     let (submissions, receiver) = async_channel::unbounded();

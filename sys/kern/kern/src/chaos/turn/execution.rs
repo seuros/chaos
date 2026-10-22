@@ -59,6 +59,15 @@ pub(super) async fn try_run_sampling_request(
     prompt: &Prompt,
     cancellation_token: CancellationToken,
 ) -> ChaosResult<SamplingRequestResult> {
+    let client = sess.services.model_client.for_provider(
+        &turn_context.config.model_provider_id,
+        &turn_context.provider,
+    )?;
+    if !Arc::ptr_eq(&client.state, &client_session.client.state) {
+        let sample_token_limit = client_session.sample_token_limit;
+        *client_session = client.new_session();
+        client_session.sample_token_limit = sample_token_limit;
+    }
     crate::feedback_tags!(
         model = turn_context.model_info.slug.clone(),
         approval_policy = turn_context.approval_policy.value(),

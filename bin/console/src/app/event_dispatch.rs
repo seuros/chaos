@@ -644,6 +644,11 @@ impl App {
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);
             }
+            AppEvent::OpenModelPopup { process_id, models } => {
+                if self.chat_widget.process_id() == process_id && !crate::theme::is_clamped() {
+                    self.chat_widget.open_model_popup_with_presets(models);
+                }
+            }
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
             }
@@ -684,7 +689,11 @@ impl App {
                             .map(|selected_effort| selected_effort.to_string())
                             .unwrap_or_else(|| "default".to_string());
                         tracing::info!("Selected model: {model}, Selected effort: {effort_label}");
-                        let mut message = format!("Model changed to {model}");
+                        let label =
+                            chaos_kern::models_manager::catalog::ModelSelection::from_id(&model)
+                                .map(|choice| format!("{} ({})", choice.model, choice.provider_id))
+                                .unwrap_or_else(|| model.clone());
+                        let mut message = format!("Model changed to {label}");
                         if let Some(label) = Self::reasoning_label_for(&model, effort) {
                             message.push(' ');
                             message.push_str(label);

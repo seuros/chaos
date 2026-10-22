@@ -57,6 +57,11 @@ impl Fixture {
             "stream_idle_timeout_ms":5000
         }))
         .unwrap();
+        // Catalog discovery must never probe ambient accounts from the developer's environment.
+        config.model_providers = std::collections::HashMap::from([(
+            config.model_provider_id.clone(),
+            config.model_provider.clone(),
+        )]);
         Self {
             _home: home,
             cwd,

@@ -188,6 +188,12 @@ pub enum AppEvent {
         personality: Personality,
     },
 
+    /// Present the account-aware model catalog after loading it off the UI thread.
+    OpenModelPopup {
+        process_id: Option<ProcessId>,
+        models: Vec<ModelPreset>,
+    },
+
     /// Open the reasoning selection popup after picking a model.
     OpenReasoningPopup {
         model: ModelPreset,

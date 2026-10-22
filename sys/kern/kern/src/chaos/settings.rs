@@ -16,6 +16,46 @@ use crate::config::ConstraintResult;
 pub(super) use super::SessionSettingsUpdate;
 
 impl Session {
+    pub(crate) async fn apply_configuration_update(
+        &self,
+        configuration: &super::SessionConfiguration,
+        updates: &SessionSettingsUpdate,
+    ) -> ConstraintResult<super::SessionConfiguration> {
+        let mut next = configuration.apply(updates)?;
+        self.resolve_model_configuration(&mut next).await?;
+        Ok(next)
+    }
+
+    /// Normalize a picker identity at the native configuration boundary. Both
+    /// frontends use this path; wire slugs never carry account information.
+    pub(crate) async fn resolve_model_configuration(
+        &self,
+        configuration: &mut super::SessionConfiguration,
+    ) -> ConstraintResult<()> {
+        let requested = configuration.collaboration_mode.model();
+        if !crate::models_manager::catalog::ModelSelection::is_id(requested) {
+            return Ok(());
+        }
+        let mut config = Self::build_per_turn_config(configuration);
+        config.model = Some(requested.to_string());
+        self.services
+            .models_manager
+            .resolve_model_selection(&mut config)
+            .await
+            .map_err(|error| crate::config::ConstraintError::ModelSelection {
+                reason: error.to_string(),
+            })?;
+        configuration.provider = config.model_provider.clone();
+        configuration.collaboration_mode = configuration.collaboration_mode.with_updates(
+            config.model.clone(),
+            Some(config.model_reasoning_effort),
+            None,
+        );
+        configuration.mode_base_reasoning_effort = config.model_reasoning_effort;
+        configuration.original_config_do_not_use = Arc::new(config);
+        Ok(())
+    }
+
     pub(crate) async fn chaos_home(&self) -> PathBuf {
         let state = self.state.lock().await;
         state.session_configuration.chaos_home().clone()
@@ -55,7 +95,10 @@ impl Session {
     ) -> ConstraintResult<()> {
         let mut state = self.state.lock().await;
 
-        match state.session_configuration.apply(&updates) {
+        match self
+            .apply_configuration_update(&state.session_configuration, &updates)
+            .await
+        {
             Ok(updated) => {
                 let previous_cwd = state.session_configuration.cwd.clone();
                 let next_cwd = updated.cwd.clone();

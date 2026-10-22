@@ -512,7 +512,7 @@ impl ChatWidget {
 
             if high_usage
                 && !self.rate_limit_switch_prompt_hidden()
-                && self.current_model() != super::core::NUDGE_MODEL_SLUG
+                && !self.model_choice_is_current(super::core::NUDGE_MODEL_SLUG)
                 && !matches!(
                     self.rate_limit_switch_prompt,
                     RateLimitSwitchPromptState::Shown

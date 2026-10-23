@@ -4,13 +4,7 @@ use core_test_support::responses::ev_function_call;
 #[test]
 fn session_owned_mcp_elicitations_are_not_filtered_by_prompt_submission_id() {
     // The full MCP HTTP/resource dispatch graph carries large debug futures.
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_stack_size(16 * 1024 * 1024)
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(Box::pin(mcp_elicitation_round_trip()));
+    native_runtime().block_on(Box::pin(mcp_elicitation_round_trip()));
 }
 
 async fn mcp_elicitation_round_trip() {

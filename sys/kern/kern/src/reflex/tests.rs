@@ -124,29 +124,7 @@ async fn reflex_off_skips_backend_and_explicit_remote_monitor() {
 }
 
 #[test]
-fn decide_allows_calm_confident_verdicts() {
-    let outcome = decide(&verdict(
-        0.1,
-        0.9,
-        &[
-            (ActionRiskSignals::IRREVERSIBLE, 0.05),
-            (ActionRiskSignals::BEYOND_REQUEST, 0.1),
-            (ActionRiskSignals::EXFILTRATES, 0.01),
-        ],
-    ));
-    assert_eq!(outcome, ArcMonitorOutcome::Ok);
-}
-
-#[test]
-fn decide_cancels_on_exfiltration_regardless_of_risk() {
-    let outcome = decide(&verdict(0.1, 0.9, &[(ActionRiskSignals::EXFILTRATES, 0.9)]));
-    std::assert_matches!(
-        outcome, ArcMonitorOutcome::SteerModel(reason) if reason.contains("private data")
-    );
-}
-
-#[test]
-fn decide_asks_about_exfiltration_below_the_block_threshold() {
+fn decide_exfiltration_thresholds_override_low_risk() {
     for probability in [0.6, 0.7, 0.8499] {
         std::assert_matches!(
             decide(&verdict(0.1, 0.9, &[(ActionRiskSignals::EXFILTRATES, probability)])),
@@ -161,42 +139,62 @@ fn decide_asks_about_exfiltration_below_the_block_threshold() {
         )),
         ArcMonitorOutcome::Ok
     );
-    std::assert_matches!(
-        decide(&verdict(
+    for probability in [0.85, 0.9] {
+        std::assert_matches!(
+            decide(&verdict(0.1, 0.9, &[(ActionRiskSignals::EXFILTRATES, probability)])),
+            ArcMonitorOutcome::SteerModel(reason) if reason.contains("private data")
+        );
+    }
+}
+
+#[test]
+fn decide_distinguishes_calm_destructive_and_uncertain_actions() {
+    for (risk, confidence, signals, expected, reason) in [
+        (
             0.1,
             0.9,
-            &[(ActionRiskSignals::EXFILTRATES, 0.85)]
-        )),
-        ArcMonitorOutcome::SteerModel(_)
-    );
-}
-
-#[test]
-fn decide_cancels_on_confident_destructive_risk_only() {
-    std::assert_matches!(
-        decide(&verdict(0.9, 0.7, &[])),
-        ArcMonitorOutcome::SteerModel(reason) if reason.contains("destructive")
-    );
-    std::assert_matches!(
-        decide(&verdict(0.9, 0.3, &[])),
-        ArcMonitorOutcome::AskUser(reason) if reason.contains("risky")
-    );
-}
-
-#[test]
-fn decide_asks_on_secondary_signals_and_low_confidence() {
-    std::assert_matches!(
-        decide(&verdict(0.2, 0.9, &[(ActionRiskSignals::IRREVERSIBLE, 0.7)])),
-        ArcMonitorOutcome::AskUser(reason) if reason.contains("hard to reverse")
-    );
-    std::assert_matches!(
-        decide(&verdict(0.2, 0.9, &[(ActionRiskSignals::BEYOND_REQUEST, 0.65)])),
-        ArcMonitorOutcome::AskUser(reason) if reason.contains("beyond the request")
-    );
-    std::assert_matches!(
-        decide(&verdict(0.2, 0.1, &[])),
-        ArcMonitorOutcome::AskUser(reason) if reason.contains("could not place")
-    );
+            vec![
+                (ActionRiskSignals::IRREVERSIBLE, 0.05),
+                (ActionRiskSignals::BEYOND_REQUEST, 0.1),
+                (ActionRiskSignals::EXFILTRATES, 0.01),
+            ],
+            "ok",
+            "",
+        ),
+        (0.9, 0.7, vec![], "block", "destructive"),
+        (0.9, 0.3, vec![], "ask", "risky"),
+        (
+            0.2,
+            0.9,
+            vec![(ActionRiskSignals::IRREVERSIBLE, 0.7)],
+            "ask",
+            "hard to reverse",
+        ),
+        (
+            0.2,
+            0.9,
+            vec![(ActionRiskSignals::BEYOND_REQUEST, 0.65)],
+            "ask",
+            "beyond the request",
+        ),
+        (0.2, 0.1, vec![], "ask", "could not place"),
+    ] {
+        let outcome = decide(&verdict(risk, confidence, &signals));
+        let (kind, message) = match &outcome {
+            ArcMonitorOutcome::Ok => ("ok", ""),
+            ArcMonitorOutcome::SteerModel(message) => ("block", message.as_str()),
+            ArcMonitorOutcome::AskUser(message) => ("ask", message.as_str()),
+            other => panic!("unexpected decision: {other:?}"),
+        };
+        assert_eq!(
+            kind, expected,
+            "risk={risk}, confidence={confidence}, signals={signals:?}"
+        );
+        assert!(
+            message.contains(reason),
+            "{outcome:?} must explain {reason}"
+        );
+    }
 }
 
 #[test]

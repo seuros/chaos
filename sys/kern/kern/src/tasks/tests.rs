@@ -71,43 +71,23 @@ fn metric_point(resource_metrics: &ResourceMetrics) -> (BTreeMap<String, String>
 }
 
 #[test]
-fn emit_turn_network_proxy_metric_records_active_turn() {
-    let session_telemetry = test_session_telemetry();
+fn emit_turn_network_proxy_metric_records_turn_attributes() {
+    for (active, enabled) in [(true, "true"), (false, "false")] {
+        let session_telemetry = test_session_telemetry();
+        emit_turn_network_proxy_metric(&session_telemetry, active, ("tmp_mem_enabled", enabled));
 
-    emit_turn_network_proxy_metric(&session_telemetry, true, ("tmp_mem_enabled", "true"));
+        let snapshot = session_telemetry
+            .snapshot_metrics()
+            .expect("runtime metrics snapshot");
+        let (attrs, value) = metric_point(&snapshot);
 
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    let (attrs, value) = metric_point(&snapshot);
-
-    assert_eq!(value, 1);
-    assert_eq!(
-        attrs,
-        BTreeMap::from([
-            ("active".to_string(), "true".to_string()),
-            ("tmp_mem_enabled".to_string(), "true".to_string()),
-        ])
-    );
-}
-
-#[test]
-fn emit_turn_network_proxy_metric_records_inactive_turn() {
-    let session_telemetry = test_session_telemetry();
-
-    emit_turn_network_proxy_metric(&session_telemetry, false, ("tmp_mem_enabled", "false"));
-
-    let snapshot = session_telemetry
-        .snapshot_metrics()
-        .expect("runtime metrics snapshot");
-    let (attrs, value) = metric_point(&snapshot);
-
-    assert_eq!(value, 1);
-    assert_eq!(
-        attrs,
-        BTreeMap::from([
-            ("active".to_string(), "false".to_string()),
-            ("tmp_mem_enabled".to_string(), "false".to_string()),
-        ])
-    );
+        assert_eq!(value, 1);
+        assert_eq!(
+            attrs,
+            BTreeMap::from([
+                ("active".to_string(), active.to_string()),
+                ("tmp_mem_enabled".to_string(), enabled.to_string()),
+            ])
+        );
+    }
 }

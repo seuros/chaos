@@ -678,43 +678,30 @@ fn responses_stream_event_response_model_prefers_response_headers() {
 }
 
 #[test]
-fn test_try_parse_retry_after() {
-    let err = Error {
+fn retry_after_parses_milliseconds_fractional_seconds_and_azure_wording() {
+    for (message, expected) in [
+        (
+            "Rate limit reached for gpt-5.1 in organization org- on tokens per min (TPM): Limit 1, Used 1, Requested 19304. Please try again in 28ms. Visit https://platform.openai.com/account/rate-limits to learn more.",
+            Duration::from_millis(28),
+        ),
+        (
+            "Rate limit reached for gpt-5.1 in organization <ORG> on tokens per min (TPM): Limit 30000, Used 6899, Requested 24050. Please try again in 1.898s. Visit https://platform.openai.com/account/rate-limits to learn more.",
+            Duration::from_secs_f64(1.898),
+        ),
+        (
+            "Rate limit exceeded. Try again in 35 seconds.",
+            Duration::from_secs(35),
+        ),
+    ] {
+        let err = Error {
             r#type: None,
-            message: Some("Rate limit reached for gpt-5.1 in organization org- on tokens per min (TPM): Limit 1, Used 1, Requested 19304. Please try again in 28ms. Visit https://platform.openai.com/account/rate-limits to learn more.".to_string()),
+            message: Some(message.to_string()),
             code: Some("rate_limit_exceeded".to_string()),
             plan_type: None,
             resets_at: None,
         };
-
-    let delay = try_parse_retry_after(&err);
-    assert_eq!(delay, Some(Duration::from_millis(28)));
-}
-
-#[test]
-fn test_try_parse_retry_after_no_delay() {
-    let err = Error {
-            r#type: None,
-            message: Some("Rate limit reached for gpt-5.1 in organization <ORG> on tokens per min (TPM): Limit 30000, Used 6899, Requested 24050. Please try again in 1.898s. Visit https://platform.openai.com/account/rate-limits to learn more.".to_string()),
-            code: Some("rate_limit_exceeded".to_string()),
-            plan_type: None,
-            resets_at: None,
-        };
-    let delay = try_parse_retry_after(&err);
-    assert_eq!(delay, Some(Duration::from_secs_f64(1.898)));
-}
-
-#[test]
-fn test_try_parse_retry_after_azure() {
-    let err = Error {
-        r#type: None,
-        message: Some("Rate limit exceeded. Try again in 35 seconds.".to_string()),
-        code: Some("rate_limit_exceeded".to_string()),
-        plan_type: None,
-        resets_at: None,
-    };
-    let delay = try_parse_retry_after(&err);
-    assert_eq!(delay, Some(Duration::from_secs(35)));
+        assert_eq!(try_parse_retry_after(&err), Some(expected), "{message}");
+    }
 }
 
 const CYBER_RESTRICTED_MODEL_FOR_TESTS: &str = "gpt-5.3-codex";

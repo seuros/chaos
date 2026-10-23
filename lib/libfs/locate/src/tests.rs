@@ -33,12 +33,8 @@ fn tie_breakers_sort_by_path_when_scores_equal() {
 }
 
 #[test]
-fn file_name_from_path_uses_basename() {
+fn file_name_from_path_uses_basename_and_falls_back_to_full_path() {
     assert_eq!(file_name_from_path("foo/bar.txt"), "bar.txt");
-}
-
-#[test]
-fn file_name_from_path_falls_back_to_full_path() {
     assert_eq!(file_name_from_path(""), "");
 }
 

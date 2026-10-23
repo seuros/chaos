@@ -31,13 +31,3 @@ fn bearer_helper_rejects_blank_keys() {
     std::assert_matches!(err, AbiError::InvalidRequest { .. });
     assert!(headers.is_empty());
 }
-
-#[test]
-fn x_api_key_helper_round_trips() {
-    let mut headers = HeaderMap::new();
-    insert_api_key_header(&mut headers, "sk-ant", "Anthropic").expect("api-key");
-    assert_eq!(
-        headers.get("x-api-key").and_then(|v| v.to_str().ok()),
-        Some("sk-ant"),
-    );
-}

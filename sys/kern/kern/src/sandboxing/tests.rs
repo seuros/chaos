@@ -7,7 +7,6 @@ use super::intersect_permission_profiles;
 use super::merge_vfs_policy_with_additional_permissions;
 use super::normalize_additional_permissions;
 use super::sandbox_policy_with_additional_permissions;
-use super::should_require_platform_sandbox;
 use crate::exec::SandboxType;
 use crate::protocol::NetworkAccess;
 use crate::protocol::ReadOnlyAccess;
@@ -37,70 +36,19 @@ use std::fs::canonicalize;
 use tempfile::TempDir;
 
 #[test]
-fn root_access_defaults_to_no_sandbox_without_network_requirements() {
+fn initial_sandbox_respects_filesystem_network_and_managed_network_requirements() {
     let manager = SandboxManager::new();
-    let sandbox = manager.select_initial(
-        &VfsPolicy::unrestricted(),
-        SocketPolicy::Enabled,
-        SandboxablePreference::Auto,
-        false,
-    );
-    assert_eq!(sandbox, SandboxType::None);
-}
-
-#[test]
-fn root_access_uses_platform_sandbox_with_network_requirements() {
-    let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox();
-    let sandbox = manager.select_initial(
-        &VfsPolicy::unrestricted(),
-        SocketPolicy::Enabled,
-        SandboxablePreference::Auto,
-        true,
-    );
-    assert_eq!(sandbox, expected);
-}
-
-#[test]
-fn restricted_file_system_uses_platform_sandbox_without_managed_network() {
-    let manager = SandboxManager::new();
-    let expected = crate::safety::get_platform_sandbox();
-    let sandbox = manager.select_initial(
-        &VfsPolicy::restricted(vec![VfsEntry {
-            path: VfsPath::Special {
-                value: VfsSpecialPath::Root,
-            },
-            access: VfsAccessMode::Read,
-        }]),
-        SocketPolicy::Enabled,
-        SandboxablePreference::Auto,
-        false,
-    );
-    assert_eq!(sandbox, expected);
-}
-
-#[test]
-fn full_access_restricted_policy_skips_platform_sandbox_when_network_is_enabled() {
-    let policy = VfsPolicy::restricted(vec![VfsEntry {
+    let root_write = VfsPolicy::restricted(vec![VfsEntry {
         path: VfsPath::Special {
             value: VfsSpecialPath::Root,
         },
         access: VfsAccessMode::Write,
     }]);
-
-    assert_eq!(
-        should_require_platform_sandbox(&policy, SocketPolicy::Enabled, false),
-        false
-    );
-}
-
-#[test]
-fn root_write_policy_with_carveouts_still_uses_platform_sandbox() {
     let blocked = AbsolutePathBuf::resolve_path_against_base(
         "blocked",
         std::env::current_dir().expect("current dir"),
     );
-    let policy = VfsPolicy::restricted(vec![
+    let carveout = VfsPolicy::restricted(vec![
         VfsEntry {
             path: VfsPath::Special {
                 value: VfsSpecialPath::Root,
@@ -113,25 +61,42 @@ fn root_write_policy_with_carveouts_still_uses_platform_sandbox() {
         },
     ]);
 
-    assert_eq!(
-        should_require_platform_sandbox(&policy, SocketPolicy::Enabled, false),
-        true
-    );
-}
-
-#[test]
-fn full_access_restricted_policy_still_uses_platform_sandbox_for_restricted_network() {
-    let policy = VfsPolicy::restricted(vec![VfsEntry {
+    let read_only = VfsPolicy::restricted(vec![VfsEntry {
         path: VfsPath::Special {
             value: VfsSpecialPath::Root,
         },
-        access: VfsAccessMode::Write,
+        access: VfsAccessMode::Read,
     }]);
-
-    assert_eq!(
-        should_require_platform_sandbox(&policy, SocketPolicy::Restricted, false),
-        true
-    );
+    let platform = crate::safety::get_platform_sandbox();
+    for (policy, network, managed, expected) in [
+        (
+            VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
+            false,
+            SandboxType::None,
+        ),
+        (
+            VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
+            true,
+            platform,
+        ),
+        (read_only, SocketPolicy::Enabled, false, platform),
+        (
+            root_write.clone(),
+            SocketPolicy::Enabled,
+            false,
+            SandboxType::None,
+        ),
+        (root_write, SocketPolicy::Restricted, false, platform),
+        (carveout, SocketPolicy::Enabled, false, platform),
+    ] {
+        assert_eq!(
+            manager.select_initial(&policy, network, SandboxablePreference::Auto, managed),
+            expected,
+            "policy: {policy:?}, network: {network:?}, managed: {managed}"
+        );
+    }
 }
 
 #[test]

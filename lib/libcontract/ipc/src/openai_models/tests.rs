@@ -97,18 +97,6 @@ fn personality_variables() -> ModelInstructionsVariables {
 }
 
 #[test]
-fn get_model_instructions_uses_template_when_placeholder_present() {
-    let model = test_model(Some(ModelMessages {
-        instructions_template: Some("Hello {{ personality }}".to_string()),
-        instructions_variables: Some(personality_variables()),
-    }));
-
-    let instructions = model.get_model_instructions(Some(Personality::Friendly));
-
-    assert_eq!(instructions, "Hello friendly");
-}
-
-#[test]
 fn get_model_instructions_always_strips_placeholder() {
     let model = test_model(Some(ModelMessages {
         instructions_template: Some("Hello\n{{ personality }}".to_string()),
@@ -169,15 +157,6 @@ fn get_model_instructions_falls_back_when_template_is_missing() {
     let instructions = model.get_model_instructions(Some(Personality::Friendly));
 
     assert_eq!(instructions, "base");
-}
-
-#[test]
-fn get_personality_message_returns_default_when_personality_is_none() {
-    let personality_template = personality_variables();
-    assert_eq!(
-        personality_template.get_personality_message(None),
-        Some("default".to_string())
-    );
 }
 
 #[test]

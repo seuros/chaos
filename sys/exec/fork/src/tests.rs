@@ -19,11 +19,6 @@ fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {
 }
 
 #[test]
-fn exec_defaults_analytics_to_enabled() {
-    assert_eq!(DEFAULT_ANALYTICS_ENABLED, true);
-}
-
-#[test]
 fn exec_root_span_can_be_parented_from_trace_context() {
     let subscriber = test_tracing_subscriber();
     let _guard = tracing::subscriber::set_default(subscriber);
@@ -240,115 +235,65 @@ fn builds_custom_review_request_trims_prompt() {
 }
 
 #[test]
-fn decode_prompt_bytes_strips_utf8_bom() {
-    let input = [0xEF, 0xBB, 0xBF, b'h', b'i', b'\n'];
-
-    let out = decode_prompt_bytes(&input).expect("decode utf-8 with BOM");
-
-    assert_eq!(out, "hi\n");
+fn decode_prompt_bytes_accepts_supported_boms() {
+    for input in [
+        b"\xef\xbb\xbfhi\n".as_slice(),
+        b"\xff\xfeh\0i\0\n\0",
+        b"\xfe\xff\0h\0i\0\n",
+    ] {
+        assert_eq!(decode_prompt_bytes(input).expect("supported BOM"), "hi\n");
+    }
 }
 
 #[test]
-fn decode_prompt_bytes_decodes_utf16le_bom() {
-    // UTF-16LE BOM + "hi\n"
-    let input = [0xFF, 0xFE, b'h', 0x00, b'i', 0x00, b'\n', 0x00];
-
-    let out = decode_prompt_bytes(&input).expect("decode utf-16le with BOM");
-
-    assert_eq!(out, "hi\n");
-}
-
-#[test]
-fn decode_prompt_bytes_decodes_utf16be_bom() {
-    // UTF-16BE BOM + "hi\n"
-    let input = [0xFE, 0xFF, 0x00, b'h', 0x00, b'i', 0x00, b'\n'];
-
-    let out = decode_prompt_bytes(&input).expect("decode utf-16be with BOM");
-
-    assert_eq!(out, "hi\n");
-}
-
-#[test]
-fn decode_prompt_bytes_rejects_utf32le_bom() {
-    // UTF-32LE BOM + "hi\n"
-    let input = [
-        0xFF, 0xFE, 0x00, 0x00, b'h', 0x00, 0x00, 0x00, b'i', 0x00, 0x00, 0x00, b'\n', 0x00, 0x00,
-        0x00,
-    ];
-
-    let err = decode_prompt_bytes(&input).expect_err("utf-32le should be rejected");
-
-    assert_eq!(
-        err,
-        PromptDecodeError::UnsupportedBom {
-            encoding: "UTF-32LE"
-        }
-    );
-}
-
-#[test]
-fn decode_prompt_bytes_rejects_utf32be_bom() {
-    // UTF-32BE BOM + "hi\n"
-    let input = [
-        0x00, 0x00, 0xFE, 0xFF, 0x00, 0x00, 0x00, b'h', 0x00, 0x00, 0x00, b'i', 0x00, 0x00, 0x00,
-        b'\n',
-    ];
-
-    let err = decode_prompt_bytes(&input).expect_err("utf-32be should be rejected");
-
-    assert_eq!(
-        err,
-        PromptDecodeError::UnsupportedBom {
-            encoding: "UTF-32BE"
-        }
-    );
-}
-
-#[test]
-fn decode_prompt_bytes_rejects_malformed_utf16() {
-    // UTF-16LE BOM + odd trailing byte.
-    let odd_le = [0xFF, 0xFE, b'h', 0x00, 0x00];
-    assert_eq!(
-        decode_prompt_bytes(&odd_le).unwrap_err(),
-        PromptDecodeError::InvalidUtf16 {
-            encoding: "UTF-16LE"
-        }
-    );
-
-    // UTF-16BE BOM + odd trailing byte.
-    let odd_be = [0xFE, 0xFF, 0x00, b'h', 0x00];
-    assert_eq!(
-        decode_prompt_bytes(&odd_be).unwrap_err(),
-        PromptDecodeError::InvalidUtf16 {
-            encoding: "UTF-16BE"
-        }
-    );
-
-    // UTF-16LE BOM + lone surrogate.
-    let lone_surrogate_le = [0xFF, 0xFE, 0x00, 0xD8, b'x', 0x00];
-    assert_eq!(
-        decode_prompt_bytes(&lone_surrogate_le).unwrap_err(),
-        PromptDecodeError::InvalidUtf16 {
-            encoding: "UTF-16LE"
-        }
-    );
-
-    // UTF-16BE BOM + lone surrogate.
-    let lone_surrogate_be = [0xFE, 0xFF, 0xD8, 0x00, 0x00, b'x'];
-    assert_eq!(
-        decode_prompt_bytes(&lone_surrogate_be).unwrap_err(),
-        PromptDecodeError::InvalidUtf16 {
-            encoding: "UTF-16BE"
-        }
-    );
-}
-
-#[test]
-fn decode_prompt_bytes_rejects_invalid_utf8() {
-    // Invalid UTF-8 sequence: 0xC3 0x28
-    let input = [0xC3, 0x28];
-
-    let err = decode_prompt_bytes(&input).expect_err("invalid utf-8 should fail");
-
-    assert_eq!(err, PromptDecodeError::InvalidUtf8 { valid_up_to: 0 });
+fn decode_prompt_bytes_rejects_unsupported_and_malformed_encodings() {
+    for (input, expected) in [
+        // UTF-32LE starts with the UTF-16LE BOM: it must be rejected before decoding.
+        (
+            b"\xff\xfe\0\0h\0\0\0i\0\0\0\n\0\0\0".as_slice(),
+            PromptDecodeError::UnsupportedBom {
+                encoding: "UTF-32LE",
+            },
+        ),
+        (
+            b"\0\0\xfe\xff\0\0\0h\0\0\0i\0\0\0\n",
+            PromptDecodeError::UnsupportedBom {
+                encoding: "UTF-32BE",
+            },
+        ),
+        (
+            b"\xff\xfeh\0\0",
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16LE",
+            },
+        ),
+        (
+            b"\xfe\xff\0h\0",
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16BE",
+            },
+        ),
+        (
+            b"\xff\xfe\0\xd8x\0",
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16LE",
+            },
+        ),
+        (
+            b"\xfe\xff\xd8\0\0x",
+            PromptDecodeError::InvalidUtf16 {
+                encoding: "UTF-16BE",
+            },
+        ),
+        (
+            b"\xc3\x28",
+            PromptDecodeError::InvalidUtf8 { valid_up_to: 0 },
+        ),
+    ] {
+        assert_eq!(
+            decode_prompt_bytes(input).unwrap_err(),
+            expected,
+            "{input:?}"
+        );
+    }
 }

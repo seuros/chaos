@@ -288,17 +288,17 @@ async fn failed_execution_keeps_public_progress_and_exact_replay() {
 }
 
 #[tokio::test]
-async fn exact_start_replay_recovers_the_persisted_run() {
+async fn start_replay_recovers_exact_request_and_rejects_content_or_scope_changes() {
     let db = database().await;
     let orchestrator = ReviewerOrchestrator::new(db.clone(), FakeBoundary::default());
     let selected = selection(0, 'a', 'b');
     let created = orchestrator
-        .start_run(OWNER, None, vec![selected.clone()])
+        .start_run(OWNER, Some("review-round-1"), vec![selected.clone()])
         .await
         .unwrap();
 
     let replayed = orchestrator
-        .start_run(OWNER, None, vec![selected])
+        .start_run(OWNER, Some("review-round-1"), vec![selected.clone()])
         .await
         .unwrap();
 
@@ -311,6 +311,27 @@ async fn exact_start_replay_recovers_the_persisted_run() {
             .len(),
         1
     );
+
+    let mut changed = selected.clone();
+    changed.prompt.push_str(" with changed criteria");
+    for (scope, request, expected) in [
+        (
+            "review-round-1",
+            changed,
+            "reused with a different review request",
+        ),
+        (
+            "review-round-2",
+            selected,
+            "reused with a different review scope",
+        ),
+    ] {
+        let error = orchestrator
+            .start_run(OWNER, Some(scope), vec![request])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains(expected), "{error:#}");
+    }
 }
 
 #[tokio::test]
@@ -337,52 +358,6 @@ async fn independent_runs_share_one_scoped_attestation_subject() {
     assert_ne!(first.id, second.id);
     assert_ne!(first.review_run_subject, second.review_run_subject);
     assert_eq!(first.attestation_subject, second.attestation_subject);
-}
-
-#[tokio::test]
-async fn start_replay_rejects_changed_content() {
-    let db = database().await;
-    let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
-    let selected = selection(0, 'a', 'b');
-    orchestrator
-        .start_run(OWNER, None, vec![selected.clone()])
-        .await
-        .unwrap();
-    let mut changed = selected;
-    changed.prompt.push_str(" with changed criteria");
-
-    let error = orchestrator
-        .start_run(OWNER, None, vec![changed])
-        .await
-        .unwrap_err();
-
-    assert!(
-        error
-            .to_string()
-            .contains("reused with a different review request")
-    );
-}
-
-#[tokio::test]
-async fn start_replay_rejects_changed_review_scope() {
-    let db = database().await;
-    let orchestrator = ReviewerOrchestrator::new(db, FakeBoundary::default());
-    let selected = selection(0, 'a', 'b');
-    orchestrator
-        .start_run(OWNER, Some("review-round-1"), vec![selected.clone()])
-        .await
-        .unwrap();
-
-    let error = orchestrator
-        .start_run(OWNER, Some("review-round-2"), vec![selected])
-        .await
-        .unwrap_err();
-
-    assert!(
-        error
-            .to_string()
-            .contains("reused with a different review scope")
-    );
 }
 
 #[tokio::test]

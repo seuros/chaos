@@ -20,114 +20,48 @@ fn network_approval_context_requires_ask_from_decider() {
 
 #[test]
 fn network_approval_context_maps_http_https_and_socks_protocols() {
-    let http_payload = NetworkPolicyDecisionPayload {
-        decision: NetworkPolicyDecision::Ask,
-        source: NetworkDecisionSource::Decider,
-        protocol: Some(NetworkApprovalProtocol::Http),
-        host: Some("example.com".to_string()),
-        reason: Some("not_allowed".to_string()),
-        port: Some(80),
-    };
-    assert_eq!(
-        network_approval_context_from_payload(&http_payload),
-        Some(NetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: NetworkApprovalProtocol::Http,
-        })
-    );
-
-    let https_payload = NetworkPolicyDecisionPayload {
-        decision: NetworkPolicyDecision::Ask,
-        source: NetworkDecisionSource::Decider,
-        protocol: Some(NetworkApprovalProtocol::Https),
-        host: Some("example.com".to_string()),
-        reason: Some("not_allowed".to_string()),
-        port: Some(443),
-    };
-    assert_eq!(
-        network_approval_context_from_payload(&https_payload),
-        Some(NetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: NetworkApprovalProtocol::Https,
-        })
-    );
-
-    let http_connect_payload = NetworkPolicyDecisionPayload {
-        decision: NetworkPolicyDecision::Ask,
-        source: NetworkDecisionSource::Decider,
-        protocol: Some(NetworkApprovalProtocol::Https),
-        host: Some("example.com".to_string()),
-        reason: Some("not_allowed".to_string()),
-        port: Some(443),
-    };
-    assert_eq!(
-        network_approval_context_from_payload(&http_connect_payload),
-        Some(NetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: NetworkApprovalProtocol::Https,
-        })
-    );
-
-    let socks5_tcp_payload = NetworkPolicyDecisionPayload {
-        decision: NetworkPolicyDecision::Ask,
-        source: NetworkDecisionSource::Decider,
-        protocol: Some(NetworkApprovalProtocol::Socks5Tcp),
-        host: Some("example.com".to_string()),
-        reason: Some("not_allowed".to_string()),
-        port: Some(443),
-    };
-    assert_eq!(
-        network_approval_context_from_payload(&socks5_tcp_payload),
-        Some(NetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: NetworkApprovalProtocol::Socks5Tcp,
-        })
-    );
-
-    let socks5_udp_payload = NetworkPolicyDecisionPayload {
-        decision: NetworkPolicyDecision::Ask,
-        source: NetworkDecisionSource::Decider,
-        protocol: Some(NetworkApprovalProtocol::Socks5Udp),
-        host: Some("example.com".to_string()),
-        reason: Some("not_allowed".to_string()),
-        port: Some(443),
-    };
-    assert_eq!(
-        network_approval_context_from_payload(&socks5_udp_payload),
-        Some(NetworkApprovalContext {
-            host: "example.com".to_string(),
-            protocol: NetworkApprovalProtocol::Socks5Udp,
-        })
-    );
+    for (protocol, port) in [
+        (NetworkApprovalProtocol::Http, 80),
+        (NetworkApprovalProtocol::Https, 443),
+        (NetworkApprovalProtocol::Socks5Tcp, 443),
+        (NetworkApprovalProtocol::Socks5Udp, 443),
+    ] {
+        let payload = NetworkPolicyDecisionPayload {
+            decision: NetworkPolicyDecision::Ask,
+            source: NetworkDecisionSource::Decider,
+            protocol: Some(protocol),
+            host: Some("example.com".to_string()),
+            reason: Some("not_allowed".to_string()),
+            port: Some(port),
+        };
+        assert_eq!(
+            network_approval_context_from_payload(&payload),
+            Some(NetworkApprovalContext {
+                host: "example.com".to_string(),
+                protocol,
+            })
+        );
+    }
 }
 
 #[test]
 fn network_policy_decision_payload_deserializes_proxy_protocol_aliases() {
-    let payload: NetworkPolicyDecisionPayload = serde_json::from_str(
-        r#"{
-                "decision":"ask",
-                "source":"decider",
-                "protocol":"https_connect",
-                "host":"example.com",
-                "reason":"not_allowed",
-                "port":443
-            }"#,
-    )
-    .expect("payload should deserialize");
-    assert_eq!(payload.protocol, Some(NetworkApprovalProtocol::Https));
-
-    let payload: NetworkPolicyDecisionPayload = serde_json::from_str(
-        r#"{
-                "decision":"ask",
-                "source":"decider",
-                "protocol":"http-connect",
-                "host":"example.com",
-                "reason":"not_allowed",
-                "port":443
-            }"#,
-    )
-    .expect("payload should deserialize");
-    assert_eq!(payload.protocol, Some(NetworkApprovalProtocol::Https));
+    for alias in ["https_connect", "http-connect"] {
+        let payload: NetworkPolicyDecisionPayload = serde_json::from_value(serde_json::json!({
+            "decision": "ask",
+            "source": "decider",
+            "protocol": alias,
+            "host": "example.com",
+            "reason": "not_allowed",
+            "port": 443
+        }))
+        .expect("payload should deserialize");
+        assert_eq!(
+            payload.protocol,
+            Some(NetworkApprovalProtocol::Https),
+            "{alias}"
+        );
+    }
 }
 
 #[test]

@@ -1276,62 +1276,32 @@ fn derive_requested_execpolicy_amendment_for_test(
 }
 
 #[test]
-fn derive_requested_execpolicy_amendment_returns_none_for_missing_prefix_rule() {
+fn derive_requested_execpolicy_amendment_rejects_missing_or_unsafe_prefixes() {
     assert_eq!(
-        None,
-        derive_requested_execpolicy_amendment_for_test(None, &[])
+        derive_requested_execpolicy_amendment_for_test(None, &[]),
+        None
     );
-}
-
-#[test]
-fn derive_requested_execpolicy_amendment_returns_none_for_empty_prefix_rule() {
-    assert_eq!(
-        None,
-        derive_requested_execpolicy_amendment_for_test(Some(&Vec::new()), &[])
-    );
-}
-
-#[test]
-fn derive_requested_execpolicy_amendment_returns_none_for_exact_banned_prefix_rule() {
-    assert_eq!(
-        None,
-        derive_requested_execpolicy_amendment_for_test(
-            Some(&vec!["python".to_string(), "-c".to_string()]),
-            &[],
-        )
-    );
-}
-
-#[test]
-fn derive_requested_execpolicy_amendment_returns_none_for_windows_and_pypy_variants() {
-    for prefix_rule in [
-        vec!["py".to_string()],
-        vec!["py".to_string(), "-3".to_string()],
-        vec!["pythonw".to_string()],
-        vec!["pyw".to_string()],
-        vec!["pypy".to_string()],
-        vec!["pypy3".to_string()],
+    for prefix in [
+        vec![],
+        vec!["python", "-c"],
+        vec!["py"],
+        vec!["py", "-3"],
+        vec!["pythonw"],
+        vec!["pyw"],
+        vec!["pypy"],
+        vec!["pypy3"],
+        vec!["bash", "-lc"],
+        vec!["sh", "-c"],
+        vec!["sh", "-lc"],
+        vec!["zsh", "-lc"],
+        vec!["/bin/bash", "-lc"],
+        vec!["/bin/zsh", "-lc"],
     ] {
+        let prefix: Vec<String> = prefix.into_iter().map(str::to_string).collect();
         assert_eq!(
+            derive_requested_execpolicy_amendment_for_test(Some(&prefix), &[]),
             None,
-            derive_requested_execpolicy_amendment_for_test(Some(&prefix_rule), &[])
-        );
-    }
-}
-
-#[test]
-fn derive_requested_execpolicy_amendment_returns_none_for_shell_variants() {
-    for prefix_rule in [
-        vec!["bash".to_string(), "-lc".to_string()],
-        vec!["sh".to_string(), "-c".to_string()],
-        vec!["sh".to_string(), "-lc".to_string()],
-        vec!["zsh".to_string(), "-lc".to_string()],
-        vec!["/bin/bash".to_string(), "-lc".to_string()],
-        vec!["/bin/zsh".to_string(), "-lc".to_string()],
-    ] {
-        assert_eq!(
-            None,
-            derive_requested_execpolicy_amendment_for_test(Some(&prefix_rule), &[])
+            "prefix={prefix:?}"
         );
     }
 }

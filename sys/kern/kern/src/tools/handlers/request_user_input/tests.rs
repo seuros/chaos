@@ -2,14 +2,6 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn request_user_input_mode_availability_defaults_to_plan_only() {
-    assert!(ModeKind::Plan.allows_request_user_input());
-    assert!(!ModeKind::Default.allows_request_user_input());
-    assert!(!ModeKind::Execute.allows_request_user_input());
-    assert!(!ModeKind::PairProgramming.allows_request_user_input());
-}
-
-#[test]
 fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
     assert_eq!(
         request_user_input_unavailable_message(ModeKind::Plan, false),

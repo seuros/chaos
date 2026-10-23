@@ -51,42 +51,27 @@ async fn test_constructor_uses_fixed_capabilities() {
 }
 
 #[test]
-fn bottom_anchored_viewport_tracks_terminal_growth() {
-    let viewport = ratatui::layout::Rect::new(0, 18, 80, 6);
-    let resized = super::bottom_anchored_viewport_after_resize(
-        viewport,
-        ratatui::layout::Size::new(80, 24),
-        ratatui::layout::Size::new(120, 40),
-        0,
-    );
-
-    assert_eq!(resized, Some(ratatui::layout::Rect::new(0, 34, 80, 6)));
-}
-
-#[test]
-fn bottom_anchored_viewport_tracks_terminal_shrink() {
-    let viewport = ratatui::layout::Rect::new(0, 18, 80, 6);
-    let resized = super::bottom_anchored_viewport_after_resize(
-        viewport,
-        ratatui::layout::Size::new(80, 24),
-        ratatui::layout::Size::new(80, 12),
-        0,
-    );
-
-    assert_eq!(resized, Some(ratatui::layout::Rect::new(0, 6, 80, 6)));
-}
-
-#[test]
-fn non_bottom_anchored_viewport_keeps_cursor_heuristic() {
-    let viewport = ratatui::layout::Rect::new(0, 10, 80, 6);
-    let resized = super::bottom_anchored_viewport_after_resize(
-        viewport,
-        ratatui::layout::Size::new(80, 24),
-        ratatui::layout::Size::new(120, 40),
-        0,
-    );
-
-    assert_eq!(resized, None);
+fn bottom_anchored_viewport_tracks_resize_without_repositioning_other_views() {
+    use ratatui::layout::{Rect, Size};
+    for (viewport, terminal, expected) in [
+        (
+            Rect::new(0, 18, 80, 6),
+            Size::new(120, 40),
+            Some(Rect::new(0, 34, 80, 6)),
+        ),
+        (
+            Rect::new(0, 18, 80, 6),
+            Size::new(80, 12),
+            Some(Rect::new(0, 6, 80, 6)),
+        ),
+        (Rect::new(0, 10, 80, 6), Size::new(120, 40), None),
+    ] {
+        assert_eq!(
+            super::bottom_anchored_viewport_after_resize(viewport, Size::new(80, 24), terminal, 0),
+            expected,
+            "viewport {viewport:?}, terminal {terminal:?}"
+        );
+    }
 }
 
 #[test]

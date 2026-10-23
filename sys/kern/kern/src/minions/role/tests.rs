@@ -331,25 +331,14 @@ async fn apply_role_returns_unavailable_for_invalid_user_role_toml() {
 }
 
 #[tokio::test]
-async fn apply_role_returns_error_for_legacy_explorer_role() {
+async fn apply_role_rejects_legacy_role_names() {
     let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
-
-    let err = apply_role_to_config(&mut config, Some("explorer"))
-        .await
-        .expect_err("legacy explorer role should fail");
-
-    assert_eq!(err, "unknown agent_type 'explorer'");
-}
-
-#[tokio::test]
-async fn apply_role_returns_error_for_legacy_worker_role() {
-    let (_home, mut config) = test_config_with_cli_overrides(Vec::new()).await;
-
-    let err = apply_role_to_config(&mut config, Some("worker"))
-        .await
-        .expect_err("legacy worker role should fail");
-
-    assert_eq!(err, "unknown agent_type 'worker'");
+    for role in ["explorer", "worker"] {
+        let err = apply_role_to_config(&mut config, Some(role))
+            .await
+            .expect_err("legacy role should fail");
+        assert_eq!(err, format!("unknown agent_type '{role}'"));
+    }
 }
 
 #[tokio::test]
@@ -892,60 +881,43 @@ fn spawn_tool_spec_lists_user_defined_roles_before_built_ins() {
 }
 
 #[test]
-fn spawn_tool_spec_marks_role_locked_model_and_reasoning_effort() {
+fn spawn_tool_spec_marks_locked_model_and_reasoning_effort_without_leaking_instructions() {
     let tempdir = TempDir::new().expect("create temp dir");
-    let role_path = tempdir.path().join("researcher.toml");
-    fs::write(
-        &role_path,
-        "name = \"researcher\"\n\
-         developer_instructions = \"Research carefully\"\n\
-         model = \"gpt-5\"\n\
-         model_reasoning_effort = \"high\"\n",
-    )
-    .expect("write role config");
-    let user_defined_roles = BTreeMap::from([(
-        "researcher".to_string(),
-        AgentRoleConfig {
-            description: Some("Research carefully.".to_string()),
-            source: Some(AgentRoleSource::File(role_path)),
-            nickname_candidates: None,
-            topics: None,
-            catchphrases: None,
-        },
-    )]);
+    for (role, body, label, instruction) in [
+        (
+            "researcher",
+            "model = \"gpt-5\"\nmodel_reasoning_effort = \"high\"\n",
+            "researcher [model=gpt-5, reasoning_effort=high, locked]",
+            "Research carefully",
+        ),
+        (
+            "reviewer",
+            "model_reasoning_effort = \"medium\"\n",
+            "reviewer [reasoning_effort=medium, locked]",
+            "Review carefully",
+        ),
+    ] {
+        let role_path = tempdir.path().join(format!("{role}.toml"));
+        fs::write(
+            &role_path,
+            format!("name = \"{role}\"\ndeveloper_instructions = \"{instruction}\"\n{body}"),
+        )
+        .expect("write role config");
+        let user_defined_roles = BTreeMap::from([(
+            role.to_string(),
+            AgentRoleConfig {
+                description: Some(format!("{instruction}.")),
+                source: Some(AgentRoleSource::File(role_path)),
+                nickname_candidates: None,
+                topics: None,
+                catchphrases: None,
+            },
+        )]);
 
-    let spec = spawn_tool_spec::build(&user_defined_roles);
-
-    assert!(spec.contains("researcher [model=gpt-5, reasoning_effort=high, locked]"));
-    assert!(!spec.contains("Research carefully"));
-}
-
-#[test]
-fn spawn_tool_spec_marks_role_locked_reasoning_effort_only() {
-    let tempdir = TempDir::new().expect("create temp dir");
-    let role_path = tempdir.path().join("reviewer.toml");
-    fs::write(
-        &role_path,
-        "name = \"reviewer\"\n\
-         developer_instructions = \"Review carefully\"\n\
-         model_reasoning_effort = \"medium\"\n",
-    )
-    .expect("write role config");
-    let user_defined_roles = BTreeMap::from([(
-        "reviewer".to_string(),
-        AgentRoleConfig {
-            description: Some("Review carefully.".to_string()),
-            source: Some(AgentRoleSource::File(role_path)),
-            nickname_candidates: None,
-            topics: None,
-            catchphrases: None,
-        },
-    )]);
-
-    let spec = spawn_tool_spec::build(&user_defined_roles);
-
-    assert!(spec.contains("reviewer [reasoning_effort=medium, locked]"));
-    assert!(!spec.contains("Review carefully"));
+        let spec = spawn_tool_spec::build(&user_defined_roles);
+        assert!(spec.contains(label), "{role}: {spec}");
+        assert!(!spec.contains(instruction), "{role}: {spec}");
+    }
 }
 
 #[test]

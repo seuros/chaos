@@ -120,43 +120,31 @@ fn write_executable(path: &Path, contents: &str) {
 }
 
 #[tokio::test]
-async fn review_diff_prefetch_disables_external_diff_helpers() {
-    let repo = repo_with_reviewable_commit(None);
-    let marker = repo.cwd.join("external-diff-ran");
-    let marker_arg = shell_quote(&marker.display().to_string());
-    let helper = repo.cwd.join("external-diff-helper.sh");
-    write_executable(
-        &helper,
-        &format!("#!/bin/sh\necho external-diff >> {marker_arg}\n"),
-    );
-    git(
-        &repo.cwd,
-        &["config", "diff.external", &helper.display().to_string()],
-    );
-
-    assert_prefetches_do_not_run_helper(&repo, &marker).await;
-}
-
-#[tokio::test]
-async fn review_diff_prefetch_disables_textconv_helpers() {
-    let repo = repo_with_reviewable_commit(Some("tracked.txt diff=reviewtextconv\n"));
-    let marker = repo.cwd.join("textconv-ran");
-    let marker_arg = shell_quote(&marker.display().to_string());
-    let helper = repo.cwd.join("textconv-helper.sh");
-    write_executable(
-        &helper,
-        &format!("#!/bin/sh\necho textconv >> {marker_arg}\ncat \"$1\"\n"),
-    );
-    git(
-        &repo.cwd,
-        &[
-            "config",
+async fn review_diff_prefetch_disables_external_and_textconv_helpers() {
+    for (attributes, setting, label, extra) in [
+        (None, "diff.external", "external-diff", ""),
+        (
+            Some("tracked.txt diff=reviewtextconv\n"),
             "diff.reviewtextconv.textconv",
-            &helper.display().to_string(),
-        ],
-    );
+            "textconv",
+            "cat \"$1\"\n",
+        ),
+    ] {
+        let repo = repo_with_reviewable_commit(attributes);
+        let marker = repo.cwd.join(format!("{label}-ran"));
+        let marker_arg = shell_quote(&marker.display().to_string());
+        let helper = repo.cwd.join(format!("{label}-helper.sh"));
+        write_executable(
+            &helper,
+            &format!("#!/bin/sh\necho {label} >> {marker_arg}\n{extra}"),
+        );
+        git(
+            &repo.cwd,
+            &["config", setting, &helper.display().to_string()],
+        );
 
-    assert_prefetches_do_not_run_helper(&repo, &marker).await;
+        assert_prefetches_do_not_run_helper(&repo, &marker).await;
+    }
 }
 
 #[tokio::test]

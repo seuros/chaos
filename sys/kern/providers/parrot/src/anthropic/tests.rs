@@ -86,77 +86,52 @@ fn test_provider() -> Provider {
 }
 
 #[test]
-fn build_headers_uses_x_api_key_for_api_key_auth() {
-    let adapter = AnthropicAdapter::new(
-        test_provider(),
-        AnthropicAuth::ApiKey("sk-ant".to_string()),
-        None,
-    );
-
-    let headers = adapter.build_headers().expect("headers should build");
-
-    assert_eq!(
-        headers
-            .get("x-api-key")
-            .and_then(|value| value.to_str().ok()),
-        Some("sk-ant")
-    );
-    assert!(headers.get(AUTHORIZATION).is_none());
+fn build_headers_selects_one_authentication_scheme() {
+    for (auth, api_key, bearer) in [
+        (
+            AnthropicAuth::ApiKey("sk-ant".to_string()),
+            Some("sk-ant"),
+            None,
+        ),
+        (
+            AnthropicAuth::BearerToken("tok-ant".to_string()),
+            None,
+            Some("Bearer tok-ant"),
+        ),
+    ] {
+        let adapter = AnthropicAdapter::new(test_provider(), auth, None);
+        let headers = adapter.build_headers().expect("headers should build");
+        assert_eq!(
+            headers
+                .get("x-api-key")
+                .and_then(|value| value.to_str().ok()),
+            api_key,
+        );
+        assert_eq!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            bearer,
+        );
+    }
 }
 
 #[test]
-fn build_headers_uses_bearer_for_bearer_auth() {
-    let adapter = AnthropicAdapter::new(
-        test_provider(),
-        AnthropicAuth::BearerToken("tok-ant".to_string()),
-        None,
-    );
-
-    let headers = adapter.build_headers().expect("headers should build");
-
-    assert_eq!(
-        headers
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer tok-ant")
-    );
-    assert!(headers.get("x-api-key").is_none());
-}
-
-#[test]
-fn build_request_body_enables_automatic_prompt_caching() {
-    let request = test_request();
-
-    let body = build_request_body(&request, "claude-test").expect("request should build");
-
-    assert_eq!(body["cache_control"], json!({"type": "ephemeral"}));
-}
-
-#[test]
-fn build_request_body_supports_one_hour_cache_ttl() {
-    let mut request = test_request();
-    request
-        .extensions
-        .insert(CACHE_TTL_EXTENSION.to_string(), json!("1h"));
-
-    let body = build_request_body(&request, "claude-test").expect("request should build");
-
-    assert_eq!(
-        body["cache_control"],
-        json!({"type": "ephemeral", "ttl": "1h"})
-    );
-}
-
-#[test]
-fn build_request_body_can_disable_prompt_caching() {
-    let mut request = test_request();
-    request
-        .extensions
-        .insert(CACHE_TTL_EXTENSION.to_string(), json!("off"));
-
-    let body = build_request_body(&request, "claude-test").expect("request should build");
-
-    assert!(body.get("cache_control").is_none());
+fn build_request_body_applies_prompt_cache_policy() {
+    for (ttl, expected) in [
+        (None, Some(json!({"type": "ephemeral"}))),
+        (Some("1h"), Some(json!({"type": "ephemeral", "ttl": "1h"}))),
+        (Some("off"), None),
+    ] {
+        let mut request = test_request();
+        if let Some(ttl) = ttl {
+            request
+                .extensions
+                .insert(CACHE_TTL_EXTENSION.to_string(), json!(ttl));
+        }
+        let body = build_request_body(&request, "claude-test").expect("request should build");
+        assert_eq!(body.get("cache_control"), expected.as_ref(), "{ttl:?}");
+    }
 }
 
 #[tokio::test]
@@ -316,31 +291,18 @@ fn missing_or_partial_streamed_usage_is_not_a_fabricated_zero_receipt() {
 }
 
 #[test]
-fn document_content_without_name_omits_title() {
-    let content = ContentItem::Document {
-        name: None,
-        mime_type: "text/plain".to_string(),
-        text: "document body".to_string(),
-    };
-
-    let value = convert_content_item(&content).expect("document should convert");
-
-    assert_eq!(value["type"], "document");
-    assert!(value.get("title").is_none());
-    assert_eq!(value["source"]["type"], "text");
-    assert_eq!(value["source"]["media_type"], "text/plain");
-    assert_eq!(value["source"]["data"], "document body");
-}
-
-#[test]
-fn document_content_with_name_sets_title() {
-    let content = ContentItem::Document {
-        name: Some("notes.txt".to_string()),
-        mime_type: "text/plain".to_string(),
-        text: "document body".to_string(),
-    };
-
-    let value = convert_content_item(&content).expect("document should convert");
-
-    assert_eq!(value["title"], "notes.txt");
+fn document_content_preserves_source_and_optional_title() {
+    for name in [None, Some("notes.txt")] {
+        let content = ContentItem::Document {
+            name: name.map(str::to_string),
+            mime_type: "text/plain".to_string(),
+            text: "document body".to_string(),
+        };
+        let value = convert_content_item(&content).expect("document should convert");
+        assert_eq!(value["type"], "document");
+        assert_eq!(value.get("title"), name.map(|name| json!(name)).as_ref());
+        assert_eq!(value["source"]["type"], "text");
+        assert_eq!(value["source"]["media_type"], "text/plain");
+        assert_eq!(value["source"]["data"], "document body");
+    }
 }

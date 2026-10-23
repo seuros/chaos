@@ -30,23 +30,22 @@ fn render_instruction_template_expands_placeholders_and_escapes_braces() {
         "area": "test",
         "file path": "docs/readme.md",
     });
-    let rendered = render_instruction_template(
-        "Review {path} in {area}. Also see {file path}. Use {{literal}}.",
-        &row,
-    );
-    assert_eq!(
-        rendered,
-        "Review src/lib.rs in test. Also see docs/readme.md. Use {literal}."
-    );
-}
-
-#[test]
-fn render_instruction_template_leaves_unknown_placeholders() {
-    let row = json!({
-        "path": "src/lib.rs",
-    });
-    let rendered = render_instruction_template("Check {path} then {missing}", &row);
-    assert_eq!(rendered, "Check src/lib.rs then {missing}");
+    for (template, expected) in [
+        (
+            "Review {path} in {area}. Also see {file path}. Use {{literal}}.",
+            "Review src/lib.rs in test. Also see docs/readme.md. Use {literal}.",
+        ),
+        (
+            "Check {path} then {missing}",
+            "Check src/lib.rs then {missing}",
+        ),
+    ] {
+        assert_eq!(
+            render_instruction_template(template, &row),
+            expected,
+            "{template}"
+        );
+    }
 }
 
 #[test]

@@ -250,45 +250,32 @@ async fn http_plain_proxy_rejects_absolute_uri_host_header_mismatch() {
 }
 
 #[test]
-fn validate_absolute_form_host_header_allows_matching_default_port() {
-    let req = Request::builder()
-        .method(Method::GET)
-        .uri("http://example.com/")
-        .header("host", "example.com")
-        .body(Body::empty())
-        .unwrap();
-
-    assert_eq!(validate_absolute_form_host_header(&req), Ok(()));
-}
-
-#[test]
-fn validate_absolute_form_host_header_rejects_mismatched_host() {
-    let req = Request::builder()
-        .method(Method::GET)
-        .uri("http://raw.githubusercontent.com/")
-        .header("host", "api.github.com")
-        .body(Body::empty())
-        .unwrap();
-
-    assert_eq!(
-        validate_absolute_form_host_header(&req),
-        Err("Host header does not match request target")
-    );
-}
-
-#[test]
-fn validate_absolute_form_host_header_rejects_missing_non_default_port() {
-    let req = Request::builder()
-        .method(Method::GET)
-        .uri("http://example.com:8080/")
-        .header("host", "example.com")
-        .body(Body::empty())
-        .unwrap();
-
-    assert_eq!(
-        validate_absolute_form_host_header(&req),
-        Err("Host header does not match request target")
-    );
+fn absolute_form_host_header_must_match_target_and_non_default_port() {
+    for (uri, host, expected) in [
+        ("http://example.com/", "example.com", Ok(())),
+        (
+            "http://raw.githubusercontent.com/",
+            "api.github.com",
+            Err("Host header does not match request target"),
+        ),
+        (
+            "http://example.com:8080/",
+            "example.com",
+            Err("Host header does not match request target"),
+        ),
+    ] {
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri(uri)
+            .header("host", host)
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            validate_absolute_form_host_header(&req),
+            expected,
+            "{uri}: {host}"
+        );
+    }
 }
 
 #[test]

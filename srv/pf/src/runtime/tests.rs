@@ -277,105 +277,33 @@ async fn host_blocked_subdomain_wildcards_exclude_apex() {
 }
 
 #[tokio::test]
-async fn host_blocked_rejects_loopback_when_local_binding_disabled() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["example.com".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("127.0.0.1", 80).await.unwrap(),
-        HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
-    );
-    assert_eq!(
-        state.host_blocked("localhost", 80).await.unwrap(),
-        HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_allows_loopback_when_explicitly_allowlisted_and_local_binding_disabled() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["localhost".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("localhost", 80).await.unwrap(),
-        HostBlockDecision::Allowed
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_allows_private_ip_literal_when_explicitly_allowlisted() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["10.0.0.1".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("10.0.0.1", 80).await.unwrap(),
-        HostBlockDecision::Allowed
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_rejects_scoped_ipv6_literal_when_not_allowlisted() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["example.com".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("fe80::1%lo0", 80).await.unwrap(),
-        HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_allows_scoped_ipv6_literal_when_explicitly_allowlisted() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["fe80::1%lo0".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("fe80::1%lo0", 80).await.unwrap(),
-        HostBlockDecision::Allowed
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_rejects_private_ip_literals_when_local_binding_disabled() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec!["example.com".to_string()],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("10.0.0.1", 80).await.unwrap(),
-        HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
-    );
-}
-
-#[tokio::test]
-async fn host_blocked_rejects_loopback_when_allowlist_empty() {
-    let state = network_proxy_state_for_policy(NetworkProxySettings {
-        allowed_domains: vec![],
-        allow_local_binding: false,
-        ..NetworkProxySettings::default()
-    });
-
-    assert_eq!(
-        state.host_blocked("127.0.0.1", 80).await.unwrap(),
-        HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
-    );
+async fn local_targets_require_an_explicit_allowlist_even_when_local_binding_is_disabled() {
+    for (allowed, host, is_allowed) in [
+        (Some("example.com"), "127.0.0.1", false),
+        (Some("example.com"), "localhost", false),
+        (Some("localhost"), "localhost", true),
+        (Some("10.0.0.1"), "10.0.0.1", true),
+        (Some("example.com"), "fe80::1%lo0", false),
+        (Some("fe80::1%lo0"), "fe80::1%lo0", true),
+        (Some("example.com"), "10.0.0.1", false),
+        (None, "127.0.0.1", false),
+    ] {
+        let state = network_proxy_state_for_policy(NetworkProxySettings {
+            allowed_domains: allowed.into_iter().map(str::to_string).collect(),
+            allow_local_binding: false,
+            ..NetworkProxySettings::default()
+        });
+        let expected = if is_allowed {
+            HostBlockDecision::Allowed
+        } else {
+            HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal)
+        };
+        assert_eq!(
+            state.host_blocked(host, 80).await.unwrap(),
+            expected,
+            "allowed={allowed:?}, host={host}"
+        );
+    }
 }
 
 #[test]
@@ -434,12 +362,30 @@ fn validate_policy_against_constraints_disallows_widening_mode() {
 }
 
 #[test]
-fn validate_policy_against_constraints_allows_narrowing_wildcard_allowlist() {
+fn managed_wildcard_allowlist_permits_narrowing_but_not_apex_expansion() {
     let constraints = NetworkProxyConstraints {
         allowed_domains: Some(vec!["*.example.com".to_string()]),
         ..NetworkProxyConstraints::default()
     };
 
+    for (pattern, permitted) in [("api.example.com", true), ("**.example.com", false)] {
+        let config = NetworkProxyConfig {
+            network: NetworkProxySettings {
+                enabled: true,
+                allowed_domains: vec![pattern.to_string()],
+                ..NetworkProxySettings::default()
+            },
+        };
+        assert_eq!(
+            validate_policy_against_constraints(&config, &constraints).is_ok(),
+            permitted,
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn managed_allowlist_rejects_all_global_wildcard_spellings() {
     let config = NetworkProxyConfig {
         network: NetworkProxySettings {
             enabled: true,
@@ -448,80 +394,16 @@ fn validate_policy_against_constraints_allows_narrowing_wildcard_allowlist() {
         },
     };
 
-    assert!(validate_policy_against_constraints(&config, &constraints).is_ok());
-}
-
-#[test]
-fn validate_policy_against_constraints_rejects_widening_wildcard_allowlist() {
-    let constraints = NetworkProxyConstraints {
-        allowed_domains: Some(vec!["*.example.com".to_string()]),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["**.example.com".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
-}
-
-#[test]
-fn validate_policy_against_constraints_rejects_global_wildcard_in_managed_allowlist() {
-    let constraints = NetworkProxyConstraints {
-        allowed_domains: Some(vec!["*".to_string()]),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["api.example.com".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
-}
-
-#[test]
-fn validate_policy_against_constraints_rejects_bracketed_global_wildcard_in_managed_allowlist() {
-    let constraints = NetworkProxyConstraints {
-        allowed_domains: Some(vec!["[*]".to_string()]),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["api.example.com".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
-}
-
-#[test]
-fn validate_policy_against_constraints_rejects_double_wildcard_bracketed_global_wildcard_in_managed_allowlist()
- {
-    let constraints = NetworkProxyConstraints {
-        allowed_domains: Some(vec!["**.[*]".to_string()]),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["api.example.com".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
+    for pattern in ["*", "[*]", "**.[*]"] {
+        let constraints = NetworkProxyConstraints {
+            allowed_domains: Some(vec![pattern.to_string()]),
+            ..NetworkProxyConstraints::default()
+        };
+        assert!(
+            validate_policy_against_constraints(&config, &constraints).is_err(),
+            "{pattern}"
+        );
+    }
 }
 
 #[test]
@@ -597,12 +479,7 @@ fn validate_policy_against_constraints_disallows_allow_local_binding_when_manage
 }
 
 #[test]
-fn validate_policy_against_constraints_disallows_allow_all_unix_sockets_without_managed_opt_in() {
-    let constraints = NetworkProxyConstraints {
-        dangerously_allow_all_unix_sockets: Some(false),
-        ..NetworkProxyConstraints::default()
-    };
-
+fn all_unix_socket_access_respects_managed_opt_in_and_allowlists() {
     let config = NetworkProxyConfig {
         network: NetworkProxySettings {
             enabled: true,
@@ -611,103 +488,28 @@ fn validate_policy_against_constraints_disallows_allow_all_unix_sockets_without_
         },
     };
 
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
-}
-
-#[test]
-fn validate_policy_against_constraints_disallows_allow_all_unix_sockets_when_allowlist_is_managed()
-{
-    let constraints = NetworkProxyConstraints {
-        allow_unix_sockets: Some(vec!["/tmp/allowed.sock".to_string()]),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            dangerously_allow_all_unix_sockets: true,
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_err());
-}
-
-#[test]
-fn validate_policy_against_constraints_allows_allow_all_unix_sockets_with_managed_opt_in() {
-    let constraints = NetworkProxyConstraints {
-        dangerously_allow_all_unix_sockets: Some(true),
-        ..NetworkProxyConstraints::default()
-    };
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            dangerously_allow_all_unix_sockets: true,
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_ok());
-}
-
-#[test]
-fn validate_policy_against_constraints_allows_allow_all_unix_sockets_when_unmanaged() {
-    let constraints = NetworkProxyConstraints::default();
-
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            dangerously_allow_all_unix_sockets: true,
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(validate_policy_against_constraints(&config, &constraints).is_ok());
-}
-
-#[test]
-fn compile_globset_is_case_insensitive() {
-    let patterns = vec!["ExAmPle.CoM".to_string()];
-    let set = compile_globset(&patterns).unwrap();
-    assert!(set.is_match("example.com"));
-    assert!(set.is_match("EXAMPLE.COM"));
-}
-
-#[test]
-fn compile_globset_excludes_apex_for_subdomain_patterns() {
-    let patterns = vec!["*.openai.com".to_string()];
-    let set = compile_globset(&patterns).unwrap();
-    assert!(set.is_match("api.openai.com"));
-    assert!(!set.is_match("openai.com"));
-    assert!(!set.is_match("evilopenai.com"));
-}
-
-#[test]
-fn compile_globset_includes_apex_for_double_wildcard_patterns() {
-    let patterns = vec!["**.openai.com".to_string()];
-    let set = compile_globset(&patterns).unwrap();
-    assert!(set.is_match("openai.com"));
-    assert!(set.is_match("api.openai.com"));
-    assert!(!set.is_match("evilopenai.com"));
-}
-
-#[test]
-fn compile_globset_rejects_global_wildcard() {
-    let patterns = vec!["*".to_string()];
-    assert!(compile_globset(&patterns).is_err());
-}
-
-#[test]
-fn compile_globset_rejects_bracketed_global_wildcard() {
-    let patterns = vec!["[*]".to_string()];
-    assert!(compile_globset(&patterns).is_err());
-}
-
-#[test]
-fn compile_globset_rejects_double_wildcard_bracketed_global_wildcard() {
-    let patterns = vec!["**.[*]".to_string()];
-    assert!(compile_globset(&patterns).is_err());
+    for (label, opt_in, allowlist, permitted) in [
+        ("managed opt-out", Some(false), None, false),
+        (
+            "managed allowlist",
+            None,
+            Some(vec!["/tmp/allowed.sock".to_string()]),
+            false,
+        ),
+        ("managed opt-in", Some(true), None, true),
+        ("unmanaged", None, None, true),
+    ] {
+        let constraints = NetworkProxyConstraints {
+            dangerously_allow_all_unix_sockets: opt_in,
+            allow_unix_sockets: allowlist,
+            ..NetworkProxyConstraints::default()
+        };
+        assert_eq!(
+            validate_policy_against_constraints(&config, &constraints).is_ok(),
+            permitted,
+            "{label}"
+        );
+    }
 }
 
 #[test]
@@ -720,63 +522,37 @@ fn compile_globset_dedupes_patterns_without_changing_behavior() {
 }
 
 #[test]
-fn compile_globset_rejects_invalid_patterns() {
-    let patterns = vec!["[".to_string()];
-    assert!(compile_globset(&patterns).is_err());
+fn compile_globset_rejects_global_wildcards_and_invalid_patterns() {
+    for pattern in ["*", "[*]", "**.[*]", "["] {
+        assert!(
+            compile_globset(&[pattern.to_string()]).is_err(),
+            "{pattern}"
+        );
+    }
 }
 
 #[test]
-fn build_config_state_rejects_global_wildcard_allowed_domains() {
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["*".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(build_config_state(config, NetworkProxyConstraints::default()).is_err());
-}
-
-#[test]
-fn build_config_state_rejects_bracketed_global_wildcard_allowed_domains() {
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["[*]".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(build_config_state(config, NetworkProxyConstraints::default()).is_err());
-}
-
-#[test]
-fn build_config_state_rejects_global_wildcard_denied_domains() {
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["example.com".to_string()],
-            denied_domains: vec!["*".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(build_config_state(config, NetworkProxyConstraints::default()).is_err());
-}
-
-#[test]
-fn build_config_state_rejects_bracketed_global_wildcard_denied_domains() {
-    let config = NetworkProxyConfig {
-        network: NetworkProxySettings {
-            enabled: true,
-            allowed_domains: vec!["example.com".to_string()],
-            denied_domains: vec!["[*]".to_string()],
-            ..NetworkProxySettings::default()
-        },
-    };
-
-    assert!(build_config_state(config, NetworkProxyConstraints::default()).is_err());
+fn build_config_state_rejects_global_wildcards_in_both_domain_lists() {
+    for pattern in ["*", "[*]"] {
+        for denied in [false, true] {
+            let config = NetworkProxyConfig {
+                network: NetworkProxySettings {
+                    enabled: true,
+                    allowed_domains: vec![if denied { "example.com" } else { pattern }.to_string()],
+                    denied_domains: if denied {
+                        vec![pattern.to_string()]
+                    } else {
+                        vec![]
+                    },
+                    ..NetworkProxySettings::default()
+                },
+            };
+            assert!(
+                build_config_state(config, NetworkProxyConstraints::default()).is_err(),
+                "{pattern}, denied={denied}"
+            );
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]

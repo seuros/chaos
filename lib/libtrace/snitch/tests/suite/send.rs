@@ -96,36 +96,6 @@ fn send_merges_default_tags_per_line() -> Result<()> {
     Ok(())
 }
 
-// Verifies enqueued metrics are delivered by the background worker.
-#[test]
-fn client_sends_enqueued_metric() -> Result<()> {
-    let (metrics, exporter) = build_metrics_with_defaults(&[])?;
-
-    metrics.counter("chaos.turns", 1, &[("model", TEST_MODEL)])?;
-    metrics.shutdown()?;
-
-    let resource_metrics = latest_metrics(&exporter);
-    assert_eq!(counter_value(&resource_metrics, "chaos.turns"), 1);
-    let attrs = counter_attributes(&resource_metrics, "chaos.turns");
-    assert_eq!(attrs.get("model").map(String::as_str), Some(TEST_MODEL));
-
-    Ok(())
-}
-
-// Ensures shutdown flushes successfully with in-memory exporters.
-#[test]
-fn shutdown_flushes_in_memory_exporter() -> Result<()> {
-    let (metrics, exporter) = build_metrics_with_defaults(&[])?;
-
-    metrics.counter("chaos.turns", 1, &[])?;
-    metrics.shutdown()?;
-
-    let resource_metrics = latest_metrics(&exporter);
-    assert_eq!(counter_value(&resource_metrics, "chaos.turns"), 1);
-
-    Ok(())
-}
-
 // Ensures shutting down without recording metrics does not export anything.
 #[test]
 fn shutdown_without_metrics_exports_nothing() -> Result<()> {

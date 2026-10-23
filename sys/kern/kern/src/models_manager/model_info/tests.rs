@@ -7,19 +7,7 @@ use chaos_abi::AbiModelInfo;
 
 #[test]
 fn with_config_overrides_never_yields_empty_base_instructions() {
-    let model = model_info_from_abi(&AbiModelInfo {
-        id: "test-model".to_string(),
-        model_family: Default::default(),
-        display_name: "Test".to_string(),
-        description: None,
-        max_input_tokens: None,
-        max_output_tokens: None,
-        supports_thinking: false,
-        supports_images: false,
-        supports_structured_output: false,
-        supports_reasoning_effort: false,
-        native_server_side_tools: vec![],
-    });
+    let model = unknown_model();
     // Catalog-only ModelInfo has empty base_instructions.
     assert!(model.base_instructions.is_empty());
 
@@ -142,37 +130,22 @@ fn explicit_compaction_limit_overrides_observed_chatgpt_preset() {
 }
 
 #[test]
-fn reasoning_summaries_override_true_enables_support() {
-    let model = unknown_model();
-    let mut config = test_config();
-    config.model_supports_reasoning_summaries = Some(true);
-
-    let updated = with_config_overrides(model, &config);
-
-    assert!(updated.supports_reasoning_summaries);
-}
-
-#[test]
-fn reasoning_summaries_override_false_does_not_disable_support() {
-    let mut model = unknown_model();
-    model.supports_reasoning_summaries = true;
-    let mut config = test_config();
-    config.model_supports_reasoning_summaries = Some(false);
-
-    let updated = with_config_overrides(model, &config);
-
-    assert!(updated.supports_reasoning_summaries);
-}
-
-#[test]
-fn reasoning_summaries_override_false_is_noop_when_model_is_false() {
-    let model = unknown_model();
-    let mut config = test_config();
-    config.model_supports_reasoning_summaries = Some(false);
-
-    let updated = with_config_overrides(model, &config);
-
-    assert!(!updated.supports_reasoning_summaries);
+fn reasoning_summaries_override_only_enables_support() {
+    for (model_support, override_support, expected) in [
+        (false, true, true),
+        (true, false, true),
+        (false, false, false),
+    ] {
+        let mut model = unknown_model();
+        model.supports_reasoning_summaries = model_support;
+        let mut config = test_config();
+        config.model_supports_reasoning_summaries = Some(override_support);
+        let updated = with_config_overrides(model, &config);
+        assert_eq!(
+            updated.supports_reasoning_summaries, expected,
+            "model={model_support}, override={override_support}"
+        );
+    }
 }
 
 #[test]

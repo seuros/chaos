@@ -122,3 +122,6 @@ pub fn resolve_sandbox_policies(
         (None, None) => Err(ResolveSandboxPoliciesError::MissingConfiguration),
     }
 }
+
+#[cfg(test)]
+mod tests;

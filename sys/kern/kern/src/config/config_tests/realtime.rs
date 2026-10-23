@@ -1,10 +1,14 @@
 use super::*;
 
 #[test]
-fn experimental_realtime_start_instructions_load_from_config_toml() -> std::io::Result<()> {
+fn experimental_realtime_fields_load_from_config_toml() -> std::io::Result<()> {
     let cfg: ConfigToml = toml::from_str(
         r#"
 experimental_realtime_start_instructions = "start instructions from config"
+experimental_realtime_ws_base_url = "http://127.0.0.1:8011"
+experimental_realtime_ws_backend_prompt = "prompt from config"
+experimental_realtime_ws_startup_context = "startup context from config"
+experimental_realtime_ws_model = "realtime-test-model"
 "#,
     )
     .expect("TOML deserialization should succeed");
@@ -12,6 +16,22 @@ experimental_realtime_start_instructions = "start instructions from config"
     assert_eq!(
         cfg.experimental_realtime_start_instructions.as_deref(),
         Some("start instructions from config")
+    );
+    assert_eq!(
+        cfg.experimental_realtime_ws_base_url.as_deref(),
+        Some("http://127.0.0.1:8011")
+    );
+    assert_eq!(
+        cfg.experimental_realtime_ws_backend_prompt.as_deref(),
+        Some("prompt from config")
+    );
+    assert_eq!(
+        cfg.experimental_realtime_ws_startup_context.as_deref(),
+        Some("startup context from config")
+    );
+    assert_eq!(
+        cfg.experimental_realtime_ws_model.as_deref(),
+        Some("realtime-test-model")
     );
 
     let chaos_home = TempDir::new()?;
@@ -25,114 +45,18 @@ experimental_realtime_start_instructions = "start instructions from config"
         config.experimental_realtime_start_instructions.as_deref(),
         Some("start instructions from config")
     );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_base_url_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_base_url = "http://127.0.0.1:8011"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_base_url.as_deref(),
-        Some("http://127.0.0.1:8011")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
     assert_eq!(
         config.experimental_realtime_ws_base_url.as_deref(),
         Some("http://127.0.0.1:8011")
     );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_backend_prompt_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_backend_prompt = "prompt from config"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_backend_prompt.as_deref(),
-        Some("prompt from config")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
     assert_eq!(
         config.experimental_realtime_ws_backend_prompt.as_deref(),
         Some("prompt from config")
     );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_startup_context_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_startup_context = "startup context from config"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_startup_context.as_deref(),
-        Some("startup context from config")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
     assert_eq!(
         config.experimental_realtime_ws_startup_context.as_deref(),
         Some("startup context from config")
     );
-    Ok(())
-}
-
-#[test]
-fn experimental_realtime_ws_model_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_realtime_ws_model = "realtime-test-model"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_realtime_ws_model.as_deref(),
-        Some("realtime-test-model")
-    );
-
-    let chaos_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        chaos_home.path().to_path_buf(),
-    )?;
-
     assert_eq!(
         config.experimental_realtime_ws_model.as_deref(),
         Some("realtime-test-model")

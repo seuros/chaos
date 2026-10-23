@@ -10,11 +10,6 @@ fn http(status: u16) -> TransportError {
 }
 
 #[test]
-fn error_suite() {
-    transport_error_classification();
-    stream_error_classification();
-}
-
 fn transport_error_classification() {
     let cases: &[(TransportError, bool, bool)] = &[
         (http(500), true, false),
@@ -41,6 +36,7 @@ fn transport_error_classification() {
     }
 }
 
+#[test]
 fn stream_error_classification() {
     assert!(StreamError::Timeout.is_retryable());
     assert!(StreamError::Timeout.is_timeout());

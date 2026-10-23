@@ -63,179 +63,69 @@ fn assert_not_match(script: &str) {
 }
 
 #[test]
-fn test_implicit_patch_single_arg_is_error() {
+fn test_implicit_patch_invocations_are_errors() {
     let patch = "*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch".to_string();
-    let args = vec![patch];
     let dir = tempdir().unwrap();
-    assert_matches!(
-        maybe_parse_apply_patch_verified(&args, dir.path()),
-        MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
-    );
+    for args in [vec![patch.clone()], args_bash(&patch)] {
+        assert_matches!(
+            maybe_parse_apply_patch_verified(&args, dir.path()),
+            MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
+        );
+    }
 }
 
 #[test]
-fn test_implicit_patch_bash_script_is_error() {
-    let script = "*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch";
-    let args = args_bash(script);
-    let dir = tempdir().unwrap();
-    assert_matches!(
-        maybe_parse_apply_patch_verified(&args, dir.path()),
-        MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
-    );
-}
-
-#[test]
-fn test_literal() {
-    let args = strs_to_strings(&[
-        "apply_patch",
-        r#"*** Begin Patch
+fn test_literal_patch_command_aliases() {
+    for command in ["apply_patch", "applypatch"] {
+        let args = strs_to_strings(&[
+            command,
+            r#"*** Begin Patch
 *** Add File: foo
 +hi
 *** End Patch
 "#,
-    ]);
-
-    match maybe_parse_apply_patch(&args) {
-        MaybeApplyPatch::Body(ApplyPatchArgs { hunks, .. }) => {
-            assert_eq!(
-                hunks,
-                vec![Hunk::AddFile {
-                    path: PathBuf::from("foo"),
-                    contents: "hi\n".to_string()
-                }]
-            );
-        }
-        result => panic!("expected MaybeApplyPatch::Body got {result:?}"),
+        ]);
+        assert_match_args(args, None);
     }
 }
 
 #[test]
-fn test_literal_applypatch() {
-    let args = strs_to_strings(&[
-        "applypatch",
-        r#"*** Begin Patch
-*** Add File: foo
-+hi
-*** End Patch
-"#,
-    ]);
-
-    match maybe_parse_apply_patch(&args) {
-        MaybeApplyPatch::Body(ApplyPatchArgs { hunks, .. }) => {
-            assert_eq!(
-                hunks,
-                vec![Hunk::AddFile {
-                    path: PathBuf::from("foo"),
-                    contents: "hi\n".to_string()
-                }]
-            );
+fn test_heredoc_commands_work_in_login_and_non_login_shells() {
+    for command in ["apply_patch", "applypatch"] {
+        let script = heredoc_script("").replacen("apply_patch", command, 1);
+        for flag in ["-lc", "-c"] {
+            assert_match_args(strs_to_strings(&["bash", flag, &script]), None);
         }
-        result => panic!("expected MaybeApplyPatch::Body got {result:?}"),
     }
 }
 
 #[test]
-fn test_heredoc() {
-    assert_match(&heredoc_script(""), None);
-}
-
-#[test]
-fn test_heredoc_non_login_shell() {
-    let script = heredoc_script("");
-    let args = strs_to_strings(&["bash", "-c", &script]);
-    assert_match_args(args, None);
-}
-
-#[test]
-fn test_heredoc_applypatch() {
-    let args = strs_to_strings(&[
-        "bash",
-        "-lc",
-        r#"applypatch <<'PATCH'
-*** Begin Patch
-*** Add File: foo
-+hi
-*** End Patch
-PATCH"#,
-    ]);
-
-    match maybe_parse_apply_patch(&args) {
-        MaybeApplyPatch::Body(ApplyPatchArgs { hunks, workdir, .. }) => {
-            assert_eq!(workdir, None);
-            assert_eq!(
-                hunks,
-                vec![Hunk::AddFile {
-                    path: PathBuf::from("foo"),
-                    contents: "hi\n".to_string()
-                }]
-            );
-        }
-        result => panic!("expected MaybeApplyPatch::Body got {result:?}"),
+fn test_heredoc_accepts_only_single_safe_leading_cd() {
+    for (prefix, workdir) in [
+        ("cd foo && ", "foo"),
+        ("cd 'foo bar' && ", "foo bar"),
+        ("cd \"foo bar\" && ", "foo bar"),
+    ] {
+        assert_match(&heredoc_script(prefix), Some(workdir));
     }
 }
 
 #[test]
-fn test_heredoc_with_leading_cd() {
-    assert_match(&heredoc_script("cd foo && "), Some("foo"));
-}
-
-#[test]
-fn test_cd_with_semicolon_is_ignored() {
-    assert_not_match(&heredoc_script("cd foo; "));
-}
-
-#[test]
-fn test_cd_or_apply_patch_is_ignored() {
-    assert_not_match(&heredoc_script("cd bar || "));
-}
-
-#[test]
-fn test_cd_pipe_apply_patch_is_ignored() {
-    assert_not_match(&heredoc_script("cd bar | "));
-}
-
-#[test]
-fn test_cd_single_quoted_path_with_spaces() {
-    assert_match(&heredoc_script("cd 'foo bar' && "), Some("foo bar"));
-}
-
-#[test]
-fn test_cd_double_quoted_path_with_spaces() {
-    assert_match(&heredoc_script("cd \"foo bar\" && "), Some("foo bar"));
-}
-
-#[test]
-fn test_echo_and_apply_patch_is_ignored() {
-    assert_not_match(&heredoc_script("echo foo && "));
-}
-
-#[test]
-fn test_apply_patch_with_arg_is_ignored() {
-    let script =
-        "apply_patch foo <<'PATCH'\n*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch\nPATCH";
-    assert_not_match(script);
-}
-
-#[test]
-fn test_double_cd_then_apply_patch_is_ignored() {
-    assert_not_match(&heredoc_script("cd foo && cd bar && "));
-}
-
-#[test]
-fn test_cd_two_args_is_ignored() {
-    assert_not_match(&heredoc_script("cd foo bar && "));
-}
-
-#[test]
-fn test_cd_then_apply_patch_then_extra_is_ignored() {
-    let script = heredoc_script_with_suffix("cd bar && ", " && echo done");
-    assert_not_match(&script);
-}
-
-#[test]
-fn test_echo_then_cd_and_apply_patch_is_ignored() {
-    // Ensure preceding commands before the `cd && apply_patch <<...` sequence do not match.
-    assert_not_match(&heredoc_script("echo foo; cd bar && "));
+fn test_heredoc_rejects_shell_operators_extra_commands_and_arguments() {
+    for script in [
+        heredoc_script("cd foo; "),
+        heredoc_script("cd bar || "),
+        heredoc_script("cd bar | "),
+        heredoc_script("echo foo && "),
+        heredoc_script("cd foo && cd bar && "),
+        heredoc_script("cd foo bar && "),
+        heredoc_script("echo foo; cd bar && "),
+        heredoc_script_with_suffix("cd bar && ", " && echo done"),
+        "apply_patch foo <<'PATCH'\n*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch\nPATCH"
+            .to_string(),
+    ] {
+        assert_not_match(&script);
+    }
 }
 
 #[test]

@@ -491,73 +491,36 @@ async fn manual_resources_can_be_read_after_initialize() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn cron_resource_can_be_read_after_initialize() -> Result<()> {
+async fn empty_cron_and_spool_resources_preserve_their_exact_wire_envelopes() -> Result<()> {
     let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
-    let request_id = mcp
-        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://crons" })))
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-
-    assert_eq!(
-        resp.result.as_ref().unwrap(),
-        &json!({
-            "contents": [
-                {
-                    "uri": "chaos://crons",
+    for uri in ["chaos://crons", "chaos://spool"] {
+        let request_id = mcp
+            .send_custom_request("resources/read", Some(json!({ "uri": uri })))
+            .await?;
+        let message = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_response_or_error_message(request_id.clone()),
+        )
+        .await??;
+        let JsonRpcMessage::Response(resp) = message else {
+            anyhow::bail!("expected JSON-RPC response for {uri}, got: {message:?}");
+        };
+        assert_eq!(resp.id, Some(request_id.to_value()), "{uri}");
+        assert!(resp.error.is_none(), "{uri}: {:?}", resp.error);
+        assert_eq!(
+            resp.result.as_ref().unwrap(),
+            &json!({
+                "contents": [{
+                    "uri": uri,
                     "mimeType": "application/json",
                     "text": "[]"
-                }
-            ]
-        })
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn spool_resource_can_be_read_after_initialize() -> Result<()> {
-    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
-    mcp.initialize().await?;
-
-    let request_id = mcp
-        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://spool" })))
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-
-    assert_eq!(
-        resp.result.as_ref().unwrap(),
-        &json!({
-            "contents": [
-                {
-                    "uri": "chaos://spool",
-                    "mimeType": "application/json",
-                    "text": "[]"
-                }
-            ]
-        })
-    );
+                }]
+            }),
+            "{uri}"
+        );
+    }
 
     Ok(())
 }

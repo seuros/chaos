@@ -82,6 +82,10 @@ fn execpolicy_network_rules_overlay_network_lists() {
 
 #[test]
 fn requirements_network_maps_to_proxy_constraints() {
+    assert_eq!(
+        constraints_from_requirements(None),
+        NetworkProxyConstraints::default()
+    );
     let network = NetworkConstraints {
         enabled: Some(true),
         allow_upstream_proxy: Some(false),
@@ -114,12 +118,4 @@ fn requirements_network_maps_to_proxy_constraints() {
         Some(vec!["/run/docker.sock".to_string()])
     );
     assert_eq!(constraints.allow_local_binding, Some(true));
-}
-
-#[test]
-fn missing_requirements_leave_proxy_constraints_unset() {
-    assert_eq!(
-        constraints_from_requirements(None),
-        NetworkProxyConstraints::default()
-    );
 }

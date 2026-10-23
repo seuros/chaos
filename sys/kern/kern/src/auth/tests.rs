@@ -529,61 +529,26 @@ async fn enforce_login_restrictions_blocks_env_api_key_when_chatgpt_required() {
 }
 
 #[test]
-fn plan_type_maps_known_plan() {
-    let chaos_home = tempdir().unwrap();
-    let _jwt = write_auth_file(
-        AuthFileParams {
-            openai_api_key: None,
-            chatgpt_plan_type: Some("pro".to_string()),
-            chatgpt_account_id: None,
-        },
-        chaos_home.path(),
-    )
-    .expect("failed to write auth file");
+fn plan_type_maps_known_unknown_and_missing_values() {
+    for (plan, expected) in [
+        (Some("pro"), AccountPlanType::Pro),
+        (Some("mystery-tier"), AccountPlanType::Unknown),
+        (None, AccountPlanType::Unknown),
+    ] {
+        let chaos_home = tempdir().unwrap();
+        let _jwt = write_auth_file(
+            AuthFileParams {
+                openai_api_key: None,
+                chatgpt_plan_type: plan.map(str::to_string),
+                chatgpt_account_id: None,
+            },
+            chaos_home.path(),
+        )
+        .expect("failed to write auth file");
 
-    let auth = super::load_auth(chaos_home.path(), false, AuthCredentialsStoreMode::File)
-        .expect("load auth")
-        .expect("auth available");
-
-    pretty_assertions::assert_eq!(auth.account_plan_type(), Some(AccountPlanType::Pro));
-}
-
-#[test]
-fn plan_type_maps_unknown_to_unknown() {
-    let chaos_home = tempdir().unwrap();
-    let _jwt = write_auth_file(
-        AuthFileParams {
-            openai_api_key: None,
-            chatgpt_plan_type: Some("mystery-tier".to_string()),
-            chatgpt_account_id: None,
-        },
-        chaos_home.path(),
-    )
-    .expect("failed to write auth file");
-
-    let auth = super::load_auth(chaos_home.path(), false, AuthCredentialsStoreMode::File)
-        .expect("load auth")
-        .expect("auth available");
-
-    pretty_assertions::assert_eq!(auth.account_plan_type(), Some(AccountPlanType::Unknown));
-}
-
-#[test]
-fn missing_plan_type_maps_to_unknown() {
-    let chaos_home = tempdir().unwrap();
-    let _jwt = write_auth_file(
-        AuthFileParams {
-            openai_api_key: None,
-            chatgpt_plan_type: None,
-            chatgpt_account_id: None,
-        },
-        chaos_home.path(),
-    )
-    .expect("failed to write auth file");
-
-    let auth = super::load_auth(chaos_home.path(), false, AuthCredentialsStoreMode::File)
-        .expect("load auth")
-        .expect("auth available");
-
-    pretty_assertions::assert_eq!(auth.account_plan_type(), Some(AccountPlanType::Unknown));
+        let auth = super::load_auth(chaos_home.path(), false, AuthCredentialsStoreMode::File)
+            .expect("load auth")
+            .expect("auth available");
+        pretty_assertions::assert_eq!(auth.account_plan_type(), Some(expected), "{plan:?}");
+    }
 }

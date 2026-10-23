@@ -1,12 +1,8 @@
 use super::*;
 
 #[test]
-fn unknown_model_family_has_no_quorum_subject() {
-    assert_eq!(model_family_subject(&ModelFamily::default()), None);
-}
-
-#[test]
 fn model_family_subject_is_stable_and_domain_separated() {
+    assert_eq!(model_family_subject(&ModelFamily::default()), None);
     let family = ModelFamily::new("anthropic");
     let subject = model_family_subject(&family).expect("known family subject");
     assert_eq!(subject, model_family_subject(&family).unwrap());

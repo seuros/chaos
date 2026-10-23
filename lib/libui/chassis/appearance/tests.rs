@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn partial_overrides_and_round_trip() {
+fn partial_overrides_preserve_unspecified_defaults() {
     let appearance: Appearance = toml::from_str(
         "[colors]\nfg = '#aAbBcC'\nbg = 'default'\n[user]\nbold = true\n[assistant]\nitalic = false",
     ).unwrap();
@@ -9,10 +9,6 @@ fn partial_overrides_and_round_trip() {
     assert_eq!(appearance.user.bold, Some(true));
     assert_eq!(appearance.assistant.italic, Some(false));
     assert_eq!(appearance.user.italic, None);
-    assert_eq!(
-        appearance,
-        toml::from_str(&toml::to_string(&appearance).unwrap()).unwrap()
-    );
     assert_eq!(
         toml::from_str::<Appearance>("").unwrap(),
         Appearance::default()

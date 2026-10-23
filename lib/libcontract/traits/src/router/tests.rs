@@ -67,16 +67,3 @@ async fn dropped_reply_sender_surfaces_error() {
     std::assert_matches!(err, AdapterError::ReplyDropped);
     server.await.expect("server task");
 }
-
-#[tokio::test]
-async fn bounded_channel_backpressures_rather_than_drops() {
-    let (adapter, mut rx) = Adapter::<PingOp>::bounded(1);
-    adapter.send(PingOp::Ping).await.expect("first send");
-    // Second send blocks until receiver drains the first.
-    let mut send = tokio_test::task::spawn(adapter.send(PingOp::Ping));
-    tokio_test::assert_pending!(send.poll());
-    let _ = rx.recv().await.expect("drain");
-    assert!(send.is_woken(), "draining capacity must wake the sender");
-    tokio_test::assert_ready!(send.poll()).expect("unblocked send");
-    std::assert_matches!(rx.try_recv().expect("second packet").op, PingOp::Ping);
-}

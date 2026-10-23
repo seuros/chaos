@@ -10,120 +10,73 @@ use chaos_ipc::models::FunctionCallOutputContentItem;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn split_string_works() {
-    assert_eq!(split_string("hello world", 5, 5), (1, "hello", "world"));
-    assert_eq!(split_string("abc", 0, 0), (3, "", ""));
+fn split_string_preserves_budget_and_utf8_boundaries() {
+    for (input, head, tail, expected) in [
+        ("hello world", 5, 5, (1, "hello", "world")),
+        ("abc", 0, 0, (3, "", "")),
+        ("", 4, 4, (0, "", "")),
+        ("abcdef", 3, 0, (3, "abc", "")),
+        ("abcdef", 0, 3, (3, "", "def")),
+        ("abcdef", 4, 4, (0, "abcd", "ef")),
+        ("😀abc😀", 5, 5, (1, "😀a", "c😀")),
+        ("😀😀😀😀😀", 1, 1, (5, "", "")),
+        ("😀😀😀😀😀", 7, 7, (3, "😀", "😀")),
+        ("😀😀😀😀😀", 8, 8, (1, "😀😀", "😀😀")),
+    ] {
+        assert_eq!(
+            split_string(input, head, tail),
+            expected,
+            "{input:?}, {head}/{tail}"
+        );
+    }
 }
 
 #[test]
-fn split_string_handles_empty_string() {
-    assert_eq!(split_string("", 4, 4), (0, "", ""));
-}
-
-#[test]
-fn split_string_only_keeps_prefix_when_tail_budget_is_zero() {
-    assert_eq!(split_string("abcdef", 3, 0), (3, "abc", ""));
-}
-
-#[test]
-fn split_string_only_keeps_suffix_when_prefix_budget_is_zero() {
-    assert_eq!(split_string("abcdef", 0, 3), (3, "", "def"));
-}
-
-#[test]
-fn split_string_handles_overlapping_budgets_without_removal() {
-    assert_eq!(split_string("abcdef", 4, 4), (0, "abcd", "ef"));
-}
-
-#[test]
-fn split_string_respects_utf8_boundaries() {
-    assert_eq!(split_string("😀abc😀", 5, 5), (1, "😀a", "c😀"));
-
-    assert_eq!(split_string("😀😀😀😀😀", 1, 1), (5, "", ""));
-    assert_eq!(split_string("😀😀😀😀😀", 7, 7), (3, "😀", "😀"));
-    assert_eq!(split_string("😀😀😀😀😀", 8, 8), (1, "😀😀", "😀😀"));
-}
-
-#[test]
-fn truncate_bytes_less_than_placeholder_returns_placeholder() {
-    let content = "example output";
-
-    assert_eq!(
-        "Total output lines: 1\n\n…13 chars truncated…t",
-        formatted_truncate_text(content, TruncationPolicy::Bytes(1)),
-    );
-}
-
-#[test]
-fn truncate_tokens_less_than_placeholder_returns_placeholder() {
-    let content = "example output";
-
-    assert_eq!(
-        "Total output lines: 1\n\nex…3 tokens truncated…ut",
-        formatted_truncate_text(content, TruncationPolicy::Tokens(1)),
-    );
-}
-
-#[test]
-fn truncate_tokens_under_limit_returns_original() {
-    let content = "example output";
-
-    assert_eq!(
-        content,
-        formatted_truncate_text(content, TruncationPolicy::Tokens(10)),
-    );
-}
-
-#[test]
-fn truncate_bytes_under_limit_returns_original() {
-    let content = "example output";
-
-    assert_eq!(
-        content,
-        formatted_truncate_text(content, TruncationPolicy::Bytes(20)),
-    );
-}
-
-#[test]
-fn truncate_tokens_over_limit_returns_truncated() {
-    let content = "this is an example of a long output that should be truncated";
-
-    assert_eq!(
-        "Total output lines: 1\n\nthis is an…10 tokens truncated… truncated",
-        formatted_truncate_text(content, TruncationPolicy::Tokens(5)),
-    );
-}
-
-#[test]
-fn truncate_bytes_over_limit_returns_truncated() {
-    let content = "this is an example of a long output that should be truncated";
-
-    assert_eq!(
-        "Total output lines: 1\n\nthis is an exam…30 chars truncated…ld be truncated",
-        formatted_truncate_text(content, TruncationPolicy::Bytes(30)),
-    );
-}
-
-#[test]
-fn truncate_bytes_reports_original_line_count_when_truncated() {
-    let content =
+fn formatted_truncation_preserves_policy_markers_and_original_line_counts() {
+    let short = "example output";
+    let long = "this is an example of a long output that should be truncated";
+    let multiline =
         "this is an example of a long output that should be truncated\nalso some other line";
-
-    assert_eq!(
-        "Total output lines: 2\n\nthis is an exam…51 chars truncated…some other line",
-        formatted_truncate_text(content, TruncationPolicy::Bytes(30)),
-    );
-}
-
-#[test]
-fn truncate_tokens_reports_original_line_count_when_truncated() {
-    let content =
-        "this is an example of a long output that should be truncated\nalso some other line";
-
-    assert_eq!(
-        "Total output lines: 2\n\nthis is an example o…11 tokens truncated…also some other line",
-        formatted_truncate_text(content, TruncationPolicy::Tokens(10)),
-    );
+    for (content, policy, expected) in [
+        (
+            short,
+            TruncationPolicy::Bytes(1),
+            "Total output lines: 1\n\n…13 chars truncated…t",
+        ),
+        (
+            short,
+            TruncationPolicy::Tokens(1),
+            "Total output lines: 1\n\nex…3 tokens truncated…ut",
+        ),
+        (short, TruncationPolicy::Tokens(10), short),
+        (short, TruncationPolicy::Bytes(20), short),
+        (
+            long,
+            TruncationPolicy::Tokens(5),
+            "Total output lines: 1\n\nthis is an…10 tokens truncated… truncated",
+        ),
+        (
+            long,
+            TruncationPolicy::Bytes(30),
+            "Total output lines: 1\n\nthis is an exam…30 chars truncated…ld be truncated",
+        ),
+        (
+            multiline,
+            TruncationPolicy::Bytes(30),
+            "Total output lines: 2\n\nthis is an exam…51 chars truncated…some other line",
+        ),
+        (
+            multiline,
+            TruncationPolicy::Tokens(10),
+            "Total output lines: 2\n\nthis is an example o…11 tokens truncated…also some other line",
+        ),
+    ] {
+        assert_eq!(
+            formatted_truncate_text(content, policy),
+            expected,
+            "{content:?}"
+        );
+    }
 }
 
 #[test]

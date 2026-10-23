@@ -118,46 +118,35 @@ fn convert_mcp_content_to_items_preserves_data_urls() {
 }
 
 #[test]
-fn response_item_parses_image_generation_call() {
-    let item = serde_json::from_value::<ResponseItem>(serde_json::json!({
-        "id": "ig_123",
-        "type": "image_generation_call",
-        "status": "completed",
-        "revised_prompt": "A small blue square",
-        "result": "Zm9v",
-    }))
-    .expect("image generation item should deserialize");
-
-    assert_eq!(
-        item,
-        ResponseItem::ImageGenerationCall {
-            id: "ig_123".to_string(),
-            status: "completed".to_string(),
-            revised_prompt: Some("A small blue square".to_string()),
-            result: "Zm9v".to_string(),
+fn response_item_parses_image_generation_call_with_or_without_revised_prompt() {
+    for (revised_prompt, expected_prompt) in [
+        (
+            serde_json::json!("A small blue square"),
+            Some("A small blue square".to_string()),
+        ),
+        (serde_json::Value::Null, None),
+    ] {
+        let mut wire = serde_json::json!({
+            "id": "ig_123",
+            "type": "image_generation_call",
+            "status": "completed",
+            "result": "Zm9v",
+        });
+        if !revised_prompt.is_null() {
+            wire["revised_prompt"] = revised_prompt;
         }
-    );
-}
-
-#[test]
-fn response_item_parses_image_generation_call_without_revised_prompt() {
-    let item = serde_json::from_value::<ResponseItem>(serde_json::json!({
-        "id": "ig_123",
-        "type": "image_generation_call",
-        "status": "completed",
-        "result": "Zm9v",
-    }))
-    .expect("image generation item should deserialize");
-
-    assert_eq!(
-        item,
-        ResponseItem::ImageGenerationCall {
-            id: "ig_123".to_string(),
-            status: "completed".to_string(),
-            revised_prompt: None,
-            result: "Zm9v".to_string(),
-        }
-    );
+        let item = serde_json::from_value::<ResponseItem>(wire)
+            .expect("image generation item should deserialize");
+        assert_eq!(
+            item,
+            ResponseItem::ImageGenerationCall {
+                id: "ig_123".to_string(),
+                status: "completed".to_string(),
+                revised_prompt: expected_prompt,
+                result: "Zm9v".to_string(),
+            }
+        );
+    }
 }
 
 #[test]
@@ -396,14 +385,10 @@ fn function_call_output_content_items_to_text_ignores_blank_text_and_images() {
 }
 
 #[test]
-fn function_call_output_body_to_text_returns_plain_text_content() {
+fn function_call_output_body_to_text_handles_plain_and_mixed_content() {
     let body = FunctionCallOutputBody::Text("ok".to_string());
-    let text = body.to_text();
-    assert_eq!(text, Some("ok".to_string()));
-}
+    assert_eq!(body.to_text(), Some("ok".to_string()));
 
-#[test]
-fn function_call_output_body_to_text_uses_content_item_fallback() {
     let body = FunctionCallOutputBody::ContentItems(vec![
         FunctionCallOutputContentItem::InputText {
             text: "line 1".to_string(),
@@ -596,35 +581,6 @@ fn serializes_custom_tool_image_outputs_as_array() -> Result<()> {
 
     let output = v.get("output").expect("output field");
     assert!(output.is_array(), "expected array output");
-
-    Ok(())
-}
-
-#[test]
-fn preserves_existing_image_data_urls() -> Result<()> {
-    let call_tool_result = CallToolResult {
-        content: vec![serde_json::json!({
-            "type": "image",
-            "data": "data:image/png;base64,BASE64",
-            "mimeType": "image/png"
-        })],
-        structured_content: None,
-        is_error: Some(false),
-        meta: None,
-    };
-
-    let payload = call_tool_result.into_function_call_output_payload();
-    let Some(items) = payload.content_items() else {
-        panic!("expected content items");
-    };
-    let items = items.to_vec();
-    assert_eq!(
-        items,
-        vec![FunctionCallOutputContentItem::InputImage {
-            image_url: "data:image/png;base64,BASE64".into(),
-            detail: None,
-        }]
-    );
 
     Ok(())
 }

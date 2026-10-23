@@ -310,19 +310,15 @@ async fn test_get_has_changes_clean_repo_returns_false() {
 }
 
 #[tokio::test]
-async fn test_get_has_changes_with_tracked_change_returns_true() {
+async fn test_get_has_changes_detects_tracked_and_untracked_changes() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await;
 
     fs::write(repo_path.join("test.txt"), "updated tracked file").expect("write tracked file");
     assert_eq!(get_has_changes(&repo_path).await, Some(true));
-}
 
-#[tokio::test]
-async fn test_get_has_changes_with_untracked_change_returns_true() {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let repo_path = create_test_git_repo(&temp_dir).await;
-
+    fs::write(repo_path.join("test.txt"), "test content").expect("restore tracked file");
+    assert_eq!(get_has_changes(&repo_path).await, Some(false));
     fs::write(repo_path.join("new_file.txt"), "untracked").expect("write untracked file");
     assert_eq!(get_has_changes(&repo_path).await, Some(true));
 }
@@ -566,7 +562,7 @@ async fn test_get_git_working_tree_state_unpushed_commit() {
 }
 
 #[test]
-fn test_git_info_serialization() {
+fn git_info_serialization_preserves_present_fields_and_omits_missing_fields() {
     let git_info = GitInfo {
         commit_hash: Some("abc123def456".to_string()),
         branch: Some("main".to_string()),
@@ -582,10 +578,7 @@ fn test_git_info_serialization() {
         parsed["repository_url"],
         "https://github.com/example/repo.git"
     );
-}
 
-#[test]
-fn test_git_info_serialization_with_nones() {
     let git_info = GitInfo {
         commit_hash: None,
         branch: None,

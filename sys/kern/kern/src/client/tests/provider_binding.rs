@@ -36,7 +36,7 @@ fn provider_rebinding_isolates_transports_and_shares_only_session_accounting() {
         .for_provider(&root.state.provider_id, &provider)
         .expect("original account");
     assert!(Arc::ptr_eq(&root.state, &original.state));
-    let mut changed_endpoint = provider.clone();
+    let mut changed_endpoint = provider;
     changed_endpoint.base_url = Some("https://other.example/v1".into());
     let changed = root
         .for_provider("second", &changed_endpoint)

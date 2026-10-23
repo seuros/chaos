@@ -92,7 +92,7 @@ fn search_baseline_metrics() {
         }
         if case.label == "symlink alias is not double-counted" {
             let alias = temp.path().join("match-link.txt");
-            symlink(&temp.path().join("match.txt"), &alias).unwrap();
+            symlink(temp.path().join("match.txt"), &alias).unwrap();
         }
         let hits = run_grep_search(case.pattern, case.glob, temp.path(), case.limit, None)
             .expect("search failed");

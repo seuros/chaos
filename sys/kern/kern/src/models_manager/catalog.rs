@@ -132,9 +132,11 @@ impl ModelsManager {
         if self.is_bound_to(&config.model_provider_id, &config.model_provider) {
             return self.clone();
         }
-        let target = self
-            .rebound_to(&config.model_provider_id, config.model_provider.clone())
-            .expect("validated model selection must have a rebindable catalog");
+        let Some(target) =
+            self.rebound_to(&config.model_provider_id, config.model_provider.clone())
+        else {
+            unreachable!("validated model selection must have a rebindable catalog");
+        };
         target.load_cached_catalog().await;
         target
     }

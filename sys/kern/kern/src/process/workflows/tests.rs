@@ -38,29 +38,19 @@ async fn active_session() -> (Arc<Session>, CancellationToken, Arc<Notify>) {
 }
 
 #[tokio::test]
-async fn attach_refuses_idle_session_without_creating_a_turn() {
+async fn attach_requires_a_task_and_does_not_create_a_turn() {
     let (session, _) = make_session_and_context().await;
     let session = Arc::new(session);
 
-    assert!(matches!(
-        attach(&session, "owner").await,
-        Err(ChaosErr::InvalidRequest(message))
-            if message == "workflow attachment requires an active turn"
-    ));
-    assert!(session.active_turn.lock().await.is_none());
-}
-
-#[tokio::test]
-async fn attach_refuses_active_turn_without_tasks() {
-    let (session, _) = make_session_and_context().await;
-    let session = Arc::new(session);
-    *session.active_turn.lock().await = Some(ActiveTurn::default());
-
-    assert!(matches!(
-        attach(&session, "owner").await,
-        Err(ChaosErr::InvalidRequest(message))
-            if message == "workflow attachment requires an active turn"
-    ));
+    for empty_turn in [false, true] {
+        *session.active_turn.lock().await = empty_turn.then(ActiveTurn::default);
+        std::assert_matches!(
+            attach(&session, "owner").await.err(),
+            Some(ChaosErr::InvalidRequest(message))
+                if message == "workflow attachment requires an active turn"
+        );
+        assert_eq!(session.active_turn.lock().await.is_some(), empty_turn);
+    }
 }
 
 #[tokio::test]
@@ -68,10 +58,10 @@ async fn attach_refuses_already_cancelled_task() {
     let (session, cancellation, _) = active_session().await;
     cancellation.cancel();
 
-    assert!(matches!(
-        attach(&session, "owner").await,
-        Err(ChaosErr::InvalidRequest(message)) if message == "the active turn is ending"
-    ));
+    std::assert_matches!(
+        attach(&session, "owner").await.err(),
+        Some(ChaosErr::InvalidRequest(message)) if message == "the active turn is ending"
+    );
     session.active_turn.lock().await.take();
 }
 
@@ -92,10 +82,10 @@ async fn attach_refuses_finished_task_even_without_cancellation() {
     }
 
     assert!(!cancellation.is_cancelled());
-    assert!(matches!(
-        attach(&session, "owner").await,
-        Err(ChaosErr::InvalidRequest(message)) if message == "the active turn is ending"
-    ));
+    std::assert_matches!(
+        attach(&session, "owner").await.err(),
+        Some(ChaosErr::InvalidRequest(message)) if message == "the active turn is ending"
+    );
     session.active_turn.lock().await.take();
 }
 
@@ -157,16 +147,13 @@ async fn scope_rejects_foreign_context_before_parsing_arguments() {
         scope.status(ExecutionContext::new(Value::Null, &foreign, &logger)),
         scope.cancel(ExecutionContext::new(Value::Null, &foreign, &logger)),
     ] {
-        assert!(matches!(
+        std::assert_matches!(
             result,
             Err(ToolError::Execution(message))
                 if message == "workflow scope belongs to another session"
-        ));
+        );
     }
-    assert!(matches!(
-        scope.status(owner_ctx),
-        Err(ToolError::InvalidArguments(_))
-    ));
+    std::assert_matches!(scope.status(owner_ctx), Err(ToolError::InvalidArguments(_)));
     scope.close();
     session.active_turn.lock().await.take();
 }

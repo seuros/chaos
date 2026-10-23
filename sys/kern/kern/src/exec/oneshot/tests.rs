@@ -95,73 +95,68 @@ fn make_exec_output(
 }
 
 #[test]
-fn sandbox_detection_requires_keywords() {
-    let output = make_exec_output(1, "", "", "");
-    assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
-        &output
-    ));
-}
-
-#[test]
-fn sandbox_detection_identifies_keyword_in_stderr() {
-    let output = make_exec_output(1, "", "Operation not permitted", "");
-    assert!(is_likely_sandbox_denied(SandboxType::LinuxSeccomp, &output));
-}
-
-#[test]
-fn sandbox_detection_respects_quick_reject_exit_codes() {
-    let output = make_exec_output(127, "", "command not found", "");
-    assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
-        &output
-    ));
-}
-
-#[test]
-fn sandbox_detection_ignores_non_sandbox_mode() {
-    let output = make_exec_output(1, "", "Operation not permitted", "");
-    assert!(!is_likely_sandbox_denied(SandboxType::None, &output));
-}
-
-#[test]
-fn sandbox_detection_ignores_network_policy_text_in_non_sandbox_mode() {
-    let output = make_exec_output(
-        0,
-        "",
-        "",
-        r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","reason":"not_allowed","source":"decider","protocol":"http","host":"google.com","port":80}"#,
-    );
-    assert!(!is_likely_sandbox_denied(SandboxType::None, &output));
-}
-
-#[test]
-fn sandbox_detection_uses_aggregated_output() {
-    let output = make_exec_output(
-        101,
-        "",
-        "",
-        "cargo failed: Read-only file system when writing target",
-    );
-    assert!(is_likely_sandbox_denied(
-        SandboxType::MacosSeatbelt,
-        &output
-    ));
-}
-
-#[test]
-fn sandbox_detection_ignores_network_policy_text_with_zero_exit_code() {
-    let output = make_exec_output(
-        0,
-        "",
-        "",
-        r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","source":"decider","protocol":"http","host":"google.com","port":80}"#,
-    );
-
-    assert!(!is_likely_sandbox_denied(
-        SandboxType::LinuxSeccomp,
-        &output
-    ));
+fn sandbox_detection_distinguishes_failures_from_unrelated_output() {
+    let network_decision = r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","source":"decider","protocol":"http","host":"google.com","port":80}"#;
+    for (name, sandbox, output, expected) in [
+        (
+            "no keywords",
+            SandboxType::LinuxSeccomp,
+            make_exec_output(1, "", "", ""),
+            false,
+        ),
+        (
+            "stderr denial",
+            SandboxType::LinuxSeccomp,
+            make_exec_output(1, "", "Operation not permitted", ""),
+            true,
+        ),
+        (
+            "command not found",
+            SandboxType::LinuxSeccomp,
+            make_exec_output(127, "", "command not found", ""),
+            false,
+        ),
+        (
+            "no sandbox",
+            SandboxType::None,
+            make_exec_output(1, "", "Operation not permitted", ""),
+            false,
+        ),
+        (
+            "no sandbox with network decision",
+            SandboxType::None,
+            make_exec_output(
+                0,
+                "",
+                "",
+                r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","reason":"not_allowed","source":"decider","protocol":"http","host":"google.com","port":80}"#,
+            ),
+            false,
+        ),
+        (
+            "aggregated denial",
+            SandboxType::MacosSeatbelt,
+            make_exec_output(
+                101,
+                "",
+                "",
+                "cargo failed: Read-only file system when writing target",
+            ),
+            true,
+        ),
+        (
+            "successful command with network decision",
+            SandboxType::LinuxSeccomp,
+            make_exec_output(0, "", "", network_decision),
+            false,
+        ),
+    ] {
+        assert_eq!(
+            is_likely_sandbox_denied(sandbox, &output),
+            expected,
+            "{name}"
+        );
+    }
 }
 
 #[tokio::test]

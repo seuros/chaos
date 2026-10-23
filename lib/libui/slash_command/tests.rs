@@ -3,7 +3,6 @@ use std::str::FromStr;
 
 use super::SlashCommand;
 
-#[test]
 fn goal_submits_a_request_but_is_not_available_during_work_or_logout() {
     assert_eq!(SlashCommand::from_str("goal"), Ok(SlashCommand::Goal));
     assert!(SlashCommand::Goal.supports_inline_args());
@@ -12,15 +11,15 @@ fn goal_submits_a_request_but_is_not_available_during_work_or_logout() {
 }
 
 pub(crate) fn slash_command_suite() {
+    goal_submits_a_request_but_is_not_available_during_work_or_logout();
     stop_command_is_canonical_name();
     clean_alias_parses_to_stop_command();
     dynamic_effort_accepts_inline_args();
-    context_window_accepts_inline_args();
     clamp_is_discoverable_without_a_claude_installation();
+    reflex_setup_and_test_are_available_without_a_model_account();
     removed_commands_do_not_parse();
 }
 
-#[test]
 fn clamp_is_discoverable_without_a_claude_installation() {
     assert!(super::built_in_slash_commands().contains(&("clamp", SlashCommand::Clamp)));
     assert!(SlashCommand::Clamp.supports_inline_args());
@@ -29,7 +28,6 @@ fn clamp_is_discoverable_without_a_claude_installation() {
     assert!(SlashCommand::Clamp.description().contains("agy"));
 }
 
-#[test]
 fn reflex_setup_and_test_are_available_without_a_model_account() {
     assert!(super::built_in_slash_commands().contains(&("reflex", SlashCommand::Reflex)));
     assert!(SlashCommand::Reflex.supports_inline_args());
@@ -46,25 +44,16 @@ fn clean_alias_parses_to_stop_command() {
     assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
 }
 
-#[test]
 fn dynamic_effort_accepts_inline_args() {
-    assert_eq!(
-        SlashCommand::from_str("dynamic-effort"),
-        Ok(SlashCommand::DynamicEffort)
-    );
-    assert!(SlashCommand::DynamicEffort.supports_inline_args());
+    for (name, command) in [
+        ("dynamic-effort", SlashCommand::DynamicEffort),
+        ("context-window", SlashCommand::ContextWindow),
+    ] {
+        assert_eq!(SlashCommand::from_str(name), Ok(command), "{name}");
+        assert!(command.supports_inline_args(), "{name}");
+    }
 }
 
-#[test]
-fn context_window_accepts_inline_args() {
-    assert_eq!(
-        SlashCommand::from_str("context-window"),
-        Ok(SlashCommand::ContextWindow)
-    );
-    assert!(SlashCommand::ContextWindow.supports_inline_args());
-}
-
-#[test]
 fn removed_commands_do_not_parse() {
     for command in [
         "approvals",

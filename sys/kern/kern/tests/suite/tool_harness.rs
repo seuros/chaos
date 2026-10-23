@@ -46,12 +46,15 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
     let server = start_mock_server().await;
 
     let mut builder = test_chaos().with_model(chaos_test_fixtures::TEST_MODEL);
+    // The process still reads approvals from its home during the tool call.
+    // Keep the complete fixture alive instead of dropping omitted fields.
+    let fixture = builder.build(&server).await?;
     let TestChaos {
         process: chaos,
         cwd,
         session_configured,
         ..
-    } = builder.build(&server).await?;
+    } = &fixture;
 
     let call_id = "shell-tool-call";
     let command = vec!["/bin/echo", "tool harness"];
@@ -90,7 +93,7 @@ async fn shell_tool_executes_command_and_streams_output() -> anyhow::Result<()> 
         })
         .await?;
 
-    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     let req = second_mock.single_request();
     let (output_text, _) = call_output(&req, call_id);
@@ -102,6 +105,7 @@ Output:
 tool harness
 ?$";
     assert_regex_match(expected_pattern, &output_text);
+    chaos.shutdown_and_wait().await?;
 
     Ok(())
 }

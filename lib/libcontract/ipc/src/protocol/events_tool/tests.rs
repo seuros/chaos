@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn internal_invocation_omits_server_and_prefix() {
+fn invocation_server_prefix_and_wire_shape() {
     let invocation = McpInvocation {
         server: None,
         tool: "read_mcp_resource".into(),
@@ -21,10 +21,7 @@ fn internal_invocation_omits_server_and_prefix() {
             .unwrap()
             .contains(&serde_json::json!("server"))
     );
-}
-
-#[test]
-fn external_invocation_retains_server_and_prefix() {
+    // External invocations keep the server name and use the dotted prefix.
     let invocation = McpInvocation {
         server: Some("external".into()),
         tool: "search".into(),

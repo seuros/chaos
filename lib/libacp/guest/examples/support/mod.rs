@@ -204,10 +204,12 @@ fn process_group_exists(group: i32) -> io::Result<bool> {
         return Ok(true);
     }
     let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(false)
-    } else {
-        Err(error)
+    match error.raw_os_error() {
+        Some(libc::ESRCH) => Ok(false),
+        // A denied existence probe is not proof that the group is gone.
+        // Keep waiting within stop's deadline; only ESRCH confirms shutdown.
+        Some(libc::EPERM) => Ok(true),
+        _ => Err(error),
     }
 }
 

@@ -1,6 +1,12 @@
 use super::*;
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf};
+use std::assert_matches;
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{
+    AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader, DuplexStream, ReadHalf, WriteHalf,
+};
 
 pub(super) struct Peer {
     reader: tokio::io::Lines<BufReader<ReadHalf<DuplexStream>>>,
@@ -71,6 +77,95 @@ pub(super) async fn open(
     let session = peer.receive().await["result"]["sessionId"].clone();
     assert!(session.is_string());
     (peer, task, observations, session)
+}
+
+struct FailingWriter<W> {
+    inner: W,
+    failure: Arc<Mutex<Option<io::ErrorKind>>>,
+}
+
+impl<W: AsyncWrite + Unpin> AsyncWrite for FailingWriter<W> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        if let Some(kind) = *self.failure.lock().unwrap() {
+            return Poll::Ready(Err(kind.into()));
+        }
+        Pin::new(&mut self.inner).poll_write(cx, bytes)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+#[tokio::test]
+async fn writer_disconnect_joins_native_work_but_preserves_other_failures() {
+    for (kind, fail_shutdown) in [
+        (io::ErrorKind::BrokenPipe, false),
+        (io::ErrorKind::ConnectionReset, false),
+        (io::ErrorKind::ConnectionAborted, false),
+        (io::ErrorKind::Other, false),
+        (io::ErrorKind::BrokenPipe, true),
+    ] {
+        let observations = Arc::new(Observations::default());
+        observations
+            .fail_shutdown
+            .store(fail_shutdown, Ordering::SeqCst);
+        let failure = Arc::new(Mutex::new(None));
+        let server = AgentServer::builder(Backend(observations.clone()))
+            .build()
+            .unwrap();
+        let (client, transport) = tokio::io::duplex(8192);
+        let (reader, writer) = tokio::io::split(transport);
+        let writer = FailingWriter {
+            inner: writer,
+            failure: failure.clone(),
+        };
+        let task = tokio::spawn(async move { server.serve(reader, writer).await });
+        let (reader, writer) = tokio::io::split(client);
+        let mut peer = Peer {
+            reader: BufReader::new(reader).lines(),
+            writer,
+        };
+        peer.send(json!({
+            "jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}
+        }))
+        .await;
+        assert!(peer.receive().await.get("error").is_none());
+        peer.send(json!({
+            "jsonrpc":"2.0","id":2,"method":"session/new",
+            "params":{"cwd":"/workspace","mcpServers":[]}
+        }))
+        .await;
+        let session = peer.receive().await["result"]["sessionId"].clone();
+        assert!(session.is_string());
+        // Keep the input open: the write failure must terminate the host without
+        // relying on reader EOF winning the scheduling race.
+        *failure.lock().unwrap() = Some(kind);
+        peer.prompt(3, &session, "wait").await;
+        let result = tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap();
+        if fail_shutdown {
+            assert_matches!(result, Err(HostError::ShutdownUnconfirmed));
+        } else if kind == io::ErrorKind::Other {
+            assert_matches!(result, Err(HostError::Protocol(_)));
+        } else {
+            result.unwrap();
+        }
+        assert_eq!(observations.shutdowns.load(Ordering::SeqCst), 1);
+        let stale = observations.context.lock().unwrap().clone().unwrap();
+        assert!(stale.is_cancelled());
+        assert!(stale.client().update(message("late")).is_err());
+    }
 }
 
 #[tokio::test]

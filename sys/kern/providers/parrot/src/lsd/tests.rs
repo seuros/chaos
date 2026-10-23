@@ -87,43 +87,18 @@ fn invalid_output_cap_cannot_fall_back_to_a_legacy_lsd_limit() {
 }
 
 #[test]
-fn build_request_body_includes_system_prompt() {
-    let request = TurnRequest {
-        model: "coding_large".to_string(),
-        instructions: "You are helpful".to_string(),
-        input: vec![],
-        tools: vec![],
-        parallel_tool_calls: false,
-        reasoning: None,
-        output_schema: None,
-        verbosity: None,
-        turn_state: None,
-        extensions: serde_json::Map::new(),
-    };
-
-    let body = build_request_body(&request, "coding_large", None).expect("body should build");
-    assert_eq!(body["function_name"], "coding_large");
-    assert_eq!(body["stream"], true);
-    assert_eq!(body["input"]["system"], "You are helpful");
-}
-
-#[test]
-fn build_request_body_omits_system_when_empty() {
-    let request = TurnRequest {
-        model: String::new(),
-        instructions: String::new(),
-        input: vec![],
-        tools: vec![],
-        parallel_tool_calls: false,
-        reasoning: None,
-        output_schema: None,
-        verbosity: None,
-        turn_state: None,
-        extensions: serde_json::Map::new(),
-    };
-
-    let body = build_request_body(&request, "coding_large", None).expect("body should build");
-    assert!(body["input"].get("system").is_none());
+fn build_request_body_includes_only_nonempty_system_prompts() {
+    for instructions in ["You are helpful", ""] {
+        let mut request = token_limit_request();
+        request.instructions = instructions.to_string();
+        let body = build_request_body(&request, "coding_large", None).expect("body should build");
+        assert_eq!(body["function_name"], "coding_large");
+        assert_eq!(body["stream"], true);
+        assert_eq!(
+            body["input"].get("system").and_then(Value::as_str),
+            (!instructions.is_empty()).then_some(instructions),
+        );
+    }
 }
 
 #[test]
@@ -337,62 +312,38 @@ async fn process_sse_stream_completes_on_done() {
 }
 
 #[test]
-fn parse_chunk_handles_malformed_json() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
-    let mut response_id = String::new();
-    let mut server_model = None;
-
-    // Attempt to parse malformed JSON - missing required fields
-    let result = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            // Missing required variant_name and content fields
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    );
-
-    // Should handle gracefully without panicking
-    assert!(
-        result.is_err() || result.is_ok(),
-        "parse_chunk should handle missing fields"
-    );
-}
-
-#[test]
-fn parse_chunk_handles_invalid_content_type() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
-    let mut response_id = String::new();
-    let mut server_model = None;
-
-    let events = parse_chunk(
-        &serde_json::json!({
+fn parse_chunk_ignores_missing_or_unknown_content_without_fabricating_output() {
+    for chunk in [
+        serde_json::json!({"inference_id": "019d-test"}),
+        serde_json::json!({
             "inference_id": "019d-test",
             "variant_name": "glm_air",
             "content": [{"type": "unknown_type", "data": "test"}],
             "usage": null,
             "finish_reason": null
         }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse despite unknown content type");
-
-    // Unknown content types should be silently ignored
-    assert!(
-        !events.is_empty() || events.is_empty(),
-        "should handle gracefully"
-    );
+    ] {
+        let mut tools = BTreeMap::new();
+        let mut text = None;
+        let mut thoughts = None;
+        let mut response_id = String::new();
+        let mut server_model = None;
+        let events = parse_chunk(
+            &chunk,
+            &mut tools,
+            &mut text,
+            &mut thoughts,
+            &mut response_id,
+            &mut server_model,
+        )
+        .expect("unsupported content should be ignored");
+        std::assert_matches!(events.as_slice(), [TurnEvent::Created]);
+        assert_eq!(response_id, "019d-test");
+        assert!(tools.is_empty());
+        assert!(text.is_none());
+        assert!(thoughts.is_none());
+        assert!(server_model.is_none());
+    }
 }
 
 #[test]

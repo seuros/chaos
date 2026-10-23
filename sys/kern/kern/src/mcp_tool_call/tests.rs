@@ -61,32 +61,21 @@ fn prompt_options(
 }
 
 #[test]
-fn approval_required_when_read_only_false_and_destructive() {
-    let annotations = annotations(Some(false), Some(true), None);
-    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
-}
-
-#[test]
-fn approval_required_when_read_only_false_and_open_world() {
-    let annotations = annotations(Some(false), None, Some(true));
-    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
-}
-
-#[test]
-fn approval_required_when_destructive_even_if_read_only_true() {
-    let annotations = annotations(Some(true), Some(true), Some(true));
-    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), true);
-}
-
-#[test]
-fn approval_required_when_annotations_missing() {
-    assert_eq!(requires_mcp_tool_approval(None), true);
-}
-
-#[test]
-fn approval_not_required_when_explicitly_read_only() {
-    let annotations = annotations(Some(true), None, None);
-    assert_eq!(requires_mcp_tool_approval(Some(&annotations)), false);
+fn approval_requirement_is_conservative_about_tool_annotations() {
+    assert!(requires_mcp_tool_approval(None));
+    for (read_only, destructive, open_world, expected) in [
+        (Some(false), Some(true), None, true),
+        (Some(false), None, Some(true), true),
+        (Some(true), Some(true), Some(true), true),
+        (Some(true), None, None, false),
+    ] {
+        let annotations = annotations(read_only, destructive, open_world);
+        assert_eq!(
+            requires_mcp_tool_approval(Some(&annotations)),
+            expected,
+            "read_only={read_only:?}, destructive={destructive:?}, open_world={open_world:?}"
+        );
+    }
 }
 
 #[test]
@@ -769,49 +758,29 @@ fn synthetic_decline_request_user_input_response_stays_decline() {
 }
 
 #[test]
-fn accepted_elicitation_response_uses_always_persist_meta() {
-    let response = parse_mcp_tool_approval_elicitation_response(
-        Some(ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: None,
-            meta: Some(serde_json::json!({
-                MCP_TOOL_APPROVAL_PERSIST_KEY: MCP_TOOL_APPROVAL_PERSIST_ALWAYS,
-            })),
-        }),
-        "approval",
-    );
-
-    assert_eq!(response, McpToolApprovalDecision::AcceptAndRemember);
-}
-
-#[test]
-fn accepted_elicitation_response_uses_session_persist_meta() {
-    let response = parse_mcp_tool_approval_elicitation_response(
-        Some(ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: None,
-            meta: Some(serde_json::json!({
-                MCP_TOOL_APPROVAL_PERSIST_KEY: MCP_TOOL_APPROVAL_PERSIST_SESSION,
-            })),
-        }),
-        "approval",
-    );
-
-    assert_eq!(response, McpToolApprovalDecision::AcceptForSession);
-}
-
-#[test]
-fn accepted_elicitation_without_content_defaults_to_accept() {
-    let response = parse_mcp_tool_approval_elicitation_response(
-        Some(ElicitationResponse {
-            action: ElicitationAction::Accept,
-            content: None,
-            meta: None,
-        }),
-        "approval",
-    );
-
-    assert_eq!(response, McpToolApprovalDecision::Accept);
+fn accepted_elicitation_persistence_decisions() {
+    for (persist, expected) in [
+        (None, McpToolApprovalDecision::Accept),
+        (
+            Some(MCP_TOOL_APPROVAL_PERSIST_SESSION),
+            McpToolApprovalDecision::AcceptForSession,
+        ),
+        (
+            Some(MCP_TOOL_APPROVAL_PERSIST_ALWAYS),
+            McpToolApprovalDecision::AcceptAndRemember,
+        ),
+    ] {
+        let response = parse_mcp_tool_approval_elicitation_response(
+            Some(ElicitationResponse {
+                action: ElicitationAction::Accept,
+                content: None,
+                meta: persist
+                    .map(|value| serde_json::json!({ MCP_TOOL_APPROVAL_PERSIST_KEY: value })),
+            }),
+            "approval",
+        );
+        assert_eq!(response, expected, "persist={persist:?}");
+    }
 }
 
 #[tokio::test]

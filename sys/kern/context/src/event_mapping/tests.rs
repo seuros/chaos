@@ -100,86 +100,44 @@ fn skips_context_only_user_message() {
 }
 
 #[test]
-fn skips_local_image_label_text() {
-    let image_url = "data:image/png;base64,abc".to_string();
-    let label = chaos_ipc::models::local_image_open_tag_text(1);
-    let user_text = "Please review this image.".to_string();
-
-    let item = ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![
-            ContentItem::InputText { text: label },
-            ContentItem::InputImage {
-                image_url: image_url.clone(),
-            },
-            ContentItem::InputText {
-                text: "</image>".to_string(),
-            },
-            ContentItem::InputText {
-                text: user_text.clone(),
-            },
-        ],
-        end_turn: None,
-        phase: None,
-    };
-
-    let turn_item = parse_turn_item(&item).expect("expected user message turn item");
-
-    match turn_item {
-        TurnItem::UserMessage(user) => {
-            let expected_content = vec![
-                UserInput::Image { image_url },
-                UserInput::Text {
-                    text: user_text,
-                    text_elements: Vec::new(),
+fn skips_numbered_and_unnamed_image_labels_but_keeps_image_and_user_text() {
+    for label in [
+        chaos_ipc::models::local_image_open_tag_text(1),
+        chaos_ipc::models::image_open_tag_text(),
+    ] {
+        let image_url = "data:image/png;base64,abc".to_string();
+        let user_text = "Please review this image.".to_string();
+        let item = ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![
+                ContentItem::InputText { text: label },
+                ContentItem::InputImage {
+                    image_url: image_url.clone(),
                 },
-            ];
-            assert_eq!(user.content, expected_content);
-        }
-        other => panic!("expected TurnItem::UserMessage, got {other:?}"),
-    }
-}
-
-#[test]
-fn skips_unnamed_image_label_text() {
-    let image_url = "data:image/png;base64,abc".to_string();
-    let label = chaos_ipc::models::image_open_tag_text();
-    let user_text = "Please review this image.".to_string();
-
-    let item = ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![
-            ContentItem::InputText { text: label },
-            ContentItem::InputImage {
-                image_url: image_url.clone(),
-            },
-            ContentItem::InputText {
-                text: chaos_ipc::models::image_close_tag_text(),
-            },
-            ContentItem::InputText {
-                text: user_text.clone(),
-            },
-        ],
-        end_turn: None,
-        phase: None,
-    };
-
-    let turn_item = parse_turn_item(&item).expect("expected user message turn item");
-
-    match turn_item {
-        TurnItem::UserMessage(user) => {
-            let expected_content = vec![
-                UserInput::Image { image_url },
-                UserInput::Text {
-                    text: user_text,
-                    text_elements: Vec::new(),
+                ContentItem::InputText {
+                    text: chaos_ipc::models::image_close_tag_text(),
                 },
-            ];
-            assert_eq!(user.content, expected_content);
+                ContentItem::InputText {
+                    text: user_text.clone(),
+                },
+            ],
+            end_turn: None,
+            phase: None,
+        };
+        match parse_turn_item(&item).expect("expected user message turn item") {
+            TurnItem::UserMessage(user) => assert_eq!(
+                user.content,
+                vec![
+                    UserInput::Image { image_url },
+                    UserInput::Text {
+                        text: user_text,
+                        text_elements: Vec::new(),
+                    },
+                ],
+            ),
+            other => panic!("expected TurnItem::UserMessage, got {other:?}"),
         }
-        other => panic!("expected TurnItem::UserMessage, got {other:?}"),
     }
 }
 
@@ -220,36 +178,9 @@ fn parses_reasoning_summary_and_raw_content() {
                 text: "Step 2".to_string(),
             },
         ],
-        content: Some(vec![ReasoningItemContent::ReasoningText {
-            text: "raw details".to_string(),
-        }]),
-        encrypted_content: None,
-    };
-
-    let turn_item = parse_turn_item(&item).expect("expected reasoning turn item");
-
-    match turn_item {
-        TurnItem::Reasoning(reasoning) => {
-            assert_eq!(
-                reasoning.summary_text,
-                vec!["Step 1".to_string(), "Step 2".to_string()]
-            );
-            assert_eq!(reasoning.raw_content, vec!["raw details".to_string()]);
-        }
-        other => panic!("expected TurnItem::Reasoning, got {other:?}"),
-    }
-}
-
-#[test]
-fn parses_reasoning_including_raw_content() {
-    let item = ResponseItem::Reasoning {
-        id: "reasoning_2".to_string(),
-        summary: vec![ReasoningItemReasoningSummary::SummaryText {
-            text: "Summarized step".to_string(),
-        }],
         content: Some(vec![
             ReasoningItemContent::ReasoningText {
-                text: "raw step".to_string(),
+                text: "raw details".to_string(),
             },
             ReasoningItemContent::Text {
                 text: "final thought".to_string(),
@@ -262,10 +193,13 @@ fn parses_reasoning_including_raw_content() {
 
     match turn_item {
         TurnItem::Reasoning(reasoning) => {
-            assert_eq!(reasoning.summary_text, vec!["Summarized step".to_string()]);
+            assert_eq!(
+                reasoning.summary_text,
+                vec!["Step 1".to_string(), "Step 2".to_string()]
+            );
             assert_eq!(
                 reasoning.raw_content,
-                vec!["raw step".to_string(), "final thought".to_string()]
+                vec!["raw details".to_string(), "final thought".to_string()]
             );
         }
         other => panic!("expected TurnItem::Reasoning, got {other:?}"),

@@ -173,54 +173,7 @@ async fn submit_manifest_persists_in_progress_row_with_batch_id() {
 }
 
 #[tokio::test]
-async fn submit_manifest_errors_when_backend_not_registered() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
-        .await
-        .expect("provider");
-    let pool = provider.sqlite_pool().expect("sqlite pool");
-    let store = BackendSpoolStore::from_provider(&provider);
-    let registry = SpoolRegistry::new();
-
-    let err = submit_manifest(
-        &registry,
-        &store,
-        "manifest-missing",
-        "ghost",
-        vec![("x".into(), dummy_turn_request("m"))],
-    )
-    .await
-    .expect_err("should fail");
-    assert!(err.contains("ghost"), "err={err}");
-
-    let row = sqlx::query(
-        "SELECT backend, batch_id, status, request_count, payload_json, error, submitted_at, completed_at \
-         FROM spool_jobs WHERE manifest_id = ?",
-    )
-    .bind("manifest-missing")
-    .fetch_one(&pool)
-    .await
-    .expect("fetch row");
-    let backend_name: String = row.get("backend");
-    let batch_id: Option<String> = row.get("batch_id");
-    let status: String = row.get("status");
-    let request_count: i64 = row.get("request_count");
-    let payload_json: String = row.get("payload_json");
-    let error: Option<String> = row.get("error");
-    let submitted_at: Option<i64> = row.get("submitted_at");
-    let completed_at: Option<i64> = row.get("completed_at");
-    assert_eq!(backend_name, "ghost");
-    assert!(batch_id.is_none());
-    assert_eq!(status, "Failed");
-    assert_eq!(request_count, 1);
-    assert!(payload_json.contains("x"));
-    assert!(error.as_deref().unwrap_or_default().contains("ghost"));
-    assert!(submitted_at.is_none());
-    assert!(completed_at.is_some());
-}
-
-#[tokio::test]
-async fn submit_manifest_persists_failed_row_when_backend_submit_errors() {
+async fn submit_manifest_persists_failures_for_missing_and_failing_backends() {
     let tmp = tempfile::tempdir().expect("tmp");
     let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
         .await
@@ -230,46 +183,44 @@ async fn submit_manifest_persists_failed_row_when_backend_submit_errors() {
     let mut registry = SpoolRegistry::new();
     registry.register(Arc::new(FailingBackend));
 
-    let err = submit_manifest(
-        &registry,
-        &store,
-        "manifest-submit-fails",
-        "failing",
-        vec![("x".into(), dummy_turn_request("m"))],
-    )
-    .await
-    .expect_err("should fail");
-    assert!(err.contains("submit exploded"), "err={err}");
+    for (manifest, backend, message) in [
+        ("manifest-missing", "ghost", "ghost"),
+        ("manifest-submit-fails", "failing", "submit exploded"),
+    ] {
+        let err = submit_manifest(
+            &registry,
+            &store,
+            manifest,
+            backend,
+            vec![("x".into(), dummy_turn_request("m"))],
+        )
+        .await
+        .expect_err(backend);
+        assert!(err.contains(message), "{backend}: {err}");
 
-    let row = sqlx::query(
-        "SELECT backend, batch_id, status, request_count, payload_json, error, submitted_at, completed_at \
-         FROM spool_jobs WHERE manifest_id = ?",
-    )
-    .bind("manifest-submit-fails")
-    .fetch_one(&pool)
-    .await
-    .expect("fetch row");
-    let backend_name: String = row.get("backend");
-    let batch_id: Option<String> = row.get("batch_id");
-    let status: String = row.get("status");
-    let request_count: i64 = row.get("request_count");
-    let payload_json: String = row.get("payload_json");
-    let error: Option<String> = row.get("error");
-    let submitted_at: Option<i64> = row.get("submitted_at");
-    let completed_at: Option<i64> = row.get("completed_at");
-    assert_eq!(backend_name, "failing");
-    assert!(batch_id.is_none());
-    assert_eq!(status, "Failed");
-    assert_eq!(request_count, 1);
-    assert!(payload_json.contains("x"));
-    assert!(
-        error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("submit exploded")
-    );
-    assert!(submitted_at.is_none());
-    assert!(completed_at.is_some());
+        let row = sqlx::query(
+            "SELECT backend, batch_id, status, request_count, payload_json, error, submitted_at, completed_at \
+             FROM spool_jobs WHERE manifest_id = ?",
+        )
+        .bind(manifest)
+        .fetch_one(&pool)
+        .await
+        .expect("fetch failed row");
+        assert_eq!(row.get::<String, _>("backend"), backend);
+        assert_eq!(row.get::<Option<String>, _>("batch_id"), None);
+        assert_eq!(row.get::<String, _>("status"), "Failed");
+        assert_eq!(row.get::<i64, _>("request_count"), 1);
+        assert!(row.get::<String, _>("payload_json").contains("x"));
+        assert!(
+            row.get::<Option<String>, _>("error")
+                .as_deref()
+                .unwrap_or_default()
+                .contains(message),
+            "{backend}: persisted error must retain the failure reason"
+        );
+        assert_eq!(row.get::<Option<i64>, _>("submitted_at"), None);
+        assert!(row.get::<Option<i64>, _>("completed_at").is_some());
+    }
 }
 
 #[tokio::test]

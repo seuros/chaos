@@ -44,79 +44,27 @@ fn partial_network_config_uses_struct_defaults_for_missing_fields() {
 }
 
 #[test]
-fn parse_host_port_defaults_for_empty_string() {
-    assert!(parse_host_port("", 1234).is_err());
-}
-
-#[test]
-fn parse_host_port_defaults_for_whitespace() {
-    assert!(parse_host_port("   ", 5555).is_err());
-}
-
-#[test]
-fn parse_host_port_parses_host_port_without_scheme() {
-    assert_eq!(
-        parse_host_port("127.0.0.1:8080", 3128).unwrap(),
-        SocketAddressParts {
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-        }
-    );
-}
-
-#[test]
-fn parse_host_port_parses_host_port_with_scheme_and_path() {
-    assert_eq!(
-        parse_host_port("http://example.com:8080/some/path", 3128).unwrap(),
-        SocketAddressParts {
-            host: "example.com".to_string(),
-            port: 8080,
-        }
-    );
-}
-
-#[test]
-fn parse_host_port_strips_userinfo() {
-    assert_eq!(
-        parse_host_port("http://user:pass@host.example:5555", 3128).unwrap(),
-        SocketAddressParts {
-            host: "host.example".to_string(),
-            port: 5555,
-        }
-    );
-}
-
-#[test]
-fn parse_host_port_parses_ipv6_with_brackets() {
-    assert_eq!(
-        parse_host_port("http://[::1]:9999", 3128).unwrap(),
-        SocketAddressParts {
-            host: "::1".to_string(),
-            port: 9999,
-        }
-    );
-}
-
-#[test]
-fn parse_host_port_does_not_treat_unbracketed_ipv6_as_host_port() {
-    assert_eq!(
-        parse_host_port("2001:db8::1", 3128).unwrap(),
-        SocketAddressParts {
-            host: "2001:db8::1".to_string(),
-            port: 3128,
-        }
-    );
-}
-
-#[test]
-fn parse_host_port_falls_back_to_default_port_when_port_is_invalid() {
-    assert_eq!(
-        parse_host_port("example.com:notaport", 3128).unwrap(),
-        SocketAddressParts {
-            host: "example.com".to_string(),
-            port: 3128,
-        }
-    );
+fn parse_host_port_preserves_address_normalization_and_default_ports() {
+    for (input, host, port) in [
+        ("127.0.0.1:8080", "127.0.0.1", 8080),
+        ("http://example.com:8080/some/path", "example.com", 8080),
+        ("http://user:pass@host.example:5555", "host.example", 5555),
+        ("http://[::1]:9999", "::1", 9999),
+        ("2001:db8::1", "2001:db8::1", 3128),
+        ("example.com:notaport", "example.com", 3128),
+    ] {
+        assert_eq!(
+            parse_host_port(input, 3128).unwrap(),
+            SocketAddressParts {
+                host: host.to_string(),
+                port,
+            },
+            "{input}"
+        );
+    }
+    for (input, default_port) in [("", 1234), ("   ", 5555)] {
+        assert!(parse_host_port(input, default_port).is_err(), "{input:?}");
+    }
 }
 
 #[test]
@@ -133,82 +81,59 @@ fn host_and_port_from_network_addr_formats_ipv6() {
 }
 
 #[test]
-fn resolve_addr_maps_localhost_to_loopback() {
-    assert_eq!(
-        resolve_addr("localhost", 3128).unwrap(),
-        "127.0.0.1:3128".parse::<SocketAddr>().unwrap()
-    );
+fn resolve_addr_preserves_literals_and_binds_hostnames_to_loopback() {
+    for (input, default_port, expected) in [
+        ("localhost", 3128, "127.0.0.1:3128"),
+        ("1.2.3.4", 80, "1.2.3.4:80"),
+        ("http://[::1]:8080", 3128, "[::1]:8080"),
+        ("http://example.com:5555", 3128, "127.0.0.1:5555"),
+    ] {
+        assert_eq!(
+            resolve_addr(input, default_port).unwrap(),
+            expected.parse::<SocketAddr>().unwrap(),
+            "{input}"
+        );
+    }
 }
 
 #[test]
-fn resolve_addr_parses_ip_literals() {
-    assert_eq!(
-        resolve_addr("1.2.3.4", 80).unwrap(),
-        "1.2.3.4:80".parse::<SocketAddr>().unwrap()
-    );
-}
-
-#[test]
-fn resolve_addr_parses_ipv6_literals() {
-    assert_eq!(
-        resolve_addr("http://[::1]:8080", 3128).unwrap(),
-        "[::1]:8080".parse::<SocketAddr>().unwrap()
-    );
-}
-
-#[test]
-fn resolve_addr_falls_back_to_loopback_for_hostnames() {
-    assert_eq!(
-        resolve_addr("http://example.com:5555", 3128).unwrap(),
-        "127.0.0.1:5555".parse::<SocketAddr>().unwrap()
-    );
-}
-
-#[test]
-fn clamp_bind_addrs_allows_non_loopback_when_enabled() {
-    let cfg = NetworkProxySettings {
-        dangerously_allow_non_loopback_proxy: true,
-        ..Default::default()
-    };
-    let http_addr = "0.0.0.0:3128".parse::<SocketAddr>().unwrap();
-    let socks_addr = "0.0.0.0:8081".parse::<SocketAddr>().unwrap();
-
-    let (http_addr, socks_addr) = clamp_bind_addrs(http_addr, socks_addr, &cfg);
-
-    assert_eq!(http_addr, "0.0.0.0:3128".parse::<SocketAddr>().unwrap());
-    assert_eq!(socks_addr, "0.0.0.0:8081".parse::<SocketAddr>().unwrap());
-}
-
-#[test]
-fn clamp_bind_addrs_forces_loopback_when_unix_sockets_enabled() {
-    let cfg = NetworkProxySettings {
-        dangerously_allow_non_loopback_proxy: true,
-        allow_unix_sockets: vec!["/tmp/docker.sock".to_string()],
-        ..Default::default()
-    };
-    let http_addr = "0.0.0.0:3128".parse::<SocketAddr>().unwrap();
-    let socks_addr = "0.0.0.0:8081".parse::<SocketAddr>().unwrap();
-
-    let (http_addr, socks_addr) = clamp_bind_addrs(http_addr, socks_addr, &cfg);
-
-    assert_eq!(http_addr, "127.0.0.1:3128".parse::<SocketAddr>().unwrap());
-    assert_eq!(socks_addr, "127.0.0.1:8081".parse::<SocketAddr>().unwrap());
-}
-
-#[test]
-fn clamp_bind_addrs_forces_loopback_when_all_unix_sockets_enabled() {
-    let cfg = NetworkProxySettings {
-        dangerously_allow_non_loopback_proxy: true,
-        dangerously_allow_all_unix_sockets: true,
-        ..Default::default()
-    };
-    let http_addr = "0.0.0.0:3128".parse::<SocketAddr>().unwrap();
-    let socks_addr = "0.0.0.0:8081".parse::<SocketAddr>().unwrap();
-
-    let (http_addr, socks_addr) = clamp_bind_addrs(http_addr, socks_addr, &cfg);
-
-    assert_eq!(http_addr, "127.0.0.1:3128".parse::<SocketAddr>().unwrap());
-    assert_eq!(socks_addr, "127.0.0.1:8081".parse::<SocketAddr>().unwrap());
+fn unix_socket_access_forces_loopback_even_with_non_loopback_opt_in() {
+    for (label, allow_unix_sockets, allow_all, expected_host) in [
+        ("TCP only", vec![], false, "0.0.0.0"),
+        (
+            "allowlisted socket",
+            vec!["/tmp/docker.sock".to_string()],
+            false,
+            "127.0.0.1",
+        ),
+        ("all sockets", vec![], true, "127.0.0.1"),
+    ] {
+        let cfg = NetworkProxySettings {
+            dangerously_allow_non_loopback_proxy: true,
+            allow_unix_sockets,
+            dangerously_allow_all_unix_sockets: allow_all,
+            ..Default::default()
+        };
+        let (http_addr, socks_addr) = clamp_bind_addrs(
+            "0.0.0.0:3128".parse().unwrap(),
+            "0.0.0.0:8081".parse().unwrap(),
+            &cfg,
+        );
+        assert_eq!(
+            http_addr,
+            format!("{expected_host}:3128")
+                .parse::<SocketAddr>()
+                .unwrap(),
+            "{label}"
+        );
+        assert_eq!(
+            socks_addr,
+            format!("{expected_host}:8081")
+                .parse::<SocketAddr>()
+                .unwrap(),
+            "{label}"
+        );
+    }
 }
 
 #[test]

@@ -6,23 +6,20 @@ use chaos_ipc::protocol::VfsPolicy;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn root_access_is_untagged_even_when_linux_sandbox_defaults_apply() {
-    let actual = sandbox_tag_for_vfs_policy(&VfsPolicy::unrestricted());
-    assert_eq!(actual, "none");
-}
-
-#[test]
-fn external_sandbox_keeps_external_tag_when_linux_sandbox_defaults_apply() {
-    let actual = sandbox_tag_for_vfs_policy(&VfsPolicy::from(&SandboxPolicy::ExternalSandbox {
-        network_access: NetworkAccess::Enabled,
-    }));
-    assert_eq!(actual, "external");
-}
-
-#[test]
-fn default_linux_sandbox_uses_platform_sandbox_tag() {
-    let actual =
-        sandbox_tag_for_vfs_policy(&VfsPolicy::from(&SandboxPolicy::new_read_only_policy()));
-    let expected = get_platform_sandbox().as_metric_tag();
-    assert_eq!(actual, expected);
+fn sandbox_tags_distinguish_unrestricted_external_and_platform_policies() {
+    for (policy, expected) in [
+        (VfsPolicy::unrestricted(), "none"),
+        (
+            VfsPolicy::from(&SandboxPolicy::ExternalSandbox {
+                network_access: NetworkAccess::Enabled,
+            }),
+            "external",
+        ),
+        (
+            VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            get_platform_sandbox().as_metric_tag(),
+        ),
+    ] {
+        assert_eq!(sandbox_tag_for_vfs_policy(&policy), expected, "{policy:?}");
+    }
 }

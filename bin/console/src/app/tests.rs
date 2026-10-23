@@ -112,7 +112,6 @@ pub(crate) async fn app_tests_suite() {
         .await
         .expect("active_non_primary_shutdown_target_still_switches_for_other_pending_exit_thread");
     clear_ui_after_long_transcript_snapshots_fresh_header_only().await;
-    ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot().await;
     update_reasoning_effort_updates_collaboration_mode().await;
     refresh_in_memory_config_from_disk_loads_latest_apps_state()
         .await
@@ -1714,11 +1713,6 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
 }
 
 async fn clear_ui_after_long_transcript_snapshots_fresh_header_only() {
-    let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
-    assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
-}
-
-async fn ctrl_l_clear_ui_after_long_transcript_reuses_clear_header_snapshot() {
     let rendered = render_clear_ui_header_after_long_transcript_for_snapshot().await;
     assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
 }

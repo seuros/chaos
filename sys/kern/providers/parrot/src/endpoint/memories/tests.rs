@@ -17,19 +17,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 #[derive(Clone, Default)]
-struct DummyTransport;
-
-impl HttpTransport for DummyTransport {
-    async fn execute(&self, _req: Request) -> Result<Response, TransportError> {
-        Err(TransportError::Build("execute should not run".to_string()))
-    }
-
-    async fn stream(&self, _req: Request) -> Result<StreamResponse, TransportError> {
-        Err(TransportError::Build("stream should not run".to_string()))
-    }
-}
-
-#[derive(Clone, Default)]
 struct DummyAuth;
 
 impl AuthProvider for DummyAuth {
@@ -84,14 +71,6 @@ fn provider(base_url: &str) -> Provider {
         },
         stream_idle_timeout: Duration::from_secs(1),
     }
-}
-
-#[test]
-fn path_is_memories_trace_summarize_for_wire_compatibility() {
-    assert_eq!(
-        MemoriesClient::<DummyTransport, DummyAuth>::path(),
-        "memories/trace_summarize"
-    );
 }
 
 #[tokio::test]

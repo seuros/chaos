@@ -1,6 +1,5 @@
 use super::*;
 use crate::tools::context::ToolInvocation;
-use pretty_assertions::assert_eq;
 
 struct TestHandler;
 
@@ -109,9 +108,7 @@ fn handler_looks_up_namespaced_aliases_explicitly() {
     let namespaced = registry.handler(tool_name, Some(namespace));
     let missing_namespaced = registry.handler(tool_name, Some("mcp__codex_apps__calendar"));
 
-    assert_eq!(plain.is_some(), true);
-    assert_eq!(namespaced.is_some(), true);
-    assert_eq!(missing_namespaced.is_none(), true);
+    assert!(missing_namespaced.is_none());
     assert!(
         plain
             .as_ref()

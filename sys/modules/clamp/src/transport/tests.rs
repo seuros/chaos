@@ -14,7 +14,23 @@ fn build_command_resumes_only_the_explicit_native_session() {
     );
     assert!(!args.contains(&std::ffi::OsStr::new("--continue")));
     let (fresh, _files) = build_command(&PathBuf::from("claude"), &ClampConfig::default()).unwrap();
-    assert!(!fresh.as_std().get_args().any(|arg| arg == "--resume"));
+    let args: Vec<_> = fresh.as_std().get_args().collect();
+    assert!(
+        !args
+            .iter()
+            .any(|arg| *arg == "--resume" || *arg == "--bare")
+    );
+    // Keychain OAuth stays available, but user settings and endpoint overrides do not.
+    assert!(
+        args.windows(2)
+            .any(|pair| pair[0] == "--setting-sources" && pair[1].is_empty())
+    );
+    assert!(
+        !fresh
+            .as_std()
+            .get_envs()
+            .any(|(key, _)| key == "ANTHROPIC_BASE_URL")
+    );
 }
 
 #[test]
@@ -52,18 +68,30 @@ fn failed_result_detection_preserves_legacy_success_messages() {
 }
 
 #[test]
-fn default_tool_permission_allow_preserves_input() {
+fn default_tool_permission_responses_preserve_input_or_explain_denial() {
     let input = serde_json::json!({"command": "ls"});
-    let value = default_tool_permission_response(true, input.clone(), None);
-    assert_eq!(value["behavior"], "allow");
-    assert_eq!(value["updatedInput"], input);
-}
-
-#[test]
-fn default_tool_permission_deny_sets_message() {
-    let value = default_tool_permission_response(false, Value::Null, Some("nope".to_string()));
-    assert_eq!(value["behavior"], "deny");
-    assert_eq!(value["message"], "nope");
+    for (allow, message, expected) in [
+        (
+            true,
+            None,
+            serde_json::json!({"behavior": "allow", "updatedInput": input}),
+        ),
+        (
+            false,
+            Some("nope".to_string()),
+            serde_json::json!({"behavior": "deny", "message": "nope"}),
+        ),
+        (
+            false,
+            None,
+            serde_json::json!({"behavior": "deny", "message": "tool use denied"}),
+        ),
+    ] {
+        assert_eq!(
+            default_tool_permission_response(allow, input.clone(), message),
+            expected
+        );
+    }
 }
 
 #[test]
@@ -78,29 +106,12 @@ fn control_response_request_id_extracts_id() {
 }
 
 #[test]
-fn build_command_no_bare_mode_by_default() {
-    // bare_mode is false by default; keychain auth must remain accessible
-    // for Claude Code MAX OAuth to work.
-    let config = ClampConfig::default();
-    let (command, _config_files) =
-        build_command(&PathBuf::from("claude"), &config).expect("build command");
-    let args: Vec<_> = command
-        .as_std()
-        .get_args()
-        .map(|arg| arg.to_string_lossy().into_owned())
-        .collect();
-    assert!(!args.iter().any(|arg| arg == "--bare"));
-    // settings files are still blocked
-    assert!(
-        args.windows(2)
-            .any(|w| w[0] == "--setting-sources" && w[1].is_empty())
-    );
-}
-
-#[test]
-fn build_command_sets_anthropic_base_url_when_configured() {
+fn build_command_passes_endpoint_and_tool_restrictions() {
     let config = ClampConfig {
         anthropic_base_url: Some("http://127.0.0.1:4567".to_string()),
+        disallowed_tools: vec!["Bash".to_string(), "Read".to_string()],
+        // disallowed_tools only takes effect when CC tools are permitted.
+        allow_claude_code_tools: true,
         ..Default::default()
     };
     let (command, _config_files) =
@@ -115,30 +126,6 @@ fn build_command_sets_anthropic_base_url_when_configured() {
             .any(|(k, v)| *k == "ANTHROPIC_BASE_URL" && v == "http://127.0.0.1:4567"),
         "ANTHROPIC_BASE_URL not set: {envs:?}"
     );
-}
-
-#[test]
-fn build_command_omits_anthropic_base_url_by_default() {
-    let config = ClampConfig::default();
-    let (command, _config_files) =
-        build_command(&PathBuf::from("claude"), &config).expect("build command");
-    let has_base_url = command
-        .as_std()
-        .get_envs()
-        .any(|(k, _)| k.to_str() == Some("ANTHROPIC_BASE_URL"));
-    assert!(!has_base_url, "ANTHROPIC_BASE_URL must be unset by default");
-}
-
-#[test]
-fn build_command_includes_disallowed_tools() {
-    let config = ClampConfig {
-        disallowed_tools: vec!["Bash".to_string(), "Read".to_string()],
-        // disallowed_tools only takes effect when CC tools are permitted
-        allow_claude_code_tools: true,
-        ..Default::default()
-    };
-    let (command, _config_files) =
-        build_command(&PathBuf::from("claude"), &config).expect("build command");
     let args: Vec<_> = command
         .as_std()
         .get_args()

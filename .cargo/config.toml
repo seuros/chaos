@@ -1,1 +1,7 @@
 # Chaos targets Linux/macOS/FreeBSD only — no Windows targets.
+
+[env]
+# Native end-to-end fixtures run the same deep debug futures as chaos-argv's
+# runtime. Match its 16 MiB worker stack instead of Tokio/libtest's 2 MiB default.
+# Keep an explicitly supplied budget available for smaller-stack diagnostics.
+RUST_MIN_STACK = { value = "16777216", force = false }

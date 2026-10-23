@@ -20,29 +20,27 @@ fn openai_representer_remaps_system_to_developer() {
 }
 
 #[test]
-fn openai_representer_passes_reasoning_items_through() {
-    let items = vec![ResponseItem::Reasoning {
-        id: "rs_1".into(),
-        summary: vec![],
-        content: None,
-        encrypted_content: Some("enc".into()),
-    }];
-    let result = ResponsesRepresenter.represent(items);
-    assert_eq!(result.len(), 1, "real OpenAI keeps Reasoning items");
-}
-
-#[test]
-fn openai_representer_passes_compaction_controls_through() {
+fn provider_dialects_preserve_or_drop_foreign_reasoning_and_compaction_state() {
     let items = vec![
+        ResponseItem::Reasoning {
+            id: "rs_1".into(),
+            summary: vec![],
+            content: None,
+            encrypted_content: Some("enc".into()),
+        },
         ResponseItem::CompactionTrigger {},
         ResponseItem::Compaction {
             encrypted_content: "encrypted".into(),
         },
     ];
 
-    let result = ResponsesRepresenter.represent(items.clone());
-
-    assert_eq!(result, items);
+    assert_eq!(ResponsesRepresenter.represent(items.clone()), items);
+    assert!(
+        OpenwAInnabeRepresenter::new(SystemRole::Anywhere)
+            .represent(items)
+            .is_empty(),
+        "compatible providers must not receive foreign encrypted state",
+    );
 }
 
 #[test]
@@ -74,32 +72,6 @@ fn wannabe_passes_system_role_through() {
         &result[0], ResponseItem::Message { role, .. } if role == "system",
         "wannabe must keep system role unchanged"
     );
-}
-
-#[test]
-fn wannabe_drops_reasoning_items() {
-    let items = vec![ResponseItem::Reasoning {
-        id: "rs_1".into(),
-        summary: vec![],
-        content: None,
-        encrypted_content: Some("enc".into()),
-    }];
-    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
-    assert!(result.is_empty(), "wannabe must drop Reasoning items");
-}
-
-#[test]
-fn wannabe_drops_compaction_controls() {
-    let items = vec![
-        ResponseItem::CompactionTrigger {},
-        ResponseItem::Compaction {
-            encrypted_content: "encrypted".into(),
-        },
-    ];
-
-    let result = OpenwAInnabeRepresenter::new(SystemRole::Anywhere).represent(items);
-
-    assert!(result.is_empty(), "wannabe must drop compaction controls");
 }
 
 #[test]
@@ -207,48 +179,16 @@ fn local_shell_call_becomes_function_call() {
 // --- SessionRepresenter -------------------------------------------------
 
 #[test]
-fn session_representer_openai_remaps_system() {
-    let sr = SessionRepresenter::openai();
-    let items = vec![ResponseItem::Message {
-        id: None,
-        role: "system".into(),
-        content: vec![],
-        end_turn: None,
-        phase: None,
-    }];
-    let result = sr.represent(items);
-    std::assert_matches!(&result[0], ResponseItem::Message { role, .. } if role == "developer");
-}
-
-#[test]
-fn session_representer_wannabe_keeps_system() {
-    let sr = SessionRepresenter::wannabe();
-    let items = vec![ResponseItem::Message {
-        id: None,
-        role: "system".into(),
-        content: vec![],
-        end_turn: None,
-        phase: None,
-    }];
-    let result = sr.represent(items);
-    std::assert_matches!(&result[0], ResponseItem::Message { role, .. } if role == "system");
-}
-
-#[test]
-fn session_representer_is_clone() {
-    let sr = SessionRepresenter::openai();
-    let sr2 = sr.clone();
-    // both should work identically
-    let items = || {
-        vec![ResponseItem::Message {
-            id: None,
-            role: "system".into(),
-            content: vec![],
-            end_turn: None,
-            phase: None,
-        }]
-    };
-    assert_eq!(sr.represent(items()).len(), sr2.represent(items()).len());
+fn session_representer_selects_the_provider_role_policy() {
+    for (representer, expected_role) in [
+        (SessionRepresenter::openai(), "developer"),
+        (SessionRepresenter::wannabe(), "system"),
+    ] {
+        assert_eq!(
+            representer.represent(vec![text_message("system", "instructions")]),
+            vec![text_message(expected_role, "instructions")],
+        );
+    }
 }
 
 // --- OpenwAInnabeRepresenter system-role switch ---------------------------

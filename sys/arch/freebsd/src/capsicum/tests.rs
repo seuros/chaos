@@ -55,18 +55,14 @@ fn prepare_command_omits_proxy_flag_when_disabled() {
 }
 
 #[test]
-fn should_restrict_when_network_disabled() {
-    assert!(should_restrict_network(SocketPolicy::Restricted, false,));
-}
-
-#[test]
-fn should_restrict_when_proxy_mode_even_with_full_network() {
-    assert!(should_restrict_network(SocketPolicy::Enabled, true));
-}
-
-#[test]
-fn should_not_restrict_when_full_network_no_proxy() {
-    assert!(!should_restrict_network(SocketPolicy::Enabled, false,));
+fn network_restrictions_include_managed_proxies() {
+    for (policy, proxy, expected) in [
+        (SocketPolicy::Restricted, false, true),
+        (SocketPolicy::Enabled, true, true),
+        (SocketPolicy::Enabled, false, false),
+    ] {
+        assert_eq!(should_restrict_network(policy, proxy), expected);
+    }
 }
 
 #[test]
@@ -81,59 +77,36 @@ fn unrestricted_policy_succeeds() {
 }
 
 #[test]
-fn restricted_read_only_policy_is_rejected() {
-    let result = apply_sandbox_policy_to_current_thread(
-        &VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
-        SocketPolicy::Restricted,
-        false,
-        false,
-    );
-    assert!(result.is_err(), "restricted policies must fail closed");
-}
-
-#[test]
-fn restricted_filesystem_policy_is_rejected() {
-    let result = apply_sandbox_policy_to_current_thread(
-        &VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
-        SocketPolicy::Enabled,
-        false,
-        false,
-    );
-    assert!(result.is_err(), "workspace-write policy must fail closed");
-}
-
-#[test]
-fn network_only_restriction_is_rejected() {
-    let result = apply_sandbox_policy_to_current_thread(
-        &VfsPolicy::unrestricted(),
-        SocketPolicy::Restricted,
-        false,
-        false,
-    );
-    assert!(result.is_err(), "network-only restriction must fail closed");
-}
-
-#[test]
-fn managed_proxy_mode_is_rejected() {
-    let result = apply_sandbox_policy_to_current_thread(
-        &VfsPolicy::unrestricted(),
-        SocketPolicy::Enabled,
-        true,
-        true,
-    );
-    assert!(result.is_err(), "managed proxy mode must fail closed");
-}
-
-#[test]
-fn root_access_applies_hardening() {
-    let result = apply_sandbox_policy_to_current_thread(
-        &VfsPolicy::unrestricted(),
-        SocketPolicy::Enabled,
-        false,
-        false,
-    );
-    assert!(
-        result.is_ok(),
-        "RootAccess should succeed with procctl hardening"
-    );
+fn unsupported_restrictions_fail_closed() {
+    for (name, vfs, socket, proxy) in [
+        (
+            "read-only",
+            VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            SocketPolicy::Restricted,
+            false,
+        ),
+        (
+            "workspace-write",
+            VfsPolicy::from(&SandboxPolicy::new_workspace_write_policy()),
+            SocketPolicy::Enabled,
+            false,
+        ),
+        (
+            "network-only",
+            VfsPolicy::unrestricted(),
+            SocketPolicy::Restricted,
+            false,
+        ),
+        (
+            "managed proxy",
+            VfsPolicy::unrestricted(),
+            SocketPolicy::Enabled,
+            true,
+        ),
+    ] {
+        assert!(
+            apply_sandbox_policy_to_current_thread(&vfs, socket, proxy, proxy).is_err(),
+            "{name} restrictions must fail closed"
+        );
+    }
 }

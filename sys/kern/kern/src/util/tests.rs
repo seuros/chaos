@@ -39,14 +39,6 @@ fn test_try_parse_error_message_no_error() {
     assert_eq!(message, r#"{"message": "test"}"#);
 }
 
-#[test]
-fn feedback_tags_macro_compiles() {
-    #[derive(Debug)]
-    struct OnlyDebug;
-
-    feedback_tags!(model = "serpent", cached = true, debug_only = OnlyDebug);
-}
-
 #[derive(Default)]
 struct TagCollectorVisitor {
     tags: BTreeMap<String, String>,
@@ -142,6 +134,23 @@ fn emit_feedback_request_tags_records_sentry_feedback_fields() {
         tags.get("auth_recovery_followup_status")
             .map(String::as_str),
         Some("\"200\"")
+    );
+}
+
+#[test]
+fn feedback_tags_records_debug_only_values() {
+    #[derive(Debug)]
+    struct OnlyDebug;
+
+    let tags = setup_tag_collector();
+    let _guard = tracing_subscriber::registry()
+        .with(TagCollectorLayer { tags: tags.clone() })
+        .set_default();
+    feedback_tags!(model = "serpent", cached = true, debug_only = OnlyDebug);
+    let tags = tags.lock().unwrap();
+    assert_eq!(
+        tags.get("debug_only").map(String::as_str),
+        Some("OnlyDebug")
     );
 }
 
@@ -341,26 +350,51 @@ fn emit_feedback_request_tags_clears_stale_latest_auth_fields() {
 
 #[test]
 fn normalize_process_name_trims_and_rejects_empty() {
-    assert_eq!(normalize_process_name("   "), None);
-    assert_eq!(
-        normalize_process_name("  my thread  "),
-        Some("my thread".to_string())
-    );
+    for (input, expected) in [
+        ("   ", None),
+        ("  my thread  ", Some("my thread")),
+        (
+            "  Compaction\n\x1b]0;bad\x07  timing ",
+            Some("Compaction ]0;bad timing"),
+        ),
+    ] {
+        assert_eq!(
+            normalize_process_name(input).as_deref(),
+            expected,
+            "{input:?}"
+        );
+    }
 }
 
 #[test]
-fn normalize_process_name_strips_controls_and_collapses_whitespace() {
-    assert_eq!(
-        normalize_process_name("  Compaction\n\x1b]0;bad\x07  timing "),
-        Some("Compaction ]0;bad timing".to_string())
-    );
-}
-
-#[test]
-fn resume_command_prefers_name_over_id() {
+fn resume_command_selects_identity_and_quotes_names() {
     let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
-    let command = resume_command(Some("my-thread"), Some(process_id));
-    assert_eq!(command, Some("chaos resume my-thread".to_string()));
+    for (name, id, expected) in [
+        (
+            Some("my-thread"),
+            Some(process_id),
+            Some("chaos resume my-thread"),
+        ),
+        (
+            None,
+            Some(process_id),
+            Some("chaos resume 123e4567-e89b-12d3-a456-426614174000"),
+        ),
+        (None, None, None),
+        (
+            Some("-starts-with-dash"),
+            None,
+            Some("chaos resume -- -starts-with-dash"),
+        ),
+        (Some("two words"), None, Some("chaos resume 'two words'")),
+        (
+            Some("quote'case"),
+            None,
+            Some("chaos resume \"quote'case\""),
+        ),
+    ] {
+        assert_eq!(resume_command(name, id).as_deref(), expected, "{name:?}");
+    }
 }
 
 #[test]
@@ -374,35 +408,4 @@ fn resume_commands_include_name_and_id() {
             "chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string(),
         ]
     );
-}
-
-#[test]
-fn resume_command_with_only_id() {
-    let process_id = ProcessId::from_string("123e4567-e89b-12d3-a456-426614174000").unwrap();
-    let command = resume_command(None, Some(process_id));
-    assert_eq!(
-        command,
-        Some("chaos resume 123e4567-e89b-12d3-a456-426614174000".to_string())
-    );
-}
-
-#[test]
-fn resume_command_with_no_name_or_id() {
-    let command = resume_command(None, None);
-    assert_eq!(command, None);
-}
-
-#[test]
-fn resume_command_quotes_process_name_when_needed() {
-    let command = resume_command(Some("-starts-with-dash"), None);
-    assert_eq!(
-        command,
-        Some("chaos resume -- -starts-with-dash".to_string())
-    );
-
-    let command = resume_command(Some("two words"), None);
-    assert_eq!(command, Some("chaos resume 'two words'".to_string()));
-
-    let command = resume_command(Some("quote'case"), None);
-    assert_eq!(command, Some("chaos resume \"quote'case\"".to_string()));
 }

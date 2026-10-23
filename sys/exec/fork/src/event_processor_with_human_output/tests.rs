@@ -16,35 +16,20 @@ use super::helpers::should_print_final_message_to_stdout;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn suppresses_final_stdout_message_when_both_streams_are_terminals() {
-    assert_eq!(
-        should_print_final_message_to_stdout(Some("hello"), true, true),
-        false
-    );
-}
-
-#[test]
-fn prints_final_stdout_message_when_stdout_is_not_terminal() {
-    assert_eq!(
-        should_print_final_message_to_stdout(Some("hello"), false, true),
-        true
-    );
-}
-
-#[test]
-fn prints_final_stdout_message_when_stderr_is_not_terminal() {
-    assert_eq!(
-        should_print_final_message_to_stdout(Some("hello"), true, false),
-        true
-    );
-}
-
-#[test]
-fn does_not_print_when_message_is_missing() {
-    assert_eq!(
-        should_print_final_message_to_stdout(None, false, false),
-        false
-    );
+fn final_stdout_message_depends_on_presence_and_terminal_routing() {
+    for (message, stdout_tty, stderr_tty, expected) in [
+        (Some("hello"), true, true, false),
+        (Some("hello"), false, true, true),
+        (Some("hello"), true, false, true),
+        (Some("hello"), false, false, true),
+        (None, false, false, false),
+    ] {
+        assert_eq!(
+            should_print_final_message_to_stdout(message, stdout_tty, stderr_tty),
+            expected,
+            "message={message:?}, stdout_tty={stdout_tty}, stderr_tty={stderr_tty}"
+        );
+    }
 }
 
 #[test]

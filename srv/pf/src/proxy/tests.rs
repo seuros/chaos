@@ -139,6 +139,10 @@ fn apply_proxy_env_overrides_sets_common_tool_vars() {
         Some(&"http://127.0.0.1:3128".to_string())
     );
     assert_eq!(
+        env.get("HTTPS_PROXY"),
+        Some(&"http://127.0.0.1:3128".to_string())
+    );
+    assert_eq!(
         env.get("WS_PROXY"),
         Some(&"http://127.0.0.1:3128".to_string())
     );
@@ -189,46 +193,6 @@ fn apply_proxy_env_overrides_uses_http_for_all_proxy_without_socks() {
         Some(&"http://127.0.0.1:3128".to_string())
     );
     assert_eq!(env.get(ALLOW_LOCAL_BINDING_ENV_KEY), Some(&"1".to_string()));
-}
-
-#[test]
-fn apply_proxy_env_overrides_uses_plain_http_proxy_url() {
-    let mut env = HashMap::new();
-    apply_proxy_env_overrides(
-        &mut env,
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 3128),
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8081),
-        true,
-        false,
-    );
-
-    assert_eq!(
-        env.get("HTTP_PROXY"),
-        Some(&"http://127.0.0.1:3128".to_string())
-    );
-    assert_eq!(
-        env.get("HTTPS_PROXY"),
-        Some(&"http://127.0.0.1:3128".to_string())
-    );
-    assert_eq!(
-        env.get("WS_PROXY"),
-        Some(&"http://127.0.0.1:3128".to_string())
-    );
-    assert_eq!(
-        env.get("WSS_PROXY"),
-        Some(&"http://127.0.0.1:3128".to_string())
-    );
-    assert_eq!(
-        env.get("ALL_PROXY"),
-        Some(&"socks5h://127.0.0.1:8081".to_string())
-    );
-    #[cfg(target_os = "macos")]
-    assert_eq!(
-        env.get("GIT_SSH_COMMAND"),
-        Some(&"ssh -o ProxyCommand='nc -X 5 -x 127.0.0.1:8081 %h %p'".to_string())
-    );
-    #[cfg(not(target_os = "macos"))]
-    assert_eq!(env.get("GIT_SSH_COMMAND"), None);
 }
 
 #[cfg(target_os = "macos")]

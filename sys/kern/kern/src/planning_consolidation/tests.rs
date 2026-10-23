@@ -1,6 +1,6 @@
 use super::*;
-use crate::models_manager::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
+use crate::models_manager::{CollaborationModesConfig, catalog::ModelSelection};
 use chaos_ipc::background_tasks::{TaskJournalEvent, WakePolicy};
 use chaos_ipc::openai_models::ModelsResponse;
 use chaos_ipc::protocol::RolloutItem;
@@ -58,6 +58,17 @@ impl Fixture {
             provider,
         ));
         session.services.runtime_db = Some(db.clone());
+        // Recovery builds fresh turns from session configuration, not the
+        // request's provider override. Keep it bound to the authoritative catalog.
+        let selection = ModelSelection {
+            provider_id: "chosen".into(),
+            model: "chosen-model".into(),
+        }
+        .id();
+        session
+            .set_session_controls(Some(&selection), None, false)
+            .await?;
+        let turn = session.new_default_turn().await;
         let actor = PlanningActor {
             session: session.conversation_id.to_string(),
             installation: "test".into(),
@@ -83,7 +94,7 @@ impl Fixture {
             _home: home,
             server,
             session: Arc::new(session),
-            turn: Arc::new(turn),
+            turn,
             db,
             actor,
             request: ConsolidationRequest {

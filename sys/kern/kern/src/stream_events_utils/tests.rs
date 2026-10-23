@@ -43,29 +43,22 @@ async fn handle_non_tool_response_item_strips_citations_from_assistant_message()
 }
 
 #[test]
-fn last_assistant_message_from_item_strips_citations_and_plan_blocks() {
-    let item = assistant_output_text(
-        "before<oai-mem-citation>doc1</oai-mem-citation>\n<proposed_plan>\n- x\n</proposed_plan>\nafter",
-    );
-
-    let message = last_assistant_message_from_item(&item, true)
-        .expect("assistant text should remain after stripping");
-
-    assert_eq!(message, "before\nafter");
-}
-
-#[test]
-fn last_assistant_message_from_item_returns_none_for_citation_only_message() {
-    let item = assistant_output_text("<oai-mem-citation>doc1</oai-mem-citation>");
-
-    assert_eq!(last_assistant_message_from_item(&item, false), None);
-}
-
-#[test]
-fn last_assistant_message_from_item_returns_none_for_plan_only_hidden_message() {
-    let item = assistant_output_text("<proposed_plan>\n- x\n</proposed_plan>");
-
-    assert_eq!(last_assistant_message_from_item(&item, true), None);
+fn last_assistant_message_filters_hidden_content_and_omits_empty_results() {
+    for (text, hide_plan, expected) in [
+        (
+            "before<oai-mem-citation>doc1</oai-mem-citation>\n<proposed_plan>\n- x\n</proposed_plan>\nafter",
+            true,
+            Some("before\nafter"),
+        ),
+        ("<oai-mem-citation>doc1</oai-mem-citation>", false, None),
+        ("<proposed_plan>\n- x\n</proposed_plan>", true, None),
+    ] {
+        assert_eq!(
+            last_assistant_message_from_item(&assistant_output_text(text), hide_plan).as_deref(),
+            expected,
+            "{text}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -80,16 +73,6 @@ async fn save_image_generation_result_saves_base64_to_png_in_temp_dir() {
     assert_eq!(saved_path, expected_path);
     assert_eq!(std::fs::read(&saved_path).expect("saved file"), b"foo");
     let _ = std::fs::remove_file(&saved_path);
-}
-
-#[tokio::test]
-async fn save_image_generation_result_rejects_data_url_payload() {
-    let result = "data:image/jpeg;base64,Zm9v";
-
-    let err = save_image_generation_result("ig_456", result)
-        .await
-        .expect_err("data url payload should error");
-    std::assert_matches!(err, ChaosErr::InvalidRequest(_));
 }
 
 #[tokio::test]
@@ -121,17 +104,15 @@ async fn save_image_generation_result_sanitizes_call_id_for_temp_dir_output_path
 }
 
 #[tokio::test]
-async fn save_image_generation_result_rejects_non_standard_base64() {
-    let err = save_image_generation_result("ig_urlsafe", "_-8")
-        .await
-        .expect_err("non-standard base64 should error");
-    std::assert_matches!(err, ChaosErr::InvalidRequest(_));
-}
-
-#[tokio::test]
-async fn save_image_generation_result_rejects_non_base64_data_urls() {
-    let err = save_image_generation_result("ig_svg", "data:image/svg+xml,<svg/>")
-        .await
-        .expect_err("non-base64 data url should error");
-    std::assert_matches!(err, ChaosErr::InvalidRequest(_));
+async fn save_image_generation_result_requires_standard_base64_without_data_url() {
+    for payload in [
+        "data:image/jpeg;base64,Zm9v",
+        "_-8",
+        "data:image/svg+xml,<svg/>",
+    ] {
+        let err = save_image_generation_result("ig_invalid", payload)
+            .await
+            .expect_err("invalid image payload should error");
+        std::assert_matches!(err, ChaosErr::InvalidRequest(_), "{payload}");
+    }
 }

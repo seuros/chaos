@@ -493,7 +493,7 @@ fn serialize_mcp_startup_complete_event() -> Result<()> {
 }
 
 #[test]
-fn token_usage_info_new_or_append_updates_context_window_when_provided() {
+fn token_usage_info_new_or_append_updates_or_preserves_context_window() {
     let initial = Some(TokenUsageInfo {
         total_token_usage: TokenUsage::default(),
         last_token_usage: TokenUsage::default(),
@@ -509,33 +509,11 @@ fn token_usage_info_new_or_append_updates_context_window_when_provided() {
         provider_request_count: 0,
     });
 
-    let info = TokenUsageInfo::new_or_append(&initial, &last, Some(128_000))
-        .expect("new_or_append should return info");
-
-    assert_eq!(info.model_context_window, Some(128_000));
-}
-
-#[test]
-fn token_usage_info_new_or_append_preserves_context_window_when_not_provided() {
-    let initial = Some(TokenUsageInfo {
-        total_token_usage: TokenUsage::default(),
-        last_token_usage: TokenUsage::default(),
-        model_context_window: Some(258_400),
-    });
-    let last = Some(TokenUsage {
-        input_tokens: 10,
-        cache_creation_input_tokens: 0,
-        cached_input_tokens: 0,
-        output_tokens: 0,
-        reasoning_output_tokens: 0,
-        total_tokens: 10,
-        provider_request_count: 0,
-    });
-
-    let info = TokenUsageInfo::new_or_append(&initial, &last, None)
-        .expect("new_or_append should return info");
-
-    assert_eq!(info.model_context_window, Some(258_400));
+    for (incoming, expected) in [(Some(128_000), 128_000), (None, 258_400)] {
+        let info = TokenUsageInfo::new_or_append(&initial, &last, incoming)
+            .expect("new_or_append should return info");
+        assert_eq!(info.model_context_window, Some(expected));
+    }
 }
 
 #[test]

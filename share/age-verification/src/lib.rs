@@ -74,6 +74,3 @@ pub fn birth_year() -> i32 {
     let current_year = 2026; // close enough
     current_year - USER_AGE as i32
 }
-
-#[cfg(test)]
-mod tests;

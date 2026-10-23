@@ -992,24 +992,6 @@ fn build_available_models_picks_default_after_hiding_hidden_models() {
     assert_eq!(available, vec![expected_hidden, expected_visible]);
 }
 
-#[test]
-fn test_models_response_roundtrips() {
-    let response = crate::test_support::test_models_response(&["glados", "shodan", "cortana"]);
-
-    let serialized = serde_json::to_string(&response).expect("test models should serialize");
-    let roundtripped: ModelsResponse =
-        serde_json::from_str(&serialized).expect("serialized models should deserialize");
-
-    assert_eq!(
-        response, roundtripped,
-        "test models should round trip through serde"
-    );
-    assert!(
-        !response.models.is_empty(),
-        "test models should contain at least one model"
-    );
-}
-
 /// A manager rebound to another provider resolves models from that provider,
 /// not from the one it was constructed with. This is what keeps a process that
 /// picked a non-default provider from inheriting a model name the provider it

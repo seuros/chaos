@@ -50,6 +50,9 @@ impl Fixture {
         let mut config = core_test_support::load_default_config_for_test(&home).await;
         config.cwd = cwd.path().to_path_buf();
         config.model = Some("mock-model".into());
+        config.model_catalog = Some(chaos_kern::test_support::test_models_response(&[
+            "mock-model",
+        ]));
         config.model_provider_id = "acp-fixture".into();
         config.model_provider = serde_json::from_value(json!({
             "name":"Isolated ACP fixture", "base_url":format!("{}/v1", server.uri()),
@@ -93,11 +96,22 @@ impl Fixture {
     }
 }
 
+fn native_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_stack_size(16 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .expect("native ACP fixture runtime")
+}
+
 async fn serve(config: Config) -> (DuplexStream, JoinHandle<Result<(), acp_host::HostError>>) {
     let host = super::build_server(config).await.unwrap();
     let (a, b) = tokio::io::duplex(64 * 1024);
     let (reader, writer) = tokio::io::split(b);
-    let task = tokio::spawn(async move { host.serve(reader, writer).await });
+    let task = tokio::task::spawn_blocking(move || {
+        native_runtime().block_on(Box::pin(host.serve(reader, writer)))
+    });
     (a, task)
 }
 

@@ -40,80 +40,67 @@ async fn test_set_default_oss_provider() -> anyhow::Result<()> {
     Ok(())
 }
 #[test]
-fn test_resolve_oss_provider_explicit_override() {
-    let config_toml = ConfigToml::default();
-    let result = resolve_oss_provider(Some("custom-provider"), &config_toml, None);
-    assert_eq!(result, Some("custom-provider".to_string()));
-}
-
-#[test]
-fn test_resolve_oss_provider_from_profile() {
-    let mut profiles = std::collections::HashMap::new();
-    let profile = ConfigProfile {
-        oss_provider: Some("profile-provider".to_string()),
-        ..Default::default()
-    };
-    profiles.insert("test-profile".to_string(), profile);
-    let config_toml = ConfigToml {
-        profiles,
-        ..Default::default()
-    };
-
-    let result = resolve_oss_provider(None, &config_toml, Some("test-profile".to_string()));
-    assert_eq!(result, Some("profile-provider".to_string()));
-}
-
-#[test]
-fn test_resolve_oss_provider_from_global_config() {
-    let config_toml = ConfigToml {
-        oss_provider: Some("global-provider".to_string()),
-        ..Default::default()
-    };
-
-    let result = resolve_oss_provider(None, &config_toml, None);
-    assert_eq!(result, Some("global-provider".to_string()));
-}
-
-#[test]
-fn test_resolve_oss_provider_profile_fallback_to_global() {
-    let mut profiles = std::collections::HashMap::new();
-    let profile = ConfigProfile::default(); // No oss_provider set
-    profiles.insert("test-profile".to_string(), profile);
-    let config_toml = ConfigToml {
-        oss_provider: Some("global-provider".to_string()),
-        profiles,
-        ..Default::default()
-    };
-
-    let result = resolve_oss_provider(None, &config_toml, Some("test-profile".to_string()));
-    assert_eq!(result, Some("global-provider".to_string()));
-}
-
-#[test]
-fn test_resolve_oss_provider_none_when_not_configured() {
-    let config_toml = ConfigToml::default();
-    let result = resolve_oss_provider(None, &config_toml, None);
-    assert_eq!(result, None);
-}
-
-#[test]
-fn test_resolve_oss_provider_explicit_overrides_all() {
-    let mut profiles = std::collections::HashMap::new();
-    let profile = ConfigProfile {
-        oss_provider: Some("profile-provider".to_string()),
-        ..Default::default()
-    };
-    profiles.insert("test-profile".to_string(), profile);
-    let config_toml = ConfigToml {
-        oss_provider: Some("global-provider".to_string()),
-        profiles,
-        ..Default::default()
-    };
-
-    let result = resolve_oss_provider(
-        Some("explicit-provider"),
-        &config_toml,
-        Some("test-profile".to_string()),
-    );
-    assert_eq!(result, Some("explicit-provider".to_string()));
+fn resolve_oss_provider_obeys_explicit_profile_global_precedence() {
+    for (explicit, profile, global, selected_profile, expected) in [
+        (
+            Some("custom-provider"),
+            None,
+            None,
+            false,
+            Some("custom-provider"),
+        ),
+        (
+            None,
+            Some("profile-provider"),
+            None,
+            true,
+            Some("profile-provider"),
+        ),
+        (
+            None,
+            None,
+            Some("global-provider"),
+            false,
+            Some("global-provider"),
+        ),
+        (
+            None,
+            None,
+            Some("global-provider"),
+            true,
+            Some("global-provider"),
+        ),
+        (None, None, None, false, None),
+        (
+            Some("explicit-provider"),
+            Some("profile-provider"),
+            Some("global-provider"),
+            true,
+            Some("explicit-provider"),
+        ),
+    ] {
+        let mut config_toml = ConfigToml {
+            oss_provider: global.map(str::to_string),
+            ..Default::default()
+        };
+        if selected_profile {
+            config_toml.profiles.insert(
+                "test-profile".to_string(),
+                ConfigProfile {
+                    oss_provider: profile.map(str::to_string),
+                    ..Default::default()
+                },
+            );
+        }
+        let result = resolve_oss_provider(
+            explicit,
+            &config_toml,
+            selected_profile.then(|| "test-profile".to_string()),
+        );
+        assert_eq!(
+            result.as_deref(),
+            expected,
+            "explicit={explicit:?}, profile={profile:?}, global={global:?}"
+        );
+    }
 }

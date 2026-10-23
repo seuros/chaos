@@ -11,20 +11,16 @@ fn invalid_value(candidate: impl Into<String>, allowed: impl Into<String>) -> Co
 }
 
 #[test]
-fn constrained_allow_any_accepts_any_value() {
+fn allow_any_accepts_values_and_uses_the_type_default() {
     let mut constrained = Constrained::allow_any(5);
     constrained.set(-10).expect("allow any accepts all values");
     assert_eq!(constrained.value(), -10);
-}
-
-#[test]
-fn constrained_allow_any_default_uses_default_value() {
     let constrained = Constrained::<i32>::allow_any_from_default();
     assert_eq!(constrained.value(), 0);
 }
 
 #[test]
-fn constrained_allow_only_rejects_different_values() {
+fn allow_only_accepts_its_value_and_rejects_changes_without_mutating() {
     let mut constrained = Constrained::allow_only(5);
     constrained
         .set(5)
@@ -38,31 +34,21 @@ fn constrained_allow_only_rejects_different_values() {
 }
 
 #[test]
-fn constrained_normalizer_applies_on_init_and_set() -> anyhow::Result<()> {
+fn validated_values_normalize_and_probe_without_mutating() -> anyhow::Result<()> {
     let mut constrained = Constrained::normalized(-1, |value| value.max(0))?;
     assert_eq!(constrained.value(), 0);
     constrained.set(-5)?;
     assert_eq!(constrained.value(), 0);
     constrained.set(10)?;
     assert_eq!(constrained.value(), 10);
-    Ok(())
-}
-
-#[test]
-fn constrained_new_rejects_invalid_initial_value() {
-    let result = Constrained::new(0, |value| {
+    let invalid_initial = Constrained::new(0, |value| {
         if *value > 0 {
             Ok(())
         } else {
             Err(invalid_value(value.to_string(), "positive values"))
         }
     });
-
-    assert_eq!(result, Err(invalid_value("0", "positive values")));
-}
-
-#[test]
-fn constrained_set_rejects_invalid_value_and_leaves_previous() {
+    assert_eq!(invalid_initial, Err(invalid_value("0", "positive values")));
     let mut constrained = Constrained::new(1, |value| {
         if *value > 0 {
             Ok(())
@@ -77,19 +63,6 @@ fn constrained_set_rejects_invalid_value_and_leaves_previous() {
         .expect_err("negative values should be rejected");
     assert_eq!(err, invalid_value("-5", "positive values"));
     assert_eq!(constrained.value(), 1);
-}
-
-#[test]
-fn constrained_can_set_allows_probe_without_setting() {
-    let constrained = Constrained::new(1, |value| {
-        if *value > 0 {
-            Ok(())
-        } else {
-            Err(invalid_value(value.to_string(), "positive values"))
-        }
-    })
-    .expect("initial value should be accepted");
-
     constrained
         .can_set(&2)
         .expect("can_set should accept positive value");
@@ -98,4 +71,5 @@ fn constrained_can_set_allows_probe_without_setting() {
         .expect_err("can_set should reject negative value");
     assert_eq!(err, invalid_value("-1", "positive values"));
     assert_eq!(constrained.value(), 1);
+    Ok(())
 }

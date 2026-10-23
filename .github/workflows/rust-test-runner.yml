@@ -168,7 +168,7 @@ jobs:
           echo "CARGO_BIN_EXE_alcatraz=${TARGET_DIR}/alcatraz" >> "$GITHUB_ENV"
 
       - name: Full test suite — PostgreSQL
-        run: mbx nextest run --locked --all-features --fail-fast --target ${{ inputs.target }} --cargo-profile ci-test --timings
+        run: mbx nextest run --locked --all-features --no-fail-fast --target ${{ inputs.target }} --cargo-profile ci-test --timings
         env:
           RUST_BACKTRACE: 1
           NEXTEST_STATUS_LEVEL: leak

@@ -33,12 +33,8 @@ fn parses_valid_w3c_trace_context() {
 }
 
 #[test]
-fn invalid_traceparent_returns_none() {
+fn invalid_or_missing_traceparent_returns_none() {
     assert!(context_from_trace_headers(Some("not-a-traceparent"), None).is_none());
-}
-
-#[test]
-fn missing_traceparent_returns_none() {
     assert!(
         context_from_w3c_trace_context(&W3cTraceContext {
             traceparent: None,

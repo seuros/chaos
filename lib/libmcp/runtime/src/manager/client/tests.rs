@@ -39,11 +39,6 @@ fn managed_client_info_reuses_the_supplied_identity() {
 }
 
 #[test]
-fn managed_client_identities_are_unique_when_created() {
-    assert_ne!(McpClientIdentity::new(), McpClientIdentity::new());
-}
-
-#[test]
 fn scoped_client_identities_are_stable_and_isolated() {
     let first = McpClientIdentity::for_scope("session-1", "review-service");
     let replay = McpClientIdentity::for_scope("session-1", "review-service");

@@ -103,65 +103,36 @@ fn format_path_for_line_escapes_control_characters() {
 }
 
 #[test]
-fn locate_search_includes_hidden_files_by_default_for_tool() {
+fn locate_search_hidden_file_option_preserves_visible_matches() {
     let temp = tempfile::tempdir().expect("create temp dir");
     let dir = temp.path();
     std::fs::write(dir.join("visible.md"), "").expect("write visible");
     std::fs::write(dir.join(".hidden.md"), "").expect("write hidden");
 
-    let matches = run_locate_search(
-        "md",
-        dir.to_path_buf(),
-        NonZero::new(10).expect("non-zero limit"),
-        true,
-    )
-    .expect("locate search");
-
-    assert!(
-        matches
-            .matches
-            .iter()
-            .any(|path| path.ends_with("visible.md")),
-        "matches: {matches:?}"
-    );
-    assert!(
-        matches
-            .matches
-            .iter()
-            .any(|path| path.ends_with(".hidden.md")),
-        "matches: {matches:?}"
-    );
-}
-
-#[test]
-fn locate_search_can_exclude_hidden_files() {
-    let temp = tempfile::tempdir().expect("create temp dir");
-    let dir = temp.path();
-    std::fs::write(dir.join("visible.md"), "").expect("write visible");
-    std::fs::write(dir.join(".hidden.md"), "").expect("write hidden");
-
-    let matches = run_locate_search(
-        "md",
-        dir.to_path_buf(),
-        NonZero::new(10).expect("non-zero limit"),
-        false,
-    )
-    .expect("locate search");
-
-    assert!(
-        matches
-            .matches
-            .iter()
-            .any(|path| path.ends_with("visible.md")),
-        "matches: {matches:?}"
-    );
-    assert!(
-        !matches
-            .matches
-            .iter()
-            .any(|path| path.ends_with(".hidden.md")),
-        "matches: {matches:?}"
-    );
+    for include_hidden in [true, false] {
+        let matches = run_locate_search(
+            "md",
+            dir.to_path_buf(),
+            NonZero::new(10).expect("non-zero limit"),
+            include_hidden,
+        )
+        .expect("locate search");
+        assert!(
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with("visible.md")),
+            "include_hidden={include_hidden}: {matches:?}"
+        );
+        assert_eq!(
+            matches
+                .matches
+                .iter()
+                .any(|path| path.ends_with(".hidden.md")),
+            include_hidden,
+            "include_hidden={include_hidden}: {matches:?}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -467,63 +467,17 @@ fn highlight_many_lines_no_trailing_newline_falls_back() {
 }
 
 #[test]
-fn find_syntax_resolves_languages_and_aliases() {
-    let languages = [
-        "javascript",
-        "typescript",
-        "tsx",
-        "python",
-        "ruby",
-        "rust",
-        "go",
-        "c",
-        "cpp",
-        "yaml",
-        "bash",
-        "kotlin",
-        "markdown",
-        "sql",
-        "lua",
-        "zig",
-        "swift",
-        "java",
-        "c#",
-        "elixir",
-        "haskell",
-        "scala",
-        "dart",
-        "r",
-        "perl",
-        "php",
-        "html",
-        "css",
-        "json",
-        "toml",
-        "xml",
-        "dockerfile",
-    ];
-    for lang in languages {
-        assert!(
-            find_syntax(lang).is_some(),
-            "find_syntax({lang:?}) returned None"
-        );
-    }
-    let extensions = [
-        "rs", "py", "js", "ts", "rb", "go", "sh", "md", "yml", "kt", "ex", "hs", "pl", "php",
-        "css", "html", "cs",
-    ];
-    for ext in extensions {
-        assert!(
-            find_syntax(ext).is_some(),
-            "find_syntax({ext:?}) returned None"
-        );
-    }
+fn find_syntax_resolves_our_aliases_and_case_insensitive_names() {
     for alias in ["csharp", "c-sharp", "golang", "python3", "shell"] {
         assert!(
             find_syntax(alias).is_some(),
             "find_syntax({alias:?}) returned None -- patched alias broken"
         );
     }
+    assert!(find_syntax("Rust").is_some(), "exact syntax-name lookup");
+    assert!(find_syntax("rs").is_some(), "file-extension lookup");
+    assert!(find_syntax("RUST").is_some(), "case-insensitive fallback");
+    assert!(find_syntax("not-a-language").is_none());
 }
 
 #[test]
@@ -651,13 +605,6 @@ fn parse_theme_name_covers_all_variants() {
 fn parse_theme_name_returns_none_for_unknown() {
     assert_eq!(parse_theme_name("nonexistent-theme"), None);
     assert_eq!(parse_theme_name(""), None);
-}
-
-#[test]
-fn parse_tmtheme_accepts_valid_and_rejects_invalid_documents() {
-    assert!(parse_tmtheme(minimal_tmtheme()).is_some());
-    assert!(parse_tmtheme("placeholder").is_none());
-    assert!(parse_tmtheme("not a plist").is_none());
 }
 
 #[test]

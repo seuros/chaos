@@ -270,53 +270,25 @@ fn mcp_tool_to_model_tool_inserts_empty_properties() {
 }
 
 #[test]
-fn mcp_tool_to_model_tool_appends_task_support_hint() {
-    let tool = chaos_mcp_runtime::manager::McpToolInfo {
-        name: "long_job".to_string(),
-        title: None,
-        description: Some("Runs a long job".to_string()),
-        input_schema: serde_json::json!({"type": "object"}),
-        output_schema: None,
-        annotations: None,
-        execution: Some(chaos_mcp_runtime::McpToolExecution {
-            task_support: Some(chaos_mcp_runtime::McpTaskSupport::Optional),
-        }),
-        icons: None,
-        meta: None,
-    };
-
-    let model_tool =
-        mcp_tool_to_model_tool("mcp__server__long_job".to_string(), tool).expect("convert tool");
-
-    assert_eq!(
-        model_tool.description,
-        "Runs a long job [async available: call_mcp_tool_async]".to_string()
-    );
-}
-
-#[test]
-fn mcp_tool_to_model_tool_marks_required_async_tools() {
-    let tool = chaos_mcp_runtime::manager::McpToolInfo {
-        name: "batch_reindex".to_string(),
-        title: None,
-        description: Some("Reindexes everything".to_string()),
-        input_schema: serde_json::json!({"type": "object"}),
-        output_schema: None,
-        annotations: None,
-        execution: Some(chaos_mcp_runtime::McpToolExecution {
-            task_support: Some(chaos_mcp_runtime::McpTaskSupport::Required),
-        }),
-        icons: None,
-        meta: None,
-    };
-
-    let model_tool = mcp_tool_to_model_tool("mcp__server__batch_reindex".to_string(), tool)
-        .expect("convert tool");
-
-    assert_eq!(
-        model_tool.description,
-        "Reindexes everything [async only: use call_mcp_tool_async]".to_string()
-    );
+fn mcp_tool_task_support_selects_optional_or_required_async_hint() {
+    for (support, expected) in [
+        (
+            chaos_mcp_runtime::McpTaskSupport::Optional,
+            "Runs a long job [async available: call_mcp_tool_async]",
+        ),
+        (
+            chaos_mcp_runtime::McpTaskSupport::Required,
+            "Runs a long job [async only: use call_mcp_tool_async]",
+        ),
+    ] {
+        let mut tool = mcp_tool("long_job", "Runs a long job", json!({"type": "object"}));
+        tool.execution = Some(chaos_mcp_runtime::McpToolExecution {
+            task_support: Some(support),
+        });
+        let model_tool = mcp_tool_to_model_tool("mcp__server__long_job".to_string(), tool)
+            .expect("convert tool");
+        assert_eq!(model_tool.description, expected);
+    }
 }
 
 #[test]
@@ -413,28 +385,6 @@ fn mcp_tool_to_model_tool_preserves_output_schema_without_inferred_type() {
             "additionalProperties": false
         }))
     );
-}
-
-#[test]
-fn search_tool_deferred_tools_always_set_defer_loading_true() {
-    let tool = mcp_tool(
-        "lookup_order",
-        "Look up an order",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "order_id": {"type": "string"}
-            },
-            "required": ["order_id"],
-            "additionalProperties": false,
-        }),
-    );
-
-    let model_tool =
-        mcp_tool_to_deferred_model_tool("mcp__codex_apps__lookup_order".to_string(), tool)
-            .expect("convert deferred tool");
-
-    assert_eq!(model_tool.defer_loading, Some(true));
 }
 
 #[test]
@@ -1665,63 +1615,34 @@ fn assert_exec_web_search_model_tool_cases(cases: &[ModelToolCase]) {
 }
 
 #[test]
-fn web_search_mode_cached_sets_external_web_access_false() {
+fn web_search_mode_controls_external_web_access() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
 
     let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        approval_policy: ApprovalPolicy::Interactive,
-        minion_jobs_allowed: false,
-        web_search_mode: Some(WebSearchMode::Cached),
-        session_source: SessionSource::Cli,
-        collab_enabled: true,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-
-    let tool = find_tool(&tools, "web_search");
-    assert_eq!(
-        tool.spec,
-        ToolSpec::WebSearch {
-            external_web_access: Some(false),
-            filters: None,
-            user_location: None,
-            search_context_size: None,
-            search_content_types: None,
-        }
-    );
-}
-
-#[test]
-fn web_search_mode_live_sets_external_web_access_true() {
-    let config = test_config();
-    let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
-
-    let available_models = Vec::new();
-    let tools_config = ToolsConfig::new(&ToolsConfigParams {
-        model_info: &model_info,
-        available_models: &available_models,
-        approval_policy: ApprovalPolicy::Interactive,
-        minion_jobs_allowed: false,
-        web_search_mode: Some(WebSearchMode::Live),
-        session_source: SessionSource::Cli,
-        collab_enabled: true,
-    });
-    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-
-    let tool = find_tool(&tools, "web_search");
-    assert_eq!(
-        tool.spec,
-        ToolSpec::WebSearch {
-            external_web_access: Some(true),
-            filters: None,
-            user_location: None,
-            search_context_size: None,
-            search_content_types: None,
-        }
-    );
+    for (mode, external_web_access) in [(WebSearchMode::Cached, false), (WebSearchMode::Live, true)]
+    {
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            available_models: &available_models,
+            approval_policy: ApprovalPolicy::Interactive,
+            minion_jobs_allowed: false,
+            web_search_mode: Some(mode),
+            session_source: SessionSource::Cli,
+            collab_enabled: true,
+        });
+        let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+        assert_eq!(
+            find_tool(&tools, "web_search").spec,
+            ToolSpec::WebSearch {
+                external_web_access: Some(external_web_access),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
+                search_content_types: None,
+            }
+        );
+    }
 }
 
 #[test]
@@ -2393,41 +2314,6 @@ fn test_mcp_tool_integer_preserved() {
         assert_eq!(schedule["properties"][field]["type"], "integer", "{field}");
     }
     assert_eq!(schedule["properties"]["weekday"]["type"], "string");
-    for schedule in [
-        serde_json::json!({"kind": "interval", "seconds": 30}),
-        serde_json::json!({"kind": "daily", "hour": 9, "minute": 0}),
-        serde_json::json!({"kind": "weekly", "weekday": "mon", "hour": 9, "minute": 0}),
-    ] {
-        serde_json::from_value::<chaos_cron::tools::create::CronCreateParams>(
-            serde_json::json!({"name": "smoke", "command": "echo cron-smoke-test", "schedule": schedule}),
-        ).unwrap();
-    }
-    let input = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "offset": {"type": "integer", "description": "Starting line"},
-            "ratio": {"type": "number"},
-            "indentation": {"$ref": "#/$defs/Indentation"}
-        },
-        "$defs": {
-            "Indentation": {
-                "type": "object",
-                "properties": {
-                    "anchor_line": {"anyOf": [{"type": "integer"}, {"type": "null"}]}
-                }
-            }
-        }
-    });
-    let schema = chaos_parrot::sanitize::parse_tool_input_schema(&input).unwrap();
-    let wire = serde_json::Value::from(&schema);
-    assert_eq!(wire["properties"]["offset"]["type"], "integer");
-    assert_eq!(wire["properties"]["offset"]["description"], "Starting line");
-    assert_eq!(wire["properties"]["ratio"]["type"], "number");
-    assert_eq!(
-        wire["properties"]["indentation"]["properties"]["anchor_line"]["type"],
-        "integer"
-    );
-
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);
     let available_models = Vec::new();

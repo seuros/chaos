@@ -7,63 +7,38 @@ use super::redact_sensitive_url_parts;
 use super::sanitize_url_for_logging;
 
 #[test]
-fn parse_token_endpoint_error_prefers_error_description() {
-    let detail = parse_token_endpoint_error(
-        r#"{"error":"invalid_grant","error_description":"refresh token expired"}"#,
-    );
-
-    assert_eq!(
-        detail,
-        TokenEndpointErrorDetail {
-            error_code: Some("invalid_grant".to_string()),
-            error_message: Some("refresh token expired".to_string()),
-            display_message: "refresh token expired".to_string(),
-        }
-    );
-}
-
-#[test]
-fn parse_token_endpoint_error_reads_nested_error_message_and_code() {
-    let detail = parse_token_endpoint_error(
-        r#"{"error":{"code":"proxy_auth_required","message":"proxy authentication required"}}"#,
-    );
-
-    assert_eq!(
-        detail,
-        TokenEndpointErrorDetail {
-            error_code: Some("proxy_auth_required".to_string()),
-            error_message: Some("proxy authentication required".to_string()),
-            display_message: "proxy authentication required".to_string(),
-        }
-    );
-}
-
-#[test]
-fn parse_token_endpoint_error_falls_back_to_error_code() {
-    let detail = parse_token_endpoint_error(r#"{"error":"temporarily_unavailable"}"#);
-
-    assert_eq!(
-        detail,
-        TokenEndpointErrorDetail {
-            error_code: Some("temporarily_unavailable".to_string()),
-            error_message: None,
-            display_message: "temporarily_unavailable".to_string(),
-        }
-    );
-}
-
-#[test]
-fn parse_token_endpoint_error_preserves_plain_text_for_display() {
-    let detail = parse_token_endpoint_error("service unavailable");
-
-    assert_eq!(
-        detail,
-        TokenEndpointErrorDetail {
-            error_code: None,
-            error_message: None,
-            display_message: "service unavailable".to_string(),
-        }
-    );
+fn token_endpoint_errors_keep_useful_messages_without_losing_codes() {
+    for (body, code, message, display) in [
+        (
+            r#"{"error":"invalid_grant","error_description":"refresh token expired"}"#,
+            Some("invalid_grant"),
+            Some("refresh token expired"),
+            "refresh token expired",
+        ),
+        (
+            r#"{"error":{"code":"proxy_auth_required","message":"proxy authentication required"}}"#,
+            Some("proxy_auth_required"),
+            Some("proxy authentication required"),
+            "proxy authentication required",
+        ),
+        (
+            r#"{"error":"temporarily_unavailable"}"#,
+            Some("temporarily_unavailable"),
+            None,
+            "temporarily_unavailable",
+        ),
+        ("service unavailable", None, None, "service unavailable"),
+    ] {
+        assert_eq!(
+            parse_token_endpoint_error(body),
+            TokenEndpointErrorDetail {
+                error_code: code.map(str::to_owned),
+                error_message: message.map(str::to_owned),
+                display_message: display.to_owned(),
+            },
+            "{body}"
+        );
+    }
 }
 
 #[test]

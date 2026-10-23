@@ -51,7 +51,9 @@ impl Session {
         let controls = self.session_controls().await;
         let requested_model = model.unwrap_or(&controls.model);
         let current = crate::models_manager::catalog::ModelSelection::from_id(&controls.model)
-            .expect("native model identity must be qualified");
+            .ok_or_else(|| {
+                ProcessControlError::Rejected("native model identity must be qualified".into())
+            })?;
         let model = if crate::models_manager::catalog::ModelSelection::same_model(
             requested_model,
             &controls.model,
@@ -62,12 +64,20 @@ impl Session {
             requested_model
         };
         let mode = mode.unwrap_or(&controls.current_mode);
-        let choice = controls.model_catalog.find(model, &current.provider_id);
-        if model != controls.model && choice.is_none() {
-            return Err(ProcessControlError::Rejected(
-                "model/account choice is not available".into(),
-            ));
-        }
+        let choice = if model != controls.model {
+            Some(
+                controls
+                    .model_catalog
+                    .find(model, &current.provider_id)
+                    .ok_or_else(|| {
+                        ProcessControlError::Rejected(
+                            "model/account choice is not available".into(),
+                        )
+                    })?,
+            )
+        } else {
+            None
+        };
         let mode_changed = mode != controls.current_mode;
         if !controls.modes.iter().any(|entry| entry.id == mode)
             || (mode_changed && !controls.switching_allowed)
@@ -77,13 +87,11 @@ impl Session {
             ));
         }
         let mut state = self.state.lock().await;
-        if model != controls.model {
+        if let Some(choice) = choice {
             let mut next = state.session_configuration.clone();
-            next.collaboration_mode = next.collaboration_mode.with_updates(
-                Some(choice.expect("validated model choice").id.clone()),
-                None,
-                None,
-            );
+            next.collaboration_mode =
+                next.collaboration_mode
+                    .with_updates(Some(choice.id.clone()), None, None);
             self.resolve_model_configuration(&mut next)
                 .await
                 .map_err(|error| ProcessControlError::Rejected(error.to_string()))?;

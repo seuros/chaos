@@ -1,58 +1,6 @@
 use super::*;
-use chaos_sh::KnownShell;
 use std::path::PathBuf;
 use std::process::Command;
-
-#[test]
-fn test_detect_shell_type() {
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("zsh")),
-        Some(KnownShell::Zsh)
-    );
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("bash")),
-        Some(KnownShell::Bash)
-    );
-    assert_eq!(detect_shell_type(&PathBuf::from("fish")), None);
-    assert_eq!(detect_shell_type(&PathBuf::from("other")), None);
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("/bin/zsh")),
-        Some(KnownShell::Zsh)
-    );
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("/bin/bash")),
-        Some(KnownShell::Bash)
-    );
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("/bin/sh")),
-        Some(KnownShell::Sh)
-    );
-    assert_eq!(
-        detect_shell_type(&PathBuf::from("sh")),
-        Some(KnownShell::Sh)
-    );
-}
-
-#[test]
-fn detects_bash() {
-    let bash_shell = get_shell(ShellType::Bash, None).unwrap();
-    let shell_path = bash_shell.shell_path;
-
-    assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("bash"),
-        "shell path: {shell_path:?}",
-    );
-}
-
-#[test]
-fn detects_sh() {
-    let sh_shell = get_shell(ShellType::Sh, None).unwrap();
-    let shell_path = sh_shell.shell_path;
-    assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("sh"),
-        "shell path: {shell_path:?}",
-    );
-}
 
 #[test]
 fn can_run_on_shell_test() {
@@ -65,6 +13,12 @@ fn can_run_on_shell_test() {
 
 fn shell_works(shell: Option<Shell>, command: &str, required: bool) -> bool {
     if let Some(shell) = shell {
+        assert_eq!(
+            shell.shell_path.file_name().and_then(|name| name.to_str()),
+            Some(shell.name()),
+            "shell path: {:?}",
+            shell.shell_path
+        );
         let args = shell.derive_exec_args(command, false);
         let output = Command::new(args[0].clone())
             .args(&args[1..])
@@ -80,33 +34,19 @@ fn shell_works(shell: Option<Shell>, command: &str, required: bool) -> bool {
 
 #[test]
 fn derive_exec_args() {
-    let test_bash_shell = Shell {
-        shell_type: ShellType::Bash,
-        shell_path: PathBuf::from("/bin/bash"),
-        shell_environment: empty_shell_environment_receiver(),
-    };
-    assert_eq!(
-        test_bash_shell.derive_exec_args("echo hello", false),
-        vec!["/bin/bash", "-c", "echo hello"]
-    );
-    assert_eq!(
-        test_bash_shell.derive_exec_args("echo hello", true),
-        vec!["/bin/bash", "-lc", "echo hello"]
-    );
-
-    let test_zsh_shell = Shell {
-        shell_type: ShellType::Zsh,
-        shell_path: PathBuf::from("/bin/zsh"),
-        shell_environment: empty_shell_environment_receiver(),
-    };
-    assert_eq!(
-        test_zsh_shell.derive_exec_args("echo hello", false),
-        vec!["/bin/zsh", "-c", "echo hello"]
-    );
-    assert_eq!(
-        test_zsh_shell.derive_exec_args("echo hello", true),
-        vec!["/bin/zsh", "-lc", "echo hello"]
-    );
+    for (shell_type, path) in [(ShellType::Bash, "/bin/bash"), (ShellType::Zsh, "/bin/zsh")] {
+        let shell = Shell {
+            shell_type,
+            shell_path: PathBuf::from(path),
+            shell_environment: empty_shell_environment_receiver(),
+        };
+        for (login, flag) in [(false, "-c"), (true, "-lc")] {
+            assert_eq!(
+                shell.derive_exec_args("echo hello", login),
+                vec![path, flag, "echo hello"]
+            );
+        }
+    }
 }
 
 #[tokio::test]

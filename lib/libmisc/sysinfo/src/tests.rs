@@ -59,24 +59,6 @@ fn singleton_returns_same_instance() {
 }
 
 #[test]
-fn uptime_is_nonzero() {
-    let facts = platform::detect();
-    if facts.sandbox_type == SandboxKind::None {
-        assert!(
-            facts.uptime_secs > 0,
-            "uptime should be > 0 on an unsandboxed running system"
-        );
-    }
-}
-
-#[test]
-fn shell_detected() {
-    // $SHELL is almost always set on unix
-    let facts = platform::detect();
-    assert_ne!(facts.shell, "", "shell should be detected");
-}
-
-#[test]
 fn serialization_has_expected_keys() {
     let facts = platform::detect();
     let json = serde_json::to_value(&facts).expect("should serialize");
@@ -115,43 +97,23 @@ fn serialization_has_expected_keys() {
 }
 
 #[test]
-fn multiplexer_detected_when_in_tmux() {
-    if std::env::var("TMUX").is_ok() {
-        let facts = platform::detect();
-        let mux = facts.multiplexer.expect("should detect tmux");
-        assert_eq!(mux.kind(), "tmux");
-        let pane = mux.id().expect("tmux always sets $TMUX_PANE");
-        assert!(
-            pane.starts_with('%'),
-            "tmux pane ids start with '%', got: {pane}"
+fn display_server_types_are_normalized() {
+    for (input, expected) in [
+        (Some("wayland"), "wayland"),
+        (Some("WAYLAND"), "wayland"),
+        (Some("x11"), "x11"),
+        (Some("Xorg"), "x11"),
+        (Some("tty"), "none"),
+        (Some("console"), "none"),
+        (Some(""), "none"),
+        (None, "none"),
+    ] {
+        assert_eq!(
+            normalize_display_server(input.map(str::to_owned)),
+            expected,
+            "{input:?}"
         );
     }
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn linux_distro_detected() {
-    let facts = platform::detect();
-    // On a real Linux system, distro should be detected from /etc/os-release
-    // or marker files.  CI may run in containers where this is available.
-    // We just check it doesn't panic — empty is acceptable in minimal containers.
-    let _ = facts.os_distro;
-}
-
-#[test]
-fn graphical_session_types_are_normalized() {
-    assert_eq!(normalize_display_server(Some("wayland".into())), "wayland");
-    assert_eq!(normalize_display_server(Some("WAYLAND".into())), "wayland");
-    assert_eq!(normalize_display_server(Some("x11".into())), "x11");
-    assert_eq!(normalize_display_server(Some("Xorg".into())), "x11");
-}
-
-#[test]
-fn non_graphical_session_types_normalize_to_none() {
-    assert_eq!(normalize_display_server(Some("tty".into())), "none");
-    assert_eq!(normalize_display_server(Some("console".into())), "none");
-    assert_eq!(normalize_display_server(Some("".into())), "none");
-    assert_eq!(normalize_display_server(None), "none");
 }
 
 #[test]

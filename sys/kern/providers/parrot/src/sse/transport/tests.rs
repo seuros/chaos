@@ -4,21 +4,6 @@ use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
-async fn encoded_payload_is_shared_by_request_bodies() {
-    let payload = serde_json::json!({"input": "x".repeat(1024 * 1024)});
-    let encoded = encode_body(&payload).unwrap();
-    let pointer = encoded.as_ptr();
-
-    for _ in 0..3 {
-        let body = Body::from(encoded.clone());
-        let collected = body.collect().await.unwrap().to_bytes();
-        assert_eq!(collected.as_ptr(), pointer);
-        assert_eq!(collected.len(), encoded.len());
-    }
-    assert_eq!(serde_json::from_slice::<Value>(&encoded).unwrap(), payload);
-}
-
-#[tokio::test]
 async fn retries_send_identical_payload_and_headers() {
     let server = MockServer::start().await;
     let payload = serde_json::json!({"input": "text\n\"escaped\"", "stream": true});

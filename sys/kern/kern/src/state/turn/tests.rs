@@ -11,35 +11,19 @@ fn make_input() -> ResponseInputItem {
 }
 
 #[test]
-fn defaults_to_current_turn() {
-    let ts = TurnState::default();
+fn mailbox_delivery_follows_answer_input_and_tool_boundaries() {
+    let mut ts = TurnState::default();
     assert!(ts.accepts_mailbox_delivery());
     assert!(!ts.has_deliverable_input());
-}
-
-#[test]
-fn answer_emitted_defers_when_mailbox_empty() {
-    let mut ts = TurnState::default();
     ts.record_answer_emitted();
     assert!(!ts.accepts_mailbox_delivery());
     assert!(!ts.has_deliverable_input());
-}
-
-#[test]
-fn steered_input_reopens_delivery() {
-    let mut ts = TurnState::default();
-    ts.record_answer_emitted();
-    assert!(!ts.accepts_mailbox_delivery());
 
     ts.push_pending_input(make_input());
     // push_pending_input atomically calls record_steered_input
     assert!(ts.accepts_mailbox_delivery());
     assert!(ts.has_deliverable_input());
-}
-
-#[test]
-fn tool_call_reopens_delivery() {
-    let mut ts = TurnState::default();
+    assert_eq!(ts.take_pending_input().len(), 1);
     ts.record_answer_emitted();
     assert!(!ts.accepts_mailbox_delivery());
 

@@ -54,25 +54,13 @@ fn storing_managed_tools_moves_the_original_vector_and_schema() {
 
 #[test]
 fn elicitation_granular_policy_defaults_to_prompting() {
+    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Headless));
     assert!(!elicitation_is_rejected_by_policy(
         ApprovalPolicy::Interactive
     ));
     assert!(!elicitation_is_rejected_by_policy(
         ApprovalPolicy::Supervised
     ));
-    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Granular(
-        GranularApprovalConfig {
-            sandbox_approval: true,
-            rules: true,
-            request_permissions: true,
-            mcp_elicitations: false,
-        }
-    )));
-}
-
-#[test]
-fn elicitation_granular_policy_respects_headless_and_config() {
-    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Headless));
     assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Granular(
         GranularApprovalConfig {
             sandbox_approval: true,
@@ -503,44 +491,29 @@ fn trusted_review_provenance_rejects_noncanonical_or_unsafe_values() {
 }
 
 #[test]
-fn tool_filter_allows_by_default() {
-    let filter = ToolFilter::default();
+fn tool_filter_applies_default_enabled_disabled_and_conflict_precedence() {
+    fn check(enabled: Option<&[&str]>, disabled: &[&str], cases: &[(&str, bool)]) {
+        let filter = ToolFilter {
+            enabled: enabled.map(|names| names.iter().map(|name| (*name).to_string()).collect()),
+            disabled: disabled.iter().map(|name| (*name).to_string()).collect(),
+        };
+        for (name, expected) in cases {
+            assert_eq!(filter.allows(name), *expected, "tool {name}");
+        }
+    }
 
-    assert!(filter.allows("any"));
-}
-
-#[test]
-fn tool_filter_applies_enabled_list() {
-    let filter = ToolFilter {
-        enabled: Some(HashSet::from(["allowed".to_string()])),
-        disabled: HashSet::new(),
-    };
-
-    assert!(filter.allows("allowed"));
-    assert!(!filter.allows("denied"));
-}
-
-#[test]
-fn tool_filter_applies_disabled_list() {
-    let filter = ToolFilter {
-        enabled: None,
-        disabled: HashSet::from(["blocked".to_string()]),
-    };
-
-    assert!(!filter.allows("blocked"));
-    assert!(filter.allows("open"));
-}
-
-#[test]
-fn tool_filter_applies_enabled_then_disabled() {
-    let filter = ToolFilter {
-        enabled: Some(HashSet::from(["keep".to_string(), "remove".to_string()])),
-        disabled: HashSet::from(["remove".to_string()]),
-    };
-
-    assert!(filter.allows("keep"));
-    assert!(!filter.allows("remove"));
-    assert!(!filter.allows("unknown"));
+    check(None, &[], &[("any", true)]);
+    check(
+        Some(&["allowed"]),
+        &[],
+        &[("allowed", true), ("denied", false)],
+    );
+    check(None, &["blocked"], &[("blocked", false), ("open", true)]);
+    check(
+        Some(&["keep", "remove"]),
+        &["remove"],
+        &[("keep", true), ("remove", false), ("unknown", false)],
+    );
 }
 
 #[test]

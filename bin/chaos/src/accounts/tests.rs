@@ -5,15 +5,13 @@ use super::{
 use serde_json::json;
 
 #[test]
-fn formats_long_key() {
-    let key = "sk-proj-1234567890ABCDE";
-    assert_eq!(safe_format_key(key), "sk-proj-***ABCDE");
-}
-
-#[test]
-fn short_key_returns_stars() {
-    let key = "sk-proj-12345";
-    assert_eq!(safe_format_key(key), "***");
+fn formats_api_keys_without_exposing_short_or_long_values() {
+    for (key, expected) in [
+        ("sk-proj-1234567890ABCDE", "sk-proj-***ABCDE"),
+        ("sk-proj-12345", "***"),
+    ] {
+        assert_eq!(safe_format_key(key), expected, "{key}");
+    }
 }
 
 #[test]

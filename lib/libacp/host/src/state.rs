@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
 use protocol::schema::v1::{
@@ -31,6 +31,7 @@ pub(crate) struct State {
     pub client_capabilities: OnceLock<ClientCapabilities>,
     pub limits: ConnectionLimits,
     pub stop: CancellationToken,
+    pub peer_disconnected: AtomicBool,
     pub sessions: Mutex<HashMap<SessionId, Arc<Slot>>>,
     pub session_permits: Arc<Semaphore>,
     pub requests: Arc<Semaphore>,
@@ -48,6 +49,7 @@ impl State {
             requests: Arc::new(Semaphore::new(limits.pending_requests)),
             limits,
             stop: CancellationToken::new(),
+            peer_disconnected: AtomicBool::new(false),
             sessions: Mutex::new(HashMap::new()),
             inbound: AtomicUsize::new(0),
             url_elicitations: Mutex::new(HashMap::new()),

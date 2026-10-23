@@ -1,7 +1,8 @@
 use super::*;
 
 #[test]
-fn turn_result_success_round_trips_with_internal_tag() {
+fn turn_result_round_trips_with_internal_tag() {
+    // Success variant.
     let value = serde_json::to_value(TurnResult::Success(TurnOutput {
         content: vec![ContentItem::OutputText { text: "hi".into() }],
         finish_reason: Some("end_turn".into()),
@@ -24,10 +25,8 @@ fn turn_result_success_round_trips_with_internal_tag() {
     );
     assert_eq!(output.finish_reason.as_deref(), Some("end_turn"));
     assert_eq!(output.server_model.as_deref(), Some("mock-model"));
-}
 
-#[test]
-fn turn_result_error_round_trips_with_internal_tag() {
+    // Error variant.
     let value = serde_json::to_value(TurnResult::Error(TurnError {
         code: "rate_limit".into(),
         message: "too many requests".into(),

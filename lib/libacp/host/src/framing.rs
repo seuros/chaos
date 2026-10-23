@@ -5,7 +5,7 @@ use std::sync::{Arc, PoisonError};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec};
+use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec, LinesCodecError};
 
 use crate::protocol::schema::v1::SessionId;
 use crate::state::State;
@@ -22,7 +22,7 @@ pub(crate) fn incoming<R: AsyncRead + Unpin>(
         let state = state.clone();
         async move {
             let result = (|| {
-                let line = line.map_err(io::Error::other)?;
+                let line = line.map_err(|error| transport_error(error, &state))?;
                 let frame: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
                 if !frame.is_object() {
                     return Err(io::Error::other("ACP requires individual JSON objects"));
@@ -54,12 +54,13 @@ pub(crate) fn outgoing<W: AsyncWrite + Unpin>(
     writer: W,
     state: Arc<State>,
 ) -> impl Sink<String, Error = io::Error> {
+    let transport_state = state.clone();
     <FramedWrite<W, LinesCodec> as SinkExt<String>>::sink_map_err(
         FramedWrite::new(
             writer,
             LinesCodec::new_with_max_length(state.limits.max_message_bytes),
         ),
-        io::Error::other,
+        move |error| transport_error(error, &transport_state),
     )
     .with(move |line: String| {
         let state = state.clone();
@@ -89,4 +90,24 @@ pub(crate) fn outgoing<W: AsyncWrite + Unpin>(
             Ok(line)
         }
     })
+}
+
+fn transport_error(error: LinesCodecError, state: &State) -> io::Error {
+    match error {
+        LinesCodecError::Io(error) => {
+            if matches!(
+                error.kind(),
+                io::ErrorKind::BrokenPipe
+                    | io::ErrorKind::ConnectionReset
+                    | io::ErrorKind::ConnectionAborted
+            ) {
+                // A full peer disconnect may reach the writer before reader EOF.
+                // Still run and confirm native cleanup before reporting success.
+                state.peer_disconnected.store(true, Ordering::Release);
+                state.close();
+            }
+            error
+        }
+        error => io::Error::other(error),
+    }
 }

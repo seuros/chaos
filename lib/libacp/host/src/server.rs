@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use protocol::schema::ProtocolVersion;
 use protocol::schema::v1::{
@@ -42,6 +43,8 @@ impl AgentServer {
 
     /// Serve one ACP client connection over caller-owned byte streams.
     ///
+    /// Peer EOF or disconnect succeeds only after native shutdown is confirmed.
+    /// Protocol violations and other transport failures remain errors.
     /// Dropping this future closes transport and schedules bounded native cleanup.
     pub async fn serve<R, W>(&self, reader: R, writer: W) -> Result<(), HostError>
     where
@@ -424,7 +427,11 @@ impl AgentServer {
         if let Some(reason) = state.failure_reason() {
             return Err(HostError::Closed(reason));
         }
-        result
+        if state.peer_disconnected.load(Ordering::Acquire) {
+            Ok(())
+        } else {
+            result
+        }
     }
 }
 

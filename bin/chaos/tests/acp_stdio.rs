@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use chaos_kern::models_manager::catalog::ModelSelection;
 use core_test_support::responses::{
     ev_assistant_message, ev_completed, ev_response_created, mount_sse_sequence, sse,
     start_mock_server,
@@ -139,6 +140,19 @@ stream_max_retries = 0
         )
         .await;
     assert!(selected["error"].is_null(), "{selected}");
+    let selected_model = ModelSelection {
+        provider_id: "acp-fixture".into(),
+        model: "mock-second".into(),
+    }
+    .id();
+    assert!(
+        selected["result"]["configOptions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|option| option["id"] == "model" && option["currentValue"] == selected_model),
+        "{selected}"
+    );
     let (mode, _) = peer
         .request(
             11,
@@ -180,7 +194,8 @@ stream_max_retries = 0
             .as_array()
             .unwrap()
             .iter()
-            .any(|option| option["id"] == "model" && option["currentValue"] == "mock-second")
+            .any(|option| option["id"] == "model" && option["currentValue"] == selected_model),
+        "{loaded}"
     );
     let replay = serde_json::to_string(&updates).unwrap();
     assert!(replay.contains("CLI first response") && replay.contains("CLI continued response"));

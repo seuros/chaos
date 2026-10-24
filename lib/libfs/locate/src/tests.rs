@@ -13,6 +13,19 @@ use std::time::Instant;
 use tempfile::TempDir;
 
 #[test]
+fn poisoned_run_reporter_returns_an_error_instead_of_panicking() {
+    let reporter = RunReporter::default();
+    let _ = std::panic::catch_unwind(|| {
+        let _guard = reporter.completed.1.lock().unwrap();
+        panic!("poison the search result state");
+    });
+
+    reporter.on_complete();
+    reporter.on_update(&FileSearchSnapshot::default());
+    assert!(reporter.wait_for_complete().is_err());
+}
+
+#[test]
 fn tie_breakers_sort_by_path_when_scores_equal() {
     let mut matches = vec![
         (100, "b_path".to_string()),

@@ -6,7 +6,7 @@ pub(crate) mod runtime;
 mod stream;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
@@ -412,6 +412,16 @@ impl From<crate::ingress::BodyError> for ApiError {
 }
 
 impl Session {
+    fn lock_data(&self) -> Result<MutexGuard<'_, SessionData>, ApiError> {
+        self.data.lock().map_err(|_| {
+            // Do not keep renewing durable ownership of untrustworthy state.
+            if let Some(owner) = self.ledger.get() {
+                owner.abandon();
+            }
+            ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "session state unavailable")
+        })
+    }
+
     fn notify(&self) {
         self.changed.send_replace(());
     }
@@ -441,9 +451,7 @@ impl Session {
     }
 
     fn turn(&self, id: &str) -> Result<TurnSnapshot, ApiError> {
-        self.data
-            .lock()
-            .unwrap()
+        self.lock_data()?
             .turns
             .get(id)
             .map(|turn| turn.snapshot.clone())
@@ -459,7 +467,7 @@ impl Session {
     ) -> Result<TurnSnapshot, ApiError> {
         request.validate()?;
         let fingerprint = fingerprint(&request);
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.lock_data()?;
         // Test retry identity BEFORE admission: retries don't consume capacity,
         // even after the session has closed.
         if let Some(previous) = data.turns.get(&id) {
@@ -516,7 +524,7 @@ impl Session {
             return Err(ApiError::bad_request("request must not be empty"));
         }
         {
-            let data = self.data.lock().unwrap();
+            let data = self.lock_data()?;
             data.require_steerable(&id)?;
         }
         let (reply, response) = oneshot::channel();
@@ -555,7 +563,7 @@ impl Session {
                         "expires_at must be finite unix seconds",
                     ));
                 }
-                self.data.lock().unwrap().require_steerable(&id)?;
+                self.lock_data()?.require_steerable(&id)?;
                 NoticeChange::Post(chaos_kern::host_notice::HostNotice {
                     id: request.id,
                     text: request.text,
@@ -578,27 +586,33 @@ impl Session {
     }
 
     fn interrupt(&self, id: String) -> Result<TurnSnapshot, ApiError> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.lock_data()?;
         data.require_active(&id)?;
-        if data.turns[&id].snapshot.status != TurnStatus::Interrupting {
+        let turn = data.turns.get_mut(&id).ok_or_else(|| {
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "active turn record unavailable",
+            )
+        })?;
+        if turn.snapshot.status != TurnStatus::Interrupting {
             // Before the supervisor takes the request, cancellation is local.
             // In durable mode it may still be committing admission; queuing an
             // interrupt then could precede Turn and wake a lazy recovery boot.
-            if data.turns[&id].request.is_none() {
+            if turn.request.is_none() {
                 self.commands
                     .try_send(Command::Interrupt(id.clone()))
                     .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
             }
-            data.turns.get_mut(&id).unwrap().snapshot.status = TurnStatus::Interrupting;
+            turn.snapshot.status = TurnStatus::Interrupting;
         }
-        let snapshot = data.turns[&id].snapshot.clone();
+        let snapshot = turn.snapshot.clone();
         drop(data);
         self.notify();
         Ok(snapshot)
     }
 
     fn close(&self) -> Result<(), ApiError> {
-        let mut data = self.data.lock().unwrap();
+        let mut data = self.lock_data()?;
         if matches!(
             data.status,
             SessionStatus::Closing | SessionStatus::Closed | SessionStatus::Failed
@@ -620,7 +634,7 @@ impl Session {
     }
 
     fn events(&self, after: u64) -> Result<EventBatch, ApiError> {
-        let data = self.data.lock().unwrap();
+        let data = self.lock_data()?;
         if after > data.sequence {
             return Err(ApiError::bad_request(
                 "event cursor is ahead of this session",
@@ -709,7 +723,7 @@ impl SessionData {
     }
 
     fn observe(&mut self, event: &Event, quiescent: bool) {
-        if let Some(active) = &self.active {
+        if let Some(active) = &mut self.active {
             let id = active.id.clone();
             let turn = &mut self.turns.get_mut(&id).unwrap().snapshot;
             match &event.msg {
@@ -728,15 +742,12 @@ impl SessionData {
                     } else {
                         TurnStatus::Completed
                     };
-                    self.active.as_mut().unwrap().completion_outcome = Some(status);
-                    self.turns.get_mut(&id).unwrap().snapshot.status =
-                        TurnStatus::WaitingBackground;
+                    active.completion_outcome = Some(status);
+                    turn.status = TurnStatus::WaitingBackground;
                 }
                 EventMsg::TurnAborted(aborted) if aborted.turn_id.as_deref() == Some(&id) => {
-                    self.active.as_mut().unwrap().completion_outcome =
-                        Some(TurnStatus::Interrupted);
-                    self.turns.get_mut(&id).unwrap().snapshot.status =
-                        TurnStatus::WaitingBackground;
+                    active.completion_outcome = Some(TurnStatus::Interrupted);
+                    turn.status = TurnStatus::WaitingBackground;
                 }
                 EventMsg::Error(_) if event.id == id => {
                     // An error alone is not proof of termination.

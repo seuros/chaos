@@ -288,7 +288,7 @@ pub fn run(
 
     session.update_query(pattern_text);
 
-    let snapshot = reporter.wait_for_complete();
+    let snapshot = reporter.wait_for_complete()?;
     Ok(FileSearchResults {
         matches: snapshot.matches,
         total_match_count: snapshot.total_match_count,
@@ -459,7 +459,9 @@ fn matcher_worker(inner: Arc<SessionInner>, work_rx: Receiver<WorkSignal>) -> an
                         needs_search = true;
                         completed_for_query = false;
                         if !scan_complete(&inner) {
-                            let snapshot = search_index(&inner, last_query.as_deref().unwrap_or(""), false);
+                            let snapshot = search_index(
+                                &inner, last_query.as_deref().unwrap_or(""), false,
+                            );
                             inner.reporter.on_update(&snapshot);
                         }
                     }
@@ -635,33 +637,45 @@ fn normalize_for_path_match(text: &str) -> String {
 
 #[derive(Default)]
 struct RunReporter {
-    snapshot: RwLock<FileSearchSnapshot>,
-    completed: (Condvar, Mutex<bool>),
+    completed: (Condvar, Mutex<RunState>),
+}
+
+#[derive(Default)]
+struct RunState {
+    snapshot: FileSearchSnapshot,
+    completed: bool,
 }
 
 impl SessionReporter for RunReporter {
     fn on_update(&self, snapshot: &FileSearchSnapshot) {
-        #[expect(clippy::unwrap_used)]
-        let mut guard = self.snapshot.write().unwrap();
-        *guard = snapshot.clone();
+        let snapshot = snapshot.clone();
+        match self.completed.1.lock() {
+            Ok(mut state) => state.snapshot = snapshot,
+            // A waiter must reacquire this poisoned mutex and return an error.
+            Err(_) => self.completed.0.notify_all(),
+        }
     }
 
     fn on_complete(&self) {
         let (cv, mutex) = &self.completed;
-        let mut completed = mutex.lock().unwrap();
-        *completed = true;
+        if let Ok(mut state) = mutex.lock() {
+            state.completed = true;
+        }
+        // Notify even on poison so an existing waiter can return its error.
         cv.notify_all();
     }
 }
 
 impl RunReporter {
-    fn wait_for_complete(&self) -> FileSearchSnapshot {
+    fn wait_for_complete(&self) -> anyhow::Result<FileSearchSnapshot> {
         let (cv, mutex) = &self.completed;
-        let mut completed = mutex.lock().unwrap();
-        while !*completed {
-            completed = cv.wait(completed).unwrap();
-        }
-        self.snapshot.read().unwrap().clone()
+        let state = mutex
+            .lock()
+            .map_err(|_| anyhow::anyhow!("file search result state is poisoned"))?;
+        let state = cv
+            .wait_while(state, |state| !state.completed)
+            .map_err(|_| anyhow::anyhow!("file search result state is poisoned"))?;
+        Ok(state.snapshot.clone())
     }
 }
 

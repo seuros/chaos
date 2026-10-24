@@ -37,6 +37,48 @@ fn complete(id: &str) -> Event {
 }
 
 #[tokio::test]
+async fn poisoned_session_state_rejects_controls_without_releasing_capacity() {
+    let (session, mut commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    submit_turn(&session, "first", "hello", &capacity);
+    let Ok(Command::Turn(_)) = commands.try_recv() else {
+        panic!("initial turn must be queued");
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _guard = session.data.lock().unwrap();
+        panic!("poison session state");
+    }));
+
+    for result in [
+        session.turn("first").map(drop),
+        session
+            .submit(
+                "next".into(),
+                request("next"),
+                &capacity,
+                Duration::from_secs(60),
+            )
+            .map(drop),
+        session.interrupt("first".into()).map(drop),
+        session.events(0).map(drop),
+        session.close(),
+    ] {
+        assert_eq!(result.unwrap_err().code, StatusCode::SERVICE_UNAVAILABLE);
+    }
+    let steering = tokio::time::timeout(
+        Duration::from_secs(1),
+        session.steer("first".into(), "steer".into()),
+    )
+    .await
+    .expect("poisoned state must be rejected without waiting for steering");
+    assert_eq!(steering.unwrap_err().code, StatusCode::SERVICE_UNAVAILABLE);
+    drop(runtime::SupervisorGuard(session.clone()));
+    assert_eq!(capacity.available_permits(), 0);
+    assert!(commands.try_recv().is_err());
+    assert!(*session.done.borrow());
+}
+
+#[tokio::test]
 async fn retries_are_payload_bound_and_capacity_is_released_only_by_matching_terminal_event() {
     let (session, _commands) = ready_session();
     let capacity = Arc::new(Semaphore::new(1));
@@ -376,9 +418,11 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
     let capacity = Arc::new(Semaphore::new(1));
     let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
     submit_turn(&session, "first", "hello", &capacity);
-    assert!(
-        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, request)) if id == "first" && request.request == "hello")
-    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(id, request))
+            if id == "first" && request.request == "hello"
+    ));
     // A streaming HTTP subscriber observes a separate replay buffer, never
     // the kernel queue. Dropping it must not stop this supervisor.
     use rama::http::body::util::BodyExt;
@@ -391,15 +435,17 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
         .steer("first".into(), "focus on tests".into())
         .await
         .unwrap();
-    assert!(
-        matches!(supervisor.operations.recv().await, Some(Operation::Steer(id, text)) if id == "first" && text == "focus on tests")
-    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Steer(id, text)) if id == "first" && text == "focus on tests"
+    ));
     supervisor.events.send(complete("first")).unwrap();
     wait_until(&session, |data| data.status == SessionStatus::Idle).await;
     submit_turn(&session, "second", "continue", &capacity);
-    assert!(
-        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, _)) if id == "second")
-    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(id, _)) if id == "second"
+    ));
     session.interrupt("second".into()).unwrap();
     assert!(matches!(
         supervisor.operations.recv().await,
@@ -430,9 +476,10 @@ async fn cancellation_before_submission_skips_execution_and_cannot_interrupt_the
     );
     submit_turn(&session, "second", "continue", &capacity);
     // In particular, no Execute(first) or Interrupt is allowed here.
-    assert!(
-        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, _)) if id == "second")
-    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(id, _)) if id == "second"
+    ));
     session.close().unwrap();
     assert!(matches!(
         supervisor.operations.recv().await,
@@ -587,9 +634,10 @@ async fn host_notices_are_bound_to_the_turn_that_posted_them() {
 
     // Mira's A->B regression: B posts, then a delayed DELETE for A arrives.
     submit_turn(&session, "second", "continue", &capacity);
-    assert!(
-        matches!(supervisor.operations.recv().await, Some(Operation::Execute(id, _)) if id == "second")
-    );
+    assert!(matches!(
+        supervisor.operations.recv().await,
+        Some(Operation::Execute(id, _)) if id == "second"
+    ));
     assert!(
         session
             .notice("second".into(), Some(notice("n4")), None)

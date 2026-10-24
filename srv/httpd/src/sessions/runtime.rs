@@ -57,7 +57,12 @@ pub(super) struct SupervisorGuard(pub Arc<Session>);
 impl Drop for SupervisorGuard {
     fn drop(&mut self) {
         self.0.done.send_replace(true);
-        let mut data = self.0.data.lock().unwrap();
+        let Ok(mut data) = self.0.lock_data() else {
+            // lock_data abandons ownership; retain capacity and do not panic
+            // again if the supervisor is already unwinding.
+            self.0.notify();
+            return;
+        };
         if matches!(data.status, SessionStatus::Closed | SessionStatus::Failed) {
             return;
         }
@@ -389,7 +394,10 @@ async fn supervise_inner<B: Backend>(
                 break;
             }
             _ = session.daemon_stopping() => {
-                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, session.ledger.get().is_some()).await;
+                terminate(
+                    &session, &mut commands, &backend,
+                    TurnStatus::Interrupted, session.ledger.get().is_some(),
+                ).await;
                 break;
             }
             _ = tokio::time::sleep_until(deadline) => {
@@ -415,17 +423,26 @@ async fn supervise_inner<B: Backend>(
                         };
                         session.notify();
                         if session.data.lock().unwrap().status == SessionStatus::Closing {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
+                            terminate(
+                                &session, &mut commands, &backend,
+                                TurnStatus::Interrupted, false,
+                            ).await;
                             break;
                         }
                         if interrupted {
                             if !backend.confirm_quiescent().await {
-                                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
+                                terminate(
+                                    &session, &mut commands, &backend,
+                                    TurnStatus::Interrupted, false,
+                                ).await;
                                 break;
                             }
-                            session.data.lock().unwrap().active.as_mut().unwrap().completion_outcome = Some(TurnStatus::Interrupted);
+                            session.data.lock().unwrap().active.as_mut().unwrap()
+                                .completion_outcome = Some(TurnStatus::Interrupted);
                             if session.commit_completion(true).await.is_err() {
-                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                terminate(
+                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                ).await;
                                 break;
                             }
                             session.notify();
@@ -435,7 +452,9 @@ async fn supervise_inner<B: Backend>(
                             if let Some(owner) = session.ledger.get() {
                                 owner.dispatch(&id).await.map_err(|_| ())?;
                             }
-                            if session.data.lock().unwrap().turns[&id].snapshot.status == TurnStatus::Interrupting {
+                            if session.data.lock().unwrap().turns[&id].snapshot.status
+                                == TurnStatus::Interrupting
+                            {
                                 return Ok(false);
                             }
                             backend.execute(id, request).await.map(|_| true)
@@ -443,16 +462,23 @@ async fn supervise_inner<B: Backend>(
                         let (executed, suspend) = tokio::select! {
                             _ = session.ownership_lost() => (None, false),
                             _ = session.daemon_stopping() => (None, true),
-                            result = tokio::time::timeout_at(turn_deadline, execution) => (Some(result), false),
+                            result = tokio::time::timeout_at(turn_deadline, execution) =>
+                                (Some(result), false),
                         };
                         if matches!(executed, Some(Ok(Ok(false)))) {
                             if !backend.confirm_quiescent().await {
-                                terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, false).await;
+                                terminate(
+                                    &session, &mut commands, &backend,
+                                    TurnStatus::Interrupted, false,
+                                ).await;
                                 break;
                             }
-                            session.data.lock().unwrap().active.as_mut().unwrap().completion_outcome = Some(TurnStatus::Interrupted);
+                            session.data.lock().unwrap().active.as_mut().unwrap()
+                                .completion_outcome = Some(TurnStatus::Interrupted);
                             if session.commit_completion(true).await.is_err() {
-                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                terminate(
+                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                ).await;
                                 break;
                             }
                         } else if !matches!(executed, Some(Ok(Ok(true)))) {
@@ -467,10 +493,18 @@ async fn supervise_inner<B: Backend>(
                         let active = session.data.lock().unwrap().require_steerable(&turn_id);
                         let result = match active {
                             Ok(()) => tokio::select! {
-                                _ = session.ownership_lost() => Err(ApiError::conflict("ownership changed; reconcile steering delivery")),
-                                _ = session.daemon_stopping() => Err(ApiError::conflict("daemon stopping; reconcile steering delivery")),
-                                result = tokio::time::timeout_at(deadline, backend.steer(turn_id, text)) => {
-                                    result.unwrap_or(Err(ApiError::conflict("steering deadline exceeded; reconcile delivery")))
+                                _ = session.ownership_lost() => Err(ApiError::conflict(
+                                    "ownership changed; reconcile steering delivery",
+                                )),
+                                _ = session.daemon_stopping() => Err(ApiError::conflict(
+                                    "daemon stopping; reconcile steering delivery",
+                                )),
+                                result = tokio::time::timeout_at(
+                                    deadline, backend.steer(turn_id, text),
+                                ) => {
+                                    result.unwrap_or(Err(ApiError::conflict(
+                                        "steering deadline exceeded; reconcile delivery",
+                                    )))
                                 }
                             },
                             Err(error) => Err(error),
@@ -513,21 +547,29 @@ async fn supervise_inner<B: Backend>(
                         if active {
                             let interrupted = tokio::select! {
                                 _ = session.daemon_stopping() => {
-                                    terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, session.ledger.get().is_some()).await;
+                                    terminate(
+                                        &session, &mut commands, &backend,
+                                        TurnStatus::Interrupted, session.ledger.get().is_some(),
+                                    ).await;
                                     break;
                                 }
                                 _ = session.ownership_lost() => None,
-                                result = tokio::time::timeout_at(deadline, backend.interrupt()) => Some(result),
+                                result = tokio::time::timeout_at(deadline, backend.interrupt()) =>
+                                    Some(result),
                             };
                             if !matches!(interrupted, Some(Ok(Ok(())))) {
-                                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                                terminate(
+                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                ).await;
                                 break;
                             }
                         }
                     }
                     command @ (Some(Command::Close) | Some(Command::Suspend) | None) => {
                         let suspend = matches!(command, Some(Command::Suspend));
-                        terminate(&session, &mut commands, &backend, TurnStatus::Interrupted, suspend).await;
+                        terminate(
+                            &session, &mut commands, &backend, TurnStatus::Interrupted, suspend,
+                        ).await;
                         break;
                     }
                 }
@@ -536,21 +578,31 @@ async fn supervise_inner<B: Backend>(
                 match event {
                     Ok(event) => {
                         let shutdown = matches!(event.msg, EventMsg::ShutdownComplete);
-                        if session.observe_committed(&event, backend.is_quiescent()).await.is_err() {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                        if session.observe_committed(&event, backend.is_quiescent())
+                            .await.is_err()
+                        {
+                            terminate(
+                                &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                            ).await;
                             break;
                         }
                         let quiescent = backend.confirm_quiescent().await;
                         let autonomous = session.ledger.get().is_some()
                             && session.data.lock().unwrap().active.is_none()
                             && !quiescent;
-                        if shutdown || autonomous || session.commit_completion(quiescent).await.is_err() {
-                            terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                        if shutdown || autonomous
+                            || session.commit_completion(quiescent).await.is_err()
+                        {
+                            terminate(
+                                &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                            ).await;
                             break;
                         }
                     }
                     Err(()) => {
-                        terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                        terminate(
+                            &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                        ).await;
                         break;
                     }
                 }

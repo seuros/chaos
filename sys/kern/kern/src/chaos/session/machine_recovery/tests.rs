@@ -258,6 +258,67 @@ async fn machine_recovery_probe_timeout_resets_the_window() {
 }
 
 #[tokio::test]
+async fn machine_recovery_after_session_resume_can_publish_a_wake() {
+    use chaos_ipc::background_tasks::{TaskJournalEvent, WakePolicy};
+    use chaos_ipc::protocol::RolloutItem;
+    use chaos_machine::ThermalState;
+
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    session
+        .recover_background_tasks(&[RolloutItem::BackgroundTask(TaskJournalEvent::WakePolicy {
+            policy: WakePolicy::Closed,
+        })])
+        .await;
+    // Ordinary operator input must enable wakes in this new session even though
+    // the previous session wrote Closed during its orderly shutdown.
+    session.suspend_completion_wakes(WakePolicy::Enabled).await;
+    assert_eq!(
+        session
+            .services
+            .internal_task_store
+            .subscribe()
+            .borrow()
+            .wake_policy,
+        WakePolicy::Enabled
+    );
+    assert!(
+        !session
+            .services
+            .internal_task_store
+            .observer_cancel
+            .is_cancelled()
+    );
+
+    tokio::time::pause();
+    unresolved(&session).await;
+    session
+        .state
+        .lock()
+        .await
+        .machine_recovery
+        .request_wait(&turn.sub_id)
+        .unwrap();
+    session.finish_machine_wait_request(&turn, 1).await;
+    sample(&session, ThermalState::Normal).await;
+    for _ in 0..10 {
+        tokio::time::advance(POLL_INTERVAL).await;
+        sample(&session, ThermalState::Normal).await;
+    }
+    assert_eq!(
+        session.machine_recovery_status().await.phase,
+        Phase::Recovered
+    );
+    let pending = session.services.internal_task_store.pending().await;
+    assert_eq!(
+        pending.len(),
+        1,
+        "stable recovery must be eligible for runner admission"
+    );
+    assert_eq!(pending[0].source, Some(TaskSource::MachineRecovery));
+}
+
+#[tokio::test]
 async fn machine_recovery_parked_session_does_not_admit_unrelated_completions() {
     let (session, turn) = crate::chaos::make_session_and_context().await;
     let session = Arc::new(session);

@@ -21,10 +21,8 @@ use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use chaos_libration::UsageSniffer;
 use rama::error::BoxError;
-use rama::futures::StreamExt;
 use rama::http::HeaderMap;
 use rama::http::body::util::BodyExt;
-use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -129,6 +127,7 @@ impl ModelAdapter for ChatCompletionsAdapter {
                 )
                 .await;
                 if let Err(e) = result {
+                    // A disconnected consumer no longer needs the terminal error.
                     let _ = tx.send(Err(e)).await;
                 }
             });
@@ -809,73 +808,17 @@ where
 {
     let mut tool_acc: BTreeMap<usize, ToolCallAccumulator> = BTreeMap::new();
     let mut text_acc: Option<TextAccumulator> = None;
-    let mut response_id = String::new();
     let mut server_model: Option<String> = None;
-    let mut stream = EventStream::<_, String>::new(data_stream);
-    let mut completed_emitted = false;
-
-    loop {
-        let sse = match timeout(idle_timeout, stream.next()).await {
-            Ok(Some(Ok(sse))) => sse,
-            Ok(Some(Err(err))) => return Err(AbiError::Stream(err.to_string())),
-            Ok(None) => break,
-            Err(_) => return Err(AbiError::Stream("idle timeout waiting for SSE".to_string())),
-        };
-        let data = match sse.data() {
-            Some(data) => data.trim(),
-            None => continue,
-        };
-
-        if data == "[DONE]" {
-            if !completed_emitted {
-                let _ = tx
-                    .send(Ok(TurnEvent::Completed {
-                        response_id: response_id.clone(),
-                        token_usage: None,
-                    }))
-                    .await;
-            }
-            return Ok(());
-        }
-
-        let json = match serde_json::from_str::<Value>(data) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let events = parse_chunk(
-            &json,
+    crate::sse::process_json_sse(data_stream, idle_timeout, tx, |json, response_id| {
+        parse_chunk(
+            json,
             &mut tool_acc,
             &mut text_acc,
-            &mut response_id,
+            response_id,
             &mut server_model,
-        )?;
-
-        for event in events {
-            let is_done = matches!(&event, TurnEvent::Completed { .. });
-            if is_done {
-                completed_emitted = true;
-            }
-            if tx.send(Ok(event)).await.is_err() {
-                return Ok(());
-            }
-            if is_done {
-                return Ok(());
-            }
-        }
-    }
-
-    // Stream ended without [DONE] — treat as completion with no token data.
-    if !completed_emitted {
-        let _ = tx
-            .send(Ok(TurnEvent::Completed {
-                response_id,
-                token_usage: None,
-            }))
-            .await;
-    }
-
-    Ok(())
+        )
+    })
+    .await
 }
 
 #[cfg(test)]

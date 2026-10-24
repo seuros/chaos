@@ -438,9 +438,25 @@ impl TaskRegistry {
         }
     }
 
-    /// Only called on resume of the same process, never on a fork or rollback.
+    /// Replay durable state without authorizing a new live session. Background
+    /// recovery discovery must continue to treat a saved Closed policy as closed.
     pub(crate) async fn restore(&self, items: &[RolloutItem]) {
+        self.restore_inner(items, false).await;
+    }
+
+    /// Resume the same process in a new session lifetime, never a fork/rollback.
+    /// Shutdown closed the previous owner's observers, not all future owners.
+    /// Keep wakes interrupted until explicit operator input enables them.
+    pub(crate) async fn restore_for_session(&self, items: &[RolloutItem]) {
+        self.restore_inner(items, true).await;
+    }
+
+    async fn restore_inner(&self, items: &[RolloutItem], new_session: bool) {
         let mut state = self.state.lock().await;
+        if new_session && self.observer_cancel.is_cancelled() {
+            // A live shutdown is irreversible; only a fresh registry can resume.
+            return;
+        }
         for item in items {
             let RolloutItem::BackgroundTask(event) = item else {
                 continue;
@@ -474,6 +490,12 @@ impl TaskRegistry {
                     state.recovery_context = Some(context.clone())
                 }
             }
+        }
+        if new_session && state.policy() == WakePolicy::Closed {
+            state.policy = lifecycle::restore_policy(WakePolicy::Interrupted);
+            state.journal.push(TaskJournalEvent::WakePolicy {
+                policy: WakePolicy::Interrupted,
+            });
         }
         // Host observations and opt-in waits belong only to the live session.
         for task in state.tasks.values_mut() {

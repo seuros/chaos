@@ -280,19 +280,26 @@ fn parse_chunk_handles_tool_call() {
 #[tokio::test]
 async fn process_sse_stream_completes_on_done() {
     let stream = futures::stream::iter(vec![
-        Ok::<_, std::io::Error>(Bytes::from(
-            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",\"variant_name\":\"v1\",\"content\":[{\"type\":\"text\",\"text\":\"Hi\"}],\"usage\":null,\"finish_reason\":null}\n\n",
-        )),
-        Ok::<_, std::io::Error>(Bytes::from(
-            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",\"variant_name\":\"v1\",\"content\":[],\"usage\":{\"input_tokens\":5,\"output_tokens\":1},\"finish_reason\":\"stop\"}\n\n",
-        )),
+        Ok::<_, std::io::Error>(Bytes::from(concat!(
+            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",",
+            "\"variant_name\":\"v1\",\"content\":[{\"type\":\"text\",\"text\":\"Hi\"}],",
+            "\"usage\":null,\"finish_reason\":null}\n\n",
+        ))),
+        Ok::<_, std::io::Error>(Bytes::from(concat!(
+            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",",
+            "\"variant_name\":\"v1\",\"content\":[],",
+            "\"usage\":{\"input_tokens\":5,\"output_tokens\":1},",
+            "\"finish_reason\":\"stop\"}\n\n",
+        ))),
         Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n\n")),
     ]);
     let (tx, mut rx) = mpsc::channel(16);
+    let turn_state = Arc::new(OnceLock::new());
 
-    process_sse_data_stream(stream, Duration::from_secs(1), None, tx)
+    process_sse_data_stream(stream, Duration::from_secs(1), Some(turn_state.clone()), tx)
         .await
         .expect("stream should succeed");
+    assert_eq!(turn_state.get().map(String::as_str), Some("ep-1"));
 
     let mut events = Vec::new();
     while let Ok(event) = rx.try_recv() {
@@ -309,6 +316,29 @@ async fn process_sse_stream_completes_on_done() {
         e,
         TurnEvent::Completed { token_usage: Some(u), .. } if u.input_tokens == 5
     )));
+}
+
+#[tokio::test]
+async fn process_sse_stream_preserves_provider_errors() {
+    let stream = futures::stream::iter([Ok::<_, std::io::Error>(Bytes::from_static(
+        b"data: {\"error\":\"inference failed\",\"episode_id\":\"not-captured\"}\n\n",
+    ))]);
+    let (tx, mut rx) = mpsc::channel(8);
+    let turn_state = Arc::new(OnceLock::new());
+    let result =
+        process_sse_data_stream(stream, Duration::from_secs(1), Some(turn_state.clone()), tx).await;
+    std::assert_matches!(
+        result,
+        Err(AbiError::Transport { status: 500, message }) if message == "inference failed"
+    );
+    assert!(
+        turn_state.get().is_none(),
+        "error frames must not update episode state"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "provider errors must not emit completion"
+    );
 }
 
 #[test]

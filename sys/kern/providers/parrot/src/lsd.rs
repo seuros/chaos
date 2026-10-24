@@ -20,9 +20,7 @@ use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use chaos_libration::UsageSniffer;
 use rama::error::BoxError;
-use rama::futures::StreamExt;
 use rama::http::HeaderMap;
-use rama::http::sse::EventStream;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -30,7 +28,6 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::timeout;
 
 /// Adapter for the LSD native inference API (`POST /inference`).
 #[derive(Debug, Clone)]
@@ -117,6 +114,7 @@ impl ModelAdapter for LsdAdapter {
             // model-mismatch check sees a match against the requested model.
             let fn_name = function_name;
             tokio::spawn(async move {
+                // A disconnected consumer no longer needs model or error notifications.
                 let _ = tx.send(Ok(TurnEvent::ServerModel(fn_name))).await;
                 if let Err(e) = run_sse_stream(
                     &url,
@@ -129,6 +127,7 @@ impl ModelAdapter for LsdAdapter {
                 )
                 .await
                 {
+                    // The consumer may have disconnected while the request was running.
                     let _ = tx.send(Err(e)).await;
                 }
             });
@@ -398,7 +397,9 @@ fn convert_tools(tools: &[chaos_abi::ToolDef]) -> Vec<LsdTool> {
                     "properties": {
                         "input": {
                             "type": "string",
-                            "description": format!("Input in {} format: {}", f.format_type, f.syntax),
+                            "description": format!(
+                                "Input in {} format: {}", f.format_type, f.syntax
+                            ),
                         }
                     },
                     "required": ["input"],
@@ -673,40 +674,8 @@ where
     let mut tool_acc: BTreeMap<String, ToolCallAccumulator> = BTreeMap::new();
     let mut text_acc: Option<TextAccumulator> = None;
     let mut thought_acc: Option<ThoughtAccumulator> = None;
-    let mut response_id = String::new();
     let mut server_model: Option<String> = None;
-    let mut stream = EventStream::<_, String>::new(data_stream);
-    let mut completed_emitted = false;
-
-    loop {
-        let sse = match timeout(idle_timeout, stream.next()).await {
-            Ok(Some(Ok(sse))) => sse,
-            Ok(Some(Err(err))) => return Err(AbiError::Stream(err.to_string())),
-            Ok(None) => break,
-            Err(_) => return Err(AbiError::Stream("idle timeout waiting for SSE".to_string())),
-        };
-        let data = match sse.data() {
-            Some(data) => data.trim(),
-            None => continue,
-        };
-
-        if data == "[DONE]" {
-            if !completed_emitted {
-                let _ = tx
-                    .send(Ok(TurnEvent::Completed {
-                        response_id: response_id.clone(),
-                        token_usage: None,
-                    }))
-                    .await;
-            }
-            return Ok(());
-        }
-
-        let json = match serde_json::from_str::<Value>(data) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
+    crate::sse::process_json_sse(data_stream, idle_timeout, tx, |json, response_id| {
         // Check for LSD error response in the stream.
         if let Some(error) = json.get("error").and_then(Value::as_str) {
             return Err(AbiError::Transport {
@@ -720,42 +689,20 @@ where
         if let Some(ep_id) = json.get("episode_id").and_then(Value::as_str)
             && let Some(state) = turn_state.as_ref()
         {
+            // Keep the first episode; later chunks must not replace its identity.
             let _ = state.set(ep_id.to_string());
         }
 
-        let events = parse_chunk(
-            &json,
+        parse_chunk(
+            json,
             &mut tool_acc,
             &mut text_acc,
             &mut thought_acc,
-            &mut response_id,
+            response_id,
             &mut server_model,
-        )?;
-
-        for event in events {
-            let is_done = matches!(&event, TurnEvent::Completed { .. });
-            if is_done {
-                completed_emitted = true;
-            }
-            if tx.send(Ok(event)).await.is_err() {
-                return Ok(());
-            }
-            if is_done {
-                return Ok(());
-            }
-        }
-    }
-
-    if !completed_emitted {
-        let _ = tx
-            .send(Ok(TurnEvent::Completed {
-                response_id,
-                token_usage: None,
-            }))
-            .await;
-    }
-
-    Ok(())
+        )
+    })
+    .await
 }
 
 #[cfg(test)]

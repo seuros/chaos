@@ -81,6 +81,11 @@ Journald protocol 5 includes background-task journal records. Older sidecars
 are incompatible even when their package version matches. PostgreSQL journal
 access is direct and does not use a sidecar.
 
+Shutdown closes automatic wakes for that live session, not all future owners
+of its journal. An explicitly resumed session keeps wakes interrupted until
+operator input re-enables them. Unattended recovery still excludes closed
+sessions, and machine-recovery waits must be registered anew after resume.
+
 Local QA uses `.tmp/qa/home` instead of the operator's `CHAOS_HOME`; override
 that test home with `CHAOS_QA_HOME`. `just test` builds the current journald
 binary before running the suite so SQLite tests do not launch a stale binary.

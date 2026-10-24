@@ -9,6 +9,15 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.5] - 2026-10-24
+
+### Fixed
+- Resumed sessions no longer inherit a permanently closed background-wake
+  policy from the previous session's shutdown. Operator input can re-enable
+  automatic wakes, including opt-in machine-recovery wakes. Live shutdowns
+  remain irreversible, unattended recovery still excludes closed sessions,
+  and saved machine-recovery waits are not replayed.
+
 ## [47.14.4] - 2026-10-22
 
 ### Fixed

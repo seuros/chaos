@@ -9,7 +9,7 @@ use std::sync::Arc;
 impl Session {
     pub(crate) async fn recover_background_tasks(self: &Arc<Self>, items: &[RolloutItem]) {
         let registry = &self.services.internal_task_store;
-        registry.restore(items).await;
+        registry.restore_for_session(items).await;
         if registry.subscribe().borrow().wake_policy
             != chaos_ipc::background_tasks::WakePolicy::Closed
             && let Err(error) = self.recover_consolidations().await
@@ -68,12 +68,33 @@ impl Session {
                         };
                     match completed {
                         Some(message) => {
-                            registry.complete(&task.id, TaskState::Succeeded, None,
-                                Some(serde_json::json!({"agent_id": process_id, "message": message}))).await;
+                            registry
+                                .complete(
+                                    &task.id,
+                                    TaskState::Succeeded,
+                                    None,
+                                    Some(serde_json::json!({
+                                        "agent_id": process_id,
+                                        "message": message,
+                                    })),
+                                )
+                                .await;
                         }
                         None => {
-                            registry.complete(&task.id, TaskState::Lost,
-                                Some("child execution did not survive its owner; it was not restarted".into()), None).await;
+                            registry
+                                .complete(
+                                    &task.id,
+                                    TaskState::Lost,
+                                    Some(
+                                        concat!(
+                                            "child execution did not survive its owner; ",
+                                            "it was not restarted",
+                                        )
+                                        .into(),
+                                    ),
+                                    None,
+                                )
+                                .await;
                         }
                     }
                 }
@@ -97,8 +118,20 @@ impl Session {
                     | TaskSource::MachineRecovery,
                 ) => {}
                 None => {
-                    registry.complete(&task.id, TaskState::SubmissionUnknown,
-                        Some("submission has no durable execution handle; do not resubmit automatically".into()), None).await;
+                    registry
+                        .complete(
+                            &task.id,
+                            TaskState::SubmissionUnknown,
+                            Some(
+                                concat!(
+                                    "submission has no durable execution handle; ",
+                                    "do not resubmit automatically",
+                                )
+                                .into(),
+                            ),
+                            None,
+                        )
+                        .await;
                 }
             }
         }

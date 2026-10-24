@@ -9,8 +9,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-gix = { version = "=0.89.0", features = [
-    "max-performance-safe",
+gix = { version = "=0.90.0", features = [
+    "max-performance",
     "blob-diff",
     "status",
     "revision",

@@ -55,6 +55,67 @@ async fn closed_wake_policy_cannot_restart_cancelled_observers() {
 }
 
 #[tokio::test]
+async fn resumed_closed_policy_requires_owner_input_without_reopening_discovery() {
+    let previous = TaskRegistry::default();
+    previous.begin_submission("completed").await;
+    let id = TaskRegistry::submission_id("completed");
+    previous
+        .complete(&id, TaskState::Succeeded, None, None)
+        .await;
+    previous.response_recorded("completed").await;
+    previous.set_policy(WakePolicy::Closed).await;
+    let history = previous.take_journal().await;
+
+    let discovery = TaskRegistry::default();
+    discovery.restore(&history).await;
+    assert_eq!(
+        discovery.subscribe().borrow().wake_policy,
+        WakePolicy::Closed
+    );
+    assert!(discovery.pending().await.is_empty());
+
+    let resumed = TaskRegistry::default();
+    resumed.restore_for_session(&history).await;
+    assert_eq!(
+        resumed.subscribe().borrow().wake_policy,
+        WakePolicy::Interrupted
+    );
+    assert!(resumed.pending().await.is_empty());
+    assert!(!resumed.observer_cancel.is_cancelled());
+    std::assert_matches!(
+        resumed.take_journal().await.last(),
+        Some(RolloutItem::BackgroundTask(TaskJournalEvent::WakePolicy {
+            policy: WakePolicy::Interrupted
+        }))
+    );
+    resumed.set_policy(WakePolicy::Enabled).await;
+    assert_eq!(resumed.pending().await.len(), 1);
+
+    previous.set_policy(WakePolicy::Enabled).await;
+    assert_eq!(
+        previous.subscribe().borrow().wake_policy,
+        WakePolicy::Closed
+    );
+}
+
+#[tokio::test]
+async fn resume_cannot_reopen_a_registry_closed_in_this_lifetime() {
+    let registry = TaskRegistry::default();
+    registry.set_policy(WakePolicy::Closed).await;
+    registry
+        .restore_for_session(&[RolloutItem::BackgroundTask(TaskJournalEvent::WakePolicy {
+            policy: WakePolicy::Enabled,
+        })])
+        .await;
+    registry.set_policy(WakePolicy::Enabled).await;
+    assert_eq!(
+        registry.subscribe().borrow().wake_policy,
+        WakePolicy::Closed
+    );
+    assert!(registry.observer_cancel.is_cancelled());
+}
+
+#[tokio::test]
 async fn machine_recovery_pending_success_is_never_replayed() {
     let registry = TaskRegistry::default();
     registry
@@ -74,10 +135,15 @@ async fn machine_recovery_pending_success_is_never_replayed() {
             delivered: false,
         })
         .await;
+    let history = registry.take_journal().await;
     let restored = TaskRegistry::default();
-    restored.restore(&registry.take_journal().await).await;
+    restored.restore(&history).await;
     assert!(restored.pending().await.is_empty());
     assert_eq!(restored.list().await[0].state, TaskState::Cancelled);
+    let resumed = TaskRegistry::default();
+    resumed.restore_for_session(&history).await;
+    assert!(resumed.pending().await.is_empty());
+    assert_eq!(resumed.list().await[0].state, TaskState::Cancelled);
 }
 
 #[tokio::test]

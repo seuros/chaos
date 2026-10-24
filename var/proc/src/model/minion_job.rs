@@ -1,6 +1,8 @@
 use anyhow::Result;
 use serde_json::Value;
 
+use super::epoch_seconds_to_datetime;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinionJobStatus {
     Pending,
@@ -114,6 +116,29 @@ pub struct MinionJobProgress {
     pub running_items: usize,
     pub completed_items: usize,
     pub failed_items: usize,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub(crate) struct MinionJobProgressRow {
+    pub(crate) total_items: i64,
+    pub(crate) pending_items: Option<i64>,
+    pub(crate) running_items: Option<i64>,
+    pub(crate) completed_items: Option<i64>,
+    pub(crate) failed_items: Option<i64>,
+}
+
+impl From<MinionJobProgressRow> for MinionJobProgress {
+    fn from(row: MinionJobProgressRow) -> Self {
+        let count =
+            |value: Option<i64>| usize::try_from(value.unwrap_or_default()).unwrap_or_default();
+        Self {
+            total_items: count(Some(row.total_items)),
+            pending_items: count(row.pending_items),
+            running_items: count(row.running_items),
+            completed_items: count(row.completed_items),
+            failed_items: count(row.failed_items),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -248,7 +273,5 @@ impl TryFrom<MinionJobItemRow> for MinionJobItem {
     }
 }
 
-fn epoch_seconds_to_datetime(secs: i64) -> Result<jiff::Timestamp> {
-    jiff::Timestamp::from_second(secs)
-        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
-}
+#[cfg(test)]
+mod tests;

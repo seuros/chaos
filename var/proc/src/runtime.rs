@@ -15,10 +15,12 @@ use crate::SortKey;
 use crate::apply_rollout_item;
 use crate::migrations::POSTGRES_STATE_MIGRATOR;
 use crate::migrations::STATE_MIGRATOR;
+use crate::model::MinionJobProgressRow;
 use crate::model::MinionJobRow;
 use crate::model::ProcessRow;
 use crate::model::anchor_from_item;
 use crate::model::datetime_to_epoch_seconds;
+use crate::model::epoch_seconds_to_datetime as timestamp_from_epoch;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
@@ -50,6 +52,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
+
+use processes::{extract_dynamic_tools, extract_memory_mode};
+
 mod agent_roles;
 mod documents;
 mod hooks;
@@ -472,7 +477,11 @@ impl RuntimeDbHandle {
     }
 
     chaos_dispatch::backend_dispatch! {
-        pub async fn archive_process_metadata(&self, id: ProcessId, archived_at: jiff::Timestamp) -> anyhow::Result<()>;
+        pub async fn archive_process_metadata(
+            &self,
+            id: ProcessId,
+            archived_at: jiff::Timestamp,
+        ) -> anyhow::Result<()>;
         pub async fn get_process(&self, id: ProcessId) -> anyhow::Result<Option<ProcessMetadata>>;
         pub async fn find_process_ids_by_parent_and_role(
             &self,
@@ -488,7 +497,10 @@ impl RuntimeDbHandle {
             process_id: ProcessId,
             tools: Option<&[DynamicToolSpec]>,
         ) -> anyhow::Result<()>;
-        pub async fn get_project_trust(&self, project_path: &Path) -> anyhow::Result<Option<TrustLevel>>;
+        pub async fn get_project_trust(
+            &self,
+            project_path: &Path,
+        ) -> anyhow::Result<Option<TrustLevel>>;
         pub async fn set_project_trust(
             &self,
             project_path: &Path,
@@ -497,7 +509,10 @@ impl RuntimeDbHandle {
         pub async fn list_global_mcp_servers(
             &self,
         ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>>;
-        pub async fn get_global_mcp_server(&self, name: &str) -> anyhow::Result<Option<McpServerConfig>>;
+        pub async fn get_global_mcp_server(
+            &self,
+            name: &str,
+        ) -> anyhow::Result<Option<McpServerConfig>>;
         pub async fn upsert_global_mcp_server(
             &self,
             name: &str,
@@ -544,7 +559,10 @@ impl RuntimeDbHandle {
             params: &MinionJobCreateParams,
             items: &[MinionJobItemCreateParams],
         ) -> anyhow::Result<MinionJob>;
-        pub(crate) async fn get_minion_job(&self, job_id: &str) -> anyhow::Result<Option<MinionJob>>;
+        pub(crate) async fn get_minion_job(
+            &self,
+            job_id: &str,
+        ) -> anyhow::Result<Option<MinionJob>>;
         pub(crate) async fn list_minion_job_items(
             &self,
             job_id: &str,
@@ -639,6 +657,7 @@ async fn open_sqlite_with_options(
         .fetch_one(&pool)
         .await?;
     if current != SqliteAutoVacuum::Incremental as i64 {
+        // Best-effort maintenance: a failed mode upgrade must not prevent opening the DB.
         let _ = sqlx::query("PRAGMA auto_vacuum = INCREMENTAL")
             .execute(&pool)
             .await;
@@ -1052,7 +1071,7 @@ FROM processes
             items.pop();
             items
                 .last()
-                .and_then(|item| anchor_from_process(item, sort_key))
+                .and_then(|item| anchor_from_item(item, sort_key))
         } else {
             None
         };
@@ -1171,7 +1190,8 @@ ON CONFLICT(process_id, position) DO NOTHING
         process_id: ProcessId,
     ) -> anyhow::Result<bool> {
         let result = sqlx::query(
-            "UPDATE processes SET memory_mode = 'polluted' WHERE id = $1 AND memory_mode != 'polluted'",
+            "UPDATE processes SET memory_mode = 'polluted'
+             WHERE id = $1 AND memory_mode != 'polluted'",
         )
         .bind(process_id.to_string())
         .execute(&self.pool)
@@ -1522,7 +1542,7 @@ SELECT
     completed_at,
     reported_at
 FROM agent_job_items
-WHERE job_id = 
+WHERE job_id =
             "#,
         );
         builder.push_bind(job_id);
@@ -1871,7 +1891,7 @@ WHERE
     }
 
     async fn get_minion_job_progress(&self, job_id: &str) -> anyhow::Result<MinionJobProgress> {
-        let row = sqlx::query(
+        let row = sqlx::query_as::<_, MinionJobProgressRow>(
             r#"
 SELECT
     COUNT(*) AS total_items,
@@ -1891,19 +1911,7 @@ WHERE job_id = $5
         .fetch_one(&self.pool)
         .await?;
 
-        let total_items: i64 = row.try_get("total_items")?;
-        let pending_items: Option<i64> = row.try_get("pending_items")?;
-        let running_items: Option<i64> = row.try_get("running_items")?;
-        let completed_items: Option<i64> = row.try_get("completed_items")?;
-        let failed_items: Option<i64> = row.try_get("failed_items")?;
-        Ok(MinionJobProgress {
-            total_items: usize::try_from(total_items).unwrap_or_default(),
-            pending_items: usize::try_from(pending_items.unwrap_or_default()).unwrap_or_default(),
-            running_items: usize::try_from(running_items.unwrap_or_default()).unwrap_or_default(),
-            completed_items: usize::try_from(completed_items.unwrap_or_default())
-                .unwrap_or_default(),
-            failed_items: usize::try_from(failed_items.unwrap_or_default()).unwrap_or_default(),
-        })
+        Ok(row.into())
     }
 
     /// Storage identity of the history table: the relation filenode changes on
@@ -2074,49 +2082,6 @@ WHERE id IN (
     .await?;
 
     Ok(())
-}
-
-fn timestamp_from_epoch(secs: i64) -> anyhow::Result<jiff::Timestamp> {
-    jiff::Timestamp::from_second(secs)
-        .map_err(|err| anyhow::anyhow!("invalid unix timestamp {secs}: {err}"))
-}
-
-fn anchor_from_process(
-    item: &crate::ProcessMetadata,
-    sort_key: crate::SortKey,
-) -> Option<crate::Anchor> {
-    let id = Uuid::parse_str(&item.id.to_string()).ok()?;
-    let ts = match sort_key {
-        crate::SortKey::CreatedAt => item.created_at,
-        crate::SortKey::UpdatedAt => item.updated_at,
-    };
-    Some(crate::Anchor { ts, id })
-}
-
-fn extract_dynamic_tools(items: &[RolloutItem]) -> Option<Option<Vec<DynamicToolSpec>>> {
-    items.iter().find_map(|item| match item {
-        RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.dynamic_tools.clone()),
-        RolloutItem::ResponseItem(_)
-        | RolloutItem::GoalCheckpoint(_)
-        | RolloutItem::Compacted(_)
-        | RolloutItem::BackgroundTask(_)
-        | RolloutItem::CompactionControl(_)
-        | RolloutItem::TurnContext(_)
-        | RolloutItem::EventMsg(_) => None,
-    })
-}
-
-fn extract_memory_mode(items: &[RolloutItem]) -> Option<String> {
-    items.iter().rev().find_map(|item| match item {
-        RolloutItem::SessionMeta(meta_line) => meta_line.meta.memory_mode.clone(),
-        RolloutItem::ResponseItem(_)
-        | RolloutItem::GoalCheckpoint(_)
-        | RolloutItem::Compacted(_)
-        | RolloutItem::BackgroundTask(_)
-        | RolloutItem::CompactionControl(_)
-        | RolloutItem::TurnContext(_)
-        | RolloutItem::EventMsg(_) => None,
-    })
 }
 
 fn push_process_filters_postgres<'a>(

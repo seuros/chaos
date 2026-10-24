@@ -4,6 +4,7 @@ use super::{
     Sqlite, StateRuntime, Value,
 };
 use crate::model::MinionJobItemRow;
+use crate::model::MinionJobProgressRow;
 use crate::model::minion_job_machine::item::MinionJobItemWorkflow;
 use crate::model::minion_job_machine::job::MinionJobWorkflow;
 
@@ -547,7 +548,7 @@ WHERE
         &self,
         job_id: &str,
     ) -> anyhow::Result<MinionJobProgress> {
-        let row = sqlx::query(
+        let row = sqlx::query_as::<_, MinionJobProgressRow>(
             r#"
 SELECT
     COUNT(*) AS total_items,
@@ -567,18 +568,9 @@ WHERE job_id = ?
         .fetch_one(self.pool.as_ref())
         .await?;
 
-        let total_items: i64 = row.try_get("total_items")?;
-        let pending_items: Option<i64> = row.try_get("pending_items")?;
-        let running_items: Option<i64> = row.try_get("running_items")?;
-        let completed_items: Option<i64> = row.try_get("completed_items")?;
-        let failed_items: Option<i64> = row.try_get("failed_items")?;
-        Ok(MinionJobProgress {
-            total_items: usize::try_from(total_items).unwrap_or_default(),
-            pending_items: usize::try_from(pending_items.unwrap_or_default()).unwrap_or_default(),
-            running_items: usize::try_from(running_items.unwrap_or_default()).unwrap_or_default(),
-            completed_items: usize::try_from(completed_items.unwrap_or_default())
-                .unwrap_or_default(),
-            failed_items: usize::try_from(failed_items.unwrap_or_default()).unwrap_or_default(),
-        })
+        Ok(row.into())
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -12,6 +12,7 @@ use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 
 mod archive;
+mod rollout_metadata;
 
 #[tokio::test]
 async fn list_processes_includes_rows_without_derived_user_message() {

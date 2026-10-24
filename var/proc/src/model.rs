@@ -32,9 +32,11 @@ pub use reviewer_orchestration::ReviewerAttempt;
 pub use reviewer_orchestration::ReviewerAttemptCreateParams;
 
 pub(crate) use minion_job::MinionJobItemRow;
+pub(crate) use minion_job::MinionJobProgressRow;
 pub(crate) use minion_job::MinionJobRow;
 pub(crate) use process_metadata::ProcessRow;
 pub(crate) use process_metadata::anchor_from_item;
 pub(crate) use process_metadata::datetime_to_epoch_seconds;
+pub(crate) use process_metadata::epoch_seconds_to_datetime;
 pub(crate) use reviewer_orchestration::ReviewRunRow;
 pub(crate) use reviewer_orchestration::ReviewerAttemptRow;

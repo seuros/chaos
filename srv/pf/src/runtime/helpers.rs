@@ -1,11 +1,11 @@
 use crate::config::NetworkProxyConfig;
 use crate::policy::is_non_public_ip;
+use rama::telemetry::tracing::info;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::time::Duration;
 use tokio::net::lookup_host;
 use tokio::time::timeout;
-use tracing::info;
 
 pub(super) const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(2);
 

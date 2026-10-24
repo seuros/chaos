@@ -10,4 +10,4 @@ workspace = true
 
 [dependencies]
 keyring-core = { workspace = true }
-tracing = { workspace = true }
+rama = { workspace = true }

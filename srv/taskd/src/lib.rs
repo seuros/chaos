@@ -11,6 +11,8 @@ use chaos_kern::background_recovery;
 use chaos_kern::config::{ConfigBuilder, ConfigOverrides};
 use chaos_kern::models_manager::CollaborationModesConfig;
 use chaos_session::background::{BackgroundWait, DEFAULT_BACKGROUND_TIMEOUT, WaitEvent};
+use chaos_snitch::tracing;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use std::time::Duration;
 
 #[derive(Debug, Default, usage::Args)]

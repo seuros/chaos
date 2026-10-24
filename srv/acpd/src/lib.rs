@@ -10,6 +10,7 @@ use chaos_argv::Arg0DispatchPaths;
 use chaos_getopt::CliConfigOverrides;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_kern::config::{Config, ConfigBuilder, ConfigOverrides};
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 
 mod approvals;
 mod backend;

@@ -1,3 +1,4 @@
+use rama::telemetry::tracing;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::sync::RwLock;

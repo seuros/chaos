@@ -24,7 +24,7 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 sys-locale = { workspace = true }
-tracing = { workspace = true }
+rama = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
 [dev-dependencies]

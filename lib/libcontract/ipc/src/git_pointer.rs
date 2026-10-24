@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 
 use chaos_realpath::AbsolutePathBuf;
-use tracing::error;
+use rama::telemetry::tracing::error;
 
 pub(crate) fn is_git_pointer_file(path: &AbsolutePathBuf) -> bool {
     path.as_path().is_file() && path.as_path().file_name() == Some(OsStr::new(".git"))

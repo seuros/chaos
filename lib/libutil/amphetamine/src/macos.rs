@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use chaos_ipc::product::OS_NAME;
 use core_foundation::base::TCFType;
 use core_foundation::string::CFString;
-use tracing::warn;
+use rama::telemetry::tracing::warn;
 
 static ASSERTION_REASON: LazyLock<String> =
     LazyLock::new(|| format!("{OS_NAME} is running an active turn"));

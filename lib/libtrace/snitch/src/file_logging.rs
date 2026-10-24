@@ -7,9 +7,11 @@
 
 use std::path::Path;
 
-use tracing_appender::non_blocking;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
+use crate::tracing;
+use crate::tracing::appender::non_blocking;
+use crate::tracing::appender::non_blocking::WorkerGuard;
+use crate::tracing::subscriber as tracing_subscriber;
+use crate::tracing::subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::registry::LookupSpan;

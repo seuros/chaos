@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use chaos_ipc::protocol::McpAuthStatus;
+use chaos_snitch::tracing::warn;
 use chaos_sysctl::types::McpServerConfig;
 use chaos_sysctl::types::McpServerTransportConfig;
 use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use futures::future::join_all;
-use tracing::warn;
 
 /// Error returned by an OAuth provider (e.g. invalid_scope).
 #[derive(Debug, Clone, PartialEq, Eq)]

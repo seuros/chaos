@@ -1,6 +1,10 @@
 use chaos_snitch::OtelProvider;
 use chaos_snitch::SessionTelemetry;
 use chaos_snitch::TelemetryAuthMode;
+use chaos_snitch::tracing;
+use chaos_snitch::tracing as tracing_opentelemetry;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
+use chaos_snitch::tracing::subscriber::Layer;
 use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::KeyValue;
@@ -14,7 +18,6 @@ use rama::telemetry::opentelemetry::trace::TracerProvider as _;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use tracing_subscriber::Layer;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -104,7 +107,7 @@ fn otel_export_routing_policy_routes_user_prompt_log_and_trace_events() {
                 .with_filter(filter_fn(OtelProvider::trace_export_filter)),
         );
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
@@ -205,7 +208,7 @@ fn otel_export_routing_policy_routes_tool_result_log_and_trace_events() {
                 .with_filter(filter_fn(OtelProvider::trace_export_filter)),
         );
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
@@ -316,7 +319,7 @@ fn otel_export_routing_policy_routes_auth_recovery_log_and_trace_events() {
                 .with_filter(filter_fn(OtelProvider::trace_export_filter)),
         );
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),
@@ -460,7 +463,7 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
                 .with_filter(filter_fn(OtelProvider::trace_export_filter)),
         );
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
             ProcessId::new(),

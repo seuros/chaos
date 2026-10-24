@@ -24,7 +24,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process", "rt", "sync", "time"] }
-tracing = { workspace = true }
+chaos-snitch = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]

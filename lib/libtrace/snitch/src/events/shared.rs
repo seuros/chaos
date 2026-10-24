@@ -2,9 +2,9 @@ use jiff::Timestamp;
 
 macro_rules! log_event {
     ($self:expr, $($fields:tt)*) => {{
-        tracing::event!(
+        $crate::tracing::event!(
             target: $crate::targets::OTEL_LOG_ONLY_TARGET,
-            tracing::Level::INFO,
+            $crate::tracing::Level::INFO,
             $($fields)*
             event.timestamp = %$crate::events::shared::timestamp(),
             conversation.id = %$self.metadata.conversation_id,
@@ -20,9 +20,9 @@ macro_rules! log_event {
 
 macro_rules! trace_event {
     ($self:expr, $($fields:tt)*) => {{
-        tracing::event!(
+        $crate::tracing::event!(
             target: $crate::targets::OTEL_TRACE_SAFE_TARGET,
-            tracing::Level::INFO,
+            $crate::tracing::Level::INFO,
             $($fields)*
             event.timestamp = %$crate::events::shared::timestamp(),
             conversation.id = %$self.metadata.conversation_id,

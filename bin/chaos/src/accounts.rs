@@ -28,13 +28,15 @@ use chaos_pam::XaiDeviceCodeOptions;
 use chaos_pam::complete_xai_device_code_login;
 use chaos_pam::request_xai_device_code;
 use chaos_pam::spawn_login_flow;
+use chaos_snitch::tracing;
+use chaos_snitch::tracing::appender::non_blocking::WorkerGuard;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use serde::Serialize;
 use serde_json::Value;
 use std::io::IsTerminal;
 use std::io::Read;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 

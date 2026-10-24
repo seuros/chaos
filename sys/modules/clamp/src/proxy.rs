@@ -12,6 +12,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use chaos_snitch::tracing::{debug, info, warn};
 use rama::{
     Layer, Service,
     bytes::Bytes,
@@ -37,7 +38,6 @@ use rama::{
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
 
 const UPSTREAM_HOST: &str = "api.anthropic.com";
 const REDACTED: &str = "<redacted>";

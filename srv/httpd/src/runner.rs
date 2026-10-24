@@ -7,7 +7,7 @@ use chaos_kern::Process;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::Config;
 use chaos_session::background::{BackgroundWait, DEFAULT_BACKGROUND_TIMEOUT, WaitEvent};
-use tracing::{info, warn};
+use chaos_snitch::tracing::{info, warn};
 
 use crate::protocol::{TokenUsageEntry, TokenUsageResponse, TriggerRequest};
 

@@ -21,7 +21,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
-tracing = { workspace = true }
+rama = { workspace = true }
 usage = { workspace = true }
 uuid = { workspace = true }
 

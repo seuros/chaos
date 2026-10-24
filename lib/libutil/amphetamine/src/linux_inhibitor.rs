@@ -5,8 +5,8 @@ use std::process::Stdio;
 use std::sync::LazyLock;
 
 use chaos_ipc::product::OS_NAME;
+use rama::telemetry::tracing::warn;
 use state_machines::state_machine;
-use tracing::warn;
 
 static ASSERTION_REASON: LazyLock<String> =
     LazyLock::new(|| format!("{OS_NAME} is running an active turn"));

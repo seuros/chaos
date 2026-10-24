@@ -1,6 +1,7 @@
 use super::*;
 use crate::sessions::durable::{Client, Store};
 use crate::sessions::tests::durability::storage::Database;
+use chaos_snitch::tracing;
 use rama::Service;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;

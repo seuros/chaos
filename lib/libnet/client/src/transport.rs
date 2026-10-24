@@ -9,11 +9,12 @@ use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
+use rama::telemetry::tracing;
+use rama::telemetry::tracing::Level;
+use rama::telemetry::tracing::enabled;
+use rama::telemetry::tracing::trace;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::Level;
-use tracing::enabled;
-use tracing::trace;
 
 use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::telemetry::inject_trace_headers;

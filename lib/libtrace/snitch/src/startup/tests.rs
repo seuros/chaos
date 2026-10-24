@@ -1,4 +1,6 @@
 use super::StartupTimeline;
+use crate::tracing;
+use crate::tracing::subscriber as tracing_subscriber;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
@@ -24,7 +26,7 @@ fn startup_log_replays_early_milestones_once_and_reports_later_frames() {
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         let timeline = StartupTimeline::new("console");
         timeline.mark("frontend_entry");
         assert!(output.0.lock().unwrap().is_empty());

@@ -30,12 +30,12 @@ use rama::net::proxy::IoForwardService;
 use rama::rt::Executor;
 use rama::tcp::client::service::TcpConnector;
 use rama::tcp::proxy::IoToProxyBridgeIoLayer;
+use rama::telemetry::tracing::error;
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use rama::tls::client::TlsClientConfig;
 use rama::tls::rustls::client::TlsConnectorLayer;
 use std::convert::Infallible;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
 
 use crate::config::NetworkMode;
 

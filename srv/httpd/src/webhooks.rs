@@ -1,4 +1,5 @@
 //! Server-owned, at-least-once delivery. No redirect, body collection or executor replay.
+use chaos_snitch::tracing;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

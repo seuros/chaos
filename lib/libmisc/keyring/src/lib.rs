@@ -1,9 +1,9 @@
 use keyring_core::Entry;
 use keyring_core::Error as KeyringError;
+use rama::telemetry::tracing::trace;
 use std::error::Error;
 use std::fmt;
 use std::fmt::Debug;
-use tracing::trace;
 
 #[derive(Debug)]
 pub enum CredentialStoreError {

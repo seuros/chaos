@@ -1,10 +1,10 @@
 //! Shared JSON ingress boundaries. Callers own authentication/admission order
 //! and wire responses; body collection always uses the caller's deadline.
+use chaos_snitch::tracing::error;
 use rama::bytes::Bytes;
 use rama::http::body::util::{BodyExt, LengthLimitError};
 use rama::http::{Body, Request, StatusCode};
 use tokio::time::Instant;
-use tracing::error;
 
 pub(crate) enum BodyError {
     ContentType,

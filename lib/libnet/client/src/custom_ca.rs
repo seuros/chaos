@@ -47,6 +47,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use rustls::ClientConfig;
 use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
@@ -54,8 +56,6 @@ use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::pem::SectionKind;
 use rustls_pki_types::pem::{self};
 use thiserror::Error;
-use tracing::info;
-use tracing::warn;
 
 pub const SSL_CERT_FILE_ENV: &str = "SSL_CERT_FILE";
 const CA_CERT_HINT: &str = "If you set SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots.";

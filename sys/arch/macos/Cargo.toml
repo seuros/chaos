@@ -20,7 +20,7 @@ chaos-pf = { workspace = true }
 chaos-realpath = { workspace = true }
 dirs = { workspace = true }
 libc = { workspace = true }
-tracing = { workspace = true }
+rama = { workspace = true }
 url = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

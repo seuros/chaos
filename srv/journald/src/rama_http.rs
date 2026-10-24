@@ -1,3 +1,4 @@
+use chaos_snitch::tracing;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;

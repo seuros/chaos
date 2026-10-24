@@ -6,11 +6,13 @@
 //! backpressure are already covered by `chaos_traits::router::tests`;
 //! we don't duplicate those here.
 use super::*;
+use chaos_snitch::tracing as tracing_opentelemetry;
+use chaos_snitch::tracing::OpenTelemetrySpanExt;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TracerProvider as _;
 use std::sync::Once;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
 fn init_tracing() {

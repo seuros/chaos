@@ -1,5 +1,6 @@
 use crate::metrics::MetricsClient;
 use crate::metrics::error::Result;
+use crate::tracing;
 use std::time::Instant;
 
 #[derive(Debug)]

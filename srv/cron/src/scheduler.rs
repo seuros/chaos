@@ -9,11 +9,11 @@ use crate::job::CronJob;
 use crate::job::JobKind;
 use crate::provider::BackendCronStorage;
 use crate::schedule::Schedule;
+use chaos_snitch::tracing::error;
+use chaos_snitch::tracing::info;
+use chaos_snitch::tracing::warn;
 use chaos_vfs::ChaosVfs;
 use tokio::sync::watch;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
 
 /// Default tick interval for the scheduler (30 seconds).
 const DEFAULT_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);

@@ -7,6 +7,7 @@ use rama::http::HeaderValue;
 use rama::http::HttpError;
 use rama::http::Method;
 use rama::http::body::util::BodyExt;
+use rama::telemetry::tracing;
 use serde::Serialize;
 use std::fmt::Display;
 use std::future::Future;

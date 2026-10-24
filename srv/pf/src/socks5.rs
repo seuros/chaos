@@ -37,13 +37,13 @@ use rama::service::service_fn;
 use rama::tcp::TcpStream;
 use rama::tcp::client::service::TcpConnector;
 use rama::tcp::server::TcpListener;
+use rama::telemetry::tracing::error;
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use std::io;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
 
 pub async fn run_socks5(
     state: Arc<NetworkProxyState>,

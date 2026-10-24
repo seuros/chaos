@@ -4,6 +4,7 @@ use crate::runtime::HostBlockReason;
 use crate::state::NetworkProxyState;
 use anyhow::Result;
 use jiff::Timestamp;
+use rama::telemetry::tracing;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

@@ -11,10 +11,10 @@ workspace = true
 
 [dependencies]
 chaos-client = { workspace = true }
+chaos-snitch = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

@@ -34,14 +34,14 @@ use rama::net::stream::SocketInfo;
 use rama::net::uri::Uri;
 use rama::rt::Executor;
 use rama::service::service_fn;
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use rama::tls::rustls::server::TlsAcceptorLayer;
 use rama::tls::server::TlsServerConfig;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context as TaskContext;
 use std::task::Poll;
-use tracing::info;
-use tracing::warn;
 
 /// State needed to terminate a CONNECT tunnel and enforce policy on inner HTTPS requests.
 pub struct MitmState {

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use chaos_snitch::tracing;
 use mlua::Function;
 use mlua::Lua;
 use mlua::LuaSerdeExt;
@@ -16,7 +17,6 @@ use mlua::Result as LuaResult;
 use mlua::Table;
 use mlua::Value;
 use serde_json::Value as JsonValue;
-use tracing;
 
 use crate::handle::ScriptTool;
 

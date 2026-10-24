@@ -16,10 +16,10 @@ use rama::layer::AddInputExtensionLayer;
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
+use rama::telemetry::tracing::info;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
-use tracing::info;
 
 pub async fn run_http_proxy(
     state: Arc<NetworkProxyState>,

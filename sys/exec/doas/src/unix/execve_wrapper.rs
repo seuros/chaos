@@ -1,6 +1,7 @@
 //! Entrypoints for execve interception helper binaries.
 
-use tracing_subscriber::EnvFilter;
+use rama::telemetry::tracing::subscriber as tracing_subscriber;
+use rama::telemetry::tracing::subscriber::EnvFilter;
 
 #[derive(usage::Cli)]
 #[usage(

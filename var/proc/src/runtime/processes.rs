@@ -3,7 +3,7 @@ use super::{
     QueryBuilder, RolloutItem, Row, SortKey, Sqlite, StateRuntime, Value, anchor_from_item,
     apply_rollout_item, datetime_to_epoch_seconds,
 };
-use tracing::warn;
+use rama::telemetry::tracing::warn;
 
 fn serialize_process_source_json(source: &str) -> String {
     serde_json::to_string(source).unwrap_or_else(|err| {

@@ -9,8 +9,10 @@ use rama::telemetry::opentelemetry::sdk::propagation::TraceContextPropagator;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TracerProvider;
-use tracing::trace_span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use rama::telemetry::tracing as tracing_opentelemetry;
+use rama::telemetry::tracing::OpenTelemetrySpanExt;
+use rama::telemetry::tracing::subscriber as tracing_subscriber;
+use rama::telemetry::tracing::trace_span;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 

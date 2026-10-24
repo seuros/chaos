@@ -2,7 +2,8 @@ extern crate usage as usage_rs;
 
 use std::path::PathBuf;
 
-use tracing_subscriber::EnvFilter;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
+use chaos_snitch::tracing::subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 

@@ -4,13 +4,15 @@ use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_snitch::set_parent_from_w3c_trace_context;
+use chaos_snitch::tracing as tracing_opentelemetry;
+use chaos_snitch::tracing::OpenTelemetrySpanExt;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TraceId;
 use rama::telemetry::opentelemetry::trace::TracerProvider as _;
 use serde_json::json;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 fn test_tracing_subscriber() -> impl tracing::Subscriber + Send + Sync {
     let provider = SdkTracerProvider::builder().build();

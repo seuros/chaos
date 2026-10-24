@@ -11,7 +11,7 @@ chaos-ipc = { workspace = true }
 chaos-sysctl = { workspace = true }
 mcp-guest = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
-tracing = { workspace = true }
+chaos-snitch = { workspace = true }
 anyhow = { workspace = true }
 futures = { workspace = true }
 

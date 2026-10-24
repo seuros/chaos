@@ -18,4 +18,4 @@ chaos-kern = { workspace = true }
 state-machines = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tokio-util = { workspace = true, features = ["rt"] }
-tracing = { workspace = true }
+chaos-snitch = { workspace = true }

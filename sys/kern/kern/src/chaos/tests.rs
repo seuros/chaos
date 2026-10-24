@@ -12,6 +12,7 @@ use crate::function_tool::FunctionCallError;
 use crate::models_manager::model_info;
 use crate::shell::default_user_shell;
 use crate::tools::format_exec_output_str;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::models::FunctionCallOutputBody;
@@ -60,6 +61,8 @@ use chaos_selinux::Decision;
 use chaos_selinux::NetworkRuleProtocol;
 use chaos_selinux::Policy;
 use chaos_snitch::TelemetryAuthMode;
+use chaos_snitch::tracing as tracing_opentelemetry;
+use chaos_snitch::tracing::OpenTelemetrySpanExt;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TraceId;
@@ -69,7 +72,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::prelude::*;
 
 use chaos_ipc::mcp::CallToolResult as McpCallToolResult;

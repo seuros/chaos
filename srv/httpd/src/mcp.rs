@@ -3,6 +3,7 @@
 //! finishes, not when a lazy SSE body or task ends. SDK per-session SSE bounds
 //! and mcpd's four-root-workflow session admission independently limit that work.
 
+use chaos_snitch::tracing;
 use std::sync::Arc;
 use std::time::Duration;
 

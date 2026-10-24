@@ -5,6 +5,9 @@ use chaos_snitch::config::OtelHttpProtocol;
 use chaos_snitch::config::OtelSettings;
 use chaos_snitch::metrics::MetricsClient;
 use chaos_snitch::metrics::MetricsConfig;
+use chaos_snitch::tracing;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
+use chaos_snitch::tracing::subscriber::layer::SubscriberExt;
 use std::any::Any;
 use std::collections::HashMap;
 use std::io::Read as _;
@@ -17,7 +20,6 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use tracing_subscriber::layer::SubscriberExt;
 
 struct CapturedRequest {
     path: String,
@@ -303,7 +305,7 @@ fn otlp_http_exporter_sends_traces_to_collector()
         .ok_or_else(|| std::io::Error::other("expected tracing layer"))?;
     let subscriber = tracing_subscriber::registry().with(tracing_layer);
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         let span = tracing::info_span!(
             "trace-loopback",
             otel.name = "trace-loopback",
@@ -341,7 +343,7 @@ async fn otlp_http_exporter_sends_traces_to_collector_in_tokio_runtime()
         .ok_or_else(|| std::io::Error::other("expected tracing layer"))?;
     let subscriber = tracing_subscriber::registry().with(tracing_layer);
 
-    tracing::subscriber::with_default(subscriber, || {
+    tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
         let span = tracing::info_span!(
             "trace-loopback-tokio",
             otel.name = "trace-loopback-tokio",
@@ -390,7 +392,7 @@ fn otlp_http_exporter_sends_traces_to_collector_in_current_thread_tokio_runtime(
                     .ok_or_else(|| "expected tracing layer".to_string())?;
                 let subscriber = tracing_subscriber::registry().with(tracing_layer);
 
-                tracing::subscriber::with_default(subscriber, || {
+                tracing::dispatcher::with_default(&tracing::Dispatch::new(subscriber), || {
                     let span = tracing::info_span!(
                         "trace-loopback-current-thread",
                         otel.name = "trace-loopback-current-thread",

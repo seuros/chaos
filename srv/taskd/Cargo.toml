@@ -17,6 +17,5 @@ chaos-ipc = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-session = { workspace = true }
 tokio = { workspace = true, features = ["signal", "time"] }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+chaos-snitch = { workspace = true }
 usage = { workspace = true }

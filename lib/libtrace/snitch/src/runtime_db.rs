@@ -4,6 +4,14 @@
 //! inserts them into the runtime `logs` table. The writer runs in a background
 //! task and batches inserts to keep logging overhead low.
 
+use crate::tracing;
+use crate::tracing::Event;
+use crate::tracing::field::Field;
+use crate::tracing::field::Visit;
+use crate::tracing::span::Attributes;
+use crate::tracing::span::Id;
+use crate::tracing::span::Record;
+use crate::tracing::subscriber as tracing_subscriber;
 use chaos_proc::LogEntry;
 use chaos_proc::RuntimeDbHandle;
 #[cfg(test)]
@@ -15,12 +23,6 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tracing::Event;
-use tracing::field::Field;
-use tracing::field::Visit;
-use tracing::span::Attributes;
-use tracing::span::Id;
-use tracing::span::Record;
 use tracing_subscriber::Layer;
 use tracing_subscriber::registry::LookupSpan;
 use uuid::Uuid;

@@ -11,13 +11,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use chaos_snitch::tracing;
 use mlua::Function;
 use mlua::Lua;
 use mlua::RegistryKey;
 use mlua::Value;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
-use tracing;
 
 use crate::api::ScriptRegistrations;
 use crate::api::ScriptSource;

@@ -76,9 +76,6 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
     "signal",
 ] }
-tracing = { workspace = true }
-tracing-appender = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 usage = { workspace = true, features = ["completions"] }
 
 [dev-dependencies]

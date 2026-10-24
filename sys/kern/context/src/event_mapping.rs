@@ -15,7 +15,7 @@ use chaos_ipc::models::is_image_open_tag_text;
 use chaos_ipc::models::is_local_image_close_tag_text;
 use chaos_ipc::models::is_local_image_open_tag_text;
 use chaos_ipc::user_input::UserInput;
-use tracing::warn;
+use rama::telemetry::tracing::warn;
 use uuid::Uuid;
 
 use crate::contextual_user_message::is_contextual_user_fragment;

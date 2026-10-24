@@ -7,13 +7,13 @@ use crate::socks5;
 use crate::state::NetworkProxyState;
 use anyhow::Context;
 use anyhow::Result;
+use rama::telemetry::tracing::warn;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::task::JoinHandle;
-use tracing::warn;
 
 #[derive(Debug)]
 struct ReservedListeners {

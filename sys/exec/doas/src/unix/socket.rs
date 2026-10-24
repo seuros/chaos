@@ -1,4 +1,5 @@
 use libc::c_uint;
+use rama::telemetry::tracing;
 use serde::Deserialize;
 use serde::Serialize;
 use socket2::Domain;

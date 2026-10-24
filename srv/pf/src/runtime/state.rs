@@ -23,15 +23,15 @@ use anyhow::Context;
 use anyhow::Result;
 use chaos_realpath::AbsolutePathBuf;
 use globset::GlobSet;
+use rama::telemetry::tracing::debug;
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::debug;
-use tracing::info;
-use tracing::warn;
 
 #[derive(Clone)]
 pub struct ConfigState {

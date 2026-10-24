@@ -1,3 +1,4 @@
+use chaos_snitch::tracing;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;

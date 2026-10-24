@@ -41,11 +41,11 @@ use rama::http::layer::upgrade::UpgradeResponse;
 use rama::net::ConnectorTargetInputExt;
 use rama::net::Protocol;
 use rama::net::client::ConnectorTarget;
+use rama::telemetry::tracing::error;
+use rama::telemetry::tracing::info;
+use rama::telemetry::tracing::warn;
 use std::convert::Infallible;
 use std::sync::Arc;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
 
 pub(super) async fn http_connect_accept(
     policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,

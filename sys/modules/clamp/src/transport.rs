@@ -12,6 +12,10 @@ use std::sync::Mutex as StdMutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 
+use chaos_snitch::tracing::debug;
+use chaos_snitch::tracing::error;
+use chaos_snitch::tracing::info;
+use chaos_snitch::tracing::warn;
 use futures::future::BoxFuture;
 use mcp_host::protocol::types::JsonRpcError;
 use mcp_host::protocol::types::JsonRpcRequest;
@@ -28,10 +32,6 @@ use tokio::process::ChildStdout;
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tracing::debug;
-use tracing::error;
-use tracing::info;
-use tracing::warn;
 
 use crate::protocol::ControlResponse;
 use crate::protocol::Message;

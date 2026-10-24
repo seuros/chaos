@@ -15,13 +15,13 @@ use chaos_pf::PROXY_URL_ENV_KEYS;
 use chaos_pf::has_proxy_url_env_vars;
 use chaos_pf::proxy_url_env_value;
 use chaos_realpath::AbsolutePathBuf;
+use rama::telemetry::tracing::warn;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::path::Path;
 use std::path::PathBuf;
-use tracing::warn;
 use url::Url;
 
 use crate::seatbelt_permissions::MacOsSeatbeltProfileExtensions;

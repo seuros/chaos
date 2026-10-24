@@ -19,7 +19,7 @@ jiff = { workspace = true }
 rama-http-types = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
-tracing = { workspace = true }
+rama = { workspace = true }
 
 [dev-dependencies]
 chaos-proc = { workspace = true }

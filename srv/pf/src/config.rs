@@ -2,12 +2,12 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
 use chaos_realpath::AbsolutePathBuf;
+use rama::telemetry::tracing::warn;
 use serde::Deserialize;
 use serde::Serialize;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::path::Path;
-use tracing::warn;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]

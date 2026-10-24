@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use tracing::debug;
+use chaos_snitch::tracing::debug;
 
 use crate::error::ReflexError;
 use crate::judgment::Judgment;

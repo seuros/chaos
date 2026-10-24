@@ -23,6 +23,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use chaos_snitch::tracing::{debug, info, warn};
 use rama::{
     Layer, Service,
     error::BoxError,
@@ -45,7 +46,6 @@ use rama::{
     },
 };
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
 
 use crate::proxy::{
     RecordParts, WiretapExchange, WiretapSink, error_response, forward_recorded_request,

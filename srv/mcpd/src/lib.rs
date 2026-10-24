@@ -13,8 +13,9 @@ use chaos_ipc::product::CHAOS_VERSION;
 use chaos_kern::config::Config;
 use chaos_kern::config::types::McpServerConfig;
 use chaos_kern::config::types::McpServerTransportConfig;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
+use chaos_snitch::tracing::subscriber::EnvFilter;
 use mcp_host::prelude::*;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 /// Environment variable used to detect when `chaos mcp serve` is running

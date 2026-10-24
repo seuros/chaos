@@ -9,8 +9,8 @@ use crate::reasons::REASON_NOT_ALLOWED_LOCAL;
 use rama::http::Body;
 use rama::http::Response;
 use rama::http::StatusCode;
+use rama::telemetry::tracing::error;
 use serde::Serialize;
-use tracing::error;
 
 pub struct PolicyDecisionDetails<'a> {
     pub decision: NetworkPolicyDecision,

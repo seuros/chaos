@@ -12,7 +12,7 @@ use rama::net::address::ProxyAddress;
 use rama::net::client::ProxyRoute;
 use rama::rt::Executor;
 use rama::service::BoxService;
-use tracing::warn;
+use rama::telemetry::tracing::warn;
 
 #[cfg(target_os = "macos")]
 use rama::unix::client::UnixConnector;

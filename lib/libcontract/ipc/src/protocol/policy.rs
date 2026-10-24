@@ -3,11 +3,11 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_realpath::AbsolutePathBuf;
+use rama::telemetry::tracing::error;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
-use tracing::error;
 
 use crate::git_pointer::is_git_pointer_file;
 use crate::git_pointer::resolve_gitdir_from_file;

@@ -1,3 +1,4 @@
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use std::time::Duration;
 
 use acp_guest::{AcpConnection, ConnectionOptions};

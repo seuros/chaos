@@ -18,6 +18,8 @@ use crate::metrics::tags::SessionMetricTagValues;
 use crate::metrics::timer::Timer;
 use crate::provider::OtelProvider;
 use crate::sanitize_metric_tag_value;
+use crate::tracing;
+use crate::tracing::Span;
 use chaos_ipc::ProcessId;
 use chaos_ipc::config_types::ReasoningSummary;
 use chaos_ipc::models::ResponseItem;
@@ -37,7 +39,6 @@ use std::future::Future;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::time::error::Elapsed;
-use tracing::Span;
 
 const SSE_UNKNOWN_KIND: &str = "unknown";
 

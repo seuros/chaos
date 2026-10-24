@@ -16,7 +16,7 @@ workspace = true
 chaos-ipc = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-tracing = { workspace = true }
+rama = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4", "v7"] }
 
 [dev-dependencies]

@@ -7,6 +7,8 @@
 #[cfg(target_os = "macos")]
 pub mod seatbelt;
 #[cfg(target_os = "macos")]
+use rama::telemetry::tracing;
+#[cfg(target_os = "macos")]
 pub mod seatbelt_permissions;
 
 pub mod protocol {

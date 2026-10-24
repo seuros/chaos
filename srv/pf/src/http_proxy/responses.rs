@@ -16,8 +16,8 @@ use crate::state::NetworkProxyState;
 use rama::http::HeaderValue;
 use rama::http::Response;
 use rama::http::StatusCode;
+use rama::telemetry::tracing::error;
 use serde::Serialize;
-use tracing::error;
 
 #[derive(Serialize)]
 pub(super) struct BlockedResponse<'a> {

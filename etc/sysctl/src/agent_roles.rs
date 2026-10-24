@@ -3,6 +3,7 @@ use crate::assets::AssetScope;
 use crate::types::AgentRoleConfig;
 use crate::types::AgentRoleSource;
 use chaos_realpath::AbsolutePathBufGuard;
+use rama::telemetry::tracing;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;

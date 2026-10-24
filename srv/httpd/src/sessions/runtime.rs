@@ -4,9 +4,9 @@ use std::sync::Arc;
 use chaos_ipc::protocol::{Event, EventMsg, Op, Submission};
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::{Process, ProcessTable};
+use chaos_snitch::tracing::warn;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tracing::warn;
 
 use super::{
     ApiError, CLEANUP_GRACE, Command, CreateRequest, NoticeChange, Session, SessionStatus,

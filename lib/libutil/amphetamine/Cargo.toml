@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 chaos-ipc = { workspace = true }
-tracing = { workspace = true }
+rama = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

@@ -4,6 +4,7 @@ use chaos_ration::Freshness;
 use chaos_ration::UsageWindow;
 use chaos_vfs::ChaosVfs;
 use chaos_vfs::Vfs;
+use rama::telemetry::tracing;
 use sqlx::AssertSqlSafe;
 use sqlx::PgPool;
 use sqlx::Row;

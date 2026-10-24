@@ -16,6 +16,7 @@ use rama::crypto::dep::rcgen::SanType;
 use rama::crypto::pki_types::CertificateDer;
 use rama::crypto::pki_types::PrivateKeyDer;
 use rama::crypto::pki_types::pem::PemObject;
+use rama::telemetry::tracing::info;
 use rama::tls::server::ServerAuthData;
 use rama::tls::server::TlsServerConfig;
 use std::fs;
@@ -27,7 +28,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use tracing::info;
 
 pub(super) struct ManagedMitmCa {
     issuer: Issuer<'static, KeyPair>,

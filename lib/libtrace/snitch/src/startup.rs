@@ -4,6 +4,7 @@
 //! checkpoints with `enable_logging`. Separate timelines keep UI readiness and
 //! kernel readiness from being mistaken for the same measurement.
 
+use crate::tracing;
 use jiff::SignedDuration;
 use std::sync::Arc;
 use std::sync::Mutex;

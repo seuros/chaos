@@ -36,13 +36,14 @@ use chaos_kern::AuthManager;
 use chaos_kern::ProcessTable;
 use chaos_kern::config::{Config, ConfigBuilder, ConfigOverrides};
 use chaos_kern::models_manager::CollaborationModesConfig;
+use chaos_snitch::tracing::info;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
+use chaos_snitch::tracing::subscriber::EnvFilter;
 use rama::graceful;
 use rama::http::server::HttpServer;
 use rama::rt::Executor;
 use rama::tcp::server::TcpListener;
 use tokio::sync::Semaphore;
-use tracing::info;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 pub use cli::ServeCli;

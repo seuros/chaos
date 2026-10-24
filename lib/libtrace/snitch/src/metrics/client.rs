@@ -9,6 +9,7 @@ use crate::metrics::validation::validate_metric_name;
 use crate::metrics::validation::validate_tag_key;
 use crate::metrics::validation::validate_tag_value;
 use crate::metrics::validation::validate_tags;
+use crate::tracing::debug;
 use chaos_wchar::sanitize_metric_tag_value;
 use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_TIMEOUT;
 use opentelemetry_otlp::Protocol;
@@ -35,7 +36,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::Weak;
 use std::time::Duration;
-use tracing::debug;
 
 const ENV_ATTRIBUTE: &str = "env";
 const METER_NAME: &str = "chaos";

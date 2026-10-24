@@ -4,6 +4,7 @@ mod invocations;
 pub(crate) mod policy;
 pub(crate) mod recovery;
 mod replay;
+use chaos_snitch::tracing;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

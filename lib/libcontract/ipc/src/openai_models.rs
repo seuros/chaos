@@ -3,12 +3,12 @@
 //! These types are serialized across core, TUI, app-server, and SDK boundaries, so field defaults
 //! are used to preserve compatibility when older payloads omit newly introduced attributes.
 
+use rama::telemetry::tracing::debug;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
 use strum_macros::EnumIter;
-use tracing::debug;
 
 use crate::config_types::Personality;
 use crate::config_types::ReasoningSummary;

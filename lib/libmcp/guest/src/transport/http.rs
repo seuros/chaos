@@ -1,3 +1,4 @@
+use rama::telemetry::tracing;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;

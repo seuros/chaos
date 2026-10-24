@@ -1,6 +1,7 @@
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_vfs::Vfs;
 use jiff::Timestamp;
+use rama::telemetry::tracing;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::Row;

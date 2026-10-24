@@ -4,9 +4,9 @@ use chaos_client::ChaosHttpClient;
 use chaos_client::RetryOn;
 use chaos_client::RetryPolicy;
 use chaos_client::run_with_retry;
+use chaos_snitch::tracing::debug;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tracing::debug;
 
 use super::error::JevError;
 use super::types::ModelsResponse;

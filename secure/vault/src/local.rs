@@ -22,11 +22,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use chaos_keyring::DefaultKeyringStore;
 use chaos_keyring::KeyringStore;
+use rama::telemetry::tracing::warn;
 use rand::TryRng;
 use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
-use tracing::warn;
 use zeroize::Zeroize;
 use zeroize::Zeroizing;
 

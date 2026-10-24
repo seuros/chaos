@@ -1,6 +1,8 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use chaos_snitch::tracing;
+use chaos_snitch::tracing::{Instrument, error, info_span, warn};
 use rama::Service;
 use rama::http::Body;
 use rama::http::HeaderValue;
@@ -9,7 +11,6 @@ use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
 use rama::service::service_fn;
-use tracing::{Instrument, error, info_span, warn};
 
 use crate::ServerState;
 use crate::auth;

@@ -92,6 +92,7 @@
 
 use std::future::Future;
 pub mod background;
+use chaos_snitch::tracing;
 use std::sync::Arc;
 
 use chaos_ipc::product::OS_NAME;

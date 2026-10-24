@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::env;
 use std::sync::OnceLock;
 
+use crate::tracing::OpenTelemetrySpanExt;
+use crate::tracing::Span;
+use crate::tracing::debug;
+use crate::tracing::warn;
 use chaos_ipc::protocol::W3cTraceContext;
 use rama::telemetry::opentelemetry::Context;
 use rama::telemetry::opentelemetry::propagation::TextMapPropagator;
 use rama::telemetry::opentelemetry::sdk::propagation::TraceContextPropagator;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
-use tracing::Span;
-use tracing::debug;
-use tracing::warn;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const TRACEPARENT_ENV_VAR: &str = "TRACEPARENT";
 const TRACESTATE_ENV_VAR: &str = "TRACESTATE";

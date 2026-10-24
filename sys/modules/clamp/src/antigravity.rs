@@ -5,6 +5,7 @@
 //! documented stream-JSON output as it arrives, and resumes later turns by
 //! provider conversation ID.
 
+use chaos_snitch::tracing;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;

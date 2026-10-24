@@ -1,6 +1,6 @@
+use chaos_snitch::tracing::warn;
 use std::collections::HashSet;
 use tokio::task::JoinHandle;
-use tracing::warn;
 
 /// Tracks the (recursive) descendants of a process by using `kqueue` to watch for fork events, and
 /// `proc_listchildpids` to list the children of a process.

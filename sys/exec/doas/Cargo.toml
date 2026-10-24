@@ -27,8 +27,7 @@ tokio = { workspace = true, features = [
     "time",
 ] }
 tokio-util = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+rama = { workspace = true }
 usage = { workspace = true }
 
 [dev-dependencies]

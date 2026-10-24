@@ -6,6 +6,10 @@ use crate::metrics::MetricsClient;
 use crate::metrics::MetricsConfig;
 use crate::targets::is_log_export_target;
 use crate::targets::is_trace_safe_target;
+use crate::tracing;
+use crate::tracing as tracing_opentelemetry;
+use crate::tracing::debug;
+use crate::tracing::subscriber as tracing_subscriber;
 use gethostname::gethostname;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::LogExporter;
@@ -28,7 +32,6 @@ use rama::telemetry::opentelemetry::sdk::trace::span_processor_with_async_runtim
 use rama::telemetry::opentelemetry::semantic_conventions as semconv;
 use rama::telemetry::opentelemetry::trace::TracerProvider as _;
 use std::error::Error;
-use tracing::debug;
 use tracing_subscriber::Layer;
 use tracing_subscriber::registry::LookupSpan;
 

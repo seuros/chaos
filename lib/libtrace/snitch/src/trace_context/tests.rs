@@ -1,6 +1,9 @@
 use super::context_from_trace_headers;
 use super::context_from_w3c_trace_context;
 use super::current_span_trace_id;
+use crate::tracing as tracing_opentelemetry;
+use crate::tracing::subscriber as tracing_subscriber;
+use crate::tracing::trace_span;
 use chaos_ipc::protocol::W3cTraceContext;
 use pretty_assertions::assert_eq;
 use rama::telemetry::opentelemetry::sdk::trace::SdkTracerProvider;
@@ -8,7 +11,6 @@ use rama::telemetry::opentelemetry::trace::SpanId;
 use rama::telemetry::opentelemetry::trace::TraceContextExt;
 use rama::telemetry::opentelemetry::trace::TraceId;
 use rama::telemetry::opentelemetry::trace::TracerProvider as _;
-use tracing::trace_span;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 

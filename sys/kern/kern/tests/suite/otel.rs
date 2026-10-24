@@ -7,6 +7,7 @@ use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::Process;
 use chaos_kern::config::Constrained;
+use chaos_snitch::tracing::subscriber as tracing_subscriber;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_custom_tool_call;

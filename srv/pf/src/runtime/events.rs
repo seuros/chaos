@@ -1,10 +1,10 @@
 use crate::config::NetworkMode;
 use jiff::Timestamp;
+use rama::telemetry::tracing::debug;
 use serde::Serialize;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tracing::debug;
 
 pub(super) const MAX_BLOCKED_EVENTS: usize = 200;
 pub(super) const NETWORK_POLICY_VIOLATION_PREFIX: &str = "CHAOS_NETWORK_POLICY_VIOLATION";

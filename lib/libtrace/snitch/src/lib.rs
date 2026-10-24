@@ -14,6 +14,7 @@ pub mod metrics;
 pub mod provider;
 pub mod startup;
 pub mod trace_context;
+pub mod tracing;
 
 mod otlp;
 mod rama_otel_client;

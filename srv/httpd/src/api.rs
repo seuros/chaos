@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use rama::Service;
 use rama::http::Body;
+use rama::http::HeaderValue;
 use rama::http::Method;
 use rama::http::Request;
 use rama::http::Response;
@@ -77,7 +78,7 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
                 json_response(StatusCode::UNAUTHORIZED, &ApiErrorResponse::error(msg));
             response
                 .headers_mut()
-                .insert("www-authenticate", "Bearer".parse().unwrap());
+                .insert("www-authenticate", HeaderValue::from_static("Bearer"));
             return response;
         }
         if state
@@ -421,24 +422,25 @@ fn body_error_response(error: BodyError) -> Response {
 }
 
 /// 405 response with the correct `Allow` header.
-fn method_not_allowed(allowed: &str) -> Response {
-    let json =
-        serde_json::to_vec(&ApiErrorResponse::error("method not allowed")).unwrap_or_default();
-    Response::builder()
-        .status(StatusCode::METHOD_NOT_ALLOWED)
-        .header("content-type", "application/json")
-        .header("allow", allowed)
-        .body(Body::from(json))
-        .unwrap()
+fn method_not_allowed(allowed: &'static str) -> Response {
+    let mut response = json_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        &ApiErrorResponse::error("method not allowed"),
+    );
+    response
+        .headers_mut()
+        .insert("allow", HeaderValue::from_static(allowed));
+    response
 }
 
 fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
     let json = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Body::from(json))
-        .unwrap()
+    let mut response = Response::new(Body::from(json));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("application/json"));
+    response
 }
 
 #[cfg(test)]

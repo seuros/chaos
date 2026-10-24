@@ -33,7 +33,7 @@ impl Owner {
                 .events
                 .into_iter()
                 .map(|event| {
-                    let bytes = serde_json::to_vec(&event.event).unwrap().len();
+                    let bytes = event.event.to_string().len();
                     super::super::ReplayEvent {
                         sequence: event.sequence,
                         event: event.event,
@@ -113,8 +113,11 @@ impl Session {
                     },
                 })
                 .await?;
-            if !matches!(response, Response::Replay(ExecutionReplayResponse::Appended { sequence }) if sequence == after + 1)
-            {
+            if !matches!(
+                response,
+                Response::Replay(ExecutionReplayResponse::Appended { sequence })
+                    if sequence == after + 1
+            ) {
                 owner.abandon();
                 return Err(unavailable());
             }

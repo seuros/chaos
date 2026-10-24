@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use rama::futures::async_stream::stream_fn;
 use rama::http::Body;
+use rama::http::HeaderValue;
 use rama::http::Response;
-use rama::http::StatusCode;
 use rama::http::header::CACHE_CONTROL;
 use rama::http::header::CONTENT_TYPE;
 use rama::http::service::web::response::{DatastarScript, IntoResponse};
@@ -81,12 +81,15 @@ impl MonitorState {
 }
 
 pub(crate) fn page_response() -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(CACHE_CONTROL, "no-store")
-        .body(Body::from(MONITOR_HTML))
-        .unwrap()
+    let mut response = Response::new(Body::from(MONITOR_HTML));
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
@@ -124,13 +127,18 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
         }
     });
 
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
-        .header(CACHE_CONTROL, "no-store")
-        .header("x-accel-buffering", "no")
-        .body(Body::from_stream(stream))
-        .unwrap()
+    let mut response = Response::new(Body::from_stream(stream));
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+        .headers_mut()
+        .insert("x-accel-buffering", HeaderValue::from_static("no"));
+    response
 }
 
 pub(crate) fn datastar_script_response() -> Response {
@@ -169,7 +177,8 @@ fn render_event(event: &MonitorEvent) -> String {
 
 fn sse_patch(selector_id: &str, html: &str) -> Result<String, Infallible> {
     Ok(format!(
-        "event: datastar-patch-elements\ndata: selector #{selector_id}\ndata: mode outer\ndata: elements {}\n\n",
+        "event: datastar-patch-elements\n\
+         data: selector #{selector_id}\ndata: mode outer\ndata: elements {}\n\n",
         one_line_html(html),
     ))
 }
@@ -177,7 +186,8 @@ fn sse_patch(selector_id: &str, html: &str) -> Result<String, Infallible> {
 fn sse_append_log(selector_id: &str, message: &str) -> Result<String, Infallible> {
     let html = format!("<li><time>{}</time> {}</li>", "now", escape_html(message));
     Ok(format!(
-        "event: datastar-patch-elements\ndata: selector #{selector_id}\ndata: mode append\ndata: elements {}\n\n",
+        "event: datastar-patch-elements\n\
+         data: selector #{selector_id}\ndata: mode append\ndata: elements {}\n\n",
         one_line_html(&html),
     ))
 }
@@ -204,7 +214,9 @@ const MONITOR_HTML: &str = r#"<!doctype html>
   <title>Chaos monitor</title>
   <script type="module" src="/assets/datastar.js"></script>
   <style>
-    body { margin: 2rem; font: 14px/1.45 system-ui, sans-serif; color: #17202a; background: #f7f8fa; }
+    body {
+      margin: 2rem; font: 14px/1.45 system-ui, sans-serif; color: #17202a; background: #f7f8fa;
+    }
     main { max-width: 920px; margin: 0 auto; }
     section, ol { background: white; border: 1px solid #d8dee4; border-radius: 8px; padding: 1rem; }
     #monitor-summary { display: grid; gap: .35rem; margin-bottom: 1rem; }
@@ -215,8 +227,13 @@ const MONITOR_HTML: &str = r#"<!doctype html>
 <body>
   <main>
     <h1>Chaos monitor</h1>
-    <form data-on:submit__prevent="@get('/monitor/events', {headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value}, filterSignals: {include: /^$/}, retry: 'never'})">
-      <label>Bearer token <input type="password" id="monitor-token" autocomplete="off" required></label>
+    <form data-on:submit__prevent="@get('/monitor/events', {
+      headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value},
+      filterSignals: {include: /^$/}, retry: 'never'
+    })">
+      <label>Bearer token
+        <input type="password" id="monitor-token" autocomplete="off" required>
+      </label>
       <button type="submit">Connect</button>
     </form>
     <p>The token stays in this page, not in URLs or browser storage. Reload to disconnect.</p>

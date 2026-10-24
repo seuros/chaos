@@ -367,8 +367,7 @@ impl ChaosAuth {
             Self::ChatgptAuthTokens(auth) => &auth.state,
             Self::ApiKey(_) => return None,
         };
-        #[expect(clippy::unwrap_used)]
-        state.auth_dot_json.lock().unwrap().clone()
+        state.auth_dot_json.lock().ok()?.clone()
     }
 
     /// Returns `None` if `is_chatgpt_auth()` is false.
@@ -448,8 +447,7 @@ impl ChaosAuth {
 
 impl ChatgptAuth {
     pub(crate) fn current_auth_json(&self) -> Option<AuthDotJson> {
-        #[expect(clippy::unwrap_used)]
-        self.state.auth_dot_json.lock().unwrap().clone()
+        self.state.auth_dot_json.lock().ok()?.clone()
     }
 
     pub(crate) fn current_token_data(&self) -> Option<TokenData> {

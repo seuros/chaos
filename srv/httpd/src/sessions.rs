@@ -775,7 +775,7 @@ impl SessionData {
 
 fn replay_value(event: &Event) -> (serde_json::Value, usize) {
     let value = serde_json::to_value(event).expect("kernel Event is JSON serializable");
-    let bytes = serde_json::to_vec(&value).unwrap().len();
+    let bytes = value.to_string().len();
     if bytes <= MAX_EVENT_BYTES {
         return (value, bytes);
     }
@@ -783,7 +783,7 @@ fn replay_value(event: &Event) -> (serde_json::Value, usize) {
         "id": bounded_text(&event.id, 128).0,
         "msg": {"type": "http_event_omitted", "reason": "event_size_limit"}
     });
-    let bytes = serde_json::to_vec(&value).unwrap().len();
+    let bytes = value.to_string().len();
     (value, bytes)
 }
 

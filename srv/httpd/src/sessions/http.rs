@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rama::http::{Body, Method, Request, Response, StatusCode};
+use rama::http::{Body, HeaderValue, Method, Request, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use uuid::Uuid;
@@ -163,7 +163,8 @@ async fn route(
         return Ok(response(
             StatusCode::OK,
             json!({
-                "daemon_id": manager.daemon_id, "next_cursor": deliveries.last().map(|d| d.event_id),
+                "daemon_id": manager.daemon_id,
+                "next_cursor": deliveries.last().map(|d| d.event_id),
                 "deliveries": deliveries,
             }),
         ));
@@ -422,7 +423,11 @@ async fn route(
                     })??;
                     response(
                         StatusCode::OK,
-                        json!({"daemon_id": manager.daemon_id, "turn_id": turn_id, "status": "steered"}),
+                        json!({
+                            "daemon_id": manager.daemon_id,
+                            "turn_id": turn_id,
+                            "status": "steered",
+                        }),
                     )
                 }
                 "interrupt" => {
@@ -466,12 +471,15 @@ fn session_response(status: StatusCode, manager: &SessionManager, session: &Sess
 }
 
 fn response(status: StatusCode, body: serde_json::Value) -> Response {
-    Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .header("cache-control", "no-store")
-        .body(Body::from(serde_json::to_vec(&body).unwrap()))
-        .unwrap()
+    let mut response = Response::new(Body::from(body.to_string()));
+    *response.status_mut() = status;
+    response
+        .headers_mut()
+        .insert("content-type", HeaderValue::from_static("application/json"));
+    response
+        .headers_mut()
+        .insert("cache-control", HeaderValue::from_static("no-store"));
+    response
 }
 
 fn method_not_allowed(allow: &'static str) -> Response {
@@ -479,7 +487,9 @@ fn method_not_allowed(allow: &'static str) -> Response {
         StatusCode::METHOD_NOT_ALLOWED,
         json!({"error": "method not allowed"}),
     );
-    value.headers_mut().insert("allow", allow.parse().unwrap());
+    value
+        .headers_mut()
+        .insert("allow", HeaderValue::from_static(allow));
     value
 }
 

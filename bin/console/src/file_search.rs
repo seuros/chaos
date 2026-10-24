@@ -43,16 +43,20 @@ impl FileSearchManager {
     /// Drops the current session so it will be recreated with the new directory on next query.
     pub fn update_search_dir(&mut self, new_dir: PathBuf) {
         self.search_dir = new_dir;
-        #[expect(clippy::unwrap_used)]
-        let mut st = self.state.lock().unwrap();
+        let Ok(mut st) = self.state.lock() else {
+            tracing::warn!("file search state is poisoned; directory update skipped");
+            return;
+        };
         st.session.take();
         st.latest_query.clear();
     }
 
     /// Call whenever the user edits the `@` token.
     pub fn on_user_query(&self, query: String) {
-        #[expect(clippy::unwrap_used)]
-        let mut st = self.state.lock().unwrap();
+        let Ok(mut st) = self.state.lock() else {
+            tracing::warn!("file search state is poisoned; query skipped");
+            return;
+        };
         if query == st.latest_query {
             return;
         }
@@ -107,8 +111,10 @@ struct TuiSessionReporter {
 
 impl TuiSessionReporter {
     fn send_snapshot(&self, snapshot: &file_search::FileSearchSnapshot) {
-        #[expect(clippy::unwrap_used)]
-        let st = self.state.lock().unwrap();
+        let Ok(st) = self.state.lock() else {
+            tracing::warn!("file search state is poisoned; snapshot skipped");
+            return;
+        };
         if st.session_token != self.session_token
             || st.latest_query.is_empty()
             || snapshot.query.is_empty()

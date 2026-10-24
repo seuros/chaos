@@ -157,8 +157,9 @@ impl RateLimitWarningState {
                         .unwrap_or_else(|| fallback.to_string());
                     let remaining_percent = 100.0 - threshold;
                     warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
-                ));
+                        "Heads up, you have less than {remaining_percent:.0}% of your \
+                         {limit_label} limit left. Run /status for a breakdown."
+                    ));
                 }
             }
         }
@@ -553,11 +554,9 @@ impl Notification {
             Notification::EditApprovalRequested { cwd, changes } => {
                 format!(
                     "{OS_NAME} wants to edit {}",
-                    if changes.len() == 1 {
-                        #[allow(clippy::unwrap_used)]
-                        display_path_for(changes.first().unwrap(), cwd)
-                    } else {
-                        format!("{} files", changes.len())
+                    match changes.as_slice() {
+                        [change] => display_path_for(change, cwd),
+                        changes => format!("{} files", changes.len()),
                     }
                 )
             }

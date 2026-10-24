@@ -1,4 +1,4 @@
-use std::cell::Ref;
+use std::cell::RefMut;
 use std::ops::Range;
 
 use ratatui::buffer::Buffer;
@@ -12,26 +12,24 @@ use unicode_width::UnicodeWidthStr;
 use super::core::{TextArea, TextAreaState, WrapCache};
 
 impl TextArea {
-    #[expect(clippy::unwrap_used)]
-    pub(super) fn wrapped_lines(&self, width: u16) -> Ref<'_, Vec<Range<usize>>> {
-        // Ensure cache is ready (potentially mutably borrow, then drop)
-        {
-            let mut cache = self.wrap_cache.borrow_mut();
-            let needs_recalc = match cache.as_ref() {
-                Some(c) => c.width != width,
-                None => true,
-            };
-            if needs_recalc {
-                let lines = crate::wrapping::wrap_ranges(
+    pub(super) fn wrapped_lines(&self, width: u16) -> RefMut<'_, Vec<Range<usize>>> {
+        RefMut::map(self.wrap_cache.borrow_mut(), |cache| {
+            let wrap = || {
+                crate::wrapping::wrap_ranges(
                     &self.text,
                     Options::new(width as usize).wrap_algorithm(textwrap::WrapAlgorithm::FirstFit),
-                );
-                *cache = Some(WrapCache { width, lines });
+                )
+            };
+            let cache = cache.get_or_insert_with(|| WrapCache {
+                width,
+                lines: wrap(),
+            });
+            if cache.width != width {
+                cache.lines = wrap();
+                cache.width = width;
             }
-        }
-
-        let cache = self.wrap_cache.borrow();
-        Ref::map(cache, |c| &c.as_ref().unwrap().lines)
+            &mut cache.lines
+        })
     }
 
     /// Calculate the scroll offset that should be used to satisfy the

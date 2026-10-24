@@ -128,15 +128,7 @@ pub enum IdTokenInfoError {
 }
 
 pub fn parse_chatgpt_jwt_claims(jwt: &str) -> Result<IdTokenInfo, IdTokenInfoError> {
-    // JWT format: header.payload.signature
-    let mut parts = jwt.split('.');
-    let (_header_b64, payload_b64, _sig_b64) = match (parts.next(), parts.next(), parts.next()) {
-        (Some(h), Some(p), Some(s)) if !h.is_empty() && !p.is_empty() && !s.is_empty() => (h, p, s),
-        _ => return Err(IdTokenInfoError::InvalidFormat),
-    };
-
-    let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_b64)?;
-    let claims: IdClaims = serde_json::from_slice(&payload_bytes)?;
+    let claims: IdClaims = decode_jwt_claims(jwt)?;
     let email = claims
         .email
         .or_else(|| claims.profile.and_then(|profile| profile.email));
@@ -166,14 +158,19 @@ pub(crate) fn parse_jwt_subject(jwt: &str) -> Result<Option<String>, IdTokenInfo
         sub: Option<String>,
     }
 
+    let claims: SubjectClaim = decode_jwt_claims(jwt)?;
+    Ok(claims.sub)
+}
+
+fn decode_jwt_claims<T: serde::de::DeserializeOwned>(jwt: &str) -> Result<T, IdTokenInfoError> {
+    // Preserve the existing format checks and error categories for both callers.
     let mut parts = jwt.split('.');
     let (_header_b64, payload_b64, _sig_b64) = match (parts.next(), parts.next(), parts.next()) {
         (Some(h), Some(p), Some(s)) if !h.is_empty() && !p.is_empty() && !s.is_empty() => (h, p, s),
         _ => return Err(IdTokenInfoError::InvalidFormat),
     };
     let payload_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_b64)?;
-    let claims: SubjectClaim = serde_json::from_slice(&payload_bytes)?;
-    Ok(claims.sub)
+    Ok(serde_json::from_slice(&payload_bytes)?)
 }
 
 fn deserialize_id_token<'de, D>(deserializer: D) -> Result<IdTokenInfo, D::Error>

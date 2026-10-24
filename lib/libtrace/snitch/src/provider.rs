@@ -50,6 +50,8 @@ pub struct OtelProvider {
 
 impl OtelProvider {
     pub fn shutdown(&self) {
+        // Shutdown is best-effort, including from Drop; exporter failures must
+        // not panic during cleanup or prevent the remaining exporters closing.
         if let Some(tracer_provider) = &self.tracer_provider {
             let _ = tracer_provider.force_flush();
             let _ = tracer_provider.shutdown();
@@ -160,16 +162,7 @@ impl OtelProvider {
 
 impl Drop for OtelProvider {
     fn drop(&mut self) {
-        if let Some(tracer_provider) = &self.tracer_provider {
-            let _ = tracer_provider.force_flush();
-            let _ = tracer_provider.shutdown();
-        }
-        if let Some(metrics) = &self.metrics {
-            let _ = metrics.shutdown();
-        }
-        if let Some(logger) = &self.logger {
-            let _ = logger.shutdown();
-        }
+        self.shutdown();
     }
 }
 

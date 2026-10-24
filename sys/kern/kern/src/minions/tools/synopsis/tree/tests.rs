@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::test_config;
-use chaos_synopsis::runs::{RunRegistry, RunSnapshot, RunStatus, StepStatus};
+use chaos_synopsis::runs::{RunRegistry, RunSnapshot, RunStatus, StepOutcome, StepStatus};
 
 fn job(id: &str, allow_replay: bool) -> NormalizedJob {
     NormalizedJob {
@@ -147,7 +147,10 @@ impl Tool for TestLeaf {
     }
     fn execute<'a>(&'a self, _: ExecutionContext<'a>) -> ToolFuture<'a> {
         Box::pin(async move {
-            let attempt = self.observer.attempts.lock().unwrap()[&self.leaf.node_id];
+            let attempt = self
+                .observer
+                .attempt(&self.leaf.node_id)
+                .expect("started attempt");
             let id = format!("{}/{}/{}", self.run_id, self.leaf.node_id, attempt);
             let state = self.attempts.start(&self.leaf.job, id.clone());
             execute_job(
@@ -183,15 +186,14 @@ async fn run_with_cancel(
     let registry = RunRegistry::default();
     let lease = registry.start(RunKind::Synopsis).unwrap();
     let cancellation = lease.cancellation();
-    let observer = Arc::new(Observer {
-        recorder: lease.recorder(),
-        cancellation: cancellation.clone(),
-        attempts: Mutex::default(),
-        labels: leaves
+    let observer = Arc::new(Observer::new(
+        lease.recorder(),
+        cancellation.clone(),
+        leaves
             .iter()
             .map(|leaf| (leaf.alias.clone(), leaf.job.id.clone()))
             .collect(),
-    });
+    ));
     let attempts = Arc::new(Attempts::default());
     let backend = Arc::new(Backend::default());
     let server = bridge_server();

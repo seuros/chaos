@@ -1,3 +1,4 @@
+use std::assert_matches;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -71,6 +72,24 @@ fn initialize_response() -> JsonRpcMessage {
     ))
 }
 
+async fn send_initialize(transport: &HttpTransport) {
+    transport
+        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
+            json!(1),
+            "initialize",
+            Some(
+                serde_json::to_value(InitializeRequest {
+                    protocol_version: "2025-11-25".to_string(),
+                    capabilities: ClientCapabilities::default(),
+                    client_info: Implementation::new("mcp-guest", "0.1.0"),
+                })
+                .unwrap(),
+            ),
+        )))
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn transport_posts_initialize_response() {
     let response = serde_json::to_vec(&initialize_response()).unwrap();
@@ -99,21 +118,7 @@ async fn transport_posts_initialize_response() {
         client,
     );
 
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(1),
-            "initialize",
-            Some(
-                serde_json::to_value(InitializeRequest {
-                    protocol_version: "2025-11-25".to_string(),
-                    capabilities: ClientCapabilities::default(),
-                    client_info: Implementation::new("mcp-guest", "0.1.0"),
-                })
-                .unwrap(),
-            ),
-        )))
-        .await
-        .unwrap();
+    send_initialize(&transport).await;
 
     let message = transport.recv().await.unwrap();
     let JsonRpcMessage::Response(response) = message else {
@@ -207,21 +212,7 @@ async fn transport_reads_get_sse_notifications() {
         client,
     );
 
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(1),
-            "initialize",
-            Some(
-                serde_json::to_value(InitializeRequest {
-                    protocol_version: "2025-11-25".to_string(),
-                    capabilities: ClientCapabilities::default(),
-                    client_info: Implementation::new("mcp-guest", "0.1.0"),
-                })
-                .unwrap(),
-            ),
-        )))
-        .await
-        .unwrap();
+    send_initialize(&transport).await;
 
     let first = transport.recv().await.unwrap();
     let JsonRpcMessage::Response(response) = first else {
@@ -250,10 +241,7 @@ async fn transport_reads_get_sse_notifications() {
     let inner = Arc::downgrade(&transport.inner);
     transport.force_shutdown().await.unwrap();
     transport.force_shutdown().await.unwrap();
-    assert!(matches!(
-        transport.recv().await,
-        Err(GuestError::Disconnected)
-    ));
+    assert_matches!(transport.recv().await, Err(GuestError::Disconnected));
     drop(transport);
     assert!(inner.upgrade().is_none());
 }
@@ -399,21 +387,7 @@ async fn transport_recovers_session_on_404_and_retries_request() {
         client,
     );
 
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(1),
-            "initialize",
-            Some(
-                serde_json::to_value(InitializeRequest {
-                    protocol_version: "2025-11-25".to_string(),
-                    capabilities: ClientCapabilities::default(),
-                    client_info: Implementation::new("mcp-guest", "0.1.0"),
-                })
-                .unwrap(),
-            ),
-        )))
-        .await
-        .unwrap();
+    send_initialize(&transport).await;
     let _ = transport.recv().await.unwrap();
 
     transport
@@ -451,16 +425,13 @@ async fn transport_recovers_session_on_404_and_retries_request() {
     tokio::time::timeout(Duration::from_secs(1), started.wait())
         .await
         .unwrap();
-    assert!(matches!(
+    assert_matches!(
         transport.recv().await.unwrap(),
         JsonRpcMessage::Notification(_)
-    ));
+    );
 
     let ping = JsonRpcMessage::Request(JsonRpcRequest::new(json!(2), "ping", Some(json!({}))));
-    assert!(matches!(
-        transport.send(ping.clone()).await,
-        Err(GuestError::Http(_))
-    ));
+    assert_matches!(transport.send(ping.clone()).await, Err(GuestError::Http(_)));
     assert!(!transport.inner.has_active_session().await);
     transport.inner.recover_session(0).await.unwrap();
     assert!(transport.inner.has_active_session().await);
@@ -608,21 +579,7 @@ async fn transport_recovers_missing_session_without_double_executing_tool_call()
         client,
     );
 
-    transport
-        .send(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(1),
-            "initialize",
-            Some(
-                serde_json::to_value(InitializeRequest {
-                    protocol_version: "2025-11-25".to_string(),
-                    capabilities: ClientCapabilities::default(),
-                    client_info: Implementation::new("mcp-guest", "0.1.0"),
-                })
-                .unwrap(),
-            ),
-        )))
-        .await
-        .unwrap();
+    send_initialize(&transport).await;
     let _ = transport.recv().await.unwrap();
 
     transport

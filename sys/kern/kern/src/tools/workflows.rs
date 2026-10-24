@@ -4,11 +4,11 @@ mod dispatch;
 pub(crate) mod executor;
 mod external;
 mod interactions;
-mod observer;
 mod sampling;
 
 use crate::client_common::tools::ToolSpec;
 use crate::function_tool::FunctionCallError;
+use crate::run_observer as observer;
 use crate::tools::context::{FunctionToolOutput, ToolInvocation};
 use crate::tools::handlers::{extract_function_arguments, parse_arguments};
 use crate::tools::registry::{ToolHandler, ToolKind, ToolRegistryBuilder};

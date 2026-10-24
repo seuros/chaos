@@ -69,23 +69,7 @@ impl CronStore {
             .await
             {
                 Ok(_) => {
-                    return Ok(CronJob {
-                        id,
-                        name: params.name.clone(),
-                        schedule: params.schedule.clone(),
-                        command: params.command.clone(),
-                        scope: params.scope,
-                        project_path: params.project_path.clone(),
-                        session_id: params.session_id.clone(),
-                        enabled: true,
-                        last_run_at: None,
-                        next_run_at,
-                        created_at: now,
-                        updated_at: now,
-                        kind: params.kind.clone(),
-                        manifest_id: params.manifest_id.clone(),
-                        execution_policy: params.execution_policy.clone(),
-                    });
+                    return Ok(params.created_job(id, now, next_run_at));
                 }
                 Err(err) if is_unique_id_collision(&err) => continue,
                 Err(err) => return Err(err.into()),
@@ -302,23 +286,7 @@ impl PostgresCronStore {
             .await
             {
                 Ok(_) => {
-                    return Ok(CronJob {
-                        id,
-                        name: params.name.clone(),
-                        schedule: params.schedule.clone(),
-                        command: params.command.clone(),
-                        scope: params.scope,
-                        project_path: params.project_path.clone(),
-                        session_id: params.session_id.clone(),
-                        enabled: true,
-                        last_run_at: None,
-                        next_run_at,
-                        created_at: now,
-                        updated_at: now,
-                        kind: params.kind.clone(),
-                        manifest_id: params.manifest_id.clone(),
-                        execution_policy: params.execution_policy.clone(),
-                    });
+                    return Ok(params.created_job(id, now, next_run_at));
                 }
                 Err(err) if is_unique_id_collision(&err) => continue,
                 Err(err) => return Err(err.into()),

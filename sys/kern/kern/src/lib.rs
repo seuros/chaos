@@ -132,6 +132,7 @@ pub use auth::AuthManager;
 pub use auth::ChaosAuth;
 pub mod default_client;
 mod rollout;
+mod run_observer;
 pub mod runtime_db;
 pub(crate) mod safety;
 pub mod saved_selection;

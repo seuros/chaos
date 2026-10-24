@@ -34,6 +34,36 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 
+async fn submit_plan_request(chaos: &chaos_kern::Process, model: &str) -> anyhow::Result<()> {
+    chaos
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "please plan".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: std::env::current_dir()?,
+            approval_policy: chaos_ipc::protocol::ApprovalPolicy::Headless,
+            vfs_policy: chaos_ipc::permissions::VfsPolicy::unrestricted(),
+            socket_policy: chaos_ipc::permissions::SocketPolicy::Enabled,
+            model: model.to_string(),
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: Some(CollaborationMode {
+                mode: ModeKind::Plan,
+                settings: Settings {
+                    model: model.to_string(),
+                    reasoning_effort: None,
+                    developer_instructions: None,
+                },
+            }),
+            personality: None,
+        })
+        .await?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn user_message_item_is_emitted() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
@@ -519,34 +549,7 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
     ]);
     mount_sse_once(&server, stream).await;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
-        settings: Settings {
-            model: session_configured.model.clone(),
-            reasoning_effort: None,
-            developer_instructions: None,
-        },
-    };
-
-    chaos
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "please plan".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: std::env::current_dir()?,
-            approval_policy: chaos_ipc::protocol::ApprovalPolicy::Headless,
-            vfs_policy: chaos_ipc::permissions::VfsPolicy::unrestricted(),
-            socket_policy: chaos_ipc::permissions::SocketPolicy::Enabled,
-            model: session_configured.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: Some(collaboration_mode),
-            personality: None,
-        })
-        .await?;
+    submit_plan_request(&chaos, &session_configured.model).await?;
 
     let plan_delta = wait_for_event_match(&chaos, |ev| match ev {
         EventMsg::PlanDelta(event) => Some(event.clone()),
@@ -598,34 +601,7 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, stream).await;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
-        settings: Settings {
-            model: session_configured.model.clone(),
-            reasoning_effort: None,
-            developer_instructions: None,
-        },
-    };
-
-    chaos
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "please plan".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: std::env::current_dir()?,
-            approval_policy: chaos_ipc::protocol::ApprovalPolicy::Headless,
-            vfs_policy: chaos_ipc::permissions::VfsPolicy::unrestricted(),
-            socket_policy: chaos_ipc::permissions::SocketPolicy::Enabled,
-            model: session_configured.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: Some(collaboration_mode),
-            personality: None,
-        })
-        .await?;
+    submit_plan_request(&chaos, &session_configured.model).await?;
 
     let mut agent_deltas = Vec::new();
     let mut plan_delta = None;
@@ -898,34 +874,7 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     events.push(ev_completed("resp-1"));
     mount_sse_once(&server, sse(events)).await;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
-        settings: Settings {
-            model: session_configured.model.clone(),
-            reasoning_effort: None,
-            developer_instructions: None,
-        },
-    };
-
-    chaos
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "please plan".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: std::env::current_dir()?,
-            approval_policy: chaos_ipc::protocol::ApprovalPolicy::Headless,
-            vfs_policy: chaos_ipc::permissions::VfsPolicy::unrestricted(),
-            socket_policy: chaos_ipc::permissions::SocketPolicy::Enabled,
-            model: session_configured.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: Some(collaboration_mode),
-            personality: None,
-        })
-        .await?;
+    submit_plan_request(&chaos, &session_configured.model).await?;
 
     let mut agent_started = None;
     let mut agent_completed = None;
@@ -1014,34 +963,7 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
     ]);
     mount_sse_once(&server, stream).await;
 
-    let collaboration_mode = CollaborationMode {
-        mode: ModeKind::Plan,
-        settings: Settings {
-            model: session_configured.model.clone(),
-            reasoning_effort: None,
-            developer_instructions: None,
-        },
-    };
-
-    chaos
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "please plan".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: std::env::current_dir()?,
-            approval_policy: chaos_ipc::protocol::ApprovalPolicy::Headless,
-            vfs_policy: chaos_ipc::permissions::VfsPolicy::unrestricted(),
-            socket_policy: chaos_ipc::permissions::SocketPolicy::Enabled,
-            model: session_configured.model.clone(),
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: Some(collaboration_mode),
-            personality: None,
-        })
-        .await?;
+    submit_plan_request(&chaos, &session_configured.model).await?;
 
     let mut plan_delta = None;
     let mut plan_item = None;

@@ -1,15 +1,14 @@
 //! Agent leaves on the upstream SDK tree; no agent-specific scheduler.
 use super::*;
 use crate::chaos::{Session, TurnContext};
-use chaos_synopsis::runs::{RunRecorder, StepOutcome};
+use crate::run_observer::Observer;
 use chaos_synopsis::tree::{Domain, ValidatedTree, compile_workflow};
 use futures::FutureExt;
-use mcp_host::bt::{Node as BtNode, Status, Step, StepInfo, TreeContext, TreeObserver, TreeTool};
+use mcp_host::bt::{Node as BtNode, Step, TreeTool};
 use mcp_host::prelude::{ExecutionContext, Server, ToolError, ToolOutput as McpOutput};
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::registry::tools::{Tool, ToolBreakerConfig, ToolFuture};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 
 pub(super) fn failure(error: impl std::fmt::Display) -> FunctionCallError {
     FunctionCallError::RespondToModel(error.to_string())
@@ -163,66 +162,6 @@ impl Attempts {
     }
 }
 
-struct Observer {
-    recorder: RunRecorder,
-    cancellation: CancellationToken,
-    attempts: Mutex<BTreeMap<String, usize>>,
-    labels: BTreeMap<String, String>,
-}
-
-impl TreeObserver for Observer {
-    fn started(&self, _: TreeContext<'_>, step: &StepInfo, attempt: usize) {
-        if let Some(id) = step.id.as_deref()
-            && self.recorder.start_step(id, attempt).is_ok()
-        {
-            self.attempts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(id.into(), attempt);
-        } else {
-            self.cancellation.cancel();
-        }
-    }
-
-    fn finished(
-        &self,
-        _: TreeContext<'_>,
-        step: &StepInfo,
-        attempt: usize,
-        status: Status,
-        record: &Value,
-    ) {
-        let outcome = if status == Status::Success {
-            StepOutcome::Success
-        } else {
-            StepOutcome::Failure
-        };
-        let mut record = record.clone();
-        // Only relabel the SDK's tool field, never arbitrary agent output.
-        if let Some(alias) = record.get("tool").and_then(Value::as_str)
-            && let Some(job_id) = self.labels.get(alias)
-        {
-            record["tool"] = Value::String(job_id.clone());
-        }
-        if let Some(id) = step.id.as_deref()
-            && self
-                .recorder
-                .finish_step(id, attempt, outcome, Some(record))
-                .is_err()
-        {
-            self.cancellation.cancel();
-        }
-    }
-
-    fn halted(&self, _: TreeContext<'_>, step: &StepInfo, attempt: usize) {
-        if let Some(id) = step.id.as_deref() {
-            let _ = self
-                .recorder
-                .finish_step(id, attempt, StepOutcome::Cancelled, None);
-        }
-    }
-}
-
 struct AgentLeaf {
     leaf: Leaf,
     session: Arc<Session>,
@@ -244,11 +183,7 @@ impl Tool for AgentLeaf {
         Box::pin(async move {
             let attempt = self
                 .observer
-                .attempts
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(&self.leaf.node_id)
-                .copied()
+                .attempt(&self.leaf.node_id)
                 .ok_or_else(|| ToolError::Execution("missing job activation".into()))?;
             if self.cancellation.is_cancelled() || (attempt > 1 && !self.leaf.job.allow_replay) {
                 return Err(ToolError::Execution(
@@ -392,12 +327,11 @@ pub(super) async fn run(
         .map_err(failure)?;
     let cancellation = lease.cancellation();
     let mut guard = RunCancellationGuard::new(cancellation.clone());
-    let observer = Arc::new(Observer {
-        recorder: lease.recorder(),
-        cancellation: cancellation.clone(),
-        attempts: Mutex::default(),
+    let observer = Arc::new(Observer::new(
+        lease.recorder(),
+        cancellation.clone(),
         labels,
-    });
+    ));
     let attempts = Arc::new(Attempts::default());
     let server = bridge_server();
     for leaf in leaves {

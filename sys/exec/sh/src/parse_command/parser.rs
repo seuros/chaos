@@ -70,9 +70,19 @@ pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {
     // so summaries reflect the order they will run.
 
     // Map each pipeline segment to its parsed summary, tracking `cd` to compute paths.
-    let mut commands: Vec<ParsedCommand> = Vec::new();
+    let mut commands = summarize_commands(parts);
+
+    while let Some(next) = simplify_once(&commands) {
+        commands = next;
+    }
+
+    commands
+}
+
+fn summarize_commands(parts: impl IntoIterator<Item = Vec<String>>) -> Vec<ParsedCommand> {
+    let mut commands = Vec::new();
     let mut cwd: Option<String> = None;
-    for tokens in &parts {
+    for tokens in parts {
         if let Some((head, tail)) = tokens.split_first()
             && head == "cd"
         {
@@ -84,7 +94,7 @@ pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {
             }
             continue;
         }
-        let parsed = summarize_main_tokens(tokens);
+        let parsed = summarize_main_tokens(&tokens);
         let parsed = match parsed {
             ParsedCommand::Read { cmd, name, path } => {
                 if let Some(base) = &cwd {
@@ -101,10 +111,6 @@ pub fn parse_command_impl(command: &[String]) -> Vec<ParsedCommand> {
             other => other,
         };
         commands.push(parsed);
-    }
-
-    while let Some(next) = simplify_once(&commands) {
-        commands = next;
     }
 
     commands
@@ -376,38 +382,7 @@ fn parse_shell_lc_commands(original: &[String]) -> Option<Vec<ParsedCommand>> {
             }]);
         }
         // Build parsed commands, tracking `cd` segments to compute effective file paths.
-        let mut commands: Vec<ParsedCommand> = Vec::new();
-        let mut cwd: Option<String> = None;
-        for tokens in filtered_commands.into_iter() {
-            if let Some((head, tail)) = tokens.split_first()
-                && head == "cd"
-            {
-                if let Some(dir) = cd_target(tail) {
-                    cwd = Some(match &cwd {
-                        Some(base) => join_paths(base, &dir),
-                        None => dir.clone(),
-                    });
-                }
-                continue;
-            }
-            let parsed = summarize_main_tokens(&tokens);
-            let parsed = match parsed {
-                ParsedCommand::Read { cmd, name, path } => {
-                    if let Some(base) = &cwd {
-                        let full = join_paths(base, &path.to_string_lossy());
-                        ParsedCommand::Read {
-                            cmd,
-                            name,
-                            path: PathBuf::from(full),
-                        }
-                    } else {
-                        ParsedCommand::Read { cmd, name, path }
-                    }
-                }
-                other => other,
-            };
-            commands.push(parsed);
-        }
+        let mut commands = summarize_commands(filtered_commands);
 
         if commands.len() > 1 {
             commands.retain(|pc| !matches!(pc, ParsedCommand::Unknown { cmd } if cmd == "true"));

@@ -172,20 +172,7 @@ impl McpAddForm {
                 }
             };
 
-            let env: BTreeMap<String, String> = self.fields[FIELD_ENV]
-                .text()
-                .split(',')
-                .filter_map(|pair| {
-                    let mut parts = pair.trim().splitn(2, '=');
-                    let key = parts.next()?.trim().to_string();
-                    let val = parts.next().unwrap_or("").trim().to_string();
-                    if key.is_empty() {
-                        None
-                    } else {
-                        Some((key, val))
-                    }
-                })
-                .collect();
+            let env = parse_stdio_env(self.fields[FIELD_ENV].text());
 
             McpAddServerParams {
                 name,
@@ -383,6 +370,22 @@ impl McpAddForm {
 
 fn gutter() -> Span<'static> {
     "▌ ".fg(crate::theme::accent_color())
+}
+
+fn parse_stdio_env(input: &str) -> BTreeMap<String, String> {
+    input
+        .split(',')
+        .filter_map(|pair| {
+            let mut parts = pair.trim().splitn(2, '=');
+            let key = parts.next()?.trim().to_string();
+            let val = parts.next().unwrap_or("").trim().to_string();
+            if key.is_empty() {
+                None
+            } else {
+                Some((key, val))
+            }
+        })
+        .collect()
 }
 
 fn parse_stdio_args(input: &str) -> Result<Vec<String>, String> {

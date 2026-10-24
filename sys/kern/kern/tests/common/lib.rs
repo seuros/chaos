@@ -47,7 +47,7 @@ fn configure_insta_workspace_root_for_snapshot_tests() {
     if let Some(workspace_root) = workspace_root
         && let Ok(workspace_root) = workspace_root.canonicalize()
     {
-        // Safety: this ctor runs at process startup before test threads begin.
+        // SAFETY: this ctor runs at process startup before test threads begin.
         unsafe {
             std::env::set_var("INSTA_WORKSPACE_ROOT", workspace_root);
         }
@@ -147,26 +147,17 @@ pub fn load_sse_fixture(path: impl AsRef<std::path::Path>) -> String {
     let events: Vec<serde_json::Value> =
         serde_json::from_reader(std::fs::File::open(path).expect("read fixture"))
             .expect("parse JSON fixture");
-    events
-        .into_iter()
-        .map(|e| {
-            let kind = e
-                .get("type")
-                .and_then(|v| v.as_str())
-                .expect("fixture event missing type");
-            if e.as_object().map(|o| o.len() == 1).unwrap_or(false) {
-                format!("event: {kind}\n\n")
-            } else {
-                format!("event: {kind}\ndata: {e}\n\n")
-            }
-        })
-        .collect()
+    sse_fixture_body(events)
 }
 
 pub fn load_sse_fixture_with_id_from_str(raw: &str, id: &str) -> String {
     let replaced = raw.replace("__ID__", id);
     let events: Vec<serde_json::Value> =
         serde_json::from_str(&replaced).expect("parse JSON fixture");
+    sse_fixture_body(events)
+}
+
+fn sse_fixture_body(events: Vec<serde_json::Value>) -> String {
     events
         .into_iter()
         .map(|e| {

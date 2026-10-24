@@ -1,7 +1,6 @@
 use super::*;
 use crate::test_support::make_app_event_sender;
 use chaos_kern::config_loader::ConfigLayerStack;
-use std::collections::HashMap;
 use tempfile::tempdir;
 
 fn make_form() -> McpAddForm {
@@ -134,21 +133,16 @@ fn args_parsing_rejects_unmatched_quotes() {
 }
 
 fn env_parsing_splits_key_value() {
-    let env: HashMap<String, String> = "FOO=bar,BAZ=qux"
-        .split(',')
-        .filter_map(|pair| {
-            let mut parts = pair.trim().splitn(2, '=');
-            let key = parts.next()?.trim().to_string();
-            let val = parts.next().unwrap_or("").trim().to_string();
-            if key.is_empty() {
-                None
-            } else {
-                Some((key, val))
-            }
-        })
-        .collect();
+    let env = parse_stdio_env("FOO=bar,BAZ=qux");
     assert_eq!(env.get("FOO").map(String::as_str), Some("bar"));
     assert_eq!(env.get("BAZ").map(String::as_str), Some("qux"));
+    assert_eq!(
+        parse_stdio_env(" FOO=old, FOO = new=value ,EMPTY,=ignored,,"),
+        BTreeMap::from([
+            ("EMPTY".to_string(), String::new()),
+            ("FOO".to_string(), "new=value".to_string()),
+        ])
+    );
 }
 
 fn http_field_parses_bearer_env_var_name() {

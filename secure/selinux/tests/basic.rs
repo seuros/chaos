@@ -236,6 +236,28 @@ prefix_rule {
 }
 
 #[test]
+fn rule_justification_validation_is_shared_by_prefix_and_network_rules() {
+    for rule in [
+        r#"prefix_rule {pattern = {"ls"}, decision = "prompt","#,
+        r#"network_rule {host = "example.com", protocol = "https", decision = "prompt","#,
+    ] {
+        for (value, expected_error) in [
+            (r#""   ""#, "justification cannot be empty"),
+            ("{}", "invalid 'justification' field"),
+        ] {
+            let source = format!("{rule} justification = {value}}}");
+            let error = PolicyParser::new()
+                .parse("test.rules", &source)
+                .expect_err("invalid justification must fail for either rule kind");
+            assert!(
+                error.to_string().contains(expected_error),
+                "{source}: {error}"
+            );
+        }
+    }
+}
+
+#[test]
 fn add_prefix_rule_extends_policy() -> Result<()> {
     let mut policy = Policy::empty();
     policy.add_prefix_rule(&tokens(&["ls", "-l"]), Decision::Prompt)?;

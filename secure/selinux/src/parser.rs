@@ -242,20 +242,7 @@ fn handle_prefix_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<
         Err(e) => return Err(Error::InvalidRule(format!("invalid 'decision' field: {e}"))),
     };
 
-    let justification = match args.get::<Option<String>>("justification") {
-        Ok(Some(raw)) if raw.trim().is_empty() => {
-            return Err(Error::InvalidRule(
-                "justification cannot be empty".to_string(),
-            ));
-        }
-        Ok(Some(raw)) => Some(raw),
-        Ok(None) => None,
-        Err(e) => {
-            return Err(Error::InvalidRule(format!(
-                "invalid 'justification' field: {e}"
-            )));
-        }
-    };
+    let justification = parse_justification(args)?;
 
     let matches: Vec<Vec<String>> = match args.get::<Option<Table>>("match") {
         Ok(Some(tbl)) => parse_examples_from_table(&tbl)?,
@@ -314,20 +301,7 @@ fn handle_network_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result
     let protocol = NetworkRuleProtocol::parse(&protocol_raw)?;
     let decision = parse_network_rule_decision(&decision_raw)?;
 
-    let justification = match args.get::<Option<String>>("justification") {
-        Ok(Some(raw)) if raw.trim().is_empty() => {
-            return Err(Error::InvalidRule(
-                "justification cannot be empty".to_string(),
-            ));
-        }
-        Ok(Some(raw)) => Some(raw),
-        Ok(None) => None,
-        Err(e) => {
-            return Err(Error::InvalidRule(format!(
-                "invalid 'justification' field: {e}"
-            )));
-        }
-    };
+    let justification = parse_justification(args)?;
 
     builder.borrow_mut().add_network_rule(NetworkRule {
         host: crate::rule::normalize_network_rule_host(&host)?,
@@ -336,6 +310,18 @@ fn handle_network_rule(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result
         justification,
     });
     Ok(())
+}
+
+fn parse_justification(args: &Table) -> Result<Option<String>> {
+    match args.get::<Option<String>>("justification") {
+        Ok(Some(raw)) if raw.trim().is_empty() => Err(Error::InvalidRule(
+            "justification cannot be empty".to_string(),
+        )),
+        Ok(justification) => Ok(justification),
+        Err(e) => Err(Error::InvalidRule(format!(
+            "invalid 'justification' field: {e}"
+        ))),
+    }
 }
 
 fn handle_host_executable(builder: &RefCell<PolicyBuilder>, args: &Table) -> Result<()> {

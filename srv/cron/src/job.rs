@@ -121,6 +121,26 @@ pub struct CreateJobParams {
 }
 
 impl CreateJobParams {
+    pub(crate) fn created_job(&self, id: String, now: i64, next_run_at: Option<i64>) -> CronJob {
+        CronJob {
+            id,
+            name: self.name.clone(),
+            schedule: self.schedule.clone(),
+            command: self.command.clone(),
+            scope: self.scope,
+            project_path: self.project_path.clone(),
+            session_id: self.session_id.clone(),
+            enabled: true,
+            last_run_at: None,
+            next_run_at,
+            created_at: now,
+            updated_at: now,
+            kind: self.kind.clone(),
+            manifest_id: self.manifest_id.clone(),
+            execution_policy: self.execution_policy.clone(),
+        }
+    }
+
     /// Shorthand for a shell-kind job with neither manifest binding.
     pub fn shell(
         name: String,

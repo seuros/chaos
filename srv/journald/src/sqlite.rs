@@ -6,7 +6,6 @@ use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_proc::open_runtime_db_at_path;
 use chaos_proc::runtime_db_path;
-use serde_json::Value;
 use sqlx::Row;
 use sqlx::SqlitePool;
 use uuid::Uuid;
@@ -25,6 +24,10 @@ use crate::model::OwnerId;
 use crate::model::ParentRef;
 use crate::model::ProcessRecord;
 use crate::store::JournalStore;
+use crate::store::{
+    journal_item_type, source_label, timestamp_after, timestamp_from_epoch_seconds,
+    validate_sequences,
+};
 
 pub struct SqliteJournalStore {
     pool: SqlitePool,
@@ -189,16 +192,7 @@ impl JournalStore for SqliteJournalStore {
                 input.create.process_id
             )));
         }
-        for (index, entry) in input.items.iter().enumerate() {
-            let expected = index as i64;
-            if entry.seq != expected {
-                return Err(JournalError::SequenceConflict {
-                    process_id: input.create.process_id,
-                    expected_next_seq: expected,
-                    actual_next_seq: entry.seq,
-                });
-            }
-        }
+        validate_sequences(input.create.process_id, 0, &input.items)?;
 
         let create = &input.create;
         let source = source_label(&create.source);
@@ -601,7 +595,7 @@ impl JournalStore for SqliteJournalStore {
         &self,
         input: AppendBatchInput,
     ) -> Result<AppendBatchResult, JournalError> {
-        validate_batch_sequences(&input)?;
+        validate_sequences(input.process_id, input.expected_next_seq, &input.items)?;
         // Fence validation and append under one write reservation. A deferred
         // read-to-write upgrade can fail with SQLITE_BUSY despite busy_timeout,
         // and an out-of-transaction lease check can race archival or takeover.
@@ -739,14 +733,6 @@ fn serialize_source(source: &SessionSource) -> Result<String, JournalError> {
         field: "source_json",
         source: source_err,
     })
-}
-
-fn source_label(source: &SessionSource) -> String {
-    match serde_json::to_value(source) {
-        Ok(Value::String(label)) => label,
-        Ok(other) => other.to_string(),
-        Err(_) => String::new(),
-    }
 }
 
 fn serialize_item(item: &RolloutItem) -> Result<String, JournalError> {
@@ -901,20 +887,6 @@ fn validate_lease_row(
     })
 }
 
-fn validate_batch_sequences(input: &AppendBatchInput) -> Result<(), JournalError> {
-    for (index, entry) in input.items.iter().enumerate() {
-        let expected = input.expected_next_seq + index as i64;
-        if entry.seq != expected {
-            return Err(JournalError::SequenceConflict {
-                process_id: input.process_id,
-                expected_next_seq: expected,
-                actual_next_seq: entry.seq,
-            });
-        }
-    }
-    Ok(())
-}
-
 async fn next_seq_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     process_id: &ProcessId,
@@ -926,42 +898,6 @@ async fn next_seq_in_tx(
     .fetch_one(&mut **tx)
     .await?;
     Ok(row.get("next_seq"))
-}
-
-fn journal_item_type(item: &RolloutItem) -> &'static str {
-    match item {
-        RolloutItem::SessionMeta(_) => "session_meta",
-        RolloutItem::ResponseItem(_) => "response_item",
-        RolloutItem::Compacted(_) => "compacted",
-        RolloutItem::CompactionControl(_) => "compaction_control",
-        RolloutItem::TurnContext(_) => "turn_context",
-        RolloutItem::EventMsg(_) => "event_msg",
-        RolloutItem::BackgroundTask(_) => "background_task",
-        RolloutItem::GoalCheckpoint(_) => "goal_checkpoint",
-    }
-}
-
-fn timestamp_after(base: jiff::Timestamp, ttl: Duration) -> Result<jiff::Timestamp, JournalError> {
-    let ttl_seconds = i64::try_from(ttl.as_secs()).map_err(|_| JournalError::InvalidTimestamp {
-        value: ttl.as_secs().to_string(),
-        message: "ttl seconds overflow i64".to_string(),
-    })?;
-    let base_seconds = base.as_second();
-    let expires =
-        base_seconds
-            .checked_add(ttl_seconds)
-            .ok_or_else(|| JournalError::InvalidTimestamp {
-                value: ttl.as_secs().to_string(),
-                message: "timestamp overflow".to_string(),
-            })?;
-    timestamp_from_epoch_seconds(expires)
-}
-
-fn timestamp_from_epoch_seconds(seconds: i64) -> Result<jiff::Timestamp, JournalError> {
-    jiff::Timestamp::from_second(seconds).map_err(|err| JournalError::InvalidTimestamp {
-        value: seconds.to_string(),
-        message: err.to_string(),
-    })
 }
 
 #[cfg(test)]

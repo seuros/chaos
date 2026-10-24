@@ -343,233 +343,55 @@ fn footer_mode_snapshots() {
 }
 
 fn footer_collapse_snapshots() {
-    fn badge(kind: chaos_ipc::config_types::ModeKind) -> CollaborationModeIndicator {
-        CollaborationModeIndicator::new(kind, "gpt-5.4".to_string(), Some("high".to_string()))
+    use chaos_ipc::config_types::ModeKind;
+
+    // Keep every original snapshot name, width and state; only setup is shared.
+    for (mode_prefix, kind) in [("", ModeKind::Default), ("plan_", ModeKind::Plan)] {
+        for (running, cases) in [
+            (
+                false,
+                &[
+                    ("empty_full", 120),
+                    ("empty_mode_cycle_with_context", 60),
+                    ("empty_mode_cycle_without_context", 44),
+                    ("empty_mode_only", 26),
+                ][..],
+            ),
+            (
+                true,
+                &[
+                    ("queue_full", 120),
+                    ("queue_short_with_context", 50),
+                    ("queue_message_without_context", 40),
+                    ("queue_short_without_context", 30),
+                    ("queue_mode_only", 20),
+                ][..],
+            ),
+        ] {
+            for &(suffix, width) in cases {
+                snapshot_composer_state_with_width(
+                    &format!("footer_collapse_{mode_prefix}{suffix}"),
+                    width,
+                    true,
+                    |composer| {
+                        composer.set_collaboration_modes_enabled(true);
+                        composer.set_collaboration_mode_indicator(Some(
+                            CollaborationModeIndicator::new(
+                                kind,
+                                "gpt-5.4".to_string(),
+                                Some("high".to_string()),
+                            ),
+                        ));
+                        composer.set_context_window(Some(if running { 98 } else { 100 }), None);
+                        if running {
+                            composer.set_task_running(true);
+                            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
+                        }
+                    },
+                );
+            }
+        }
     }
-
-    fn setup_collab_footer(
-        composer: &mut ChatComposer,
-        context_percent: i64,
-        indicator: Option<CollaborationModeIndicator>,
-    ) {
-        composer.set_collaboration_modes_enabled(true);
-        composer.set_collaboration_mode_indicator(indicator);
-        composer.set_context_window(Some(context_percent), None);
-    }
-
-    // Empty textarea, agent idle: shortcuts hint can show, and cycle hint is hidden.
-    snapshot_composer_state_with_width("footer_collapse_empty_full", 120, true, |composer| {
-        setup_collab_footer(
-            composer,
-            100,
-            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-        );
-    });
-    snapshot_composer_state_with_width(
-        "footer_collapse_empty_mode_cycle_with_context",
-        60,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                100,
-                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-            );
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_empty_mode_cycle_without_context",
-        44,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                100,
-                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-            );
-        },
-    );
-    snapshot_composer_state_with_width("footer_collapse_empty_mode_only", 26, true, |composer| {
-        setup_collab_footer(
-            composer,
-            100,
-            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-        );
-    });
-
-    // Empty textarea, plan mode idle: shortcuts hint and cycle hint are available.
-    snapshot_composer_state_with_width("footer_collapse_plan_empty_full", 120, true, |composer| {
-        setup_collab_footer(
-            composer,
-            100,
-            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-        );
-    });
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_empty_mode_cycle_with_context",
-        60,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                100,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_empty_mode_cycle_without_context",
-        44,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                100,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_empty_mode_only",
-        26,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                100,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-        },
-    );
-
-    // Textarea has content, agent running: queue hint is shown.
-    snapshot_composer_state_with_width("footer_collapse_queue_full", 120, true, |composer| {
-        setup_collab_footer(
-            composer,
-            98,
-            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-        );
-        composer.set_task_running(true);
-        composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-    });
-    snapshot_composer_state_with_width(
-        "footer_collapse_queue_short_with_context",
-        50,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_queue_message_without_context",
-        40,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_queue_short_without_context",
-        30,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width("footer_collapse_queue_mode_only", 20, true, |composer| {
-        setup_collab_footer(
-            composer,
-            98,
-            Some(badge(chaos_ipc::config_types::ModeKind::Default)),
-        );
-        composer.set_task_running(true);
-        composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-    });
-
-    // Textarea has content, plan mode active, agent running: queue hint + mode.
-    snapshot_composer_state_with_width("footer_collapse_plan_queue_full", 120, true, |composer| {
-        setup_collab_footer(
-            composer,
-            98,
-            Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-        );
-        composer.set_task_running(true);
-        composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-    });
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_queue_short_with_context",
-        50,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_queue_message_without_context",
-        40,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_queue_short_without_context",
-        30,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
-    snapshot_composer_state_with_width(
-        "footer_collapse_plan_queue_mode_only",
-        20,
-        true,
-        |composer| {
-            setup_collab_footer(
-                composer,
-                98,
-                Some(badge(chaos_ipc::config_types::ModeKind::Plan)),
-            );
-            composer.set_task_running(true);
-            composer.set_text_content("Test".to_string(), Vec::new(), Vec::new());
-        },
-    );
 }
 
 fn esc_hint_stays_hidden_with_draft_content() {

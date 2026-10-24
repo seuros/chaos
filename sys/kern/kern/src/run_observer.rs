@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 use tokio_util::sync::CancellationToken;
 
-pub(super) struct Observer {
+/// Shared run-recording adapter for tool and agent trees.
+pub(crate) struct Observer {
     recorder: RunRecorder,
     cancellation: CancellationToken,
     attempts: Mutex<BTreeMap<String, usize>>,
@@ -13,7 +14,7 @@ pub(super) struct Observer {
 }
 
 impl Observer {
-    pub(super) fn new(
+    pub(crate) fn new(
         recorder: RunRecorder,
         cancellation: CancellationToken,
         display_names: BTreeMap<String, String>,
@@ -26,21 +27,21 @@ impl Observer {
         }
     }
     /// Rewrite only SDK-owned labels, never arbitrary values inside tool output.
-    pub(super) fn display_record(&self, record: &mut Value) {
+    pub(crate) fn display_record(&self, record: &mut Value) {
         if let Some(name) = record.get("tool").and_then(Value::as_str)
             && let Some(canonical) = self.display_names.get(name)
         {
             record["tool"] = Value::String(canonical.clone());
         }
     }
-    pub(super) fn display_result(&self, result: &mut Value) {
+    pub(crate) fn display_result(&self, result: &mut Value) {
         if let Some(steps) = result.get_mut("steps").and_then(Value::as_array_mut) {
             for record in steps {
                 self.display_record(record);
             }
         }
     }
-    pub(super) fn attempt(&self, id: &str) -> Option<usize> {
+    pub(crate) fn attempt(&self, id: &str) -> Option<usize> {
         self.attempts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -98,6 +99,7 @@ impl TreeObserver for Observer {
     }
     fn halted(&self, _: TreeContext<'_>, step: &StepInfo, attempt: usize) {
         if let Some(id) = step.id.as_deref() {
+            // An already-terminal attempt may race with SDK scope cleanup.
             let _ = self
                 .recorder
                 .finish_step(id, attempt, StepOutcome::Cancelled, None);

@@ -4,6 +4,9 @@
 //! We prefer this to using a crate feature to avoid building multiple
 //! permutations of the crate.
 
+/// Fake JWTs and typed auth records for tests, never real credentials.
+pub mod auth_fixtures;
+
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;

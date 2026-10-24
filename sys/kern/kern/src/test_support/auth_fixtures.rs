@@ -12,7 +12,10 @@ use crate::token_data::IdTokenInfo;
 use crate::token_data::TokenData;
 use crate::token_data::parse_chatgpt_jwt_claims;
 
-pub(super) fn make_jwt(payload: serde_json::Value) -> String {
+/// Build an unsigned JWT (`alg: none`) carrying the given JSON payload.
+///
+/// The signature segment is a constant placeholder; tests never validate it.
+pub fn make_jwt(payload: serde_json::Value) -> String {
     let header = json!({ "alg": "none", "typ": "JWT" });
     let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
     let header_b64 = encode(&serde_json::to_vec(&header).unwrap_or_else(|err| {
@@ -59,7 +62,8 @@ pub(super) fn id_token_from_payload(payload: serde_json::Value) -> IdTokenInfo {
     parse_id_token(&make_jwt(payload))
 }
 
-pub(super) fn openai_auth(
+/// Construct an [`AuthDotJson`] containing a single OpenAI provider record.
+pub fn openai_auth(
     auth_mode: ApiAuthMode,
     api_key: Option<&str>,
     tokens: Option<TokenData>,
@@ -81,13 +85,15 @@ pub(super) fn openai_auth(
     }
 }
 
-pub(super) fn openai_record(auth: &AuthDotJson) -> &ProviderAuthRecord {
+/// Borrow the OpenAI provider record, panicking if the record is missing.
+pub fn openai_record(auth: &AuthDotJson) -> &ProviderAuthRecord {
     auth.providers
         .get(DEFAULT_AUTH_PROVIDER_ID)
         .unwrap_or_else(|| panic!("openai provider record should exist"))
 }
 
-pub(super) fn build_tokens(access_token: &str, refresh_token: &str) -> TokenData {
+/// Build a [`TokenData`] with the given tokens, canned `sub` claim and account id.
+pub fn build_tokens(access_token: &str, refresh_token: &str) -> TokenData {
     let id_token = IdTokenInfo {
         raw_jwt: make_jwt(json!({ "sub": "user-123" })),
         ..IdTokenInfo::default()

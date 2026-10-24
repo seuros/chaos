@@ -1,79 +1,15 @@
 //! Shared OAuth/JWT test fixtures used by kernel and PAM integration tests.
 //!
-//! This crate is the single source of truth for the small set of helpers that
-//! manufacture fake JWTs and `AuthDotJson` records during tests. It exists so
-//! that kernel-side and PAM-side suites stop drifting separate copies of the
-//! same five-function module.
+//! The kernel owns the typed fixtures in its existing `test_support` module.
+//! Reexport them here for downstream suites without making the kernel depend
+//! on a crate that already depends on it.
 
 #![warn(clippy::all)]
 
-use base64::Engine;
-use chaos_ipc::api::AuthMode;
-use chaos_kern::auth::AuthDotJson;
-use chaos_kern::auth::DEFAULT_AUTH_PROVIDER_ID;
-use chaos_kern::auth::ProviderAuthRecord;
-use chaos_kern::token_data::IdTokenInfo;
-use chaos_kern::token_data::TokenData;
-use jiff::Timestamp;
-use serde_json::json;
+pub use chaos_kern::test_support::auth_fixtures::build_tokens;
+pub use chaos_kern::test_support::auth_fixtures::make_jwt;
+pub use chaos_kern::test_support::auth_fixtures::openai_auth;
+pub use chaos_kern::test_support::auth_fixtures::openai_record;
 
-/// Build an unsigned JWT (`alg: none`) carrying the given JSON payload.
-///
-/// The signature segment is a constant placeholder; tests never validate it.
-pub fn make_jwt(payload: serde_json::Value) -> String {
-    let header = json!({ "alg": "none", "typ": "JWT" });
-    let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-    let header_b64 = encode(&serde_json::to_vec(&header).unwrap_or_else(|err| {
-        panic!("header should serialize: {err}");
-    }));
-    let payload_b64 = encode(&serde_json::to_vec(&payload).unwrap_or_else(|err| {
-        panic!("payload should serialize: {err}");
-    }));
-    let signature_b64 = encode(b"sig");
-    format!("{header_b64}.{payload_b64}.{signature_b64}")
-}
-
-/// Construct an [`AuthDotJson`] containing a single OpenAI provider record.
-pub fn openai_auth(
-    auth_mode: AuthMode,
-    api_key: Option<&str>,
-    tokens: Option<TokenData>,
-    last_refresh: Option<Timestamp>,
-) -> AuthDotJson {
-    AuthDotJson {
-        providers: [(
-            DEFAULT_AUTH_PROVIDER_ID.to_string(),
-            ProviderAuthRecord {
-                credential_subject: Some("test-credential-subject".to_string()),
-                auth_mode: Some(auth_mode),
-                api_key: api_key.map(str::to_string),
-                tokens,
-                last_refresh,
-            },
-        )]
-        .into_iter()
-        .collect(),
-    }
-}
-
-/// Borrow the OpenAI provider record from an [`AuthDotJson`], panicking if
-/// the record is missing.
-pub fn openai_record(auth: &AuthDotJson) -> &ProviderAuthRecord {
-    auth.providers
-        .get(DEFAULT_AUTH_PROVIDER_ID)
-        .unwrap_or_else(|| panic!("openai provider record should exist"))
-}
-
-/// Build a [`TokenData`] for the given access/refresh token pair, with a
-/// canned `sub` claim and account id.
-#[allow(clippy::field_reassign_with_default)]
-pub fn build_tokens(access_token: &str, refresh_token: &str) -> TokenData {
-    let mut id_token = IdTokenInfo::default();
-    id_token.raw_jwt = make_jwt(json!({ "sub": "user-123" }));
-    TokenData {
-        id_token,
-        access_token: access_token.to_string(),
-        refresh_token: refresh_token.to_string(),
-        account_id: Some("account-id".to_string()),
-    }
-}
+#[cfg(test)]
+mod tests;

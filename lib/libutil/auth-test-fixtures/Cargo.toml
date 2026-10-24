@@ -9,8 +9,10 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+chaos-kern = { workspace = true }
+
+[dev-dependencies]
 base64 = { workspace = true }
 chaos-ipc = { workspace = true }
-chaos-kern = { workspace = true }
 jiff = { workspace = true }
 serde_json = { workspace = true }

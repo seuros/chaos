@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use chaos_ipc::ProcessId;
 use chaos_vfs::Vfs;
+use sqlx::FromRow;
 use sqlx::PgPool;
 use sqlx::QueryBuilder;
 use sqlx::Row;
@@ -36,6 +37,68 @@ impl ProcessNameSource {
 pub(crate) struct ProcessNameRecord {
     pub name: String,
     pub source: ProcessNameSource,
+}
+
+#[derive(FromRow)]
+struct ProcessNameRow {
+    process_name: String,
+    process_name_source: Option<String>,
+}
+
+#[derive(FromRow)]
+struct NamedProcessRow {
+    id: String,
+    process_name: String,
+}
+
+#[derive(FromRow)]
+struct ProcessIdRow {
+    id: String,
+}
+
+fn decode_process_name<R>(row: Option<R>) -> std::io::Result<Option<ProcessNameRecord>>
+where
+    R: Row,
+    for<'r> ProcessNameRow: FromRow<'r, R>,
+{
+    row.map(|row| {
+        let row = ProcessNameRow::from_row(&row).map_err(std::io::Error::other)?;
+        Ok(ProcessNameRecord {
+            name: row.process_name,
+            source: ProcessNameSource::from_db(row.process_name_source.as_deref()),
+        })
+    })
+    .transpose()
+}
+
+fn decode_process_id(id: String) -> std::io::Result<ProcessId> {
+    ProcessId::try_from(id).map_err(std::io::Error::other)
+}
+
+fn decode_process_names<R>(rows: Vec<R>) -> std::io::Result<HashMap<ProcessId, String>>
+where
+    R: Row,
+    for<'r> NamedProcessRow: FromRow<'r, R>,
+{
+    let mut out = HashMap::with_capacity(rows.len());
+    // Decode and parse each row before proceeding, preserving error precedence.
+    for row in rows {
+        let row = NamedProcessRow::from_row(&row).map_err(std::io::Error::other)?;
+        out.insert(decode_process_id(row.id)?, row.process_name);
+    }
+    Ok(out)
+}
+
+fn decode_optional_process_id<R>(row: Option<R>) -> std::io::Result<Option<ProcessId>>
+where
+    R: Row,
+    for<'r> ProcessIdRow: FromRow<'r, R>,
+{
+    row.map(|row| {
+        let row = ProcessIdRow::from_row(&row).map_err(std::io::Error::other)?;
+        decode_process_id(row.id)
+    })
+    .transpose()
 }
 
 trait ProcessNameStore {
@@ -97,17 +160,7 @@ impl ProcessNameStore for SqlitePool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| {
-            let name = row.try_get("process_name").map_err(std::io::Error::other)?;
-            let source: Option<String> = row
-                .try_get("process_name_source")
-                .map_err(std::io::Error::other)?;
-            Ok(ProcessNameRecord {
-                name,
-                source: ProcessNameSource::from_db(source.as_deref()),
-            })
-        })
-        .transpose()
+        decode_process_name(row)
     }
 
     async fn get_process_names(
@@ -135,17 +188,7 @@ impl ProcessNameStore for SqlitePool {
             .fetch_all(self)
             .await
             .map_err(std::io::Error::other)?;
-        let mut out = HashMap::with_capacity(rows.len());
-        for row in rows {
-            let id: String = row.try_get("id").map_err(std::io::Error::other)?;
-            let process_name: String =
-                row.try_get("process_name").map_err(std::io::Error::other)?;
-            out.insert(
-                ProcessId::try_from(id).map_err(std::io::Error::other)?,
-                process_name,
-            );
-        }
-        Ok(out)
+        decode_process_names(rows)
     }
 
     async fn find_process_id_by_name(&self, name: &str) -> std::io::Result<Option<ProcessId>> {
@@ -161,12 +204,7 @@ impl ProcessNameStore for SqlitePool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| row.try_get::<String, _>("id"))
-            .transpose()
-            .map_err(std::io::Error::other)?
-            .map(ProcessId::try_from)
-            .transpose()
-            .map_err(std::io::Error::other)
+        decode_optional_process_id(row)
     }
 
     async fn find_unarchived_process_id_by_name(
@@ -181,12 +219,7 @@ impl ProcessNameStore for SqlitePool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| row.try_get::<String, _>("id"))
-            .transpose()
-            .map_err(std::io::Error::other)?
-            .map(ProcessId::try_from)
-            .transpose()
-            .map_err(std::io::Error::other)
+        decode_optional_process_id(row)
     }
 }
 
@@ -223,17 +256,7 @@ impl ProcessNameStore for PgPool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| {
-            let name = row.try_get("process_name").map_err(std::io::Error::other)?;
-            let source: Option<String> = row
-                .try_get("process_name_source")
-                .map_err(std::io::Error::other)?;
-            Ok(ProcessNameRecord {
-                name,
-                source: ProcessNameSource::from_db(source.as_deref()),
-            })
-        })
-        .transpose()
+        decode_process_name(row)
     }
 
     async fn get_process_names(
@@ -261,17 +284,7 @@ impl ProcessNameStore for PgPool {
             .fetch_all(self)
             .await
             .map_err(std::io::Error::other)?;
-        let mut out = HashMap::with_capacity(rows.len());
-        for row in rows {
-            let id: String = row.try_get("id").map_err(std::io::Error::other)?;
-            let process_name: String =
-                row.try_get("process_name").map_err(std::io::Error::other)?;
-            out.insert(
-                ProcessId::try_from(id).map_err(std::io::Error::other)?,
-                process_name,
-            );
-        }
-        Ok(out)
+        decode_process_names(rows)
     }
 
     async fn find_process_id_by_name(&self, name: &str) -> std::io::Result<Option<ProcessId>> {
@@ -287,12 +300,7 @@ impl ProcessNameStore for PgPool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| row.try_get::<String, _>("id"))
-            .transpose()
-            .map_err(std::io::Error::other)?
-            .map(ProcessId::try_from)
-            .transpose()
-            .map_err(std::io::Error::other)
+        decode_optional_process_id(row)
     }
 
     async fn find_unarchived_process_id_by_name(
@@ -307,12 +315,7 @@ impl ProcessNameStore for PgPool {
         .fetch_optional(self)
         .await
         .map_err(std::io::Error::other)?;
-        row.map(|row| row.try_get::<String, _>("id"))
-            .transpose()
-            .map_err(std::io::Error::other)?
-            .map(ProcessId::try_from)
-            .transpose()
-            .map_err(std::io::Error::other)
+        decode_optional_process_id(row)
     }
 }
 

@@ -13,6 +13,7 @@ mod bootstrap;
 mod client;
 mod error;
 mod execution;
+mod lease_policy;
 mod model;
 mod postgres;
 mod protocol;

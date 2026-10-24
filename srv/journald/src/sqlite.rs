@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::error::JournalError;
+use crate::lease_policy::{ensure_acquirable, validate_lease};
 use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
@@ -455,17 +456,14 @@ impl JournalStore for SqliteJournalStore {
         .fetch_optional(&mut *tx)
         .await?;
 
-        if let Some(row) = existing.as_ref() {
-            let existing_owner_id: String = row.get("owner_id");
-            let existing_expires_at = timestamp_from_epoch_seconds(row.get("expires_at"))?;
-            if existing_expires_at > now && existing_owner_id != *owner_id {
-                return Err(JournalError::LeaseConflict {
-                    process_id: *process_id,
-                    current_owner_id: existing_owner_id,
-                    expires_at: existing_expires_at,
-                });
-            }
-        }
+        let existing = match existing {
+            Some(row) => Some((
+                row.get("owner_id"),
+                timestamp_from_epoch_seconds(row.get("expires_at"))?,
+            )),
+            None => None,
+        };
+        ensure_acquirable(process_id, owner_id, existing, now)?;
 
         sqlx::query(
             "INSERT INTO process_leases (process_id, owner_id, lease_token, expires_at, updated_at)
@@ -816,34 +814,16 @@ fn validate_lease_row(
     lease_token: &str,
     now: jiff::Timestamp,
 ) -> Result<Lease, JournalError> {
-    let Some(row) = row else {
-        return Err(JournalError::InvalidLease {
+    let lease = match row {
+        Some(row) => Some(Lease {
             process_id: *process_id,
-        });
+            owner_id: row.get("owner_id"),
+            lease_token: row.get("lease_token"),
+            expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
+        }),
+        None => None,
     };
-
-    let stored_owner_id: String = row.get("owner_id");
-    let stored_lease_token: String = row.get("lease_token");
-    let expires_at = timestamp_from_epoch_seconds(row.get("expires_at"))?;
-
-    if expires_at <= now {
-        return Err(JournalError::LeaseExpired {
-            process_id: *process_id,
-        });
-    }
-
-    if stored_owner_id != *owner_id || stored_lease_token != lease_token {
-        return Err(JournalError::InvalidLease {
-            process_id: *process_id,
-        });
-    }
-
-    Ok(Lease {
-        process_id: *process_id,
-        owner_id: stored_owner_id,
-        lease_token: stored_lease_token,
-        expires_at,
-    })
+    validate_lease(lease, process_id, owner_id, lease_token, now)
 }
 
 async fn next_seq_in_tx(

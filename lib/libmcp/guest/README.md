@@ -10,13 +10,22 @@ Requires Rust 1.98 or newer.
 
 ```toml
 [dependencies]
-mcp-guest = "0.11.0"
+mcp-guest = "0.12.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 The default `stdio` feature connects to local server processes. Enable `http`
 for remote servers, or use `default-features = false, features = ["http"]` for
 HTTP-only clients.
+
+HTTPS needs a rustls crypto provider, and the crate forces none: enable
+`tls-aws-lc` or `tls-ring` (each implies `http`), or rely on a provider your
+application already compiles into rama and installs as rustls' process
+default. Applications that standardised on one provider build only that one.
+
+```toml
+mcp-guest = { version = "0.12.0", default-features = false, features = ["tls-aws-lc"] }
+```
 
 ```rust,no_run
 # #[cfg(feature = "stdio")]

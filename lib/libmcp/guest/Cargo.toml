@@ -1,6 +1,6 @@
 [package]
 name = "mcp-guest"
-version = "0.11.0"
+version = "0.12.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,20 @@ all-features = true
 [features]
 default = ["stdio"]
 stdio = []
-http = ["dep:chrono-machines", "dep:rand", "dep:tokio-stream", "dep:url"]
+# Remote servers over streamable HTTP. HTTPS needs a TLS provider: pick one of
+# the `tls-*` features, or a provider the application already compiles into
+# rama (installed as rustls' process default).
+http = [
+    "dep:chrono-machines",
+    "dep:rand",
+    "dep:tokio-stream",
+    "dep:url",
+    "rama/http-backend",
+    "rama/tcp",
+    "rama/dns",
+]
+tls-ring = ["http", "rama/rustls", "rama/ring"]
+tls-aws-lc = ["http", "rama/rustls", "rama/aws-lc"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -31,7 +44,10 @@ serde_json = { workspace = true }
 state-machines = { workspace = true }
 tokio = { workspace = true, features = ["rt", "sync", "macros", "time", "io-util", "process", "net"] }
 thiserror = { workspace = true }
-rama = { workspace = true }
+# Not the workspace's: that one carries every feature chaos uses (ring,
+# socks5, unix...), which would reach every application depending on the
+# published crate.
+rama = { version = "0.4.0", default-features = false, features = ["std"] }
 tokio-stream = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 

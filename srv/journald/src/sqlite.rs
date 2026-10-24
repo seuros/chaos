@@ -25,8 +25,8 @@ use crate::model::ParentRef;
 use crate::model::ProcessRecord;
 use crate::store::JournalStore;
 use crate::store::{
-    journal_item_type, source_label, timestamp_after, timestamp_from_epoch_seconds,
-    validate_sequences,
+    journal_item_type, new_process_record, process_insert_error, source_label, timestamp_after,
+    timestamp_from_epoch_seconds, validate_sequences,
 };
 
 pub struct SqliteJournalStore {
@@ -62,12 +62,16 @@ impl JournalStore for SqliteJournalStore {
         let row = sqlx::query(
             "SELECT p.id, p.parent_process_id, p.fork_at_seq, p.source_json,
                 COALESCE((SELECT json_extract(j.payload_json, '$.payload.cwd')
-                    FROM journal_entries j WHERE j.process_id = p.id AND j.item_type = 'turn_context'
+                    FROM journal_entries j
+                    WHERE j.process_id = p.id AND j.item_type = 'turn_context'
                     ORDER BY j.seq DESC LIMIT 1), p.cwd) AS cwd,
                 p.created_at, p.updated_at, p.archived_at, p.title, p.model_provider,
                 p.cli_version, p.agent_nickname, p.agent_role
              FROM processes p WHERE p.id = ?",
-        ).bind(request.process_id.to_string()).fetch_optional(&mut *tx).await?;
+        )
+        .bind(request.process_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await?;
         let Some(row) = row else { return Ok(()) };
         let record = process_row_to_record(&row)?;
         if record.source != request.source
@@ -80,8 +84,14 @@ impl JournalStore for SqliteJournalStore {
         }
         let now = jiff::Timestamp::now();
         if let Some(row) = sqlx::query(
-            "SELECT owner_id, expires_at FROM process_leases WHERE process_id = ? AND expires_at > ?"
-        ).bind(request.process_id.to_string()).bind(now.as_second()).fetch_optional(&mut *tx).await? {
+            "SELECT owner_id, expires_at FROM process_leases
+             WHERE process_id = ? AND expires_at > ?",
+        )
+        .bind(request.process_id.to_string())
+        .bind(now.as_second())
+        .fetch_optional(&mut *tx)
+        .await?
+        {
             return Err(JournalError::LeaseConflict {
                 process_id: request.process_id,
                 current_owner_id: row.get("owner_id"),
@@ -108,16 +118,10 @@ impl JournalStore for SqliteJournalStore {
         &self,
         input: CreateProcessInput,
     ) -> Result<ProcessRecord, JournalError> {
+        let created_at = input.created_at;
+        let input = new_process_record(input, created_at);
         let source = source_label(&input.source);
         let source_json = serialize_source(&input.source)?;
-        let title = input.title.clone().unwrap_or_default();
-        let model_provider = input
-            .model_provider
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-        let cli_version = input.cli_version.clone().unwrap_or_default();
-        let agent_nickname = input.source.get_nickname();
-        let agent_role = input.source.get_agent_role();
         let created_at = input.created_at.as_second();
         let parent_process_id = input
             .parent
@@ -151,34 +155,16 @@ impl JournalStore for SqliteJournalStore {
         .bind(input.cwd.to_string_lossy().to_string())
         .bind(created_at)
         .bind(created_at)
-        .bind(&title)
-        .bind(&model_provider)
-        .bind(&cli_version)
-        .bind(&agent_nickname)
-        .bind(&agent_role)
+        .bind(&input.title)
+        .bind(&input.model_provider)
+        .bind(input.cli_version.as_deref().unwrap_or_default())
+        .bind(&input.agent_nickname)
+        .bind(&input.agent_role)
         .execute(&self.pool)
         .await;
 
-        match result {
-            Ok(_) => Ok(ProcessRecord {
-                process_id: input.process_id,
-                parent: input.parent,
-                source: input.source,
-                cwd: input.cwd,
-                created_at: input.created_at,
-                updated_at: input.created_at,
-                archived_at: None,
-                title,
-                model_provider,
-                cli_version: input.cli_version,
-                agent_nickname,
-                agent_role,
-            }),
-            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
-                Err(JournalError::ProcessAlreadyExists(input.process_id))
-            }
-            Err(err) => Err(JournalError::Db(err)),
-        }
+        result.map_err(|err| process_insert_error(input.process_id, err))?;
+        Ok(input)
     }
 
     async fn initialize_process(
@@ -197,14 +183,6 @@ impl JournalStore for SqliteJournalStore {
         let create = &input.create;
         let source = source_label(&create.source);
         let source_json = serialize_source(&create.source)?;
-        let title = create.title.clone().unwrap_or_default();
-        let model_provider = create
-            .model_provider
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string());
-        let cli_version = create.cli_version.clone().unwrap_or_default();
-        let agent_nickname = create.source.get_nickname();
-        let agent_role = create.source.get_agent_role();
         let created_at_seconds = create.created_at.as_second();
         let parent_process_id = create
             .parent
@@ -224,6 +202,7 @@ impl JournalStore for SqliteJournalStore {
             .last()
             .map(|entry| entry.recorded_at)
             .unwrap_or(now);
+        let create = new_process_record(input.create, updated_at);
 
         let mut tx = self.pool.begin().await?;
 
@@ -253,21 +232,14 @@ impl JournalStore for SqliteJournalStore {
         .bind(create.cwd.to_string_lossy().to_string())
         .bind(created_at_seconds)
         .bind(updated_at.as_second())
-        .bind(&title)
-        .bind(&model_provider)
-        .bind(&cli_version)
-        .bind(&agent_nickname)
-        .bind(&agent_role)
+        .bind(&create.title)
+        .bind(&create.model_provider)
+        .bind(create.cli_version.as_deref().unwrap_or_default())
+        .bind(&create.agent_nickname)
+        .bind(&create.agent_role)
         .execute(&mut *tx)
         .await;
-        if let Err(err) = insert_process {
-            return match err {
-                sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
-                    Err(JournalError::ProcessAlreadyExists(create.process_id))
-                }
-                other => Err(JournalError::Db(other)),
-            };
-        }
+        insert_process.map_err(|err| process_insert_error(create.process_id, err))?;
 
         for entry in &input.items {
             let recorded_at = entry.recorded_at.as_second();
@@ -306,26 +278,13 @@ impl JournalStore for SqliteJournalStore {
         tx.commit().await?;
 
         Ok(InitializeProcessResult {
-            process: ProcessRecord {
-                process_id: create.process_id,
-                parent: create.parent.clone(),
-                source: create.source.clone(),
-                cwd: create.cwd.clone(),
-                created_at: create.created_at,
-                updated_at,
-                archived_at: None,
-                title,
-                model_provider,
-                cli_version: create.cli_version.clone(),
-                agent_nickname,
-                agent_role,
-            },
             lease: Lease {
                 process_id: create.process_id,
                 owner_id: input.owner_id,
                 lease_token,
                 expires_at: lease_expires_at,
             },
+            process: create,
             next_seq,
             updated_at,
         })

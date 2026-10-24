@@ -95,6 +95,40 @@ pub trait JournalStore {
     ) -> impl Future<Output = Result<(), JournalError>> + Send;
 }
 
+/// Apply the same metadata defaults for both backends and creation paths.
+pub(crate) fn new_process_record(
+    input: CreateProcessInput,
+    updated_at: jiff::Timestamp,
+) -> ProcessRecord {
+    let agent_nickname = input.source.get_nickname();
+    let agent_role = input.source.get_agent_role();
+    ProcessRecord {
+        process_id: input.process_id,
+        parent: input.parent,
+        source: input.source,
+        cwd: input.cwd,
+        created_at: input.created_at,
+        updated_at,
+        archived_at: None,
+        title: input.title.unwrap_or_default(),
+        model_provider: input
+            .model_provider
+            .unwrap_or_else(|| "unknown".to_string()),
+        cli_version: input.cli_version,
+        agent_nickname,
+        agent_role,
+    }
+}
+
+pub(crate) fn process_insert_error(process_id: ProcessId, err: sqlx::Error) -> JournalError {
+    match err {
+        sqlx::Error::Database(db_err) if db_err.is_unique_violation() => {
+            JournalError::ProcessAlreadyExists(process_id)
+        }
+        other => JournalError::Db(other),
+    }
+}
+
 pub(crate) fn validate_sequences(
     process_id: ProcessId,
     first_seq: i64,

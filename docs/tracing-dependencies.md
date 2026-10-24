@@ -49,5 +49,13 @@ compatibility facade to bypass them.
 Rama does not replace them here. Tracing packages are still expected as
 transitive dependencies in the root lockfile.
 
-Independent workspaces under `drivers/` and their lockfiles are not part of
-this migration. Changes to Rama itself are deferred.
+## Independent drivers
+
+Driver workspaces maintain their own lockfiles and tracing APIs:
+
+- Dictator uses `dictator_core::tracing`, backed by Rama's minimal `std` feature.
+- Skipper uses its local `crate::tracing` module, backed by its existing Rama dependency.
+- Helmsman has no direct tracing dependency to replace.
+
+These workspaces are validated and released independently of the application.
+Changes to Rama itself are deferred.

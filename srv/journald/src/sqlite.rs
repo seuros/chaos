@@ -2,8 +2,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
-use chaos_ipc::protocol::RolloutItem;
-use chaos_ipc::protocol::SessionSource;
 use chaos_proc::open_runtime_db_at_path;
 use chaos_proc::runtime_db_path;
 use sqlx::Row;
@@ -11,7 +9,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::error::JournalError;
-use crate::lease_policy::{ensure_acquirable, validate_lease};
+use crate::lease_policy::ensure_acquirable;
 use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
@@ -22,13 +20,20 @@ use crate::model::JournalEntry;
 use crate::model::Lease;
 use crate::model::LoadedJournal;
 use crate::model::OwnerId;
-use crate::model::ParentRef;
 use crate::model::ProcessRecord;
 use crate::store::JournalStore;
 use crate::store::{
-    journal_item_type, new_process_record, process_insert_error, source_label, timestamp_after,
-    timestamp_from_epoch_seconds, validate_sequences,
+    journal_item_type, timestamp_after, timestamp_from_epoch_seconds, validate_sequences,
 };
+
+use self::codec::{deserialize_item, process_row_to_record, serialize_item};
+use self::transactions::{
+    ensure_process_exists, ensure_process_exists_in_tx, load_valid_lease_in_tx, next_seq_in_tx,
+};
+
+mod codec;
+mod processes;
+mod transactions;
 
 pub struct SqliteJournalStore {
     pool: SqlitePool,
@@ -119,320 +124,28 @@ impl JournalStore for SqliteJournalStore {
         &self,
         input: CreateProcessInput,
     ) -> Result<ProcessRecord, JournalError> {
-        let created_at = input.created_at;
-        let input = new_process_record(input, created_at);
-        let source = source_label(&input.source);
-        let source_json = serialize_source(&input.source)?;
-        let created_at = input.created_at.as_second();
-        let parent_process_id = input
-            .parent
-            .as_ref()
-            .map(|parent| parent.parent_process_id.to_string());
-        let fork_at_seq = input.parent.as_ref().map(|parent| parent.fork_at_seq);
-
-        let result = sqlx::query(
-            "INSERT INTO processes (
-                id,
-                parent_process_id,
-                fork_at_seq,
-                source,
-                source_json,
-                cwd,
-                created_at,
-                updated_at,
-                archived_at,
-                title,
-                model_provider,
-                cli_version,
-                agent_nickname,
-                agent_role
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
-        )
-        .bind(input.process_id.to_string())
-        .bind(parent_process_id)
-        .bind(fork_at_seq)
-        .bind(source)
-        .bind(source_json)
-        .bind(input.cwd.to_string_lossy().to_string())
-        .bind(created_at)
-        .bind(created_at)
-        .bind(&input.title)
-        .bind(&input.model_provider)
-        .bind(input.cli_version.as_deref().unwrap_or_default())
-        .bind(&input.agent_nickname)
-        .bind(&input.agent_role)
-        .execute(&self.pool)
-        .await;
-
-        result.map_err(|err| process_insert_error(input.process_id, err))?;
-        Ok(input)
+        self.create_process_inner(input).await
     }
 
     async fn initialize_process(
         &self,
         input: InitializeProcessInput,
     ) -> Result<InitializeProcessResult, JournalError> {
-        if input.items.is_empty() {
-            return Err(JournalError::InvalidRequest(format!(
-                "initialize_process for {} requires at least one journal entry; \
-                 use create_process + acquire_lease for empty-journal cases",
-                input.create.process_id
-            )));
-        }
-        validate_sequences(input.create.process_id, 0, &input.items)?;
-
-        let create = &input.create;
-        let source = source_label(&create.source);
-        let source_json = serialize_source(&create.source)?;
-        let created_at_seconds = create.created_at.as_second();
-        let parent_process_id = create
-            .parent
-            .as_ref()
-            .map(|parent| parent.parent_process_id.to_string());
-        let fork_at_seq = create.parent.as_ref().map(|parent| parent.fork_at_seq);
-
-        let now = jiff::Timestamp::now();
-        let lease_ttl = Duration::from_millis(input.ttl_ms);
-        let lease_expires_at = timestamp_after(now, lease_ttl)?;
-        let lease_token = Uuid::now_v7().to_string();
-
-        let last_seq = input.items.last().map(|entry| entry.seq).unwrap_or(-1);
-        let next_seq = last_seq + 1;
-        let updated_at = input
-            .items
-            .last()
-            .map(|entry| entry.recorded_at)
-            .unwrap_or(now);
-        let create = new_process_record(input.create, updated_at);
-
-        let mut tx = self.pool.begin().await?;
-
-        let insert_process = sqlx::query(
-            "INSERT INTO processes (
-                id,
-                parent_process_id,
-                fork_at_seq,
-                source,
-                source_json,
-                cwd,
-                created_at,
-                updated_at,
-                archived_at,
-                title,
-                model_provider,
-                cli_version,
-                agent_nickname,
-                agent_role
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)",
-        )
-        .bind(create.process_id.to_string())
-        .bind(parent_process_id)
-        .bind(fork_at_seq)
-        .bind(&source)
-        .bind(&source_json)
-        .bind(create.cwd.to_string_lossy().to_string())
-        .bind(created_at_seconds)
-        .bind(updated_at.as_second())
-        .bind(&create.title)
-        .bind(&create.model_provider)
-        .bind(create.cli_version.as_deref().unwrap_or_default())
-        .bind(&create.agent_nickname)
-        .bind(&create.agent_role)
-        .execute(&mut *tx)
-        .await;
-        insert_process.map_err(|err| process_insert_error(create.process_id, err))?;
-
-        for entry in &input.items {
-            let recorded_at = entry.recorded_at.as_second();
-            let item_type = journal_item_type(&entry.item);
-            let payload_json = serialize_item(&entry.item)?;
-            sqlx::query(
-                "INSERT INTO journal_entries (
-                    process_id,
-                    seq,
-                    recorded_at,
-                    item_type,
-                    payload_json
-                 ) VALUES (?, ?, ?, ?, ?)",
-            )
-            .bind(create.process_id.to_string())
-            .bind(entry.seq)
-            .bind(recorded_at)
-            .bind(item_type)
-            .bind(payload_json)
-            .execute(&mut *tx)
-            .await?;
-        }
-
-        sqlx::query(
-            "INSERT INTO process_leases (process_id, owner_id, lease_token, expires_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(create.process_id.to_string())
-        .bind(&input.owner_id)
-        .bind(&lease_token)
-        .bind(lease_expires_at.as_second())
-        .bind(now.as_second())
-        .execute(&mut *tx)
-        .await?;
-
-        tx.commit().await?;
-
-        Ok(InitializeProcessResult {
-            lease: Lease {
-                process_id: create.process_id,
-                owner_id: input.owner_id,
-                lease_token,
-                expires_at: lease_expires_at,
-            },
-            process: create,
-            next_seq,
-            updated_at,
-        })
+        self.initialize_process_inner(input).await
     }
 
     async fn get_process(
         &self,
         process_id: &ProcessId,
     ) -> Result<Option<ProcessRecord>, JournalError> {
-        let row = sqlx::query(
-            "SELECT
-                p.id,
-                p.parent_process_id,
-                p.fork_at_seq,
-                p.source_json,
-                COALESCE(
-                    (
-                        SELECT json_extract(j.payload_json, '$.payload.cwd')
-                        FROM journal_entries AS j
-                        WHERE j.process_id = p.id
-                          AND j.item_type = 'turn_context'
-                        ORDER BY j.seq DESC
-                        LIMIT 1
-                    ),
-                    p.cwd
-                ) AS cwd,
-                p.created_at,
-                p.updated_at,
-                p.archived_at,
-                p.title,
-                p.model_provider,
-                p.cli_version,
-                p.agent_nickname,
-                p.agent_role
-             FROM processes AS p
-             WHERE p.id = ?",
-        )
-        .bind(process_id.to_string())
-        .fetch_optional(&self.pool)
-        .await?;
-
-        row.as_ref().map(process_row_to_record).transpose()
+        self.get_process_inner(process_id).await
     }
 
     async fn list_processes(
         &self,
         archived: Option<bool>,
     ) -> Result<Vec<ProcessRecord>, JournalError> {
-        let rows = match archived {
-            Some(true) => {
-                sqlx::query(
-                    "SELECT
-                        p.id,
-                        p.parent_process_id,
-                        p.fork_at_seq,
-                        p.source_json,
-                        COALESCE(
-                            (
-                                SELECT json_extract(j.payload_json, '$.payload.cwd')
-                                FROM journal_entries AS j
-                                WHERE j.process_id = p.id
-                                  AND j.item_type = 'turn_context'
-                                ORDER BY j.seq DESC
-                                LIMIT 1
-                            ),
-                            p.cwd
-                        ) AS cwd,
-                        p.created_at,
-                        p.updated_at,
-                        p.archived_at,
-                        p.title,
-                        p.model_provider,
-                        p.cli_version,
-                        p.agent_nickname,
-                        p.agent_role
-                     FROM processes AS p
-                     WHERE p.archived_at IS NOT NULL",
-                )
-                .fetch_all(&self.pool)
-                .await?
-            }
-            Some(false) => {
-                sqlx::query(
-                    "SELECT
-                        p.id,
-                        p.parent_process_id,
-                        p.fork_at_seq,
-                        p.source_json,
-                        COALESCE(
-                            (
-                                SELECT json_extract(j.payload_json, '$.payload.cwd')
-                                FROM journal_entries AS j
-                                WHERE j.process_id = p.id
-                                  AND j.item_type = 'turn_context'
-                                ORDER BY j.seq DESC
-                                LIMIT 1
-                            ),
-                            p.cwd
-                        ) AS cwd,
-                        p.created_at,
-                        p.updated_at,
-                        p.archived_at,
-                        p.title,
-                        p.model_provider,
-                        p.cli_version,
-                        p.agent_nickname,
-                        p.agent_role
-                     FROM processes AS p
-                     WHERE p.archived_at IS NULL",
-                )
-                .fetch_all(&self.pool)
-                .await?
-            }
-            None => {
-                sqlx::query(
-                    "SELECT
-                        p.id,
-                        p.parent_process_id,
-                        p.fork_at_seq,
-                        p.source_json,
-                        COALESCE(
-                            (
-                                SELECT json_extract(j.payload_json, '$.payload.cwd')
-                                FROM journal_entries AS j
-                                WHERE j.process_id = p.id
-                                  AND j.item_type = 'turn_context'
-                                ORDER BY j.seq DESC
-                                LIMIT 1
-                            ),
-                            p.cwd
-                        ) AS cwd,
-                        p.created_at,
-                        p.updated_at,
-                        p.archived_at,
-                        p.title,
-                        p.model_provider,
-                        p.cli_version,
-                        p.agent_nickname,
-                        p.agent_role
-                     FROM processes AS p",
-                )
-                .fetch_all(&self.pool)
-                .await?
-            }
-        };
-
-        rows.iter().map(process_row_to_record).collect()
+        self.list_processes_inner(archived).await
     }
 
     async fn acquire_lease(
@@ -683,160 +396,6 @@ impl JournalStore for SqliteJournalStore {
         .await?;
         Ok(())
     }
-}
-
-fn serialize_source(source: &SessionSource) -> Result<String, JournalError> {
-    serde_json::to_string(source).map_err(|source_err| JournalError::Serialize {
-        field: "source_json",
-        source: source_err,
-    })
-}
-
-fn serialize_item(item: &RolloutItem) -> Result<String, JournalError> {
-    serde_json::to_string(item).map_err(|source| JournalError::Serialize {
-        field: "payload_json",
-        source,
-    })
-}
-
-fn deserialize_item(value: String) -> Result<RolloutItem, JournalError> {
-    serde_json::from_str(&value).map_err(|source| JournalError::Deserialize {
-        field: "payload_json",
-        source,
-    })
-}
-
-fn deserialize_source(value: String) -> Result<SessionSource, JournalError> {
-    serde_json::from_str(&value).map_err(|source| JournalError::Deserialize {
-        field: "source_json",
-        source,
-    })
-}
-
-fn process_row_to_record(row: &sqlx::sqlite::SqliteRow) -> Result<ProcessRecord, JournalError> {
-    let process_id_text: String = row.get("id");
-    let process_id = ProcessId::from_string(&process_id_text).map_err(|source| {
-        JournalError::InvalidProcessId {
-            value: process_id_text,
-            source,
-        }
-    })?;
-    let parent = match row.get::<Option<String>, _>("parent_process_id") {
-        Some(parent_process_id_text) => {
-            let parent_process_id =
-                ProcessId::from_string(&parent_process_id_text).map_err(|source| {
-                    JournalError::InvalidProcessId {
-                        value: parent_process_id_text,
-                        source,
-                    }
-                })?;
-            Some(ParentRef {
-                parent_process_id,
-                fork_at_seq: row.get("fork_at_seq"),
-            })
-        }
-        None => None,
-    };
-    let source = deserialize_source(row.get("source_json"))?;
-    let created_at = timestamp_from_epoch_seconds(row.get("created_at"))?;
-    let updated_at = timestamp_from_epoch_seconds(row.get("updated_at"))?;
-    let archived_at = row
-        .get::<Option<i64>, _>("archived_at")
-        .map(timestamp_from_epoch_seconds)
-        .transpose()?;
-    let cli_version: String = row.get("cli_version");
-    Ok(ProcessRecord {
-        process_id,
-        parent,
-        source,
-        cwd: row.get::<String, _>("cwd").into(),
-        created_at,
-        updated_at,
-        archived_at,
-        title: row.get("title"),
-        model_provider: row.get("model_provider"),
-        cli_version: (!cli_version.is_empty()).then_some(cli_version),
-        agent_nickname: row.get("agent_nickname"),
-        agent_role: row.get("agent_role"),
-    })
-}
-
-async fn ensure_process_exists(
-    pool: &SqlitePool,
-    process_id: &ProcessId,
-) -> Result<(), JournalError> {
-    let exists = sqlx::query("SELECT 1 FROM processes WHERE id = ?")
-        .bind(process_id.to_string())
-        .fetch_optional(pool)
-        .await?;
-    if exists.is_some() {
-        return Ok(());
-    }
-    Err(JournalError::ProcessNotFound(*process_id))
-}
-
-async fn ensure_process_exists_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    process_id: &ProcessId,
-) -> Result<(), JournalError> {
-    let exists = sqlx::query("SELECT 1 FROM processes WHERE id = ?")
-        .bind(process_id.to_string())
-        .fetch_optional(&mut **tx)
-        .await?;
-    if exists.is_some() {
-        return Ok(());
-    }
-    Err(JournalError::ProcessNotFound(*process_id))
-}
-
-async fn load_valid_lease_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
-    let row = sqlx::query(
-        "SELECT owner_id, lease_token, expires_at
-         FROM process_leases
-         WHERE process_id = ?",
-    )
-    .bind(process_id.to_string())
-    .fetch_optional(&mut **tx)
-    .await?;
-    validate_lease_row(row, process_id, owner_id, lease_token, now)
-}
-
-fn validate_lease_row(
-    row: Option<sqlx::sqlite::SqliteRow>,
-    process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
-    let lease = match row {
-        Some(row) => Some(Lease {
-            process_id: *process_id,
-            owner_id: row.get("owner_id"),
-            lease_token: row.get("lease_token"),
-            expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
-        }),
-        None => None,
-    };
-    validate_lease(lease, process_id, owner_id, lease_token, now)
-}
-
-async fn next_seq_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    process_id: &ProcessId,
-) -> Result<EntrySeq, JournalError> {
-    let row = sqlx::query(
-        "SELECT COALESCE(MAX(seq) + 1, 0) AS next_seq FROM journal_entries WHERE process_id = ?",
-    )
-    .bind(process_id.to_string())
-    .fetch_one(&mut **tx)
-    .await?;
-    Ok(row.get("next_seq"))
 }
 
 #[cfg(test)]

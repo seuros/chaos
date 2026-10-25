@@ -17,7 +17,7 @@ async fn bounds_output_and_times_out_blocked_stdin() {
         display_order: 0,
     };
     let result = run_command(&shell, &handler, "{}", &std::env::temp_dir()).await;
-    assert!(result.error.unwrap().contains("128 KiB"));
+    assert!(result.error.unwrap().contains("1 MiB"));
     handler.command = "sleep 30".into();
     let result = tokio::time::timeout(
         Duration::from_secs(3),

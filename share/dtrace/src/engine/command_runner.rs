@@ -6,7 +6,13 @@ use tokio::process::{Child, Command};
 
 use super::{CommandShell, ConfiguredHandler};
 
-const OUTPUT_LIMIT: u64 = 128 * 1024;
+/// Per-stream cap on what a hook may write. An oversize stream fails the hook
+/// rather than being truncated, so this must comfortably exceed any legitimate
+/// `additionalContext`: a session-start hook that hands a resident its identity
+/// and recent journals can run well past 128 KiB, and at that size the whole
+/// wake was being dropped on the floor.
+const OUTPUT_LIMIT: u64 = 1024 * 1024;
+const OUTPUT_LIMIT_LABEL: &str = "1 MiB";
 
 #[derive(Debug)]
 pub(crate) struct CommandRunResult {
@@ -35,7 +41,9 @@ async fn read_output(stream: impl AsyncRead + Unpin) -> std::io::Result<String> 
         .read_to_end(&mut bytes)
         .await?;
     if bytes.len() as u64 > OUTPUT_LIMIT {
-        return Err(std::io::Error::other("hook output exceeds 128 KiB"));
+        return Err(std::io::Error::other(format!(
+            "hook output exceeds {OUTPUT_LIMIT_LABEL}"
+        )));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }

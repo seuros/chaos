@@ -140,7 +140,8 @@ Commands run in the session's working directory with its filtered environment,
 current filesystem/network sandbox, and execution-policy deny checks. Hook
 approval does not grant sandbox escalation. Timeout covers stdin, process exit,
 and output draining (default 30 seconds, maximum 600); each output stream is
-limited to 128 KiB. Hook process groups are terminated on cancellation/timeout.
+limited to 1 MiB, and a stream over the limit fails the hook rather than being
+truncated. Hook process groups are terminated on cancellation/timeout.
 Existing event input/output JSON semantics are unchanged. Results are ordered
 global-before-project, then by `order` and stable ID; matching commands can run
 concurrently. Event origins use `chaos://hooks/{id}`.

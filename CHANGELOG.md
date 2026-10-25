@@ -9,6 +9,14 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Changed
+- Hook output streams are limited to 1 MiB per stream, up from 128 KiB. A
+  session-start hook injecting a resident's identity and recent journals as
+  `additionalContext` could exceed the old cap, and because an oversize stream
+  fails the hook rather than being truncated, the whole wake was silently
+  dropped. The over-limit behaviour is unchanged and now documented in
+  chaos-hooks(7).
+
 ## [47.14.5] - 2026-10-24
 
 ### Fixed

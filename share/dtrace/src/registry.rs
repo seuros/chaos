@@ -20,6 +20,9 @@ pub struct HooksConfig {
     pub shell_program: Option<String>,
     pub shell_args: Vec<String>,
     pub command_builder: Option<std::sync::Arc<HookCommandBuilder>>,
+    /// Per-stream cap on hook output in bytes; `None` keeps the built-in
+    /// default of 128 KiB (`DEFAULT_OUTPUT_LIMIT_BYTES` in the command runner).
+    pub output_limit_bytes: Option<u64>,
 }
 
 pub type HookCommandBuilder =
@@ -46,6 +49,9 @@ impl Hooks {
                 program: config.shell_program.unwrap_or_default(),
                 args: config.shell_args,
                 builder: config.command_builder,
+                output_limit_bytes: config
+                    .output_limit_bytes
+                    .unwrap_or(crate::engine::command_runner::DEFAULT_OUTPUT_LIMIT_BYTES),
             },
         );
         Self {

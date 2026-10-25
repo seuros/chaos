@@ -22,6 +22,9 @@ pub(crate) struct CommandShell {
     pub program: String,
     pub args: Vec<String>,
     pub builder: Option<std::sync::Arc<crate::registry::HookCommandBuilder>>,
+    /// Per-stream cap on hook stdout/stderr, in bytes. A stream over it fails
+    /// the hook rather than being truncated.
+    pub output_limit_bytes: u64,
 }
 
 #[derive(Debug, Clone)]

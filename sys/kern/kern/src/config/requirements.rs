@@ -12,6 +12,7 @@ use chaos_realpath::AbsolutePathBuf;
 use crate::config::Config;
 use crate::config::ConfigOverrides;
 use crate::config::ConfigToml;
+use crate::config::DEFAULT_HOOK_OUTPUT_LIMIT_KIB;
 use crate::config::Permissions;
 use crate::config::agent_roles;
 use crate::config::parsing;
@@ -651,6 +652,9 @@ impl Config {
             agent_compaction_control: cfg.agent_compaction_control.unwrap_or_default(),
             recall_automatic: cfg.recall_automatic,
             hook_approval_policy: cfg.hook_approval_policy.unwrap_or_default(),
+            hook_output_limit_kib: cfg
+                .hook_output_limit_kib
+                .unwrap_or(DEFAULT_HOOK_OUTPUT_LIMIT_KIB),
             terminal_title: cfg.terminal_title.unwrap_or_default(),
             model_provider_id,
             model_provider,

@@ -20,6 +20,7 @@ fn shell() -> CommandShell {
         builder: None,
         program: "/bin/sh".to_string(),
         args: vec!["-c".to_string()],
+        output_limit_bytes: crate::engine::command_runner::DEFAULT_OUTPUT_LIMIT_BYTES,
     }
 }
 

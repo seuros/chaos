@@ -108,6 +108,9 @@ pub use types::ApprovalsReviewer;
 pub(crate) const DEFAULT_AGENT_MAX_THREADS: Option<usize> = Some(6);
 pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
+/// Per-stream hook output cap in KiB when `hook_output_limit_kib` is unset.
+/// Mirrors `chaos_dtrace`'s built-in default; both are 128 KiB.
+pub(crate) const DEFAULT_HOOK_OUTPUT_LIMIT_KIB: u64 = 128;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
@@ -409,6 +412,10 @@ pub struct Config {
 
     /// Whether hook tools require human elicitation or standing authorization.
     pub hook_approval_policy: HookApprovalPolicy,
+
+    /// Per-stream cap on hook stdout/stderr, in KiB. A stream over the cap fails
+    /// the hook rather than being truncated. Default: 128.
+    pub hook_output_limit_kib: u64,
 
     /// Terminal title behavior for interactive sessions.
     pub terminal_title: TerminalTitleMode,
@@ -772,6 +779,13 @@ pub struct ConfigToml {
     /// `automatic` explicitly permits unattended management, not sandbox escalation.
     #[serde(default)]
     pub hook_approval_policy: Option<HookApprovalPolicy>,
+
+    /// Per-stream cap on hook stdout/stderr, in KiB. Hooks that inject large
+    /// `additionalContext` (a resident's identity and journals at session start)
+    /// need more than the 128 KiB default; an over-limit stream fails the hook
+    /// rather than being truncated.
+    #[serde(default)]
+    pub hook_output_limit_kib: Option<u64>,
 
     /// Terminal title behavior. `process-name` mirrors `/rename`; `agent` also
     /// lets the current model name the session.

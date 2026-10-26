@@ -1010,6 +1010,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         agent_compaction_control: Default::default(),
         recall_automatic: false,
         hook_approval_policy: Default::default(),
+        hook_output_limit_kib: 128,
         terminal_title: Default::default(),
         service_tier: None,
         model_provider_id: "openai".to_string(),
@@ -1406,6 +1407,21 @@ fn hook_approval_policy_requires_explicit_opt_in() {
         assert_eq!(config.hook_approval_policy, expected);
     }
     assert!(toml::from_str::<ConfigToml>("hook_approval_policy = 'typo'").is_err());
+}
+
+#[test]
+fn hook_output_limit_defaults_to_128_kib_and_accepts_an_override() {
+    for (text, expected) in [("", 128), ("hook_output_limit_kib = 1024", 1024)] {
+        let home = tempdir().unwrap();
+        let config = Config::load_from_base_config_with_overrides(
+            toml::from_str(text).unwrap(),
+            ConfigOverrides::default(),
+            home.path().into(),
+        )
+        .unwrap();
+        assert_eq!(config.hook_output_limit_kib, expected);
+    }
+    assert!(toml::from_str::<ConfigToml>("hook_output_limit_kib = 'lots'").is_err());
 }
 
 // anyhow chains reach the CLI boxed inside `io::Error`. Whether the root cause

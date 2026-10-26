@@ -463,6 +463,7 @@ pub(crate) async fn for_turn(
         shell_program: Some(program),
         shell_args: argv,
         command_builder: Some(builder),
+        output_limit_bytes: Some(turn.config.hook_output_limit_kib.saturating_mul(1024)),
     }))
 }
 

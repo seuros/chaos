@@ -6,7 +6,19 @@ use tokio::process::{Child, Command};
 
 use super::{CommandShell, ConfiguredHandler};
 
-const OUTPUT_LIMIT: u64 = 128 * 1024;
+/// Default per-stream cap on what a hook may write, in bytes. Operators raise it
+/// with the `hook_output_limit_kib` config key; the dtrace side receives it on
+/// `CommandShell::output_limit_bytes`.
+pub(crate) const DEFAULT_OUTPUT_LIMIT_BYTES: u64 = 128 * 1024;
+
+/// Human label for a byte limit: whole KiB when it divides evenly, bytes otherwise.
+pub(crate) fn output_limit_label(bytes: u64) -> String {
+    if bytes > 0 && bytes % 1024 == 0 {
+        format!("{} KiB", bytes / 1024)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct CommandRunResult {
@@ -28,14 +40,17 @@ impl Drop for HookChild {
     }
 }
 
-async fn read_output(stream: impl AsyncRead + Unpin) -> std::io::Result<String> {
+async fn read_output(stream: impl AsyncRead + Unpin, limit: u64) -> std::io::Result<String> {
     let mut bytes = Vec::new();
     stream
-        .take(OUTPUT_LIMIT + 1)
+        .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)
         .await?;
-    if bytes.len() as u64 > OUTPUT_LIMIT {
-        return Err(std::io::Error::other("hook output exceeds 128 KiB"));
+    if bytes.len() as u64 > limit {
+        return Err(std::io::Error::other(format!(
+            "hook output exceeds {}",
+            output_limit_label(limit)
+        )));
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
@@ -87,8 +102,8 @@ pub(crate) async fn run_command(
         };
         let (_, stdout, stderr, status) = tokio::try_join!(
             write,
-            read_output(stdout),
-            read_output(stderr),
+            read_output(stdout, shell.output_limit_bytes),
+            read_output(stderr, shell.output_limit_bytes),
             child.0.wait(),
         )?;
         Ok::<_, anyhow::Error>((stdout, stderr, status.code()))

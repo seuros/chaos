@@ -9,6 +9,13 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- `hook_output_limit_kib` config key: the per-stream cap on hook stdout/stderr,
+  default 128 KiB as before. A stream over the cap fails the hook rather than
+  being truncated, which silently dropped a session-start hook's whole
+  `additionalContext` once a resident's identity and journals outgrew 128 KiB.
+  Installs that inject large context raise the key; nothing changes for the rest.
+
 ## [47.14.5] - 2026-10-24
 
 ### Fixed

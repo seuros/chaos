@@ -357,9 +357,9 @@ serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
 state-machines = { version = "0.32.1", features = ["dynamic", "async", "runtime-send"] }
-breaker-machines = { version = "0.18.0", features = ["async"] }
-chrono-machines = { version = "0.8", features = ["std"] }
-throttle-machines = { version = "0.2" }
+breaker-machines = { version = "0.20.0", features = ["async"] }
+chrono-machines = { version = "0.9", features = ["std"] }
+throttle-machines = { version = "0.3" }
 serial_test = "4.0.1"
 sha1 = "0.11.0"
 sha2 = "0.11"

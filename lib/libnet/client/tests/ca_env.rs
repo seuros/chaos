@@ -50,7 +50,11 @@ fn uses_ssl_cert_file() {
 
     let output = run_probe(&[(SSL_CERT_FILE_ENV, cert_path.as_path())]);
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "custom_ca_probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -61,7 +65,11 @@ fn handles_multi_certificate_bundle() {
 
     let output = run_probe(&[(SSL_CERT_FILE_ENV, cert_path.as_path())]);
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "custom_ca_probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -101,7 +109,11 @@ fn accepts_openssl_trusted_certificate() {
 
     let output = run_probe(&[(SSL_CERT_FILE_ENV, cert_path.as_path())]);
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "custom_ca_probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -113,5 +125,9 @@ fn accepts_bundle_with_crl() {
 
     let output = run_probe(&[(SSL_CERT_FILE_ENV, cert_path.as_path())]);
 
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "custom_ca_probe failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

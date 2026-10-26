@@ -58,7 +58,8 @@ use rustls_pki_types::pem::{self};
 use thiserror::Error;
 
 pub const SSL_CERT_FILE_ENV: &str = "SSL_CERT_FILE";
-const CA_CERT_HINT: &str = "If you set SSL_CERT_FILE, ensure it points to a PEM file containing one or more CERTIFICATE blocks, or unset it to use system roots.";
+const CA_CERT_HINT: &str = "If you set SSL_CERT_FILE, ensure it points to a PEM file containing \
+    one or more CERTIFICATE blocks, or unset it to use system roots.";
 type PemSection = (SectionKind, Vec<u8>);
 
 /// Describes why a transport using shared custom CA support could not be constructed.
@@ -98,7 +99,8 @@ pub enum BuildCustomCaTransportError {
 
     /// One parsed certificate block could not be registered with the rustls root store.
     #[error(
-        "Failed to register certificate #{certificate_index} from {} selected by {} in rustls root store: {source}. {hint}",
+        "Failed to register certificate #{certificate_index} from {} selected by {} \
+         in rustls root store: {source}. {hint}",
         path.display(),
         source_env,
         hint = CA_CERT_HINT
@@ -171,6 +173,7 @@ fn maybe_build_rustls_client_config_with_env_and_native_roots(
             "encountered errors while loading native root certificates"
         );
     }
+    // Native stores may include unsupported certificates; keep usable roots and ignore the counts.
     let _ = root_store.add_parsable_certificates(certs);
 
     for (idx, cert) in certificates.into_iter().enumerate() {
@@ -190,6 +193,10 @@ fn maybe_build_rustls_client_config_with_env_and_native_roots(
             });
         }
     }
+
+    // This path can run before any HTTP client initializes rustls. Feature unification
+    // may enable both crypto backends, so use the same provider policy as the HTTP path.
+    crate::ensure_rustls_crypto_provider();
 
     Ok(Some(Arc::new(
         ClientConfig::builder()
@@ -317,7 +324,8 @@ impl ConfiguredCaBundle {
                     // trailing X509_AUX trust metadata before registration.
                     let cert_der = normalized_pem.certificate_der(&der).ok_or_else(|| {
                         self.invalid_ca_file(
-                            "failed to extract certificate data from TRUSTED CERTIFICATE: invalid DER length",
+                            "failed to extract certificate data from TRUSTED CERTIFICATE: \
+                             invalid DER length",
                         )
                     })?;
                     certificates.push(CertificateDer::from(cert_der.to_vec()));

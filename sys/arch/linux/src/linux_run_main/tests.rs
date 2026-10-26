@@ -12,8 +12,6 @@ use chaos_ipc::protocol::VfsPolicy;
 use chaos_realpath::AbsolutePathBuf;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
-#[cfg(test)]
-use std::path::Path;
 
 #[test]
 fn resolve_sandbox_policies_accepts_split_policies_requiring_direct_runtime_enforcement() {

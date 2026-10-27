@@ -13,8 +13,6 @@ expression: rendered
     • Env: TOKEN=*****, APP_TOKEN=*****
     • Tools:
       - list
-    • Resources: (none)
-    • Resource templates: (none)
 
   • http
     • Status: connected
@@ -23,5 +21,3 @@ expression: rendered
     • Env HTTP headers: X-API-Key=API_KEY_ENV
     • Tools:
       - ping
-    • Resources: (none)
-    • Resource templates: (none)

@@ -57,6 +57,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     if mcp_servers.is_empty() {
         return McpListToolsResponseEvent {
             server_statuses: HashMap::new(),
+            server_capabilities: HashMap::new(),
             tools: HashMap::new(),
             resources: HashMap::new(),
             resource_templates: HashMap::new(),
@@ -164,12 +165,14 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
         mcp_connection_manager.list_all_resource_templates(),
     );
     let server_statuses = mcp_connection_manager.server_startup_statuses().await;
+    let server_capabilities = mcp_connection_manager.server_capabilities().await;
     build_mcp_snapshot(
         tools,
         resources,
         resource_templates,
         auth_status_entries,
         server_statuses,
+        server_capabilities,
     )
 }
 
@@ -184,12 +187,14 @@ pub(crate) async fn collect_mcp_snapshot_from_registry(
         registry.list_all_resource_templates(),
     );
     let server_statuses = manager.server_startup_statuses().await;
+    let server_capabilities = manager.server_capabilities().await;
     build_mcp_snapshot(
         tools,
         resources,
         resource_templates,
         auth_status_entries,
         server_statuses,
+        server_capabilities,
     )
 }
 
@@ -199,6 +204,7 @@ fn build_mcp_snapshot(
     resource_templates: HashMap<String, Vec<chaos_mcp_runtime::ResourceTemplateInfo>>,
     auth_status_entries: HashMap<String, crate::mcp::auth::McpAuthStatusEntry>,
     server_statuses: HashMap<String, McpStartupStatus>,
+    server_capabilities: HashMap<String, Value>,
 ) -> McpListToolsResponseEvent {
     let auth_statuses = auth_status_entries
         .iter()
@@ -295,6 +301,7 @@ fn build_mcp_snapshot(
 
     McpListToolsResponseEvent {
         server_statuses,
+        server_capabilities,
         tools,
         resources,
         resource_templates,

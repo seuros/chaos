@@ -703,6 +703,25 @@ impl McpConnectionManager {
         statuses
     }
 
+    pub async fn server_capabilities(&self) -> HashMap<String, serde_json::Value> {
+        let mut capabilities = HashMap::new();
+        for (server_name, client) in &self.clients {
+            if !client
+                .startup_complete
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                continue;
+            }
+            if let Ok(client) = client.client().await {
+                capabilities.insert(
+                    server_name.clone(),
+                    serde_json::json!(client.session.server_info().capabilities),
+                );
+            }
+        }
+        capabilities
+    }
+
     pub async fn required_startup_failures(
         &self,
         required_servers: &[String],

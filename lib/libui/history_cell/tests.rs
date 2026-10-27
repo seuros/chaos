@@ -120,6 +120,7 @@ pub(crate) async fn history_cell_suite() {
     error_event_oversized_input_snapshot();
     mcp_tools_output_masks_sensitive_values().await;
     mcp_tools_output_uses_runtime_status().await;
+    mcp_tools_output_uses_resource_capability().await;
     empty_agent_message_cell_transcript();
     prefixed_wrapped_history_cell_indents_wrapped_lines();
     prefixed_wrapped_history_cell_does_not_split_url_like_token();
@@ -396,6 +397,10 @@ async fn mcp_tools_output_masks_sensitive_values() {
         HashMap::new(),
         &auth_statuses,
         &server_statuses,
+        &HashMap::from([
+            ("docs".to_string(), json!({"tools": {}})),
+            ("http".to_string(), json!({"tools": {}})),
+        ]),
     );
     let rendered = render_lines(&cell.display_lines(120)).join("\n");
 
@@ -442,12 +447,12 @@ async fn mcp_tools_output_uses_runtime_status() {
             HashMap::new(),
             &HashMap::new(),
             statuses,
+            &HashMap::new(),
         );
         render_lines(&cell.display_lines(120)).join("\n")
     };
     let rendered = render(&server_statuses);
 
-    // Empty tool/resource lists do not imply that a connection failed.
     assert!(rendered.contains("  • ready\n    • Status: connected"));
     assert!(rendered.contains("  • starting\n    • Status: starting"));
     assert!(rendered.contains("  • disabled (disabled)"));
@@ -456,12 +461,77 @@ async fn mcp_tools_output_uses_runtime_status() {
     assert!(!rendered.contains("  • not_initialized"));
     assert!(!rendered.contains("Status: enabled"));
 
-    // A subsequent snapshot (e.g. after refresh) must use the new runtime state.
     server_statuses.insert("failed".to_string(), McpStartupStatus::Ready);
     server_statuses.insert("starting".to_string(), McpStartupStatus::Cancelled);
     let refreshed = render(&server_statuses);
     assert!(refreshed.contains("  • failed\n    • Status: connected"));
     assert!(!refreshed.contains("  • starting"));
+}
+
+async fn mcp_tools_output_uses_resource_capability() {
+    let (_chaos_home, mut config) = test_config().await;
+    let server_config: McpServerConfig =
+        serde_json::from_value(json!({"command": "test-mcp-server"})).expect("server config");
+    config
+        .mcp_servers
+        .set(HashMap::from([("docs".to_string(), server_config)]))
+        .expect("set server");
+    let statuses = HashMap::from([("docs".to_string(), McpStartupStatus::Ready)]);
+    let resource = chaos_ipc::mcp::Resource::from_mcp_value(json!({
+        "name": "guide", "uri": "docs://guide"
+    }))
+    .expect("resource");
+    let template = chaos_ipc::mcp::ResourceTemplate::from_mcp_value(json!({
+        "name": "page", "uriTemplate": "docs://{page}"
+    }))
+    .expect("template");
+    let render = |capabilities: Option<serde_json::Value>, populated: bool| {
+        let capabilities = capabilities
+            .map(|capabilities| ("docs".to_string(), capabilities))
+            .into_iter()
+            .collect();
+        let resources = if populated {
+            HashMap::from([("docs".to_string(), vec![resource.clone()])])
+        } else {
+            HashMap::new()
+        };
+        let templates = if populated {
+            HashMap::from([("docs".to_string(), vec![template.clone()])])
+        } else {
+            HashMap::new()
+        };
+        let cell = new_mcp_tools_output(
+            &config,
+            HashMap::new(),
+            resources,
+            templates,
+            &HashMap::new(),
+            &statuses,
+            &capabilities,
+        );
+        render_lines(&cell.display_lines(120)).join("\n")
+    };
+
+    for capabilities in [
+        None,
+        Some(json!({"tools": {}})),
+        Some(json!({"resources": null})),
+    ] {
+        let rendered = render(capabilities, false);
+        assert!(!rendered.contains("    • Resources:"));
+        assert!(!rendered.contains("    • Resource templates:"));
+    }
+    for capabilities in [
+        json!({"resources": {}}),
+        json!({"resources": {"subscribe": false, "listChanged": false}}),
+    ] {
+        let empty = render(Some(capabilities), false);
+        assert!(empty.contains("    • Resources: (none)"));
+        assert!(empty.contains("    • Resource templates: (none)"));
+    }
+    let populated = render(Some(json!({"resources": {}})), true);
+    assert!(populated.contains("    • Resources: guide (docs://guide)"));
+    assert!(populated.contains("    • Resource templates: page (docs://{page})"));
 }
 
 fn empty_agent_message_cell_transcript() {

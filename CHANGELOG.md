@@ -9,6 +9,10 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Fixed
+- `/mcp` omits resource and resource-template sections for servers that do not
+  advertise the MCP `resources` capability, rather than showing `(none)`.
+
 ## [47.14.6] - 2026-10-27
 
 ### Added

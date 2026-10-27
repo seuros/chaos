@@ -379,6 +379,7 @@ pub fn new_mcp_tools_output(
     resource_templates: HashMap<String, Vec<ResourceTemplate>>,
     auth_statuses: &HashMap<String, McpAuthStatus>,
     server_statuses: &HashMap<String, McpStartupStatus>,
+    server_capabilities: &HashMap<String, serde_json::Value>,
 ) -> PlainHistoryCell {
     use crate::tool_badges::tool_name_style;
     use crate::tool_badges::tool_name_style_from_annotations;
@@ -401,9 +402,6 @@ pub fn new_mcp_tools_output(
     servers.sort_by_key(|(a, _)| *a);
 
     for (server, cfg) in servers {
-        // Configuration enablement does not mean the connection succeeded.
-        // Keep disabled configuration visible, but only list enabled servers
-        // which the shared runtime knows are starting or ready.
         let status = server_statuses.get(server);
         if cfg.enabled
             && !matches!(
@@ -534,32 +532,38 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        lines.push(resource_listing(
-            "Resources",
-            resources
-                .get(server.as_str())
-                .into_iter()
-                .flatten()
-                .map(|resource| {
-                    (
-                        resource.title.as_deref().unwrap_or(&resource.name),
-                        resource.uri.as_str(),
-                    )
-                }),
-        ));
-        lines.push(resource_listing(
-            "Resource templates",
-            resource_templates
-                .get(server.as_str())
-                .into_iter()
-                .flatten()
-                .map(|template| {
-                    (
-                        template.title.as_deref().unwrap_or(&template.name),
-                        template.uri_template.as_str(),
-                    )
-                }),
-        ));
+        if server_capabilities
+            .get(server)
+            .and_then(|capabilities| capabilities.get("resources"))
+            .is_some_and(serde_json::Value::is_object)
+        {
+            lines.push(resource_listing(
+                "Resources",
+                resources
+                    .get(server.as_str())
+                    .into_iter()
+                    .flatten()
+                    .map(|resource| {
+                        (
+                            resource.title.as_deref().unwrap_or(&resource.name),
+                            resource.uri.as_str(),
+                        )
+                    }),
+            ));
+            lines.push(resource_listing(
+                "Resource templates",
+                resource_templates
+                    .get(server.as_str())
+                    .into_iter()
+                    .flatten()
+                    .map(|template| {
+                        (
+                            template.title.as_deref().unwrap_or(&template.name),
+                            template.uri_template.as_str(),
+                        )
+                    }),
+            ));
+        }
 
         lines.push(Line::from(""));
     }

@@ -33,3 +33,28 @@ fn tmux_and_ssh_require_reported_capabilities_not_environment_hints() {
         &[Capability::Kitty]
     ));
 }
+
+#[test]
+fn late_tmux_replies_are_drained_until_input_goes_quiet() {
+    use std::io::Write;
+    use std::os::fd::{AsFd, OwnedFd};
+
+    let mut fds = [0; 2];
+    // Safety: fds has room for the two descriptors pipe() returns.
+    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+    // Safety: pipe() returned two fresh descriptors we now own.
+    let (reader, writer) = unsafe {
+        use std::os::fd::FromRawFd;
+        (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1]))
+    };
+    let replies = b"\x1b_Gi=31;OK\x1b\\\x1b_Gi=32;OK\x1b\\";
+    std::fs::File::from(writer.try_clone().unwrap())
+        .write_all(replies)
+        .unwrap();
+
+    let quiet = Duration::from_millis(20);
+    let limit = Duration::from_millis(200);
+    assert_eq!(drain_late_replies(reader.as_fd(), quiet, limit), replies.len());
+    assert_eq!(drain_late_replies(reader.as_fd(), quiet, limit), 0);
+    drop(writer);
+}

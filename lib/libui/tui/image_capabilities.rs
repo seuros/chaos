@@ -2,6 +2,8 @@
 //! on a temporary alternate screen so they cannot alter native scrollback.
 
 use std::io::{IsTerminal, stdin, stdout};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::time::{Duration, Instant};
 
 use chaos_sysinfo::terminal::{self, Multiplexer, TerminalName};
 use crossterm::execute;
@@ -31,6 +33,36 @@ fn query_options(remote: bool) -> QueryStdioOptions {
         // different machines, including through a local tmux.
         kitty_shared_memory_object: None,
         ..Default::default()
+    }
+}
+
+/// Discard probe replies tmux forwards after the picker returns, before they
+/// reach the event reader as keystrokes.
+fn drain_late_replies(fd: BorrowedFd<'_>, quiet: Duration, limit: Duration) -> usize {
+    let deadline = Instant::now() + limit;
+    let mut buf = [0u8; 256];
+    let mut drained = 0;
+    loop {
+        let wait = quiet.min(deadline.saturating_duration_since(Instant::now()));
+        if wait.is_zero() {
+            return drained;
+        }
+        let mut pollfd = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // Safety: one valid pollfd for the duration of the call.
+        let ready = unsafe { libc::poll(&mut pollfd, 1, wait.as_millis() as libc::c_int) };
+        if ready <= 0 || pollfd.revents & libc::POLLIN == 0 {
+            return drained;
+        }
+        // Safety: buf is valid for writes of buf.len() bytes.
+        let read = unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
+        if read <= 0 {
+            return drained;
+        }
+        drained += read as usize;
     }
 }
 
@@ -65,6 +97,13 @@ pub(super) fn image_capabilities() -> Option<Picker> {
     // wraps queries/transmissions in DCS, and chunks image data for tmux.
     // The picker scopes this change to the current pane.
     let result = Picker::from_query_stdio_with_options(query_options(remote));
+    if tmux {
+        let quiet = Duration::from_millis(if remote { 150 } else { 50 });
+        let drained = drain_late_replies(stdin().as_fd(), quiet, Duration::from_millis(500));
+        if drained > 0 {
+            tracing::debug!(drained, "discarded late terminal replies after image probe");
+        }
+    }
     // Restore on success and failure, before any normal TUI output.
     execute!(stdout(), LeaveAlternateScreen).ok()?;
     result.ok().filter(|picker| {

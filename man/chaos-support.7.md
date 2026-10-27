@@ -94,7 +94,7 @@ See [setup and commands](./chaos-providers.7.md#clamp-transports).
 |----------|-------------|
 | Linux x86_64 / aarch64 | Linux **≥ 6.10** |
 | macOS aarch64 | macOS **≥ 15** |
-| FreeBSD x86_64 | FreeBSD **≥ 15** |
+| FreeBSD x86_64 | FreeBSD **≥ 15**; experimental `mac_gulag` ABI 1 supports network/process restrictions only; filesystem requests fail closed pending jail/nullfs supervisor; not production-ready; managed proxy unsupported |
 
 ## STORAGE AND RECALL
 

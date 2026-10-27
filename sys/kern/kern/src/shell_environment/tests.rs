@@ -3,12 +3,8 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 use tokio::fs;
 
-fn test_shell(shell_type: ShellType, shell_path: &str) -> Shell {
-    Shell {
-        shell_type,
-        shell_path: PathBuf::from(shell_path),
-        shell_environment: crate::shell::empty_shell_environment_receiver(),
-    }
+fn test_shell() -> Shell {
+    crate::shell::get_shell(ShellType::Bash, None).expect("bash must be installed for shell tests")
 }
 
 #[test]
@@ -48,7 +44,7 @@ fn parse_environment_preserves_multiline_values() -> Result<()> {
 #[tokio::test]
 async fn capture_does_not_create_snapshot_storage() -> Result<()> {
     let dir = tempdir()?;
-    let shell = test_shell(ShellType::Bash, "/bin/bash");
+    let shell = test_shell();
 
     let environment = ShellEnvironment::try_new(dir.path(), &shell)
         .await
@@ -67,7 +63,7 @@ async fn actor_replaces_environment_when_cwd_changes() -> Result<()> {
     let second_cwd = dir.path().join("second");
     fs::create_dir_all(&first_cwd).await?;
     fs::create_dir_all(&second_cwd).await?;
-    let mut shell = test_shell(ShellType::Bash, "/bin/bash");
+    let mut shell = test_shell();
     let actor = ShellEnvironmentActor::spawn_inner(
         ProcessId::new(),
         ShellEnvironmentStartup::Idle,
@@ -102,7 +98,7 @@ async fn capture_ignores_retired_snapshot_storage() -> Result<()> {
     fs::create_dir_all(&storage).await?;
     let snapshot = storage.join("old.sh");
     fs::write(&snapshot, "exit 99\n").await?;
-    let mut shell = test_shell(ShellType::Bash, "/bin/bash");
+    let mut shell = test_shell();
     let actor = ShellEnvironmentActor::spawn_inner(
         ProcessId::new(),
         ShellEnvironmentStartup::Idle,

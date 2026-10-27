@@ -8,7 +8,10 @@ select exactly one implementation:
 
 - Linux: Landlock and seccomp
 - macOS: Seatbelt through `/usr/bin/sandbox-exec`
-- FreeBSD: Capsicum and `procctl` hardening
+- FreeBSD: `procctl` hardening and experimental `mac_gulag` ABI 1 for
+  network/process restrictions. Filesystem confinement awaits the jail/nullfs
+  supervisor; restricted filesystem requests currently fail closed.
+  Generic commands do not enter Capsicum capability mode.
 
 This facade is the only package that generates the helper executable. Every
 supported target therefore produces exactly one binary named `alcatraz`, backed

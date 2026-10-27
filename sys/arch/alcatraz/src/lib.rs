@@ -9,6 +9,9 @@ pub use alcatraz_base::prepared_command::SandboxRequest;
 pub const HELPER_ARG0: &str = "alcatraz";
 
 #[cfg(target_os = "freebsd")]
+pub use alcatraz_freebsd::warden_client;
+
+#[cfg(target_os = "freebsd")]
 pub use alcatraz_freebsd::prepare_command;
 #[cfg(target_os = "freebsd")]
 pub use alcatraz_freebsd::register_keyring_store;

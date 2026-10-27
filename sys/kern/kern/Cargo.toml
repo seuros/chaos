@@ -10,6 +10,11 @@ doctest = false
 name = "chaos_kern"
 path = "src/lib.rs"
 
+[[test]]
+name = "freebsd_warden"
+path = "tests/freebsd_warden/main.rs"
+harness = false
+
 [lints]
 workspace = true
 

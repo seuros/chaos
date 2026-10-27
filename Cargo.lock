@@ -1425,6 +1425,7 @@ dependencies = [
  "image",
  "insta",
  "jiff",
+ "libc",
  "libui",
  "pretty_assertions",
  "pulldown-cmark",

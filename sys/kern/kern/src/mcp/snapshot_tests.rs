@@ -17,16 +17,24 @@ fn snapshot_preserves_runtime_statuses_without_tools() {
         HashMap::new(),
         HashMap::new(),
         statuses,
-        HashMap::from([("ready".to_string(), serde_json::json!({"resources": {}}))]),
+        HashMap::from([(
+            "ready".to_string(),
+            McpServerInfo {
+                name: "resource-server".to_string(),
+                version: "1.0.0".to_string(),
+                capabilities: serde_json::json!({"resources": {}}),
+            },
+        )]),
     );
 
     assert!(snapshot.tools.is_empty());
     assert!(snapshot.resources.is_empty());
     assert!(snapshot.resource_templates.is_empty());
     assert_eq!(
-        snapshot.server_capabilities["ready"],
+        snapshot.server_infos["ready"].capabilities,
         serde_json::json!({"resources": {}})
     );
+    assert_eq!(snapshot.server_infos["ready"].name, "resource-server");
     std::assert_matches!(
         snapshot.server_statuses.get("ready"),
         Some(McpStartupStatus::Ready)

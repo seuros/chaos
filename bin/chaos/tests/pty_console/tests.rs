@@ -10,6 +10,83 @@ use core_test_support::streaming_sse::{
 use serde_json::Value;
 use tokio::sync::oneshot;
 
+#[cfg(target_os = "freebsd")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "root-only UI/Warden gate; requires ABI 1, explicit helper/journal and non-root user"]
+async fn freebsd_warden_ui_readonly_exec_resize_and_shutdown() -> Result<()> {
+    use super::warden::WardenLaunch;
+    use core_test_support::responses::ev_function_call;
+
+    let launch = WardenLaunch::from_test_environment()?;
+    let command = format!(
+        "set -eu; test \"$(/sbin/sysctl -n security.jail.jailed)\" = 1; \
+         test \"$(/usr/bin/id -u)\" = {}; \
+         if (printf forbidden > warden-readonly-canary) 2>/dev/null; then exit 90; fi; \
+         printf 'WARDEN_UI_EXEC_OK\\n'",
+        launch.uid
+    );
+    let arguments = serde_json::json!({
+        "cmd": command,
+        "login": false,
+        "tty": false,
+        "yield_time_ms": 1000,
+    });
+    let (server, _completions) = start_streaming_sse_server(vec![
+        vec![StreamingSseChunk {
+            gate: None,
+            body: sse(vec![
+                ev_response_created("warden-ui-enable"),
+                ev_function_call(
+                    "warden-ui-enable-shell",
+                    "enable_tools",
+                    r#"{"groups":["shell"]}"#,
+                ),
+                ev_completed("warden-ui-enable"),
+            ]),
+        }],
+        vec![StreamingSseChunk {
+            gate: None,
+            body: sse(vec![
+                ev_response_created("warden-ui-tool"),
+                ev_function_call("warden-ui-exec", "exec_command", &arguments.to_string()),
+                ev_completed("warden-ui-tool"),
+            ]),
+        }],
+        reply("warden-ui-done", "WARDEN_UI_REPLY_OK"),
+    ])
+    .await;
+    let result = async {
+        let mut console = PtyConsole::start_warden(&server, "WARDEN_UI_PROMPT", launch).await?;
+        console.wait_screen("WARDEN_UI_REPLY_OK").await?;
+        console.resize_and_wait(39, 101).await?;
+        console.verify_warden_canary()?;
+        console.shutdown().await?;
+        let requests = requests(&server).await?;
+        ensure!(
+            requests.len() == 3,
+            "expected shell activation, one execution and one reply"
+        );
+        let output = requests[2]["input"]
+            .as_array()
+            .context("missing final request input")?
+            .iter()
+            .find(|item| {
+                item["type"] == "function_call_output" && item["call_id"] == "warden-ui-exec"
+            })
+            .context("missing tool result")?["output"]
+            .as_str()
+            .context("tool output is not text")?;
+        ensure!(
+            output.contains("WARDEN_UI_EXEC_OK") && output.contains("Process exited with code 0"),
+            "UI tool failed confinement checks: {output}"
+        );
+        Ok(())
+    }
+    .await;
+    server.shutdown().await;
+    result
+}
+
 fn reply(id: &str, text: &str) -> Vec<StreamingSseChunk> {
     vec![StreamingSseChunk {
         gate: None,

@@ -89,7 +89,16 @@ pub async fn run_command_under_sandbox(
         network: network.as_ref(),
         platform_permissions: None,
     })?;
-
+    let mut command = Command::new(prepared.program);
+    #[cfg(target_os = "freebsd")]
+    alcatraz::warden_client::inherit_for_helper(
+        command.as_std_mut(),
+        prepared.arg0.as_deref(),
+        prepared
+            .env
+            .get(alcatraz::warden_client::CONTROL_ENV)
+            .map(String::as_str),
+    )?;
     if let Some(network) = network.as_ref() {
         network.apply_to_env(&mut env);
     }
@@ -101,7 +110,6 @@ pub async fn run_command_under_sandbox(
         );
     }
 
-    let mut command = Command::new(prepared.program);
     if let Some(arg0) = prepared.arg0 {
         command.arg0(arg0);
     };

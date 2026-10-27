@@ -6,17 +6,23 @@ expression: rendered
 
 🔌  MCP Tools
 
-  • docs
+  • docs v1.2.3
     • Status: connected
     • Command: docs-server
     • Env: TOKEN=*****, APP_TOKEN=*****
     • Tools:
       - list
 
-  • http
+  • filtered(original) v0.4.0
+    • Status: connected
+    • Command: docs-server
+    • Env: TOKEN=*****, APP_TOKEN=*****
+    • Tools: (none)
+
+  • http(http-server) v0.4.0
     • Status: connected
     • URL: https://example.com/mcp
     • HTTP headers: Authorization=*****
     • Env HTTP headers: X-API-Key=API_KEY_ENV
-    • Tools:
-      - ping
+    • Resources: (none)
+    • Resource templates: (none)

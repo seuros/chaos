@@ -2,17 +2,17 @@
 //!
 //! Capsicum capability mode (`cap_enter()`) is the wrong tool for arbitrary
 //! commands — it blocks `open(2)`, `connect(2)`, and `openat(AT_FDCWD)`, which
-//! every shell command relies on.  Full Capsicum enforcement belongs in
-//! controlled code paths (Phase 3: `apply_patch` fork).
+//! ordinary shell commands rely on. This module retains its historical name
+//! but does not claim Capsicum capability-mode confinement.
 //!
 //! What we *can* do for every child process right now:
 //!
 //!   1. `procctl(PROC_NO_NEW_PRIVS_CTL)` — prevent setuid/setgid escalation.
 //!   2. `procctl(PROC_TRACE_CTL, PROC_TRACE_CTL_DISABLE)` — block ptrace.
 //!
-//! Filesystem and network restrictions that require `cap_enter()`, `ipfw`, or
-//! jails are currently unsupported for general command execution. When such
-//! restrictions are requested, we fail closed and return an explicit error.
+//! mac_gulag ABI 1 provides network/process restrictions only. Filesystem
+//! restrictions require a private Warden jail/nullfs connection, otherwise
+//! they fail closed. Unsupported policies/modules also fail closed.
 
 use alcatraz_base::error::AlcatrazError;
 use alcatraz_base::error::Result;
@@ -20,9 +20,8 @@ use alcatraz_base::prepared_command::PreparedCommand;
 use chaos_ipc::protocol::SandboxPolicy;
 use chaos_ipc::protocol::SocketPolicy;
 use chaos_ipc::protocol::VfsPolicy;
-use chaos_parole::sandbox::has_full_disk_read_access;
-use chaos_parole::sandbox::has_full_disk_write_access;
 use chaos_parole::sandbox::vfs_policy_from_sandbox_policy;
+use chaos_parole::sandbox::{has_full_disk_read_access, has_full_disk_write_access};
 use chaos_pf::NetworkProxy;
 use std::collections::HashMap;
 use std::path::Path;
@@ -79,10 +78,16 @@ where
     args.push("--".to_string());
     args.extend(command);
 
+    let mut env = Default::default();
+    if !has_full_disk_write_access(vfs_policy)
+        && let Some(fd) = crate::warden_client::prepared_environment()
+    {
+        env = std::collections::HashMap::from([(crate::warden_client::CONTROL_ENV.to_owned(), fd)]);
+    }
     Ok(PreparedCommand {
         program: executable.as_ref().to_path_buf(),
         args,
-        env: Default::default(),
+        env,
         arg0: Some("alcatraz".to_string()),
     })
 }
@@ -113,11 +118,18 @@ where
     )?;
 
     let mut env = env;
+    env.extend(prepared.env.clone());
     if let Some(network) = network {
         network.apply_to_env(&mut env);
     }
 
     let mut cmd = Command::new(&prepared.program);
+    crate::warden_client::inherit_for_helper(
+        cmd.as_std_mut(),
+        prepared.arg0.as_deref(),
+        env.get(crate::warden_client::CONTROL_ENV)
+            .map(String::as_str),
+    )?;
     cmd.arg0(
         prepared
             .arg0
@@ -140,56 +152,31 @@ where
 
 /// Apply sandbox policies inside this process before exec.
 ///
-/// Always applies process hardening (no-new-privs, anti-ptrace). Logs
-/// warnings for enforcement dimensions that are not yet implemented and then
-/// rejects execution to avoid fail-open behavior.
+/// Requires successful process hardening (no-new-privs, anti-ptrace).
+/// Unsupported policies and unavailable MAC enforcement fail closed.
 pub fn apply_sandbox_policy_to_current_thread(
     vfs_policy: &VfsPolicy,
     socket_policy: SocketPolicy,
     allow_network_for_proxy: bool,
     proxy_routed_network: bool,
+    sandbox_policy_cwd: &Path,
 ) -> Result<()> {
     // ── Layer 1: process hardening (always applied) ──────────────────────
-    apply_procctl_hardening();
-    let mut unsupported_restrictions = Vec::new();
-
-    // ── Layer 2: network isolation ───────────────────────────────────────
-    if should_restrict_network(socket_policy, allow_network_for_proxy) {
-        unsupported_restrictions.push(
-            "network isolation requested but ipfw enforcement is not yet implemented on FreeBSD",
-        );
-    }
+    apply_procctl_hardening()?;
 
     if proxy_routed_network || allow_network_for_proxy {
-        unsupported_restrictions
-            .push("managed network proxy mode requested but not yet implemented on FreeBSD");
+        return Err(AlcatrazError::UnsupportedOperation(
+            "managed network proxy mode is not supported by mac_gulag ABI 1".into(),
+        ));
     }
 
-    // ── Layer 3: filesystem confinement ──────────────────────────────────
-    if !has_full_disk_write_access(vfs_policy) {
-        if !has_full_disk_read_access(vfs_policy) {
-            unsupported_restrictions.push(
-                "restricted read-only filesystem access requested but jail-based confinement is not yet implemented on FreeBSD",
-            );
-        } else {
-            unsupported_restrictions.push(
-                "restricted filesystem write access requested but jail-based confinement is not yet implemented on FreeBSD",
-            );
-        }
-    }
-
-    if unsupported_restrictions.is_empty() {
+    if has_full_disk_read_access(vfs_policy)
+        && has_full_disk_write_access(vfs_policy)
+        && !should_restrict_network(socket_policy, false)
+    {
         return Ok(());
     }
-
-    for message in &unsupported_restrictions {
-        eprintln!("alcatraz: warning: {message}");
-    }
-
-    Err(AlcatrazError::UnsupportedOperation(format!(
-        "requested sandbox restrictions are not enforceable on FreeBSD: {}",
-        unsupported_restrictions.join("; ")
-    )))
+    crate::gulag::apply(vfs_policy, socket_policy, sandbox_policy_cwd)
 }
 
 /// Apply `procctl` process hardening that is safe for arbitrary commands.
@@ -198,7 +185,7 @@ pub fn apply_sandbox_policy_to_current_thread(
 ///   Survives `execve()`.
 /// - `PROC_TRACE_CTL`: disables `ptrace(2)` attachment to this process.
 ///   Survives `execve()` with `PROC_TRACE_CTL_DISABLE_EXEC`.
-fn apply_procctl_hardening() {
+fn apply_procctl_hardening() -> Result<()> {
     // PROC_NO_NEW_PRIVS_CTL — block setuid/setgid escalation
     let mut arg: libc::c_int = libc::PROC_NO_NEW_PRIVS_ENABLE;
     let ret = unsafe {
@@ -210,8 +197,7 @@ fn apply_procctl_hardening() {
         )
     };
     if ret != 0 {
-        let err = std::io::Error::last_os_error();
-        eprintln!("alcatraz: warning: procctl(PROC_NO_NEW_PRIVS_CTL) failed: {err}");
+        return Err(std::io::Error::last_os_error().into());
     }
 
     // PROC_TRACE_CTL — block ptrace attachment (survives exec)
@@ -225,9 +211,9 @@ fn apply_procctl_hardening() {
         )
     };
     if ret != 0 {
-        let err = std::io::Error::last_os_error();
-        eprintln!("alcatraz: warning: procctl(PROC_TRACE_CTL) failed: {err}");
+        return Err(std::io::Error::last_os_error().into());
     }
+    Ok(())
 }
 
 /// Check if network should be restricted based on policy and proxy settings.

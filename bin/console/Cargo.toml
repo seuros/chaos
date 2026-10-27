@@ -88,6 +88,7 @@ chaos-kern = { workspace = true }
 chaos-which = { workspace = true }
 chaos-pty = { workspace = true }
 insta = { workspace = true }
+libc = { workspace = true }
 libui = { workspace = true, features = ["testing"] }
 pretty_assertions = { workspace = true }
 serial_test = { workspace = true }

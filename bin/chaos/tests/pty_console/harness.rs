@@ -20,6 +20,12 @@ const INITIAL_SIZE: TerminalSize = TerminalSize {
 };
 const OUTPUT_TAIL_BYTES: usize = 4 * 1024;
 
+enum Launch {
+    Direct,
+    #[cfg(target_os = "freebsd")]
+    Warden(super::warden::WardenLaunch),
+}
+
 #[derive(Clone, Default)]
 struct TerminalSnapshot {
     screen: String,
@@ -107,6 +113,23 @@ pub(super) struct PtyConsole {
 
 impl PtyConsole {
     pub(super) async fn start(server: &StreamingSseServer, prompt: Option<&str>) -> Result<Self> {
+        Self::start_inner(server, prompt, Launch::Direct).await
+    }
+
+    #[cfg(target_os = "freebsd")]
+    pub(super) async fn start_warden(
+        server: &StreamingSseServer,
+        prompt: &str,
+        launch: super::warden::WardenLaunch,
+    ) -> Result<Self> {
+        Self::start_inner(server, Some(prompt), Launch::Warden(launch)).await
+    }
+
+    async fn start_inner(
+        server: &StreamingSseServer,
+        prompt: Option<&str>,
+        launch: Launch,
+    ) -> Result<Self> {
         // Short paths also fit Unix-socket limits when macOS gives TMPDIR a
         // long path. All settings, credentials, caches and scripts are isolated.
         let root = tempfile::Builder::new()
@@ -133,6 +156,11 @@ impl PtyConsole {
                 "models": [chaos_kern::test_support::test_model_info(TEST_MODEL)]
             }))?,
         )?;
+        #[cfg(target_os = "freebsd")]
+        if let Launch::Warden(warden) = &launch {
+            std::fs::write(work.join("warden-readonly-canary"), "unchanged\n")?;
+            warden.give_test_home_to_user(root.path())?;
+        }
 
         let env = HashMap::from([
             ("HOME".into(), root.path().to_string_lossy().into_owned()),
@@ -152,7 +180,17 @@ impl PtyConsole {
             ("LANG".into(), "C.UTF-8".into()),
         ]);
         let socket = home.join("run/journald.sock");
-        let mut journal = Command::new(chaos_which::cargo_bin("chaos_journald")?)
+        let journal_path = match &launch {
+            Launch::Direct => chaos_which::cargo_bin("chaos_journald")?,
+            #[cfg(target_os = "freebsd")]
+            Launch::Warden(warden) => warden.journal.clone(),
+        };
+        let mut journal_command = Command::new(journal_path);
+        #[cfg(target_os = "freebsd")]
+        if let Launch::Warden(warden) = &launch {
+            journal_command.uid(warden.uid).gid(warden.gid);
+        }
+        let mut journal = journal_command
             .env_clear()
             .envs(&env)
             .arg("--socket")
@@ -203,20 +241,18 @@ impl PtyConsole {
         if let Some(prompt) = prompt {
             args.push(prompt.to_string());
         }
+        let program = env!("CARGO_BIN_EXE_chaos").to_string();
+        let (program, args) = match launch {
+            Launch::Direct => (program, args),
+            #[cfg(target_os = "freebsd")]
+            Launch::Warden(warden) => warden.console_command(&program, args, &env),
+        };
         let SpawnedProcess {
             session,
             mut stdout_rx,
             stderr_rx: _,
             exit_rx,
-        } = chaos_pty::spawn_pty_process(
-            env!("CARGO_BIN_EXE_chaos"),
-            &args,
-            &work,
-            &env,
-            &None,
-            INITIAL_SIZE,
-        )
-        .await?;
+        } = chaos_pty::spawn_pty_process(&program, &args, &work, &env, &None, INITIAL_SIZE).await?;
         let writer = session.writer_sender();
         let (snapshot_tx, snapshots) = watch::channel(TerminalSnapshot::default());
         let (resize_tx, mut resize_rx) = mpsc::channel::<ResizeRequest>(16);
@@ -234,8 +270,7 @@ impl PtyConsole {
                         for reply in terminal.process(&bytes) {
                             if writer.send(reply).await.is_err() {
                                 let mut snapshot = terminal.snapshot();
-                                snapshot.error =
-                                    Some("PTY input closed during cursor query".into());
+                                snapshot.error = Some("PTY input closed during reply".into());
                                 snapshot_tx.send_replace(snapshot);
                                 return;
                             }
@@ -318,6 +353,16 @@ impl PtyConsole {
             state.screen.contains(needle)
         })
         .await
+    }
+
+    #[cfg(target_os = "freebsd")]
+    pub(super) fn verify_warden_canary(&self) -> Result<()> {
+        ensure!(
+            std::fs::read_to_string(self._root.path().join("work/warden-readonly-canary"))?
+                == "unchanged\n",
+            "read-only tool changed the host canary"
+        );
+        Ok(())
     }
 
     async fn wait_for(

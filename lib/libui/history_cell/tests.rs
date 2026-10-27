@@ -5,6 +5,7 @@ use crate::exec_cell::ExecCell;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::McpAuthStatus;
+use chaos_ipc::protocol::McpServerInfo;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
@@ -325,6 +326,8 @@ async fn mcp_tools_output_masks_sensitive_values() {
         oauth: None,
     };
     let mut servers = config.mcp_servers.get().clone();
+    servers.insert("broken".to_string(), stdio_config.clone());
+    servers.insert("filtered".to_string(), stdio_config.clone());
     servers.insert("docs".to_string(), stdio_config);
 
     let mut headers = HashMap::new();
@@ -371,35 +374,49 @@ async fn mcp_tools_output_masks_sensitive_values() {
             meta: None,
         },
     );
-    tools.insert(
-        "mcp__http__ping".to_string(),
-        Tool {
-            description: None,
-            name: "ping".to_string(),
-            title: None,
-            input_schema: serde_json::json!({"type": "object", "properties": {}}),
-            output_schema: None,
-            annotations: None,
-            icons: None,
-            meta: None,
-        },
-    );
-
     let auth_statuses: HashMap<String, McpAuthStatus> = HashMap::new();
-    let server_statuses = HashMap::from([
-        ("docs".to_string(), McpStartupStatus::Ready),
-        ("http".to_string(), McpStartupStatus::Ready),
-    ]);
     let cell = new_mcp_tools_output(
         &config,
         tools,
         HashMap::new(),
         HashMap::new(),
         &auth_statuses,
-        &server_statuses,
         &HashMap::from([
-            ("docs".to_string(), json!({"tools": {}})),
-            ("http".to_string(), json!({"tools": {}})),
+            (
+                "broken".into(),
+                McpStartupStatus::Failed {
+                    error: "No such file or directory (os error 2)".into(),
+                },
+            ),
+            ("docs".into(), McpStartupStatus::Ready),
+            ("filtered".into(), McpStartupStatus::Ready),
+            ("http".into(), McpStartupStatus::Ready),
+        ]),
+        &HashMap::from([
+            (
+                "docs".into(),
+                McpServerInfo {
+                    name: "docs".into(),
+                    version: "1.2.3".into(),
+                    capabilities: json!({"tools": {}}),
+                },
+            ),
+            (
+                "filtered".into(),
+                McpServerInfo {
+                    name: "original".into(),
+                    version: "v0.4.0".into(),
+                    capabilities: json!({"tools": {}}),
+                },
+            ),
+            (
+                "http".into(),
+                McpServerInfo {
+                    name: "http-server".into(),
+                    version: "0.4.0".into(),
+                    capabilities: json!({"resources": {}}),
+                },
+            ),
         ]),
     );
     let rendered = render_lines(&cell.display_lines(120)).join("\n");
@@ -486,8 +503,17 @@ async fn mcp_tools_output_uses_resource_capability() {
     }))
     .expect("template");
     let render = |capabilities: Option<serde_json::Value>, populated: bool| {
-        let capabilities = capabilities
-            .map(|capabilities| ("docs".to_string(), capabilities))
+        let server_infos = capabilities
+            .map(|capabilities| {
+                (
+                    "docs".to_string(),
+                    McpServerInfo {
+                        name: String::new(),
+                        version: String::new(),
+                        capabilities,
+                    },
+                )
+            })
             .into_iter()
             .collect();
         let resources = if populated {
@@ -507,7 +533,7 @@ async fn mcp_tools_output_uses_resource_capability() {
             templates,
             &HashMap::new(),
             &statuses,
-            &capabilities,
+            &server_infos,
         );
         render_lines(&cell.display_lines(120)).join("\n")
     };

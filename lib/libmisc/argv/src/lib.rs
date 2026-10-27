@@ -83,6 +83,14 @@ pub fn arg0_dispatch() -> Option<Arg0PathEntryGuard> {
         chaos_diff::main();
     }
 
+    #[cfg(target_os = "freebsd")]
+    // No runtime/threads/subprocesses exist yet. Capture and immediately mark
+    // the launcher capability CLOEXEC before dotenv or ordinary child spawns.
+    if let Err(error) = unsafe { alcatraz::warden_client::initialize() } {
+        eprintln!("Warden bootstrap: {error}");
+        std::process::exit(1);
+    }
+
     let argv1 = args.next().unwrap_or_default();
     if argv1 == CHAOS_CORE_APPLY_PATCH_ARG1 {
         let patch_arg = args.next().and_then(|s| s.to_str().map(str::to_owned));

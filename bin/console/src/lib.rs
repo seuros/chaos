@@ -67,7 +67,10 @@ pub mod public_widgets;
 mod resume_picker;
 mod selection_list;
 mod side_panel;
+mod terminal_output;
 mod tile_manager;
+
+use terminal_output::write_stderr;
 
 // Modules now living in libui — re-exported under the same name so
 // all existing `crate::foo` paths inside console continue to resolve.
@@ -174,18 +177,16 @@ pub async fn run_main(
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
         // Parse `-c` overrides from the CLI.
         Ok(v) => v,
-        #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            write_stderr(format_args!("Error parsing -c overrides: {e}"));
             std::process::exit(1);
         }
     };
 
-    #[allow(clippy::print_stderr)]
     let chaos_home = match find_chaos_home() {
         Ok(chaos_home) => chaos_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding {OS_NAME} home: {err}");
+            write_stderr(format_args!("Error finding {OS_NAME} home: {err}"));
             std::process::exit(1);
         }
     };
@@ -237,14 +238,13 @@ pub async fn run_main(
         .map_err(std::io::Error::other)?;
     startup.mark("storage_mounted");
 
-    #[allow(clippy::print_stderr)]
     match check_execpolicy_for_warnings(&config.config_layer_stack, &config.chaos_home).await {
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
-            eprintln!(
+            write_stderr(format_args!(
                 "Error loading rules:\n{}",
                 format_exec_policy_error_with_source(&err)
-            );
+            ));
             std::process::exit(1);
         }
     }
@@ -252,16 +252,12 @@ pub async fn run_main(
     if let Some(warning) =
         add_dir_warning_message(&cli.add_dir, config.permissions.sandbox_policy.get())
     {
-        #[allow(clippy::print_stderr)]
-        {
-            eprintln!("Error adding directories: {warning}");
-            std::process::exit(1);
-        }
+        write_stderr(format_args!("Error adding directories: {warning}"));
+        std::process::exit(1);
     }
 
-    #[allow(clippy::print_stderr)]
     if let Err(err) = enforce_login_restrictions(&config) {
-        eprintln!("{err}");
+        write_stderr(format_args!("{err}"));
         std::process::exit(1);
     }
 
@@ -289,17 +285,13 @@ pub async fn run_main(
     })) {
         Ok(Ok(otel)) => otel,
         Ok(Err(e)) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("Could not create otel exporter: {e}");
-            }
+            write_stderr(format_args!("Could not create otel exporter: {e}"));
             None
         }
         Err(_) => {
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("Could not create otel exporter: panicked during initialization");
-            }
+            write_stderr(format_args!(
+                "Could not create otel exporter: panicked during initialization"
+            ));
             None
         }
     };
@@ -382,17 +374,7 @@ async fn run_ratatui_app(
     log_state_db: Option<RuntimeDbHandle>,
     startup: chaos_snitch::startup::StartupTimeline,
 ) -> color_eyre::Result<AppExitInfo> {
-    color_eyre::install()?;
-
-    // Forward panic reports through tracing so they appear in the UI status
-    // line, but do not swallow the default/color-eyre panic handler.
-    // Chain to the previous hook so users still get a rich panic report
-    // (including backtraces) after we restore the terminal.
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        tracing::error!("panic: {info}");
-        prev_hook(info);
-    }));
+    terminal_output::install_panic_hook()?;
     let mut terminal = tui::init()?;
     terminal.clear()?;
 
@@ -753,15 +735,11 @@ pub(crate) async fn resolve_cwd_for_resume_or_fork(
     Ok(ResolveCwdOutcome::Continue(Some(history_cwd)))
 }
 
-#[expect(
-    clippy::print_stderr,
-    reason = "TUI should no longer be displayed, so we can write to stderr."
-)]
 fn restore() {
     if let Err(err) = tui::restore() {
-        eprintln!(
+        write_stderr(format_args!(
             "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
-        );
+        ));
     }
 }
 

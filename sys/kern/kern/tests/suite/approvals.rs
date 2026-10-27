@@ -1351,7 +1351,9 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts() -> Result<()> {
     let server = start_mock_server().await;
     let approval_policy = ApprovalPolicy::Supervised;
-    let sandbox_policy = SandboxPolicy::new_read_only_policy();
+    // Supervised mode requires the initial approval even with root-access.
+    // This regression tests grant persistence, not OS confinement or retries.
+    let sandbox_policy = SandboxPolicy::RootAccess;
     let sandbox_policy_for_config = sandbox_policy.clone();
     let mut builder = test_chaos().with_config(move |config| {
         config.permissions.approval_policy = Constrained::allow_any(approval_policy);
@@ -1432,7 +1434,12 @@ async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts
             .single_request()
             .function_call_output(call_id_first),
     );
-    assert_eq!(first_output.exit_code.unwrap_or(0), 0);
+    assert_eq!(
+        first_output.exit_code.unwrap_or(0),
+        0,
+        "first approved execution failed: {}",
+        first_output.stdout
+    );
     assert!(
         first_output.stdout.is_empty(),
         "unexpected stdout: {}",

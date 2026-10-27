@@ -32,6 +32,8 @@ use chaos_selinux::ExecPolicyCheckCommand;
 use owo_colors::OwoColorize;
 #[cfg(feature = "tui")]
 use std::io::IsTerminal;
+#[cfg(any(feature = "tui", feature = "self-update"))]
+use std::io::Write;
 #[cfg(feature = "tui")]
 use supports_color::Stream;
 
@@ -396,16 +398,18 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     match exit_info.exit_reason {
         ExitReason::Fatal(message) => {
-            eprintln!("ERROR: {message}");
+            let _ = writeln!(std::io::stderr().lock(), "ERROR: {message}");
             std::process::exit(1);
         }
         ExitReason::UserRequested => { /* normal exit */ }
     }
 
     let color_enabled = supports_color::on(Stream::Stdout).is_some();
+    let mut stdout = std::io::stdout().lock();
     for line in format_exit_messages(exit_info, color_enabled) {
-        println!("{line}");
+        writeln!(stdout, "{line}")?;
     }
+    stdout.flush()?;
     Ok(())
 }
 
@@ -618,10 +622,11 @@ async fn run_interactive_tui(
             ));
         }
 
-        eprintln!(
+        writeln!(
+            std::io::stderr().lock(),
             "WARNING: TERM is set to \"dumb\". \
              {OS_NAME}'s interactive TUI may not work in this terminal."
-        );
+        )?;
         if !confirm("Continue anyway? [y/N]: ")? {
             return Ok(AppExitInfo::fatal(
                 "Refusing to start the interactive TUI because TERM is set to \"dumb\". \
@@ -640,7 +645,7 @@ async fn run_interactive_tui(
 
 #[cfg(any(feature = "tui", feature = "self-update"))]
 fn confirm(prompt: &str) -> std::io::Result<bool> {
-    eprintln!("{prompt}");
+    writeln!(std::io::stderr().lock(), "{prompt}")?;
 
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;

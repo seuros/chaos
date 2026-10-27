@@ -551,10 +551,13 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __preserved__ >\"/dev/fd/$PRESERVED_FD\"";
+    // Exercise the inherited descriptor itself; /dev/fd needs an optional
+    // fdescfs mount on FreeBSD and shell redirections may only support fd 0..9.
+    let fixture = fixture_executable()?;
+    let script = "fixture.write_fd(assert(tonumber(os.getenv('PRESERVED_FD'))), '__preserved__')";
     let spawned = spawn_process_with_inherited_fds(
-        "/bin/sh",
-        &["-c".to_string(), script.to_string()],
+        &fixture,
+        &["--eval".to_string(), script.to_string()],
         Path::new("."),
         &env_map,
         &None,
@@ -768,10 +771,12 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
         write_end.as_raw_fd().to_string(),
     );
 
-    let script = "printf __pipe_preserved__ >\"/dev/fd/$PRESERVED_FD\"";
+    let fixture = fixture_executable()?;
+    let script =
+        "fixture.write_fd(assert(tonumber(os.getenv('PRESERVED_FD'))), '__pipe_preserved__')";
     let spawned = spawn_process_no_stdin_with_inherited_fds(
-        "/bin/sh",
-        &["-c".to_string(), script.to_string()],
+        &fixture,
+        &["--eval".to_string(), script.to_string()],
         Path::new("."),
         &env_map,
         &None,

@@ -778,7 +778,7 @@ async fn exec_emits_terminal_interaction_for_write_stdin() -> Result<()> {
 
     let open_call_id = "exec-open";
     let open_args = json!({
-        "cmd": "/bin/bash -i",
+        "cmd": "bash -i",
         "yield_time_ms": 200,
         "tty": true,
     });

@@ -16,6 +16,7 @@ use chaos_ipc::mcp::Tool;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::protocol::McpListToolsResponseEvent;
+use chaos_ipc::protocol::McpServerInfo;
 use chaos_ipc::protocol::McpStartupStatus;
 use serde_json::Value;
 
@@ -56,12 +57,12 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
     let mcp_servers = mcp_manager.effective_servers(config);
     if mcp_servers.is_empty() {
         return McpListToolsResponseEvent {
-            server_statuses: HashMap::new(),
-            server_capabilities: HashMap::new(),
             tools: HashMap::new(),
             resources: HashMap::new(),
             resource_templates: HashMap::new(),
             auth_statuses: HashMap::new(),
+            server_statuses: HashMap::new(),
+            server_infos: HashMap::new(),
         };
     }
 
@@ -164,15 +165,13 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
         mcp_connection_manager.list_all_resources(),
         mcp_connection_manager.list_all_resource_templates(),
     );
-    let server_statuses = mcp_connection_manager.server_startup_statuses().await;
-    let server_capabilities = mcp_connection_manager.server_capabilities().await;
     build_mcp_snapshot(
         tools,
         resources,
         resource_templates,
         auth_status_entries,
-        server_statuses,
-        server_capabilities,
+        mcp_connection_manager.server_startup_statuses().await,
+        mcp_connection_manager.server_infos().await,
     )
 }
 
@@ -186,15 +185,13 @@ pub(crate) async fn collect_mcp_snapshot_from_registry(
         registry.list_all_resources(),
         registry.list_all_resource_templates(),
     );
-    let server_statuses = manager.server_startup_statuses().await;
-    let server_capabilities = manager.server_capabilities().await;
     build_mcp_snapshot(
         tools,
         resources,
         resource_templates,
         auth_status_entries,
-        server_statuses,
-        server_capabilities,
+        manager.server_startup_statuses().await,
+        manager.server_infos().await,
     )
 }
 
@@ -204,7 +201,7 @@ fn build_mcp_snapshot(
     resource_templates: HashMap<String, Vec<chaos_mcp_runtime::ResourceTemplateInfo>>,
     auth_status_entries: HashMap<String, crate::mcp::auth::McpAuthStatusEntry>,
     server_statuses: HashMap<String, McpStartupStatus>,
-    server_capabilities: HashMap<String, Value>,
+    server_infos: HashMap<String, McpServerInfo>,
 ) -> McpListToolsResponseEvent {
     let auth_statuses = auth_status_entries
         .iter()
@@ -300,11 +297,11 @@ fn build_mcp_snapshot(
         .collect();
 
     McpListToolsResponseEvent {
-        server_statuses,
-        server_capabilities,
         tools,
         resources,
         resource_templates,
         auth_statuses,
+        server_statuses,
+        server_infos,
     }
 }

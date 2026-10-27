@@ -87,6 +87,13 @@ pub(crate) async fn spawn_child_async(request: SpawnChildRequest<'_>) -> std::io
     );
 
     let mut cmd = Command::new(&program);
+    #[cfg(target_os = "freebsd")]
+    alcatraz::warden_client::inherit_for_helper(
+        cmd.as_std_mut(),
+        arg0,
+        env.get(alcatraz::warden_client::CONTROL_ENV)
+            .map(String::as_str),
+    )?;
     cmd.arg0(arg0.map_or_else(|| program.to_string_lossy().to_string(), String::from));
     cmd.args(args);
     cmd.current_dir(cwd);

@@ -20,6 +20,11 @@ async fn test_session_and_turn() -> (Arc<Session>, Arc<TurnContext>) {
     let sandbox_policy = SandboxPolicy::RootAccess;
     turn.vfs_policy = chaos_ipc::permissions::VfsPolicy::from(&sandbox_policy);
     turn.socket_policy = chaos_ipc::permissions::SocketPolicy::from(&sandbox_policy);
+    session
+        .permission_actor
+        .register_turn(&turn)
+        .await
+        .expect("register root-access test turn permissions");
     (Arc::new(session), Arc::new(turn))
 }
 

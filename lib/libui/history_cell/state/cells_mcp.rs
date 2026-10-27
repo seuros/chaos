@@ -16,6 +16,7 @@ use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_ipc::protocol::McpInvocation;
+use chaos_ipc::protocol::McpServerInfo;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
@@ -379,7 +380,7 @@ pub fn new_mcp_tools_output(
     resource_templates: HashMap<String, Vec<ResourceTemplate>>,
     auth_statuses: &HashMap<String, McpAuthStatus>,
     server_statuses: &HashMap<String, McpStartupStatus>,
-    server_capabilities: &HashMap<String, serde_json::Value>,
+    server_infos: &HashMap<String, McpServerInfo>,
 ) -> PlainHistoryCell {
     use crate::tool_badges::tool_name_style;
     use crate::tool_badges::tool_name_style_from_annotations;
@@ -429,6 +430,14 @@ pub fn new_mcp_tools_output(
             .copied()
             .unwrap_or(McpAuthStatus::Unsupported);
         let mut header: Vec<Span<'static>> = vec!["  • ".into(), server.clone().into()];
+        if let Some(info) = server_infos.get(server.as_str()) {
+            if !info.name.is_empty() && info.name != *server {
+                header.push(format!("({})", info.name).into());
+            }
+            if !info.version.is_empty() {
+                header.push(format!(" v{}", info.version.trim_start_matches('v')).dim());
+            }
+        }
         if !cfg.enabled {
             header.push(" ".into());
             header.push("(disabled)".fg(crate::theme::error_color()));
@@ -512,9 +521,17 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        if tool_entries.is_empty() {
+        let capabilities = server_infos
+            .get(server.as_str())
+            .map(|info| &info.capabilities);
+        let supports = |name: &str| {
+            capabilities
+                .and_then(|caps| caps.get(name))
+                .is_some_and(serde_json::Value::is_object)
+        };
+        if tool_entries.is_empty() && supports("tools") {
             lines.push("    • Tools: (none)".into());
-        } else {
+        } else if supports("tools") {
             lines.push("    • Tools:".into());
             for (tool_name, tool) in tool_entries {
                 let name_style = if tool.annotations.is_some() {
@@ -532,11 +549,7 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        if server_capabilities
-            .get(server)
-            .and_then(|capabilities| capabilities.get("resources"))
-            .is_some_and(serde_json::Value::is_object)
-        {
+        if supports("resources") {
             lines.push(resource_listing(
                 "Resources",
                 resources

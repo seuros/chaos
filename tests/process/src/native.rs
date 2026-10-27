@@ -23,6 +23,20 @@ pub fn register(lua: &Lua) -> mlua::Result<()> {
     )?;
     fixture.set("pid", lua.create_function(|_, ()| Ok(std::process::id()))?)?;
     fixture.set(
+        "write_fd",
+        lua.create_function(|_, (fd, text): (i32, mlua::LuaString)| {
+            let duplicate = unsafe { libc::dup(fd) };
+            if duplicate < 0 {
+                return Err(mlua::Error::external(io::Error::last_os_error()));
+            }
+            // SAFETY: dup returned a fresh descriptor owned by this function.
+            let mut output = unsafe { std::fs::File::from_raw_fd(duplicate) };
+            output
+                .write_all(text.as_bytes().as_ref())
+                .map_err(mlua::Error::external)
+        })?,
+    )?;
+    fixture.set(
         "stdin_isatty",
         lua.create_function(|_, ()| Ok(unsafe { libc::isatty(libc::STDIN_FILENO) } == 1))?,
     )?;

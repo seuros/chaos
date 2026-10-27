@@ -14,6 +14,9 @@ libnull.rlib
 .env.*
 !.env.example
 
+# Local notes, patch drafts, and crash dumps.
+/.tmp/
+
 # Local release/dist artifacts.
 /chaos-dist.tar.gz
 *.tar.gz

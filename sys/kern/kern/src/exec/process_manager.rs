@@ -586,7 +586,19 @@ impl ExecProcessManager {
             .command
             .split_first()
             .ok_or(ExecError::MissingCommandLine)?;
-        let inherited_fds = spawn_lifecycle.inherited_fds();
+        #[allow(unused_mut)]
+        let mut inherited_fds = spawn_lifecycle.inherited_fds();
+        #[cfg(target_os = "freebsd")]
+        if let Some(fd) = alcatraz::warden_client::inherited_fd(
+            env.arg0.as_deref(),
+            env.env
+                .get(alcatraz::warden_client::CONTROL_ENV)
+                .map(String::as_str),
+        )
+        .map_err(|error| ExecError::create_process(error.to_string()))?
+        {
+            inherited_fds.push(fd);
+        }
 
         let spawn_result = if tty {
             chaos_pty::pty::spawn_process_with_inherited_fds(

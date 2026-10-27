@@ -21,6 +21,7 @@ use chaos_ipc::mcp::CallToolResult;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::McpServerInfo;
 use chaos_ipc::protocol::McpStartupCompleteEvent;
 use chaos_ipc::protocol::McpStartupFailure;
 use chaos_ipc::protocol::McpStartupStatus;
@@ -703,8 +704,11 @@ impl McpConnectionManager {
         statuses
     }
 
-    pub async fn server_capabilities(&self) -> HashMap<String, serde_json::Value> {
-        let mut capabilities = HashMap::new();
+    /// Initialize metadata of initialized servers, including resource-only
+    /// servers and servers whose tools have all been filtered out.
+    /// Pending clients are skipped rather than awaited.
+    pub async fn server_infos(&self) -> HashMap<String, McpServerInfo> {
+        let mut infos = HashMap::new();
         for (server_name, client) in &self.clients {
             if !client
                 .startup_complete
@@ -713,13 +717,18 @@ impl McpConnectionManager {
                 continue;
             }
             if let Ok(client) = client.client().await {
-                capabilities.insert(
+                let info = client.session.server_info();
+                infos.insert(
                     server_name.clone(),
-                    serde_json::json!(client.session.server_info().capabilities),
+                    McpServerInfo {
+                        name: info.server_info.name,
+                        version: info.server_info.version,
+                        capabilities: serde_json::json!(info.capabilities),
+                    },
                 );
             }
         }
-        capabilities
+        infos
     }
 
     pub async fn required_startup_failures(

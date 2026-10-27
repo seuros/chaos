@@ -16,6 +16,7 @@ use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_ipc::protocol::McpInvocation;
+use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
 use chaos_kern::config::Config;
@@ -377,6 +378,7 @@ pub fn new_mcp_tools_output(
     resources: HashMap<String, Vec<Resource>>,
     resource_templates: HashMap<String, Vec<ResourceTemplate>>,
     auth_statuses: &HashMap<String, McpAuthStatus>,
+    server_statuses: &HashMap<String, McpStartupStatus>,
 ) -> PlainHistoryCell {
     use crate::tool_badges::tool_name_style;
     use crate::tool_badges::tool_name_style_from_annotations;
@@ -399,6 +401,18 @@ pub fn new_mcp_tools_output(
     servers.sort_by_key(|(a, _)| *a);
 
     for (server, cfg) in servers {
+        // Configuration enablement does not mean the connection succeeded.
+        // Keep disabled configuration visible, but only list enabled servers
+        // which the shared runtime knows are starting or ready.
+        let status = server_statuses.get(server);
+        if cfg.enabled
+            && !matches!(
+                status,
+                Some(McpStartupStatus::Ready | McpStartupStatus::Starting)
+            )
+        {
+            continue;
+        }
         let prefix = format!("mcp__{server}__");
         let mut tool_entries: Vec<(String, chaos_ipc::mcp::Tool)> = tools
             .keys()
@@ -428,13 +442,11 @@ pub fn new_mcp_tools_output(
             continue;
         }
         lines.push(header.into());
-        lines.push(
-            vec![
-                "    • Status: ".into(),
-                "enabled".fg(crate::theme::success_color()),
-            ]
-            .into(),
-        );
+        let status_label = match status {
+            Some(McpStartupStatus::Ready) => "connected".fg(crate::theme::success_color()),
+            _ => "starting".fg(crate::theme::annotation_color()),
+        };
+        lines.push(vec!["    • Status: ".into(), status_label].into());
         if matches!(
             cfg.transport,
             McpServerTransportConfig::StreamableHttp { .. }

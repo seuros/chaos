@@ -13,6 +13,7 @@ impl ChatWidget {
             ev.resources,
             ev.resource_templates,
             &ev.auth_statuses,
+            &ev.server_statuses,
         ));
     }
 

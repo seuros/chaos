@@ -7,7 +7,7 @@ expression: rendered
 🔌  MCP Tools
 
   • docs
-    • Status: enabled
+    • Status: connected
     • Command: docs-server
     • Env: TOKEN=*****, APP_TOKEN=*****
     • Tools:
@@ -16,7 +16,7 @@ expression: rendered
     • Resource templates: (none)
 
   • http
-    • Status: enabled
+    • Status: connected
     • URL: https://example.com/mcp
     • HTTP headers: Authorization=*****
     • Env HTTP headers: X-API-Key=API_KEY_ENV

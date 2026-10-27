@@ -9,12 +9,20 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.6] - 2026-10-27
+
 ### Added
 - `hook_output_limit_kib` config key: the per-stream cap on hook stdout/stderr,
   default 128 KiB as before. A stream over the cap fails the hook rather than
   being truncated, which silently dropped a session-start hook's whole
   `additionalContext` once a resident's identity and journals outgrew 128 KiB.
   Installs that inject large context raise the key; nothing changes for the rest.
+
+### Fixed
+- `/mcp` uses shared connection-manager startup state instead of configuration
+  enablement. Failed, cancelled, and uninitialized servers are hidden; ready
+  servers show `connected` and pending servers show `starting`, even when no
+  tools or resources are available.
 
 ## [47.14.5] - 2026-10-24
 
@@ -497,7 +505,8 @@ See the Drivers section of `man/chaos-install.7.md`.
   access for the model now comes from skipper.
 - `git://branches` resource template.
 
-[Unreleased]: https://github.com/seuros/chaos/compare/v47.14.1...HEAD
+[Unreleased]: https://github.com/seuros/chaos/compare/v47.14.6...HEAD
+[47.14.6]: https://github.com/seuros/chaos/compare/v47.14.5...v47.14.6
 [47.14.1]: https://github.com/seuros/chaos/compare/v47.14.0...v47.14.1
 [47.14.0]: https://github.com/seuros/chaos/compare/v47.13.2...v47.14.0
 [47.13.2]: https://github.com/seuros/chaos/compare/v47.13.1...v47.13.2

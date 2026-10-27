@@ -5,6 +5,7 @@ use crate::exec_cell::ExecCell;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::McpAuthStatus;
+use chaos_ipc::protocol::McpStartupStatus;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigBuilder;
 use chaos_kern::config::types::McpServerConfig;
@@ -118,6 +119,7 @@ pub(crate) async fn history_cell_suite() {
     ps_output_chunk_leading_whitespace_snapshot();
     error_event_oversized_input_snapshot();
     mcp_tools_output_masks_sensitive_values().await;
+    mcp_tools_output_uses_runtime_status().await;
     empty_agent_message_cell_transcript();
     prefixed_wrapped_history_cell_indents_wrapped_lines();
     prefixed_wrapped_history_cell_does_not_split_url_like_token();
@@ -383,16 +385,83 @@ async fn mcp_tools_output_masks_sensitive_values() {
     );
 
     let auth_statuses: HashMap<String, McpAuthStatus> = HashMap::new();
+    let server_statuses = HashMap::from([
+        ("docs".to_string(), McpStartupStatus::Ready),
+        ("http".to_string(), McpStartupStatus::Ready),
+    ]);
     let cell = new_mcp_tools_output(
         &config,
         tools,
         HashMap::new(),
         HashMap::new(),
         &auth_statuses,
+        &server_statuses,
     );
     let rendered = render_lines(&cell.display_lines(120)).join("\n");
 
     assert_snapshot!(rendered);
+}
+
+async fn mcp_tools_output_uses_runtime_status() {
+    let (_chaos_home, mut config) = test_config().await;
+    let server_config: McpServerConfig =
+        serde_json::from_value(json!({"command": "test-mcp-server"})).expect("server config");
+    let mut servers: HashMap<_, _> = [
+        "ready",
+        "starting",
+        "failed",
+        "cancelled",
+        "not_initialized",
+        "disabled",
+    ]
+    .into_iter()
+    .map(|name| (name.to_string(), server_config.clone()))
+    .collect();
+    servers
+        .get_mut("disabled")
+        .expect("disabled config")
+        .enabled = false;
+    config.mcp_servers.set(servers).expect("set servers");
+
+    let mut server_statuses = HashMap::from([
+        ("ready".to_string(), McpStartupStatus::Ready),
+        ("starting".to_string(), McpStartupStatus::Starting),
+        (
+            "failed".to_string(),
+            McpStartupStatus::Failed {
+                error: "executable not found".to_string(),
+            },
+        ),
+        ("cancelled".to_string(), McpStartupStatus::Cancelled),
+    ]);
+    let render = |statuses: &HashMap<String, McpStartupStatus>| {
+        let cell = new_mcp_tools_output(
+            &config,
+            HashMap::new(),
+            HashMap::new(),
+            HashMap::new(),
+            &HashMap::new(),
+            statuses,
+        );
+        render_lines(&cell.display_lines(120)).join("\n")
+    };
+    let rendered = render(&server_statuses);
+
+    // Empty tool/resource lists do not imply that a connection failed.
+    assert!(rendered.contains("  • ready\n    • Status: connected"));
+    assert!(rendered.contains("  • starting\n    • Status: starting"));
+    assert!(rendered.contains("  • disabled (disabled)"));
+    assert!(!rendered.contains("  • failed"));
+    assert!(!rendered.contains("  • cancelled"));
+    assert!(!rendered.contains("  • not_initialized"));
+    assert!(!rendered.contains("Status: enabled"));
+
+    // A subsequent snapshot (e.g. after refresh) must use the new runtime state.
+    server_statuses.insert("failed".to_string(), McpStartupStatus::Ready);
+    server_statuses.insert("starting".to_string(), McpStartupStatus::Cancelled);
+    let refreshed = render(&server_statuses);
+    assert!(refreshed.contains("  • failed\n    • Status: connected"));
+    assert!(!refreshed.contains("  • starting"));
 }
 
 fn empty_agent_message_cell_transcript() {

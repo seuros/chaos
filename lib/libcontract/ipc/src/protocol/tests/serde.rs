@@ -6,6 +6,33 @@ use serde_json::json;
 use std::path::PathBuf;
 
 #[test]
+fn mcp_list_tools_response_round_trips_runtime_statuses() -> Result<()> {
+    let value = json!({
+        "tools": {},
+        "resources": {},
+        "resource_templates": {},
+        "auth_statuses": {},
+        "server_statuses": {
+            "ready": {"state": "ready"},
+            "starting": {"state": "starting"},
+            "failed": {"state": "failed", "error": "executable not found"},
+            "cancelled": {"state": "cancelled"}
+        }
+    });
+    let event: McpListToolsResponseEvent = serde_json::from_value(value.clone())?;
+    assert_eq!(serde_json::to_value(event)?, value);
+
+    let legacy: McpListToolsResponseEvent = serde_json::from_value(json!({
+        "tools": {},
+        "resources": {},
+        "resource_templates": {},
+        "auth_statuses": {}
+    }))?;
+    assert!(legacy.server_statuses.is_empty());
+    Ok(())
+}
+
+#[test]
 fn list_models_response_round_trips_with_submission_correlation() -> Result<()> {
     let event = Event {
         id: "catalog-request".into(),

@@ -148,6 +148,9 @@ impl fmt::Display for McpAuthStatus {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpListToolsResponseEvent {
+    /// Runtime state from the shared connection manager, not configuration enablement.
+    #[serde(default)]
+    pub server_statuses: std::collections::HashMap<String, McpStartupStatus>,
     /// Fully qualified tool name -> tool definition.
     pub tools: std::collections::HashMap<String, McpTool>,
     /// Known resources grouped by server name.

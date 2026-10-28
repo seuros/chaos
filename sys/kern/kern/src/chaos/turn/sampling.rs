@@ -43,8 +43,10 @@ fn append_mcp_server_instructions(
     base_instructions.text.push_str(
         "\n\nThe following instructions were provided by configured MCP servers. \
          Apply each section when using that server's tools or resources. \
-         Each capabilities attribute is JSON containing server-advertised declarations, \
-         not client-negotiated features, custom metadata contracts, or current tool visibility.\n\n",
+         Each capabilities attribute summarizes server-advertised prompts, resources, and tools. \
+         other* indicates additional capabilities whose details are omitted. \
+         These declarations do not establish current tool visibility; \
+         only exposed tools are callable.\n\n",
     );
     base_instructions.text.push_str(&xml);
     Ok(())
@@ -274,7 +276,8 @@ pub(super) async fn run_sampling_request(
                 _ => backoff(retries),
             };
             warn!(
-                "stream disconnected - retrying sampling request ({retries}/{max_retries} in {delay:?})...",
+                "stream disconnected - retrying sampling request \
+                 ({retries}/{max_retries} in {delay:?})...",
             );
 
             // Surface retry information to any UI/front-end so the

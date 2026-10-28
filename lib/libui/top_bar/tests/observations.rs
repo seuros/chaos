@@ -24,6 +24,7 @@ pub(in crate::top_bar) fn discharging(charge_percent: Option<u8>) -> PowerInfo {
 
 pub(in crate::top_bar) fn machine_status(power: PowerInfo) -> MachineStatus {
     MachineStatus {
+        indexing: None,
         machine: MachineSnapshot {
             observed_at: SystemTime::UNIX_EPOCH,
             os: "linux",

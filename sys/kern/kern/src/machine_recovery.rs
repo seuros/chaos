@@ -263,16 +263,16 @@ impl Recovery {
         let status = self.status(config, now);
         let state = match self.phase() {
             Phase::Recovered => {
-                "Recovery confirmed by stable observations. Reassess before resuming; \
-                 recovery does not prove the previous workload is sustainable. \
-                 You may reduce workload or stop rather than retry."
+                "Recovery confirmed by stable observations. Assess workload sustainability \
+                 before resuming; reduce workload or stop as needed."
             }
             Phase::Stabilizing => {
-                "Recovery is being observed but is not yet confirmed. \
+                "Recovery observations are stabilizing. \
                  Keep interruption-sensitive/heavy work paused."
             }
             Phase::Unavailable => {
-                "Recovery measurements unavailable; missing observations are not safety clearance."
+                "Recovery measurements unavailable. \
+                 Verify power, storage, and cooling before resuming."
             }
             Phase::Blocked => {
                 "Recovery target exceeds resource capacity; \
@@ -287,12 +287,11 @@ impl Recovery {
              🩺 Kernel health checks and notifications are automatic. \
              Required stable observation: {} seconds. \
              Recent warning episodes (last hour): power {}, thermal {}, disk {}. \
-             Repeated thermal interruptions warrant reducing workload or stopping, \
-             not blindly restarting. Expected heat below configured/OS warning thresholds \
-             is not itself a warning. Avoid repeating unchanged notices. \
+             Repeated thermal interruptions warrant reducing workload or stopping. \
+             Heat within configured/OS thresholds is expected. Report changes once. \
              To opt into one recovery wake, checkpoint essential work and stop/check \
              your heavy background processes, then call wait_for_machine_recovery alone \
-             if available. Waiting never stops existing processes automatically.",
+             if available. Existing processes remain under operator control.",
             status.required_seconds,
             status.interruptions_last_hour[0].count,
             status.interruptions_last_hour[1].count,

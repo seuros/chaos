@@ -138,9 +138,7 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
                     BatteryKind::System => "system battery",
                     BatteryKind::Ups => "UPS battery",
                 };
-                facts.push(format!(
-                    "Discharging {kind}: {charge_percent}% (not combined capacity)."
-                ));
+                facts.push(format!("Discharging {kind}: {charge_percent}%."));
                 "restore external power"
             }
             MachineWarning::LowDiskSpace {
@@ -197,10 +195,10 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
          🩺 Kernel health checks and notifications are automatic. \
          Save essential work and a minimal checkpoint to verified persistent storage \
          outside /tmp and other temporary directories; verify the write succeeded. \
-         If unavailable, tell the operator. Do not rely on suspend to preserve data. \
+         If unavailable, tell the operator. Complete the checkpoint before suspending. \
          Pause heavy or interruption-sensitive work, including flashing. \
-         Tell the operator to {}; avoid repeating unchanged notifications. \
-         Do not delete files or suspend the machine automatically.",
+         Tell the operator to {}; report condition changes. \
+         Leave file cleanup and system suspension to the operator.",
         facts.join(" "),
         actions.join(", "),
     ))

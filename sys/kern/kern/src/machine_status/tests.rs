@@ -5,6 +5,7 @@ async fn observation_deadline_includes_queueing_without_starting_a_host_probe() 
     let _permit = OBSERVATION_GATE.acquire().await.expect("observation gate");
     let request = ObservationRequest {
         targets: vec![],
+        include_indexing: false,
         policy: MachineWarningsConfig {
             probe_timeout_ms: 25,
             ..Default::default()
@@ -74,6 +75,13 @@ fn repeated_paths_are_deduplicated_but_distinct_roles_are_preserved() {
 fn requests_track_policy_and_active_paths_not_unrelated_config() {
     let mut config = crate::config::test_config();
     let request = ObservationRequest::new(&config, Path::new("/active"));
+    assert!(
+        !request.include_indexing,
+        "automatic checks do not run indexing probes"
+    );
+    let explicit = request.clone().with_indexing();
+    assert!(explicit.include_indexing);
+    assert_ne!(request, explicit);
     config.cwd = "/ignored-startup-cwd".into();
     assert_eq!(
         request,

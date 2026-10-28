@@ -18,17 +18,32 @@ pub(super) async fn append(
         async {
             let observation = session.refresh_machine_recovery().await?;
             let mut instruction = observation.warning_instruction;
-            if session.machine_recovery_status().await.phase == crate::machine_recovery::Phase::Recovered {
+            if session.machine_recovery_status().await.phase
+                == crate::machine_recovery::Phase::Recovered
+            {
                 // Only fixed vocabulary and measured values enter privileged text.
-                let temperatures = observation.machine.thermal.cpu_temperatures.iter()
-                    .filter_map(|sensor| sensor.celsius.filter(|value| value.is_finite())
-                        .map(|value| (sensor.kind, value)))
+                let temperatures = observation
+                    .machine
+                    .thermal
+                    .cpu_temperatures
+                    .iter()
+                    .filter_map(|sensor| {
+                        sensor
+                            .celsius
+                            .filter(|value| value.is_finite())
+                            .map(|value| (sensor.kind, value))
+                    })
                     .collect::<Vec<_>>();
-                let disk = observation.storage.filesystems.iter()
+                let disk = observation
+                    .storage
+                    .filesystems
+                    .iter()
                     .filter_map(chaos_machine::Filesystem::available_percent)
                     .collect::<Vec<_>>();
                 let measurements = format!(
-                    "Current recovery observations (harness host): external power {:?}; CPU channels (kind, degrees) {:?}; relevant filesystem free percentages {:?}. These readings are not a guarantee the previous workload is sustainable.",
+                    "Current recovery observations (harness host): external power {:?}; \
+                     CPU channels (kind, degrees) {:?}; relevant filesystem free percentages {:?}. \
+                     Assess workload sustainability before resuming.",
                     observation.machine.power.external_power, temperatures, disk,
                 );
                 instruction = Some(match instruction {
@@ -66,7 +81,13 @@ async fn append_with_observation(
         Ok(instruction) => instruction,
         Err(error) => {
             tracing::warn!(%error, "machine warning check unavailable");
-            Some("Machine check unavailable. Before interruption-sensitive work, ask the operator to verify power, storage and cooling; missing observations are not safety clearance.".to_string())
+            Some(
+                concat!(
+                    "Machine check unavailable. Before interruption-sensitive work, ",
+                    "ask the operator to verify power, storage, and cooling."
+                )
+                .to_string(),
+            )
         }
     };
     if let Some(message) = message {

@@ -13,7 +13,14 @@ pub(crate) const NAME: &str = "wait_for_machine_recovery";
 pub(crate) fn tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: NAME.into(),
-        description: "Opt into one recovery wake and park this turn. First checkpoint essential work and stop/check your heavy background processes. Call this tool ALONE in the response. The kernel waits for all outstanding host warnings to recover with configured headroom and a stable observation window, then wakes you to reassess, not blindly restart. No processes are stopped by this tool. New operator input cancels the wait; waits do not survive session closure or restart.".into(),
+        description:
+            "Opt into one recovery wake and park this turn. First checkpoint essential work \
+                      and stop/check your heavy background processes. Call this tool ALONE in the \
+                      response. The kernel waits for all outstanding host warnings to recover with \
+                      configured headroom and a stable observation window, then wakes you to \
+                      reassess. Existing processes remain under operator control. The wait lasts \
+                      for this live session; new operator input cancels it."
+                .into(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -60,7 +67,9 @@ impl ToolHandler for Handler {
         Ok(FunctionToolOutput::from_text(serde_json::json!({
             "wait_id": id,
             "status": "requested",
-            "message": "The runner parks after this result only if this was the sole tool call. Recovery wakes you to reassess; existing processes are not stopped. This wait lasts only for this live session."
+            "message": "The runner parks after this result when this is the sole tool call. \
+                        Recovery wakes you to reassess; existing processes remain under operator \
+                        control. This wait lasts for this live session."
         }).to_string(), Some(true)))
     }
 }

@@ -385,7 +385,7 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourc
         crate::hooks::resource_json(&self.turn.config.chaos_home, &self.turn.cwd, id).await
     }
     async fn machine_json(&self) -> Result<String, String> {
-        let mut resource = match self.session.refresh_machine_recovery().await {
+        let mut resource = match self.session.machine_resource_observation().await {
             Ok(status) => serde_json::to_value(status).map_err(|error| error.to_string())?,
             Err(error) => serde_json::json!({ "observation_error": error }),
         };
@@ -1026,7 +1026,8 @@ async fn handle_resource_subscription(
                 subscribed: false,
                 subscription_supported: false,
                 fallback: if subscribed { "read_once" } else { "no_op" },
-                message: "Internal resources do not support update notifications. No subscription is active. Use read_mcp_resource to refresh when needed.",
+                message: "Internal resources do not support update notifications. \
+                          No subscription is active. Use read_mcp_resource to refresh when needed.",
                 snapshot,
             });
         };

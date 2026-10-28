@@ -52,8 +52,7 @@ impl Session {
             self.send_event_raw(Event {
                 id: "machine-recovery".into(),
                 msg: EventMsg::Warning(WarningEvent {
-                    message: "Machine recovery wait cancelled; no recovery wake will be scheduled."
-                        .into(),
+                    message: "Machine recovery wait cancelled.".into(),
                 }),
             })
             .await;
@@ -95,6 +94,28 @@ impl Session {
             |request| async move { request.observe().await },
         )
         .await
+    }
+
+    /// Explicit reads add diagnostics without changing the recovery context.
+    pub(crate) async fn machine_resource_observation(&self) -> Result<MachineStatus, String> {
+        self.machine_resource_observation_with_observer(
+            |request| async move { request.observe().await },
+        )
+        .await
+    }
+
+    async fn machine_resource_observation_with_observer<F, Fut>(
+        &self,
+        observe: F,
+    ) -> Result<MachineStatus, String>
+    where
+        F: FnOnce(ObservationRequest) -> Fut,
+        Fut: Future<Output = Result<MachineStatus, String>>,
+    {
+        // Only the actual probe opts in. Recovery comparisons retain the base
+        // request, so alternating resource/monitor reads cannot reset a wait.
+        self.refresh_machine_recovery_with_observer(|request| observe(request.with_indexing()))
+            .await
     }
 
     async fn refresh_machine_recovery_with_observer<F, Fut>(
@@ -202,11 +223,21 @@ impl Session {
                 SystemTime::now(),
             );
             let notice = (previous != recovery.phase()).then_some(match recovery.phase() {
-                Phase::Recovered => "Machine recovery confirmed. A registered wait can wake the model to reassess; commands are not restarted.",
-                Phase::Stabilizing => "Machine conditions improving; observing the recovery stability window.",
-                Phase::Unavailable => "Machine recovery monitoring unavailable; stability window reset.",
-                Phase::Blocked => "Machine recovery target exceeds filesystem capacity; adjust configuration or storage.",
-                Phase::Warning => "Machine warning active. Recovery is not confirmed.",
+                Phase::Recovered => {
+                    "Machine recovery confirmed. \
+                                     A registered wait can wake the model to reassess."
+                }
+                Phase::Stabilizing => {
+                    "Machine conditions improving; observing the recovery stability window."
+                }
+                Phase::Unavailable => {
+                    "Machine recovery monitoring unavailable; stability window reset."
+                }
+                Phase::Blocked => {
+                    "Machine recovery target exceeds filesystem capacity; \
+                                   adjust configuration or storage."
+                }
+                Phase::Warning => "Machine warning active. Recovery pending.",
                 Phase::Healthy => "Machine monitoring active.",
             });
             let wake = recovery
@@ -229,15 +260,21 @@ impl Session {
             let state = self.state.lock().await;
             if state.machine_recovery.wait_id() == Some(id.as_str()) {
                 if state.machine_recovery.phase() == Phase::Recovered {
-                    self.services.internal_task_store.complete(
-                        &id,
-                        TaskState::Succeeded,
-                        Some("Stable recovery observed; reassess before resuming.".into()),
-                        Some(serde_json::json!({
-                            "recovery": state.machine_recovery.status(&config.machine_warnings, Instant::now()),
-                            "observations": observation.as_ref().ok(),
-                        })),
-                    ).await;
+                    let recovery_status = state
+                        .machine_recovery
+                        .status(&config.machine_warnings, Instant::now());
+                    self.services
+                        .internal_task_store
+                        .complete(
+                            &id,
+                            TaskState::Succeeded,
+                            Some("Stable recovery observed; reassess before resuming.".into()),
+                            Some(serde_json::json!({
+                                "recovery": recovery_status,
+                                "observations": observation.as_ref().ok(),
+                            })),
+                        )
+                        .await;
                 } else if let Some(mut task) = self.services.internal_task_store.get(&id).await
                     && task.state == TaskState::Succeeded
                     && !task.delivered
@@ -266,8 +303,10 @@ impl Session {
         if tool_count != 1 {
             self.cancel_machine_recovery_wait().await;
             let item = DeveloperInstructions::new(
-                "Recovery wait was not activated: wait_for_machine_recovery must be the only tool call in a model response. Finish checkpointing and checking background work first, then call it alone."
-            ).into();
+                "Finish checkpointing and checking background work, \
+                 then call wait_for_machine_recovery alone to activate the wait.",
+            )
+            .into();
             self.record_conversation_items(turn, &[item]).await;
             return;
         }
@@ -298,9 +337,13 @@ impl Session {
             self.send_event_raw(Event {
                 id: "machine-recovery".into(),
                 msg: EventMsg::Warning(WarningEvent {
-                    message: "Recovery wake registered. Model work is parked; existing processes are not stopped. Operator input cancels this live-session wait.".into(),
+                    message: "Recovery wake registered. Model work is parked; \
+                              existing processes remain under operator control. \
+                              Operator input cancels this live-session wait."
+                        .into(),
                 }),
-            }).await;
+            })
+            .await;
         }
     }
 

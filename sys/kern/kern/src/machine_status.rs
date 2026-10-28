@@ -14,6 +14,9 @@ pub use crate::machine_warnings::MachineWarning;
 pub struct MachineStatus {
     pub machine: MachineSnapshot,
     pub storage: StorageSnapshot,
+    /// Collected only for explicit resource reads, not UI or warning polling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub indexing: Option<chaos_machine::IndexingSnapshot>,
     pub warnings: Vec<MachineWarning>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning_instruction: Option<String>,
@@ -28,6 +31,7 @@ static OBSERVATION_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_
 pub struct ObservationRequest {
     targets: Vec<StorageTarget>,
     policy: MachineWarningsConfig,
+    include_indexing: bool,
 }
 
 impl ObservationRequest {
@@ -36,7 +40,14 @@ impl ObservationRequest {
         Self {
             targets: storage_targets(config, cwd, std::env::temp_dir()),
             policy: config.machine_warnings.clone(),
+            include_indexing: false,
         }
+    }
+
+    /// Add read-only indexing probes for the active workspace to this read.
+    pub fn with_indexing(mut self) -> Self {
+        self.include_indexing = true;
+        self
     }
 
     /// Fresh observations of this harness host, not an external MCP/tool host.
@@ -44,6 +55,7 @@ impl ObservationRequest {
     pub async fn observe(&self) -> Result<MachineStatus, String> {
         let targets = self.targets.clone();
         let policy = self.policy.clone();
+        let include_indexing = self.include_indexing;
         tokio::time::timeout(Duration::from_millis(policy.probe_timeout_ms), async move {
             let permit = OBSERVATION_GATE
                 .acquire()
@@ -53,11 +65,16 @@ impl ObservationRequest {
                 let _permit = permit;
                 let machine = chaos_machine::inspect_machine();
                 let storage = chaos_machine::inspect_storage(&targets);
+                let indexing = targets
+                    .iter()
+                    .find(|target| include_indexing && target.role == StorageRole::Workspace)
+                    .map(|target| chaos_machine::inspect_indexing(&target.path));
                 let warnings = machine_warnings::evaluate(&policy, &machine, &storage);
                 let warning_instruction = machine_warnings::instructions(&warnings);
                 MachineStatus {
                     machine,
                     storage,
+                    indexing,
                     warnings,
                     warning_instruction,
                 }

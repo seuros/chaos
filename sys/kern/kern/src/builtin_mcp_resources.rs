@@ -97,7 +97,8 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 9] = [
         kind: ChaosBuiltinResourceKind::Models,
         uri: CHAOS_MODELS_URI,
         name: "models",
-        description: "List cached model presets by provider. Use refresh_models to fetch a provider's latest catalog.",
+        description: "List cached model presets by provider. \
+                      Use refresh_models to fetch a provider's latest catalog.",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
@@ -125,14 +126,16 @@ const RESOURCE_SPECS: [ChaosBuiltinResourceSpec; 9] = [
         kind: ChaosBuiltinResourceKind::Machine,
         uri: CHAOS_MACHINE_URI,
         name: "machine",
-        description: "Fresh host profile, power, thermals, and relevant filesystem space; not a safety verdict or live monitor",
+        description: "Read fresh host, power, thermal, storage, and indexing status",
         mime_type: JSON_MIME_TYPE,
     },
     ChaosBuiltinResourceSpec {
         kind: ChaosBuiltinResourceKind::Hooks,
         uri: CHAOS_HOOKS_URI,
         name: "hooks",
-        description: "Database lifecycle hooks in caller scope, revisions and activation status. Use hooks_* tools to manage changes under the configured hook approval policy (human elicitation by default).",
+        description: "Database lifecycle hooks in caller scope, revisions and activation status. \
+                      Use hooks_* tools to manage changes under the configured hook approval \
+                      policy (human elicitation by default).",
         mime_type: JSON_MIME_TYPE,
     },
 ];
@@ -447,12 +450,11 @@ pub fn mcp_json_from_servers(
                 json!({ "state": "disabled" })
             } else {
                 match (active_servers, startup_statuses) {
-                    (Some(active_servers), Some(_))
-                        if active_servers.get(name) != Some(config) =>
-                    {
+                    (Some(active_servers), Some(_)) if active_servers.get(name) != Some(config) => {
                         json!({
                             "state": "not_loaded",
-                            "error": "configured server is not active in this session; the latest reload may have failed"
+                            "error": "configured server is not active in this session; \
+                                      the latest reload may have failed"
                         })
                     }
                     (Some(_), Some(startup_statuses)) => startup_statuses
@@ -485,7 +487,9 @@ pub fn mcp_json_from_servers(
             server.insert("transport".to_string(), json!(transport));
             server.insert(
                 "auth_status".to_string(),
-                auth_statuses.get(name).map_or(serde_json::Value::Null, |status| json!(status)),
+                auth_statuses
+                    .get(name)
+                    .map_or(serde_json::Value::Null, |status| json!(status)),
             );
             server.insert("status".to_string(), status);
             if let Some(reason) = &config.disabled_reason {

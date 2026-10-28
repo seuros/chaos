@@ -45,6 +45,7 @@ fn observation(config: &Config, cwd: &Path, observed_at: SystemTime) -> MachineS
     MachineStatus {
         machine,
         storage,
+        indexing: None,
         warnings,
         warning_instruction,
     }
@@ -72,7 +73,7 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
         // Explicit reads still return observations when automatic warnings are disabled.
         config.machine_warnings.enabled = enabled;
         config.machine_warnings.disk_free_percent = threshold;
-        let expected_request = ObservationRequest::new(&config, &cwd);
+        let expected_request = ObservationRequest::new(&config, &cwd).with_indexing();
         let observed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(index as u64 + 1);
         let text = machine_json_with_observer(&config, &cwd, |request| {
             calls.set(calls.get() + 1);
@@ -115,55 +116,6 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
 }
 
 #[tokio::test]
-async fn machine_resource_and_guidance_follow_the_capped_disk_policy() {
-    let mut config = crate::config::test_config();
-    let cwd = Path::new("/active");
-    for (total, available, cap, warns) in [
-        (4_000_000_000_000, 200_000_000_000, 20 << 30, false),
-        (4 << 40, 20 << 30, 20 << 30, true),
-        (4 << 40, (20 << 30) + 1, 20 << 30, false),
-        (20 << 30, 1 << 30, 20 << 30, true),
-        (20 << 30, (1 << 30) + 1, 20 << 30, false),
-        (4 << 40, 8 << 30, 8 << 30, true),
-    ] {
-        config.machine_warnings.disk_free_bytes_cap = cap;
-        let text = machine_json_with_observer(&config, cwd, |_| {
-            let mut status = observation(&config, cwd, SystemTime::UNIX_EPOCH);
-            let filesystem = &mut status.storage.filesystems[0];
-            filesystem.total_bytes = total;
-            filesystem.available_bytes = available;
-            status.warnings = crate::machine_warnings::evaluate(
-                &config.machine_warnings,
-                &status.machine,
-                &status.storage,
-            );
-            status.warning_instruction = crate::machine_warnings::instructions(&status.warnings);
-            ready(Ok(status))
-        })
-        .await
-        .unwrap();
-        let value: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(
-            value["storage"]["filesystems"][0]["available_bytes"],
-            available
-        );
-        assert_eq!(
-            value["warnings"].as_array().unwrap().len(),
-            usize::from(warns)
-        );
-        if warns {
-            assert_eq!(value["warnings"][0]["kind"], "low_disk_space");
-            assert_eq!(value["warnings"][0]["available_bytes"], available);
-            let instruction = value["warning_instruction"].as_str().unwrap();
-            assert!(instruction.contains("GiB ("));
-            assert!(instruction.contains("%) available."));
-        } else {
-            assert!(value.get("warning_instruction").is_none());
-        }
-    }
-}
-
-#[tokio::test]
 async fn machine_resource_propagates_observation_failure_without_a_snapshot() {
     let config = crate::config::test_config();
     let error = machine_json_with_observer(&config, Path::new("/active"), |_| {
@@ -175,26 +127,65 @@ async fn machine_resource_propagates_observation_failure_without_a_snapshot() {
 }
 
 #[tokio::test]
-async fn machine_resource_preserves_fresh_raw_thermal_diagnostics() {
-    use chaos_machine::{MacosThermalDiagnostics, ThermalState};
+async fn machine_resource_preserves_fresh_platform_diagnostics() {
+    use chaos_machine::{
+        IndexerProcess, IndexingObservation, IndexingSnapshot, MacosThermalDiagnostics,
+        SpotlightState, ThermalState,
+    };
+
     let config = crate::config::test_config();
-    let cwd = Path::new("/active");
-    for (index, (level, pressure, state)) in [
-        (100, 0, ThermalState::Warning),
-        (0, 0, ThermalState::Normal),
+    let cwd = Path::new("/active workspace");
+    // Parsers and observation variants have their own unit tests. Here only
+    // verify fresh diagnostics and failures pass through the resource boundary.
+    for (index, (level, state, spotlight, processes)) in [
+        (
+            100,
+            ThermalState::Warning,
+            IndexingObservation::Available {
+                value: SpotlightState::Disabled,
+            },
+            IndexingObservation::Available {
+                value: vec![IndexerProcess {
+                    pid: 123,
+                    name: "mds_stores".into(),
+                    cpu_percent: 12.5,
+                }],
+            },
+        ),
+        (
+            0,
+            ThermalState::Normal,
+            IndexingObservation::PermissionDenied,
+            IndexingObservation::TimedOut,
+        ),
     ]
     .into_iter()
     .enumerate()
     {
         let observed_at = SystemTime::UNIX_EPOCH + Duration::from_secs(index as u64);
-        let text = machine_json_with_observer(&config, cwd, |_| {
+        let diagnostics = MacosThermalDiagnostics {
+            iopm_return_code: 0,
+            iopm_warning_level: Some(level),
+            ns_process_info_thermal_state: 0,
+        };
+        let indexing = IndexingSnapshot {
+            observed_at,
+            workspace: cwd.into(),
+            volume: Some("/System/Volumes/Data".into()),
+            spotlight,
+            processes,
+        };
+        let expected_thermal = serde_json::to_value(&diagnostics).unwrap();
+        let expected_indexing = serde_json::to_value(&indexing).unwrap();
+        let text = machine_json_with_observer(&config, cwd, |request| {
+            assert_eq!(
+                request,
+                ObservationRequest::new(&config, cwd).with_indexing()
+            );
             let mut status = observation(&config, cwd, observed_at);
             status.machine.thermal.state = state;
-            status.machine.thermal.macos = Some(MacosThermalDiagnostics {
-                iopm_return_code: 0,
-                iopm_warning_level: Some(level),
-                ns_process_info_thermal_state: pressure,
-            });
+            status.machine.thermal.macos = Some(diagnostics);
+            status.indexing = Some(indexing);
             ready(Ok(status))
         })
         .await
@@ -202,12 +193,7 @@ async fn machine_resource_preserves_fresh_raw_thermal_diagnostics() {
         let value: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["machine"]["observed_at"], json!(observed_at));
         assert_eq!(value["machine"]["thermal"]["state"], json!(state));
-        assert_eq!(
-            value["machine"]["thermal"]["macos"],
-            json!({
-                "iopm_return_code":0, "iopm_warning_level":level,
-                "ns_process_info_thermal_state":pressure,
-            })
-        );
+        assert_eq!(value["machine"]["thermal"]["macos"], expected_thermal);
+        assert_eq!(value["indexing"], expected_indexing);
     }
 }

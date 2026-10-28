@@ -109,6 +109,35 @@ or by cleanup even on ordinary disks.
 
 ## API
 
+### Explicit indexing diagnostics
+
+`inspect_indexing(workspace)` adds read-only macOS Spotlight diagnostics for an
+existing absolute workspace. It resolves symlinks and queries the actual mount
+point with `mdutil -s`, never all volumes or an assumed `/`. A separate `ps`
+query lists visible Spotlight/indexer executable basenames, PIDs, and CPU
+estimates. Exact executable names are matched, not command-line substrings.
+
+The kernel includes this snapshot in the top-level `indexing` field of explicit
+`chaos://machine` reads. Top-bar updates and automatic warning/recovery checks
+do not collect it. No background enforcement or automatic mitigation is added.
+
+`spotlight` and `processes` each carry a `status`: `available`, `unavailable`,
+`permission_denied`, `timed_out`, or `unsupported`. Only available probes have a
+`value`: Spotlight is `enabled`/`disabled`; processes is an array, possibly empty.
+Missing/failed probes are not reported as disabled or as no indexers running.
+Other platforms return `unsupported` without spawning these commands.
+
+Both commands use absolute executable paths, the C locale, no shell, no sudo,
+bounded output, and a one-second deadline each. Timed-out children are killed
+and reaped; the kernel's existing observation deadline also bounds the resource
+wait. Filesystem resolution remains best-effort synchronous I/O.
+
+Process observations cover the visible host, **not just this workspace**, and
+do not establish which volume a process is indexing. `cpu_percent` is macOS
+`ps`'s decaying average over up to a minute, not an instantaneous sample; values
+may exceed 100. Process names alone do not prove useful indexing work or pressure.
+No settings, launchd jobs, indexes, model packs, or SIP protections are changed.
+
 `inspect_machine()` returns machine, power, and thermal observations.
 `inspect_storage(&[StorageTarget])` inspects the supplied task paths.
 

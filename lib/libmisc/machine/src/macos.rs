@@ -65,39 +65,15 @@ fn display_state(result: i32, count: u32, session_available: bool) -> crate::Dis
 
 #[cfg(target_os = "macos")]
 fn read_power() -> PowerInfo {
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
+    use std::ffi::OsStr;
+    use std::time::Duration;
 
-    let Ok(mut child) = Command::new("/usr/bin/pmset")
-        .args(["-g", "batt"])
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    else {
-        return PowerInfo::default();
-    };
-    // pmset's small output fits the pipe; a stalled/overproducing probe is
-    // killed and reaped rather than delaying the caller indefinitely.
-    let deadline = Instant::now() + Duration::from_secs(2);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return PowerInfo::default();
-            }
-        }
-    }
-    match child.wait_with_output() {
-        Ok(output) if output.status.success() => {
-            parse_power(&String::from_utf8_lossy(&output.stdout))
-        }
+    match crate::command::run(
+        "/usr/bin/pmset",
+        &[OsStr::new("-g"), OsStr::new("batt")],
+        Duration::from_secs(2),
+    ) {
+        Ok(output) if output.success => parse_power(&String::from_utf8_lossy(&output.stdout)),
         _ => PowerInfo::default(),
     }
 }

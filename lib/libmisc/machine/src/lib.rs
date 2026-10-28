@@ -8,6 +8,9 @@
 //! synchronous I/O: use a blocking worker in async applications. Snapshots are
 //! not atomic or cached; collect again before making a resource decision.
 
+#[cfg(any(target_os = "macos", test))]
+mod command;
+mod indexing;
 mod power;
 mod profile;
 mod storage;
@@ -37,6 +40,9 @@ use macos as platform;
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd")))]
 compile_error!("chaos-machine supports Linux, macOS, and FreeBSD");
 
+pub use indexing::{
+    IndexerProcess, IndexingObservation, IndexingSnapshot, SpotlightState, inspect_indexing,
+};
 pub use power::{BatteryInfo, BatteryKind, BatteryState, PowerInfo, PowerSource};
 pub use profile::{
     DisplayState, ExecutionEnvironment, FormFactor, FormFactorEvidence, MachineProfile,

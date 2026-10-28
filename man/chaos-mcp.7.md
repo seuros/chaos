@@ -178,7 +178,7 @@ effects are unacceptable.
 | `chaos://mcp` | List configured MCP servers with auth and startup status |
 | `chaos://hooks` | List database lifecycle hooks visible to the caller, revisions, and activation status |
 | `chaos://hooks/{id}` | Read one visible hook definition |
-| `chaos://machine` | Read fresh host profile, power, thermals, and relevant filesystem space |
+| `chaos://machine` | Read host, power, thermal, storage, and indexing status |
 | `chaos://man` | List embedded manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
@@ -192,16 +192,19 @@ again to refresh their contents.
 Read `chaos://mcp` inside a live session for startup errors; standalone serving
 has no per-session startup state. Credentials are omitted.
 
-`chaos://machine` observes the harness host, not remote tools. Storage checks cover
-the working directory, ChaOS home/cache/log paths, and temporary filesystem, not
-every output path or disk. Unknown measurements and empty warnings are not safety
-clearance. macOS reports thermal pressure, not CPU Celsius.
+`chaos://machine` observes the harness host. Storage checks cover the working
+directory, ChaOS home/cache/log paths, and temporary filesystem.
+macOS reports thermal pressure.
+
+On macOS, `indexing` reports workspace-volume Spotlight state and visible host
+indexers with averaged CPU usage. Probes are read-only and on demand, with explicit
+availability status. Other platforms report `unsupported`.
 
 ### Machine warnings
 
 On a host warning, checkpoint to verified persistent storage outside temporary
 directories, pause heavy/interruption-sensitive work, and notify the operator.
-Do not assume suspend prevents data loss or automatically delete files.
+Checkpoint before suspending and preserve existing files.
 
 Manage global `machine_warnings` with `chaos config set` / `chaos config unset`.
 Restart to apply changes. Project configuration cannot override this host policy.

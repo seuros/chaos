@@ -394,6 +394,9 @@ async fn machine_resource_can_be_read_after_initialize() -> Result<()> {
     assert!(payload["machine"]["thermal"]["cpu_temperatures"].is_array());
     assert!(payload["storage"]["filesystems"].is_array());
     assert!(payload["storage"]["unavailable"].is_array());
+    assert!(payload["indexing"]["workspace"].is_string());
+    assert!(payload["indexing"]["spotlight"]["status"].is_string());
+    assert!(payload["indexing"]["processes"]["status"].is_string());
     Ok(())
 }
 
@@ -530,10 +533,15 @@ async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/models"))
-        .and(wiremock::matchers::header("authorization", "Bearer fixture-key"))
+        .and(wiremock::matchers::header(
+            "authorization",
+            "Bearer fixture-key",
+        ))
         .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
             "object": "list",
-            "data": [{"id": "fixture-model", "object": "model", "created": 0, "owned_by": "fixture"}]
+            "data": [{
+                "id": "fixture-model", "object": "model", "created": 0, "owned_by": "fixture"
+            }]
         })))
         .expect(1)
         .mount(&server)
@@ -744,7 +752,8 @@ async fn spool_resource_never_exposes_global_rows_without_a_trustworthy_owner() 
     let pool = open_runtime_db(chaos_home.path()).await?;
     sqlx::query(
         "INSERT INTO spool_jobs \
-         (manifest_id, backend, batch_id, status, request_count, payload_json, submitted_at, created_at, updated_at) \
+         (manifest_id, backend, batch_id, status, request_count, payload_json, \
+          submitted_at, created_at, updated_at) \
          VALUES (?, 'xai', 'batch-1', 'InProgress', 2, \
          '[\"foreign-private-prompt\"]', 123, 111, 222)",
     )

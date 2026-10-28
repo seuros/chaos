@@ -92,7 +92,7 @@ async fn machine_warnings_report_probe_failure_without_inventing_measurements() 
     let text = value[0]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Machine check unavailable"));
     assert!(text.contains("ask the operator"));
-    assert!(text.contains("not safety clearance"));
+    assert!(text.contains("verify power, storage, and cooling"));
     assert!(!text.contains("Discharging"));
     assert!(!text.contains("Disk ("));
 }

@@ -15,6 +15,7 @@ fn observation(thermal: chaos_machine::ThermalState) -> MachineStatus {
         },
     };
     MachineStatus {
+        indexing: None,
         machine,
         storage: StorageSnapshot {
             observed_at: SystemTime::now(),
@@ -39,6 +40,59 @@ async fn sample(session: &Session, thermal: chaos_machine::ThermalState) {
 
 async fn unresolved(session: &Session) {
     sample(session, chaos_machine::ThermalState::Critical).await;
+}
+
+#[tokio::test]
+async fn indexing_resource_read_does_not_reset_recovery_context_or_wait() {
+    use chaos_machine::{IndexingObservation, IndexingSnapshot};
+
+    let (session, turn) = crate::chaos::make_session_and_context().await;
+    unresolved(&session).await;
+    let id = session
+        .state
+        .lock()
+        .await
+        .machine_recovery
+        .request_wait(&turn.sub_id)
+        .unwrap();
+    let config = session.get_config().await;
+    let cwd = session.state.lock().await.session_configuration.cwd.clone();
+    let base = ObservationRequest::new(&config, &cwd);
+    let status = session
+        .machine_resource_observation_with_observer(|request| {
+            assert_eq!(request, base.clone().with_indexing());
+            let mut status = observation(chaos_machine::ThermalState::Critical);
+            status.indexing = Some(IndexingSnapshot {
+                observed_at: SystemTime::now(),
+                workspace: cwd,
+                volume: None,
+                spotlight: IndexingObservation::PermissionDenied,
+                processes: IndexingObservation::TimedOut,
+            });
+            std::future::ready(Ok(status))
+        })
+        .await
+        .unwrap();
+    assert!(
+        status.indexing.is_some(),
+        "diagnostic failures stay visible"
+    );
+    {
+        let state = session.state.lock().await;
+        assert_eq!(state.machine_recovery.context.as_ref(), Some(&base));
+        assert_eq!(state.machine_recovery.wait_id(), Some(id.as_str()));
+    }
+    session
+        .refresh_machine_recovery_with_observer(|request| {
+            assert_eq!(request, base, "monitor keeps indexing probes disabled");
+            std::future::ready(Ok(observation(chaos_machine::ThermalState::Critical)))
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        session.state.lock().await.machine_recovery.wait_id(),
+        Some(id.as_str())
+    );
 }
 
 #[tokio::test]

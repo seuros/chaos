@@ -27,7 +27,7 @@ async fn machine_json_with_observer<F: Future<Output = Result<MachineStatus, Str
         status: MachineStatus,
     }
 
-    let status = observe(ObservationRequest::new(config, cwd)).await?;
+    let status = observe(ObservationRequest::new(config, cwd).with_indexing()).await?;
     super::to_json(
         &Resource {
             scope: "harness_host",

@@ -61,6 +61,7 @@ fn snapshot_on_disk(
     };
     let warnings = crate::machine_warnings::evaluate(config, &machine, &storage);
     MachineStatus {
+        indexing: None,
         machine,
         storage,
         warning_instruction: crate::machine_warnings::instructions(&warnings),

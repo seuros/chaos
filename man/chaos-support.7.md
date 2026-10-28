@@ -63,9 +63,6 @@ Only action risk runs automatically; other judgments are library-only.
 | `minicheck` | OpenAI-compatible chat completions | grounding | optional API key | Experimental |
 | `shieldgemma` | OpenAI-compatible chat completions | policy violation | optional API key | Experimental |
 
-New keys use the shared encrypted vault; settings store references. Only the
-vault's unlock key uses the OS keyring. Saved provider accounts
-and explicit `env_key` sources are also supported; no environment key is assumed.
 See [chaos-reflex(7)](./chaos-reflex.7.md).
 
 ## WIRE FORMATS
@@ -77,11 +74,7 @@ See [chaos-reflex(7)](./chaos-reflex.7.md).
 | `chat_completions` | `/v1/chat/completions` |
 | `lsd` | LSD `/inference` |
 
-Selection rules:
-
-1. Requests to `api.anthropic.com` → Anthropic Messages
-2. Else if `wire_api` is set → use it
-3. Else → `auto`
+`api.anthropic.com` uses Anthropic Messages regardless of `wire_api`.
 
 ## CLAMP TRANSPORTS
 
@@ -95,14 +88,13 @@ Clamp uses a first-party CLI instead of a direct provider API:
 CLI and authentication failures terminate the turn with an error.
 See [setup and commands](./chaos-providers.7.md#clamp-transports).
 
-## PLATFORMS AND SANDBOXES
+## PLATFORMS
 
-| Platform | Sandbox mechanism | Requirement |
-|----------|-------------------|-------------|
-| Linux x86_64 | Landlock + seccomp + `no_new_privs` | Linux **≥ 6.10** |
-| Linux aarch64 | Landlock + seccomp + `no_new_privs` | Linux **≥ 6.10** |
-| macOS aarch64 | Seatbelt profiles | Apple sandbox |
-| FreeBSD x86_64 | Capsicum | FreeBSD |
+| Platform | Requirement |
+|----------|-------------|
+| Linux x86_64 / aarch64 | Linux **≥ 6.10** |
+| macOS aarch64 | macOS **≥ 15** |
+| FreeBSD x86_64 | FreeBSD **≥ 15** |
 
 ## STORAGE AND RECALL
 
@@ -118,7 +110,7 @@ See [chaos-storage(7)](./chaos-storage.7.md).
 
 | Surface | Level | Notes |
 |---------|-------|-------|
-| MCP client (`.mcp.json`, managed servers) | Supported | Kernel + `mcpd` runtime |
+| MCP client (`.mcp.json`, managed servers) | Supported | Local stdio and remote HTTP servers |
 | Session tools | Supported | Filesystem, shell, and other activated tools |
 | External MCP servers | Supported | Tools and resources from configured server connections |
 

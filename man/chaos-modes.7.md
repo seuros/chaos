@@ -11,12 +11,10 @@ chaos-modes - define and switch session-scoped FreeChaOS collaboration modes
 
 ## DESCRIPTION
 
-FreeChaOS modes are session-scoped instruction and capability profiles. A mode
-selects the developer instructions, reasoning effort, and model-visible tool
-surface used for subsequent samples in one process.
+Modes select instructions, reasoning effort, and available tools for a session.
 
 Every installation includes the `default` and `plan` modes. Additional modes
-can be installed as Markdown files without rebuilding the kernel.
+can be imported as Markdown documents.
 
 Mode state is isolated per process. Switching a root session changes its TUI
 mode indicator. Switching a minion changes only that minion and does not change
@@ -34,53 +32,22 @@ questions, and mode switching. It removes `apply_patch`,
 `request_permissions`, dynamic mutating tools, and MCP tools marked
 destructive.
 
-The bundled `collaboration_mode/plan.md` is a conditional MiniJinja template.
-The kernel renders it after mounting the session database. PostgreSQL sessions
-receive nesting, dependency-DAG, and shared-workspace guidance; SQLite sessions
-receive local nested-task guidance only. Neither prompt includes instructions
-or fallback caveats for the other backend. Sessions without a planning database
-receive conversational planning instructions without durable-tool guidance.
-
-See chaos-planning(7) for workspace registration, checkout bindings, plan
-commands, optimistic revisions, and explicit child attachments.
-
-The same mounted-backend capabilities filter the tool schemas: SQLite does not
-advertise dependency actions. Execution-mode planning guidance is emitted only
-when `plan_progress` is visible. An attached agent may switch to Plan mode to
-revise structure and return to execution without asking the operator to switch.
-The session's existing allowed-mode policy still applies.
+To revise an attached plan, switch to Plan mode and return to execution afterward;
+no operator mode switch is needed. See [chaos-planning(7)](./chaos-planning.7.md)
+for durable plans and backend-specific features.
 
 ## DISCOVERY
 
-Models discover the active mode and caller-visible catalog by reading:
-
-```text
-chaos://modes
-```
-
-The resource is caller-filtered. A child can see fewer modes than its parent,
-and a fixed-mode child does not receive the `switch_mode` tool. The resource
-returns mode metadata and capabilities but never returns custom mode
-instructions.
+Read `chaos://modes` for the active mode and allowed choices, not mode instructions.
+A child may have fewer choices than its parent.
 
 The installation-level MCP resource reports the default root catalog. A live
 session can expose a narrower catalog and a different active mode.
 
 ## SWITCHING
 
-When mode switching is enabled, the model calls:
-
-```json
-{
-  "mode_id": "plan"
-}
-```
-
-The kernel updates the session policy, records the new developer instructions,
-and rebuilds the effective tool surface before the next model sample. This also
-applies to the immediate follow-up sample in the same user turn.
-
-Switching to the already active mode is a no-op.
+Use `switch_mode` when available. The new mode applies to the next model request,
+including within the same turn. Selecting the current mode changes nothing.
 
 ## CHILD SESSIONS
 
@@ -88,19 +55,9 @@ The orchestrator controls a child's initial mode, allowed modes, and ability to
 switch. A child cannot enable a mode or capability unavailable in the active
 parent mode.
 
-Create a fixed planning minion by selecting `plan` and omitting
-`allowed_modes`. Create a switchable child with an explicit catalog:
-
-```json
-{
-  "mode": "default",
-  "allowed_modes": ["default", "plan"],
-  "allow_mode_switching": true
-}
-```
-
-A minion can switch its own mode when permitted, but its switch does not update
-the root session's TUI.
+For a fixed planning child, select `plan` without a switchable catalog.
+For a child that must alternate planning and execution, allow both modes and
+enable switching. Delegation still requires explicit user authorization.
 
 ## CUSTOM MODES
 
@@ -154,11 +111,6 @@ to narrow its model-visible surface:
 
 A mode can remove capabilities but cannot grant filesystem, network, sandbox,
 approval, delegation, or other security authority.
-
-## FILES
-
-- runtime database, `user_documents` rows of kind `mode` - custom
-  collaboration mode definitions (`chaos modes`)
 
 ## SEE ALSO
 

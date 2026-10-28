@@ -11,13 +11,8 @@ chaos-mcp - connect FreeChaOS to MCP servers and expose FreeChaOS over MCP
 
 ## DESCRIPTION
 
-FreeChaOS uses MCP to connect to external tools and services. MCP servers are
-the drivers that give FreeChaOS its capabilities - file access, shell commands,
-APIs, databases, anything.
-
-FreeChaOS is also an MCP server itself, so other tools can drive it. This page
-covers both sides: using external MCP servers from FreeChaOS, and exposing
-FreeChaOS over MCP.
+Connect external tools through MCP servers, or expose FreeChaOS to another MCP
+client with `chaos mcp serve`.
 
 ## CLIENT USAGE
 
@@ -41,10 +36,7 @@ chaos mcp remove my-server  # Remove a server
 
 ### Storage
 
-Global MCP servers are stored in the runtime MCP registry. Use `chaos mcp add`, `chaos mcp remove`, and
-`chaos mcp get` to manage them.
-
-Project-local MCP servers still live in `.mcp.json`.
+Manage global servers with `chaos mcp ...`; project-local definitions use `.mcp.json`.
 
 ### Project-local `.mcp.json`
 
@@ -65,28 +57,11 @@ with FreeChaOS, Claude Code, and other MCP-aware tools:
 }
 ```
 
-### Agent-facing MCP management tools
+### In-session management
 
-Agents can manage project-local servers with:
-
-| Tool | Purpose |
-|------|---------|
-| `mcp_add_server` | Add a stdio or HTTP server and reload the active session |
-| `mcp_server` | Enable, disable, reset, or remove a server and reload the active session |
-
-Use `command` for stdio or `url` for HTTP.
-
-### Trusted stdio identity
-
-Each managed stdio server receives a host-controlled `CHAOS_MCP_CLIENT_ID`.
-The identity is scoped to the persisted ChaOS conversation and server name, so
-it survives server resets and harness restarts that resume the same
-conversation. Different conversations and different servers receive distinct
-identities. Server configuration cannot override the value.
-
-The identity preserves server-side ownership across reconnects; it does not
-extend or revive an expired server-side lease. A server should resume a live
-lease for this identity or create a new fenced generation after expiration.
+Use the native MCP management tools rather than editing `.mcp.json`.
+Read `chaos://mcp` before and after changes to check startup and authentication.
+Server reconnects preserve conversation identity, not expired server leases.
 
 ### Persistent tool approvals
 
@@ -130,11 +105,7 @@ chaos mcp add remote --url https://api.example.com/mcp \
 
 ## SERVER USAGE
 
-Server entry points require the default-enabled `mcpd` Cargo feature.
-Building `chaos-cli` with `--no-default-features` excludes `mcp serve`
-and `serve --mcp`, without disabling MCP client commands, external tools, or
-clamping and its session bridge. Add `--features tui` to retain the TUI without
-the MCP daemon, or `--features mcpd` to retain serving without the TUI.
+Serving requires a build with `mcpd` enabled (the default).
 See [build options](./chaos-install.7.md#build-without-the-tui-acp-or-mcp-daemon).
 
 Start the server:
@@ -143,32 +114,16 @@ Start the server:
 chaos mcp serve
 ```
 
-Pipe it into another client:
-
-```bash
-chaos mcp serve | your_mcp_client
-```
-
 For inspection:
 
 ```bash
 bunx @mcpjam/inspector@latest chaos mcp serve
 ```
 
-The server runs over standard MCP stdio transport using JSON-RPC 2.0.
-
 ### Refreshing provider models
 
-Call `refresh_models` with the required `provider` argument set to a configured
-provider ID. It forces discovery using that provider's configured credentials,
-updates the catalog cache, and returns an object containing `provider` and `models`.
-It does not start a session or switch the current session's provider.
-Unknown providers, authoritative custom catalogs, and fetch failures return
-errors rather than silently serving stale models.
-
-The tool is also available inside ChaOS sessions and through the session MCP
-bridge. Reading `chaos://models` remains cache-only; use `refresh_models` when
-a provider's catalog is empty or out of date.
+Use `refresh_models` when a provider's catalog is empty or stale.
+Reading `chaos://models` does not refresh it; refreshing does not switch providers.
 
 ## INTEGRATION
 
@@ -187,40 +142,9 @@ Add FreeChaOS to another MCP client's config:
 
 ## EXPOSED INTERFACE
 
-### Tool
-
-| Tool | Description |
-|------|-------------|
-| `chaos` | Start, resume, or continue a FreeChaOS process through the unified MCP tool |
-
-The older split between `chaos` and `chaos-reply` has been replaced by this
-single unified `chaos` tool.
-
-### File content search
-
-The built-in `grep_files` tool accepts an optional `case_sensitive` boolean:
-
-- Omitted: smart case, ignoring case unless the regex contains uppercase.
-- `true`: case-sensitive matching.
-- `false`: case-insensitive matching, including uppercase patterns.
-
-For example, `{"pattern":"TODO","include":"*.rs","case_sensitive":false}`
-finds Rust files containing `TODO`, `todo`, or other case variants. Inline
-regex flags such as `(?i)` and `(?-i)` can override the selected case mode.
-The tool still returns matching file paths, not matching lines.
-
 ### Scheduled shell commands
 
-Pass `schedule` as a JSON object, not a JSON-encoded string. For example,
-`{"kind":"interval","seconds":30}` runs every 30 seconds. Daily schedules use
-`{"kind":"daily","hour":9,"minute":0}` and weekly schedules add
-`"weekday":"mon"` with `"kind":"weekly"`.
-
-The native `cron_create` tool persists a kernel-issued command/policy binding,
-not a raw command to run with the next process's privileges. Shell jobs use
-`/bin/sh -c` (non-login), the normal sandbox runner, bounded output, and a
-60-second execution deadline. Policy/config loading has a separate 10-second
-deadline. Shutdown waits for the current bounded shell run before stopping.
+Shell jobs run with `/bin/sh -c` (non-login), sandboxing, and a 60-second deadline.
 
 Creation requires unattended command authorization under both current session
 rules and config-file rules. A command needing approval must have an
@@ -230,25 +154,16 @@ The base filesystem/network policy and shell environment must match the
 config-file configuration. Managed proxies and external-sandbox profiles are
 not supported for shell cron.
 
-Before every run, including after restart, the kernel reloads config/rules and
-checks the saved command, ownership, filesystem/network policy, and launching
-process's constraints. Policy differences fail closed: recreate the job under
-the new configuration. The environment is freshly filtered using the current
-config-file shell environment policy; shell snapshots and credentials are not
-stored in the job.
-The environment policy must also match the launching process's policy; restart
-the scheduler under matching configuration after changing it.
+After policy changes, recreate the job and restart the scheduler under matching
+configuration. Jobs do not save shell snapshots or credentials.
 
 Legacy shell jobs without a policy must be recreated, not merely re-enabled.
-Direct MCP catalog calls cannot manufacture this authorization. Use
-`cron_toggle` to disable/delete future runs or change config-file rules to
+Use `cron_toggle` to disable/delete future runs or change config-file rules to
 revoke authorization; changing a turn's temporary grant is not a durable job
 revocation. Disabling does not interrupt an already-running command.
 
-The scheduler is still process-local: do not run multiple scheduler processes
-against the same store when duplicate shell effects are unacceptable. Durable
-claims, retries, and per-run records remain separate work. Spool polling is
-unchanged.
+Do not run multiple schedulers against the same store when duplicate shell
+effects are unacceptable.
 
 ### Resources
 
@@ -267,57 +182,28 @@ unchanged.
 | `chaos://man` | List embedded manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
-Hook definitions live in SQLite/PostgreSQL, never runtime `hooks.json` files.
-Enable the `session` tool group to use `hooks_create`, `hooks_update`,
-`hooks_set_enabled`, `hooks_delete`, and read-only `hooks_preview`. Every mutation,
-including disabling or deleting a hook, requires human form elicitation by default.
-Acceptance must include `approve: true`; cancellation, timeout, missing client
-support, or headless mode leaves hooks unchanged under `hook_approval_policy = "on-request"`.
-An operator can explicitly set `hook_approval_policy = "automatic"` to permit
-unattended native hook management without elicitation. Existing hooks require
-`expected_revision` from the resource. Enabling authorizes recurring execution
-only on the approving installation, under the session sandbox; project hooks
-also require project trust. `chaos hooks --yes` provides explicit noninteractive
-operator provisioning; agent shells must use the native tools. See
-[chaos-hooks(7)](./chaos-hooks.7.md) for migration and authority boundaries.
+For hook management and approval requirements, see
+[chaos-hooks(7)](./chaos-hooks.7.md).
 
 These built-in resources are read-on-demand snapshots. The standalone
 `chaos mcp serve` endpoint does not support subscriptions to them; read them
 again to refresh their contents.
 
-`chaos://mcp` reports each server's enabled, required, transport, authentication,
-and startup state. Failed startup states include the error. Commands, endpoints,
-environment variables, headers, and credentials are omitted. Per-session startup
-state is available when the resource is read from an active ChaOS session; the
-standalone `chaos mcp serve` endpoint reports it as unavailable because it has no
-single session to inspect.
+Read `chaos://mcp` inside a live session for startup errors; standalone serving
+has no per-session startup state. Credentials are omitted.
 
-`chaos://machine` returns compact JSON containing `scope: "harness_host"`,
-`machine`, `storage`, and a `warnings` array. When warnings are active,
-`warning_instruction` contains the model-facing checkpoint/operator instruction.
-Each read collects new observations on a blocking worker. In-session reads use
-the active turn's cwd; standalone MCP reads use the
-server's configured cwd. Storage is scoped to that cwd, the configured ChaOS
-home/cache/log directories, and the process temporary directory, deduplicated by
-filesystem. Other output/checkpoint paths, custom database URL locations,
-per-command temp overrides, and remote tool hosts are not inferred.
-
-Unknown power/thermal values and storage probe failures are not evidence of
-safety. macOS provides thermal warning/pressure state rather than CPU Celsius
-readings. Empty warnings are not safety clearance.
+`chaos://machine` observes the harness host, not remote tools. Storage checks cover
+the working directory, ChaOS home/cache/log paths, and temporary filesystem, not
+every output path or disk. Unknown measurements and empty warnings are not safety
+clearance. macOS reports thermal pressure, not CPU Celsius.
 
 ### Machine warnings
 
-The kernel checks the host before each normal model request, including requests
-after tool batches and stream retries. Active warnings are request-local developer
-instructions, not permanent conversation history: recovered conditions are
-re-evaluated rather than accumulating stale alerts. The model is told to save a
-minimal checkpoint to verified persistent storage outside temporary directories,
-verify the write, pause heavy/interruption-sensitive work, and notify the operator.
-It must not assume suspend prevents data loss or automatically delete files.
+On a host warning, checkpoint to verified persistent storage outside temporary
+directories, pause heavy/interruption-sensitive work, and notify the operator.
+Do not assume suspend prevents data loss or automatically delete files.
 
-Global `machine_warnings` settings use the normal settings database and
-`chaos config set` / `chaos config unset` interface.
+Manage global `machine_warnings` with `chaos config set` / `chaos config unset`.
 Restart to apply changes. Project configuration cannot override this host policy.
 
 | Setting | Default | Meaning |
@@ -335,136 +221,48 @@ Restart to apply changes. Project configuration cannot override this host policy
 
 ### Opt-in recovery wake
 
-A live session monitors host conditions every 30 seconds, independently of the
-terminal UI. Warnings expose `wait_for_machine_recovery`. After checkpointing and
-stopping/checking its heavy background work, the model can call this tool **alone**
-to park the turn and request one recovery wake. The tool does not kill processes,
-suspend the host, delete files, or restart commands. Unrelated background
-completions remain pending and cannot restart a parked model.
+After checkpointing and stopping heavy background work, call
+`wait_for_machine_recovery` **alone** to request one recovery wake. It does not
+stop processes, suspend the host, or restart commands.
 
-Recovery requires all outstanding conditions to meet their recovery margins for
-five continuous observed minutes by default. Power warnings require positively
-confirmed external power; OS thermal warnings require a normal state. Temperature
-and disk warnings require the margins above. Missing triggering sensors, remounted
-or unavailable filesystems, probe failures, and observation gaps over 60 seconds
-reset the window. Host suspend is not observed recovery time. Unattainable disk
-targets are reported as blocked, not silently weakened.
+Recovery normally requires five continuously observed stable minutes: external
+power for battery warnings, normal thermal state, and the configured temperature
+and disk margins. Missing measurements and gaps over 60 seconds reset the window;
+suspend time does not count. On waking, reassess rather than blindly retrying.
 
-Recovery produces a UI notice. Only an opted-in wait starts a model turn; otherwise
-the recovery update accompanies the next normal request. The wake includes a task
-resource containing observations and recent episode counts. It asks the model to
-**reassess**, reduce workload, or stop, not blindly restart. Ordinary heat below
-existing warning thresholds does not create a new warning. Repeated thermal
-episodes are reported without an automatic retry limit.
+Input, interruption, workspace/policy changes, closure, and restart cancel waits.
+Read `chaos://machine` for recovery progress. Without an opted-in wait, recovery
+does not start a new model turn.
 
-New operator input, interruption, workspace/policy changes, or session closure
-cancel a wait. Waits and pending recovery wakes **do not survive restart**.
-`chaos://machine` in a kernel session includes recovery phase, stability progress,
-outstanding conditions, wait ID, and bounded last-hour interruption counts.
-
-Battery warnings require a present/not-known-absent, discharging battery of the
-current system/UPS power source, without external power. Dead, removed, idle, or
-maintenance-discharging batteries on AC do not trigger them. Multiple batteries
-remain individual observations, never an invented combined percentage.
-Disk warnings cover only the relevant paths listed above, once per filesystem.
-Unknown percentages and failed probes do not become zero free space.
-
-Thermal warnings do not depend on laptop classification. Custom Celsius thresholds
-apply only to physical readings, never AMD Tctl or unknown temperature scales;
-driver critical limits apply only to their own channel. An unknown thermal state
-alone does not trigger an overheating warning. Disabling `thermal` disables both
-OS/sensor and custom-temperature warnings.
-
-Probe waits default to three seconds with at most one blocking worker active.
-The budget can be increased for slow or restricted host APIs.
-A failed/timed-out model-request check asks for operator verification before risky
-work rather than inventing measurements. Model checks are not a background monitor and
-cannot interrupt a running tool, automatically save work, or block execution.
-Standalone MCP clients receive warnings when reading the resource, not pushed
-notifications.
-
-The terminal top bar polls the same bounded collector and policy for display
-(see `chaos-appearance(7)`). It follows the active UI workspace, never all disks,
-and does not push model notifications or replace fresh pre-request checks.
+Warnings cannot interrupt tools or save work automatically. Failed probes require
+operator verification before risky work. Standalone MCP clients must reread the
+resource; warnings are not pushed. See [chaos-appearance(7)](./chaos-appearance.7.md)
+for UI indicators.
 
 ### Resource tool rules
 
-- Read internal resources with `read_mcp_resource({"uri":"chaos://sessions"})`
-  (replace the URI as needed). Omit `server` for internal reads, subscriptions,
-  and task cancellation. External MCP resources and tasks require their configured
-  `server`; supplied names never fall back to internal routing.
-- Listing resources or templates without `server` aggregates internal and external
-  entries. Internal entries omit `server`; external entries retain it.
-- Internal tasks use `tasks://`, `tasks://get/<id>`, and `tasks://result/<id>`
-  without `server`. Execution and agent outputs provide `task_id`, not `task_server`.
-  `call_mcp_tool_async` remains external-only and requires `server`.
-- **Breaking change:** `server: "chaos_local"` is rejected; omit the field instead.
-  Internal tool labels have no server prefix, and invocation events omit `server`.
-  Actual external MCP tool invocations retain their server metadata and prefix.
+- Use resource listing for discovery; prefer resources over tool calls or web
+  searches when they already contain the needed data.
+- For templates, pass raw values in `parameters`; do not pre-encode them.
+  For concrete URIs, omit `parameters`.
+- Follow async work through its task handle. Internal tasks use `tasks://get/<id>`
+  and `tasks://result/<id>`; external tasks require their originating server.
+  Cancel explicitly; stopping polling does not stop work.
 - If a subscription call returns `fallback: "read_once"`, consume `snapshot`
   as a successful read. Do not retry the subscription or report it as a failure.
 - `subscribed: false` means no updates will arrive. Do not claim to be watching
   the resource. Call `read_mcp_resource` again only when fresh data is needed.
 - `fallback: "no_op"` acknowledges unsubscribe; no further action is needed.
-- For configured MCP servers, subscribe only when subscription support is
-  advertised. Server errors are never redirected to internal resources.
-- If a read fails, use the error to correct the server, URI, or access issue;
-  resource access checks remain enforced for internal reads and snapshots.
+- Subscribe only when the server advertises support. On failure, correct the
+  server, URI, or access issue rather than retrying blindly.
 
 ### Events and approvals
 
 While a conversation runs, the server emits `chaos/event` notifications for
 live agent events.
 
-When FreeChaOS needs approval to apply changes or run commands, it sends an MCP
-`elicitation/create` request. The client replies with:
-
-```json
-{
-  "action": "accept" | "decline" | "cancel",
-  "content": {}
-}
-```
-
-Tool results are returned as normal MCP `CallToolResult` payloads with
-structured content.
-
-## TRANSPORTS
-
-| Transport | Status | Use case |
-|-----------|--------|----------|
-| Stdio | Supported | Local processes, CLI tools |
-| Streamable HTTP (SSE) | Supported | Remote servers, APIs |
-
-## PROTOCOL SUPPORT
-
-### What works
-
-- **Tools** — listing, calling, pagination, and change notifications
-- **Resources** — listing, reading, templates, and update flows
-- **Prompts** — list/get support with pagination where applicable
-- **Sampling** — server-side requests for model output
-- **Elicitation** — approval and user-input requests
-- **Roots** — project root discovery
-- **Logging** — log level and message transport
-- **Tasks** — async task discovery and cancellation
-- **Notifications** — progress and live event delivery
-
-### Stability
-
-The MCP surface is real and in use, but specific method names, fields, and
-event shapes may still evolve with the implementation.
-
-## TOOL NAMING
-
-When the LLM sees tools from MCP servers, they are prefixed:
-
-```
-mcp__<server>__<tool>
-```
-
-For example, a `read` tool from a server named `filesystem` becomes
-`mcp__filesystem__read`. Names longer than 64 characters are hashed.
+Clients must handle MCP `elicitation/create` for approval requests, replying with
+`accept`, `decline`, or `cancel` and the requested form content.
 
 ## TIMEOUTS
 

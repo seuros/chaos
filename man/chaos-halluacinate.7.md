@@ -11,8 +11,8 @@ chaos-halluacinate - extend FreeChaOS with Lua tools, hooks, and statusline scri
 
 ## DESCRIPTION
 
-Halluacinate lets you teach FreeChaOS new tricks without recompiling. Drop a Lua
-script into the right folder and the LLM can call it as a tool.
+Use Lua scripts to add tools, event hooks, or a custom TUI status line.
+Import user scripts; project scripts require project trust.
 
 ## QUICK START
 
@@ -54,7 +54,7 @@ same name. Scripts load in alphabetical order within each layer. Project
 scripts are executable code shipped by the repository, so they only load once
 the project is trusted. `~/.config/chaos/scripts/` is no longer read.
 
-Only `.lua` files are loaded. WASM support is planned.
+Only `.lua` files are loaded.
 
 ## API
 
@@ -89,8 +89,7 @@ chaos.tool({
 })
 ```
 
-The `input_schema` follows JSON Schema. The LLM uses it to understand what
-parameters to pass.
+Use JSON Schema for `input_schema`; handlers receive a Lua table and return a string.
 
 ### Hooks
 
@@ -134,11 +133,8 @@ Store a statusline script in either of the normal script layers:
 - Per-user: `chaos scripts import statusline.lua`
 - Per-project: `.chaos/scripts/statusline.lua` (trusted projects only)
 
-The project copy overrides the user copy because project scripts load later.
-
 The built-in renderer is a Doom-style HUD. By default it shows:
 
-- `HUD` so it is obviously not the old Rust footer
 - `HP`, where remaining context is treated as health and color-coded
 - `CRIT` when context health gets dangerously low
 - `WPN`, showing the active model and reasoning effort
@@ -147,8 +143,6 @@ The built-in renderer is a Doom-style HUD. By default it shows:
 - `CTX`, showing effective context load above the fixed prompt baseline
 - `AMMO`, showing last-response output with optional context growth
 - `DIR`, when it adds extra path context beyond `MAP`
-
-If multiple scripts call `chaos.statusline(...)`, the last loaded script wins.
 
 The `ctx` table currently includes:
 
@@ -213,49 +207,6 @@ with each other.
 
 If a script exceeds these limits, the call fails and FreeChaOS continues
 without it.
-
-## EXAMPLES
-
-### Timestamp tool
-
-```lua
-chaos.tool({
-    name = "timestamp",
-    description = "Return the current UTC timestamp",
-    input_schema = { type = "object", properties = {} },
-    handler = function()
-        -- os.time is blocked, but you can use other approaches
-        return tostring(chaos.session_id) .. " — time is an illusion"
-    end
-})
-```
-
-### String utility
-
-```lua
-chaos.tool({
-    name = "reverse_string",
-    description = "Reverse a string",
-    input_schema = {
-        type = "object",
-        properties = {
-            text = { type = "string", description = "Text to reverse" }
-        },
-        required = { "text" }
-    },
-    handler = function(args)
-        return string.reverse(args.text)
-    end
-})
-```
-
-### Logging hook
-
-```lua
-chaos.on("tool_call", function(payload)
-    chaos.log.info("Tool called: " .. tostring(payload.name))
-end)
-```
 
 ## TROUBLESHOOTING
 

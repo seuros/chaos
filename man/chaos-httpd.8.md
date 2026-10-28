@@ -25,10 +25,8 @@ with asynchronous turns, live steering and authenticated event replay/SSE.
 
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
-With the default-enabled `mcpd` build feature, `--mcp` additionally exposes
-authenticated MCP Streamable HTTP at `/mcp`; `--mcp-allowed-origin` configures
-allowed browser origins. Builds without `mcpd` omit both flags and the `/mcp`
-handler (404), without changing trigger, monitoring, or retained-session APIs.
+Builds with `mcpd` (the default) support authenticated MCP at `/mcp` through
+`--mcp`. Set permitted browser origins with `--mcp-allowed-origin`.
 
 ## OPTIONS
 
@@ -141,16 +139,10 @@ a full-access credential: it also permits triggering agent runs.
 
 ### Experimental retained sessions (`--sessions`)
 
-This is a validation API, **not yet a production execution service**.
-A successful health probe is not proof of
-storage availability, executor containment or webhook delivery.
-Provider, credentials, working directory, tool
-environment and sandbox are server-owned. Clamp transports are rejected at
-startup when execution through this API is enabled. Per-turn environment isolation
-and complete billing are not implemented. Durable sessions expose bounded direct
-logical-request accounting, not provider invoices. Host notices (below) expire and can be
-withdrawn, but reach the model only at native sample boundaries until clamp is
-supported here.
+**Experimental, not a production execution service.** Health does not prove
+storage availability, containment, or webhook delivery. Provider, credentials,
+cwd, environment, and sandbox are server-owned; clamp and per-turn environment
+isolation are unsupported. Accounting is partial, not a provider invoice.
 
 ```sh
 chaos serve --sessions -C /path/to/project
@@ -220,13 +212,11 @@ newer one. Only the turn that posted the pending notice can withdraw it.
 a bare `DELETE` withdraws whatever that turn has pending. `chaos exec
 --steer-file` feeds the same slot.
 
-Turn states include `persisting`, `accepted`, `running`, `waiting_background`, `interrupting`,
-`completed`, `failed`, `interrupted`, `timed_out` and `unknown`. Execution capacity
-is retained until matching completion and kernel background quiescence, or
-confirmed session shutdown. An error event or cancellation request alone does
-not release it. Failed containment remains `unknown` and occupies capacity;
-an explicit DELETE may retry containment. The limit does not count detached
-processes, external side effects or all sub-agent work.
+Turn states include `persisting`, `accepted`, `running`, `waiting_background`,
+`interrupting`, `completed`, `failed`, `interrupted`, `timed_out`, and `unknown`.
+Errors and cancellation requests alone do not release capacity: work must stop.
+`unknown` occupies capacity; DELETE may retry containment. Limits do not cover
+all detached processes, external effects, or sub-agent work.
 
 Turn results are capped at 16 KiB with `result_truncated`. Usage is the kernel's
 cumulative/last-request snapshot, **not invocation-local billing telemetry**.
@@ -243,10 +233,9 @@ a confirmed terminal outcome.
 Replay retains at most 256 events / 1 MiB; events over 64 KiB are replaced with
 `http_event_omitted` markers. JSON replay returns `events`, `gap` and
 `next_cursor` inside `replay`. A cursor ahead of the session returns `400`.
-Scoped replay commits before exposure and survives restart; a restart omission
-marker warns of potentially unobserved kernel work. Responses identify durable,
-observation-only history. Raw completion observations are not committed terminal
-outcomes. Never treat an event gap as proof of completion; read turn status.
+Scoped replay survives restart, with markers for potentially unobserved work.
+Events are observations, not authoritative outcomes. After gaps or disconnects,
+read turn status; event absence never proves completion.
 
 **These are private runtime events**, potentially containing prompts, tool
 arguments/results and reasoning. A frontend adapter must implement its own
@@ -266,29 +255,22 @@ record also forgets its in-memory turn tombstones.
 chaos serve --sessions --session-scope project-worker -C /path/to/project
 ```
 
-Choose a distinct, stable namespace for each tenant/configuration. Journald
-immutably binds it to a digest of provider/credential identity, cwd/home,
-effective permissions/environment policy, configured tools, roles and instructions.
-Changed policy is rejected before ownership changes, even after all records
-close. Use a new namespace for intentional changes. The namespace is server
-configuration, never an HTTP override; one daemon serves one such scope.
-
-Executors use independent credential snapshots for configured providers and
-frozen file-backed role configurations. Drift checks before boot/admission/dispatch
-and every 15 seconds contain work without authorizing replay. OAuth token rotation
-is allowed only under the pinned identity. Only digests, not raw keys/tokens,
-are persisted. Enabled HTTP MCP needs an explicit present bearer/authorization
-source; anonymous HTTP MCP and implicit MCP OAuth are not supported here.
+Choose a distinct stable scope per tenant/configuration. A scope binds provider
+and credential identity, cwd/home, permissions, environment, tools, roles, and
+instructions. Intentional changes require a new scope, even after records close.
+Configuration drift stops work, not authorizes replay. OAuth token rotation is
+allowed only for the same identity.
+HTTP MCP requires explicit bearer authorization; anonymous access and implicit
+MCP OAuth are unsupported here.
 
 Process-history ownership survives closure. Explicit resume requires an existing
 matching tenant/policy binding before loading history; arbitrary CLI or legacy
 history cannot be imported. Legacy namespaces cannot silently adopt a policy.
 
-Journald commits acceptance before dispatch and terminal outcomes before
-execution capacity is released. A disconnected client cannot cancel those
-writes. Ownership uses 90-second fenced leases, renewed every 15 seconds;
-storage calls have a 5-second deadline. Lost storage/ownership triggers bounded
-containment and retains uncertain capacity. No lease token is exposed over HTTP.
+Client disconnects do not cancel accepted work or outcome recording.
+Storage/ownership loss stops work where possible and retains uncertain capacity.
+After an unclean exit, ownership may take up to 90 seconds to expire;
+expiry is not proof that tools stopped.
 
 Graceful daemon shutdown contains processes and releases idle history. On the
 next start, its session UUID, process mapping and saved turn outcomes are restored.
@@ -297,12 +279,9 @@ prompt. Explicit DELETE or session TTL closes the record instead of suspending i
 Closed durable records retain their deduplication tombstones; DELETE cannot erase
 them. `--max-sessions` therefore bounds all records in the durable namespace.
 
-Expired ownership with unfinished work, or even a bound idle process that was
-not orderly released, recovers as `unknown` and consumes execution capacity.
-An interrupted, unbound creation is closed without starting a kernel. Startup
-fails if a live owner conflicts, retained records exceed `--max-sessions`, or
-uncontained reservations exceed `--max-concurrent`. Wait for lease expiry after
-an unclean exit; expiry itself does not prove tools stopped.
+Uncleanly released sessions recover as `unknown` and consume capacity.
+Startup fails on live-owner conflicts or retained records/reservations exceeding
+configured limits.
 
 Recovered unknown work is never automatically resumed. DELETE cannot establish
 containment of a previous daemon's external processes; use operator recovery
@@ -330,49 +309,33 @@ automatically refresh a stale assertion. The server records operator assertions,
 not proof of containment or verified actor identity. Keep the recovery credential
 out of application/tool environments; it is not a sandbox boundary.
 
-The audit, interrupted turn outcome, session closure and lease release commit
-atomically before local capacity is released. Failed/ambiguous commits retain
-capacity. Read the audit and retry only the identical resolution; changed
-decisions return `409`. Disconnect cannot cancel the daemon-owned write.
+Failed/ambiguous recovery writes retain capacity. Read the audit and retry only
+the identical resolution; changed decisions return `409`.
 Resolution closes permanently and preserves deduplication; it never resumes
 history or replays input. Continuing requires an explicit new session.
 
 #### Invocation-local accounting
-
-New durable turns commit a bounded invocation UUID before each direct native
-sampling/compaction call. The record is bound to the current fenced owner,
-dispatched turn and process. Repeating a begin is read-only, never permission
-for another provider call. A completed response's immutable receipt commits
-before kernel completion is forwarded. Changed receipts conflict.
 
 `GET …/turns/{turn}/accounting` returns provider/requested-model/requested-tier
 metadata, purpose, storage timestamps, observed response/server-model metadata,
 normalized input/cache-write/cache-read/output/reasoning/total counters and
 explicit missing/pending/unknown states. No prompts or credentials are included.
 It uses normal session authentication and also the operator header in
-recovery-only mode. Pre-metering turns return `enabled: false, summary: null`;
-old cumulative/context counters are never reconstructed into receipts.
+recovery-only mode. Pre-metering turns return `enabled: false, summary: null`.
 
-Missing or interrupted usage is not zero/free. Ownership loss, quarantine,
-finish and operator resolution fence outstanding starts to unknown, preserving
-committed receipts. Failed accounting stops further dispatch and retains
-uncertain execution capacity. At most 128 logical calls may be recorded per
-turn; the next call is refused before reaching the provider client. Records
-survive closure/restart and cannot be implicitly discarded or overwritten.
+Missing/interrupted usage is not zero/free. Failed accounting stops further
+dispatch and retains uncertain capacity. At most 128 logical calls are allowed
+per turn. Records survive closure and restart.
 
 Repeated nonempty response IDs within a scope/provider retain a
 `duplicate_receipt_of` link and are excluded from the reported subtotal, without
 asserting that the duplicate was free. Missing IDs cannot support that deduplication.
-Subtotal overflow returns `known_usage: null, totals_overflowed: true`,
-not a wrapped/saturated amount. No unique reported usage also returns a null
-subtotal, not a fabricated zero. New terminal webhooks atomically include the
-accounting summary; full receipts remain on this authenticated endpoint.
+Overflow or absent unique usage yields a null subtotal, not zero.
+Terminal webhooks include the summary; full receipts remain on this endpoint.
 
 **Not a provider bill:** every summary says `billing_complete: false`. New
 turns record `coverage: root_and_descendant_logical_sampling_and_compaction`;
-old turns retain direct-only provenance. Descendants are admitted under fenced
-root lineage before startup. Metered clients disable automatic transport/auth
-and fallback retries; a new outer call requires a fresh durable begin.
+old turns retain direct-only provenance. Metered calls do not automatically retry.
 Planning/reflex work, root startup/autonomous
 calls, catalogue traffic, tools, clamp, memory-only sessions and `/api/trigger`
 are outside this coverage. Requested model/tier are not proof of a charged SKU.
@@ -392,11 +355,10 @@ chaos serve --sessions --session-scope old-worker --session-recovery-only
 
 Supply both bearer/recovery credentials through their environment variables.
 All protected reads as well as recovery POST require the operator header.
-Triggers and execution mutations are rejected before reading the body.
+Triggers and execution mutations are rejected.
 Operator-only price/evidence and archive operations remain available.
-No kernel is booted or resumed; released bound history is quarantined for
-independent containment. Execution login, clamp and git-trust checks are skipped;
-the original journal backend/home and sufficient capacity are still required.
+No execution starts or resumes; released history is quarantined for independent
+containment. Use the original storage backend/home and sufficient capacity.
 Closing old records never permits overwriting their namespace's policy.
 
 #### Durable terminal webhooks
@@ -407,16 +369,13 @@ chaos serve --sessions --session-scope project-worker \
   --session-webhook-url https://adapter.example/internal/chaos
 ```
 
-Terminal outcomes and operator resolutions atomically create immutable outbox
-events before local capacity is released. Events are retained even without a
-target; enabling delivery sends all pending events created since migration 29.
-Unknown execution produces no terminal callback. `/api/trigger` and live kernel
-SSE are not part of this outbox.
+Terminal outcomes and operator resolutions produce durable events, retained even
+without a target. Enabling delivery sends pending events. `unknown` execution
+produces no terminal callback; triggers and live SSE are not included.
 
 The destination/signing identity is immutable per scope; changed values fail
-startup. Signing keys must differ from bearer/recovery tokens. Only a private
-digest is persisted, never URL/key material. Omit the
-URL to pause, or use recovery-only mode with the original target/key to drain
+startup. Signing keys must differ from bearer/recovery tokens. Omit the URL
+to pause, or use recovery-only mode with the original target/key to drain
 old events. No per-request callback override is accepted.
 
 POST carries `X-Chaos-Event-ID`, `X-Chaos-Timestamp` (Unix seconds),
@@ -434,24 +393,15 @@ receiver effects, then return 2xx. A lost HTTP/storage acknowledgement may
 deliver the same immutable bytes again, possibly concurrently or out of order.
 Delivery failure is never permission to replay execution.
 
-One independent worker uses 60-second fenced delivery leases, a 10-second HTTP
-timeout, and exponential retries from 2 seconds to 1 hour. Redirects are not
-followed; response bodies are neither collected nor logged. Only 2xx headers
-acknowledge delivery. Retries continue without silently discarding events.
-Delivery does not occupy execution capacity; shutdown/crashes retain uncertain
-deliveries for lease-expiry retry.
+Delivery has a 10-second HTTP timeout and retries from 2 seconds to 1 hour.
+Redirects are not followed; only 2xx acknowledges delivery. Failures/crashes
+retain pending events, and delivery does not occupy execution capacity.
 
 `GET /api/sessions/deliveries[?after=<event UUID>]` lists up to 256 UUID-sorted
 status records (attempts/deadlines/delivery timestamps), without bodies or leases.
 This is metadata pagination, not an append-only event cursor. Refresh the list
 for new events. Authentication follows other session reads, including the
 operator header in recovery-only mode.
-
-After a generation change, read saved state before refreshing the mutation
-header. Same-payload retries return the saved outcome; changed payloads conflict.
-Scoped replay cursors survive restart with explicit gaps/omissions. Without a
-scope, buffers remain memory-only and old cursors must be discarded. Always use
-persisted turn state rather than event absence to reconcile.
 
 #### Operator financial evidence and archival
 
@@ -465,49 +415,26 @@ GET. Mutations also require the current daemon generation:
 | GET, POST | `/api/sessions/{session}/archive` | Read/export a closed-session manifest or seal its verified digest |
 
 Price and billing routes exist only when the retained-session store uses
-PostgreSQL. SQLite has no financial tables or routes; those paths return `404`.
+PostgreSQL. On SQLite those paths return `404`.
 Raw invocation receipts and execution archival remain available on both backends.
 SQLite archives omit financial evidence sections.
-Existing SQLite migration history is preserved. A forward migration retires
-empty financial tables; populated tables require explicit evidence export or
-migration to PostgreSQL rather than automatic deletion.
+Upgrading SQLite with legacy financial evidence requires explicit export or
+migration to PostgreSQL; populated financial tables are not automatically deleted.
 
 Archival is non-destructive: original outcomes, receipts and
 tombstones remain, and no session-cap capacity is reclaimed.
 
-## ARCHITECTURE
-
-Runs in-process via `ProcessTable::start_process` — same runtime path as `chaos exec`, no subprocess.
-
-With `--sessions`, a bounded registry retains process supervisors independently
-of HTTP handlers. Each supervisor alone drains its process's kernel event queue;
-polling and SSE clients read a separate bounded replay buffer. Commands and
-execution have separate admission limits.
-
-```
-POST /api/trigger
-  → auth → content-type → Content-Length preflight → acquire semaphore permit
-  → timeout_at(deadline) { bounded body read → deserialize → validate
-                          → start process → submit prompt → drain events }
-  → cleanup process (bounded 30s grace, always removes from ProcessTable)
-  → respond
-```
-
-The process lifecycle is split: `runner::start` creates the process handle, `runner::execute` submits and drains events, `runner::cleanup` shuts down and removes from the table. The API layer owns the handle across all three phases, so timeout cancellation always cleans up.
-
-Headless mode (`ApprovalPolicy::Headless`) does not prompt for approval.
-Command rules and sandbox policy still apply; commands requiring approval
-cannot obtain it through HTTP.
-
 ## DEPLOYMENT
 
-Expected behind a reverse proxy (nginx, Caddy, k8s ingress). No TLS, no rate limiting beyond the semaphore.
+Run behind a reverse proxy for TLS and rate limiting.
+Commands requiring interactive approval cannot obtain it through HTTP;
+command rules and sandbox policy still apply.
 Use TLS for non-loopback access, forward `Authorization` to the SSE endpoint,
 disable proxy buffering/caching for it, and do not log authorization headers.
 Forward `X-Chaos-Recovery-Authorization` only on trusted recovery routes and
 redact it in proxy/access logs.
 Apply proxy connection/header timeouts and rate limits as well: the trigger
-semaphore is not a limit on idle connections or monitor subscriptions.
+concurrency limit does not bound idle connections or monitor subscriptions.
 
 Scope bindings are control-plane protections, **not an OS tenant sandbox**.
 Fingerprints do not freeze executable tools, arbitrary files or remote server

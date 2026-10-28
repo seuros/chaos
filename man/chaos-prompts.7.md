@@ -39,10 +39,6 @@ Review $1 with attention to $2. Report findings with line numbers.
 Changes apply to new sessions. A prompt whose name collides with a built-in
 slash command is hidden. `${CHAOS_HOME}/prompts/` is no longer read.
 
-## FILES
-
-- runtime database, `user_documents` rows of kind `prompt`
-
 ## SEE ALSO
 
 - [chaos-keyboard.7](./chaos-keyboard.7.md)

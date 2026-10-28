@@ -18,9 +18,8 @@ ask the parent model to call `wait_agent` to observe child completion.
 
 Each event identifies the direct parent and child processes. Optional
 `agent_nickname`, `agent_role` and `model` describe the child when available;
-consumers should key their state by process ID, not nickname. The model is the
-kernel-selected model identifier, not a guarantee about a provider's internal
-routing.
+consumers should key their state by process ID, not nickname. The model identifier
+does not attest to the provider's routing.
 
 `status` is one of:
 
@@ -35,24 +34,18 @@ routing.
 Completion is not permanent termination. Sending new input can make the same
 child run again. Reopening a closed child alone does not mean new work has
 started. Shutdown does not retrospectively classify a completed turn as failed.
-Late events cannot reopen a shutdown session; resume initializes a new session
-for that child.
 Consumers needing the last work outcome should preserve that separately from
 whether the child is still open.
 
 The lifecycle payload contains no prompts, reasoning, final messages or raw
-error text. Existing collaboration tool events retain their existing contracts,
-which can include private task content: this new event is not a redaction of the
-entire JSONL stream.
+error text. Other JSONL events may contain private task content; do not treat
+the entire stream as redacted.
 
 ## Delivery boundaries
 
 Events describe direct children, not a flattened tree of all descendants. They
 are status observations, not collaboration tool results. Repeated observations
 of the same status are allowed; consumers should upsert by child process ID.
-The kernel publishes
-its committed status, including preservation of failures when an empty turn
-completion follows an error or interruption.
 
 Delivery requires an open parent invocation. These events do not keep the CLI
 alive after its normal exit, wait for children implicitly, or provide a durable
@@ -60,7 +53,7 @@ subscription/replay API. Reattaching a parent does not synthesize snapshots of
 already-active children; subsequent child status publications can still arrive
 while the parent is registered. End-of-stream is not evidence that a child completed:
 consumers should display unresolved activity as unknown or disconnected, not
-successful. Existing tool-call events are unchanged.
+successful.
 
 The first status is published only after session initialization succeeds.
 Failed initialization, including a required MCP server failing to start, is

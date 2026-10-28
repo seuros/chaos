@@ -3,6 +3,17 @@
 This directory is the canonical source tree for the project's operator- and
 model-facing manual pages.
 
+## Content guidelines
+
+Keep manual pages focused on usage: commands, options, configuration, examples,
+observable behavior, and troubleshooting. Do not include implementation details
+such as internal crates, helper functions, or request-routing mechanics.
+
+LLM readers already see tool descriptions and argument schemas. Complement them;
+do not repeat them. Write for small context windows: explain when and why to use
+a feature, workflows, and essential caveats. Include examples only when they add
+information the tool schema does not convey.
+
 ## Adding a manual
 
 Add a top-level file named `<name>.<section>.md`, with a section number from 1

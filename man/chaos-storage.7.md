@@ -11,17 +11,11 @@ chaos-storage - select and provision the FreeChaOS runtime storage backend
 
 ## DESCRIPTION
 
-Everything FreeChaOS must remember across a restart lives in one database:
-processes and their lineage, the append-only journal, message history, cron
-jobs and the spool, token accounting, the model catalog cache, project trust
-decisions, and globally registered MCP servers.
-
-That database is mounted once at boot and never swapped for the life of the
-process. Two backends exist and the choice is always explicit: interactive
-startup asks on first run, and every other command refuses to start until
-`storage_url` is configured. PostgreSQL is recommended; it lets several machines
-share one history and powers the semantic recall store. SQLite serves a single
-machine. See [Getting started](../docs/getting-started.md) for the walkthrough.
+Select storage before using FreeChaOS. PostgreSQL supports shared multi-machine
+history and semantic recall; SQLite is for one machine. Interactive startup
+offers first-run setup; other commands require `storage_url` in advance.
+Changing storage requires a restart. Settings, history, jobs, and global MCP
+servers use the selected database.
 
 Shell environment capture stays in memory. ChaOS no longer reads, creates, or
 automatically removes the retired `$CHAOS_HOME/shell_snapshots` directory.
@@ -30,65 +24,29 @@ process is using it; snapshots may contain sensitive environment values.
 
 ## AGENT HISTORY ACCESS
 
-Agents can inspect a bounded view of their own canonical persisted transcript
-with two read-only tools:
-
-- `read_session_history` pages backward through transcript entries. With no
-  cursor it begins immediately before the latest compaction, or at the journal
-  end when the session has not compacted.
-- `search_session_history` performs bounded literal search across the current
-  session's canonical journal. ASCII matching is case-insensitive; other text
-  is matched exactly.
-
-Both tools flush already-queued journal writes before reading, preserve journal
-sequence numbers and timestamps, and return pagination cursors. They are
-restricted to the calling session and omit hidden reasoning, encrypted
-payloads, image data, turn-context records, and telemetry. Tool arguments and
-textual tool results remain visible because they are often necessary to recover
-operational context.
-
-This access does not automatically restore old history into the active context
-or require an agent to preserve anything. It gives the continuing agent a
-deliberate route back when a compaction summary proves incomplete.
+When a compaction summary omits needed context, search your session history,
+then page around relevant entries. History access does not automatically restore
+the conversation. Textual tool arguments/results are available; hidden reasoning,
+images, encrypted content, and telemetry are not.
 
 ## JOURNAL WRITER OWNERSHIP
 
-Only one writer may own a session journal at a time. Resuming a session with
-an active writer reports that the session is already in use and explains how
-to retry, without displaying internal error wrappers. Logs retain the current
-writer and lease expiry for diagnosis. Other resume and durability errors
-include the underlying journal failure.
+Only one instance may write a session. If resume reports it is in use, close the
+other instance and retry; after a crash, normally wait up to 30 seconds.
+Do not delete ownership records to force resume.
 
-Close the other instance of that session before retrying. A crashed writer's
-lease normally expires within 30 seconds; a live writer renews it. Do not
-delete lease rows to force a resume, as that can allow competing writers.
-Orderly process shutdown (including closing a subagent or disconnecting its
-last client) waits for journal lease cleanup on both SQLite and PostgreSQL.
-Lease release is attempted even after write failures. Recorder shutdown returns
-a timeout error after 30 seconds; lease expiry remains the fallback.
 Console exit gives all processes up to 10 seconds to shut down. Immediate exit
 or a second termination signal skips the remaining grace period.
 
-Lease failures pause work without exiting. ChaOS retries every 10 seconds
-with a 5-second timeout; queued entries remain in memory until committed.
-Interrupted chat turns automatically continue from history after recovery;
+Journal lease failures pause work and retry automatically.
+Interrupted chat turns continue from history after recovery;
 an explicit interrupt while paused cancels that continuation. Standalone
 shell commands, reviews, and compaction must be retried manually.
 Ownership or history conflicts stay
 paused: close the other writer and resume the session.
 
-Journald protocol 5 includes background-task journal records. Older sidecars
-are incompatible even when their package version matches. PostgreSQL journal
-access is direct and does not use a sidecar.
-
-Shutdown closes automatic wakes for that live session, not all future owners
-of its journal. An explicitly resumed session keeps wakes interrupted until
-operator input re-enables them. Unattended recovery still excludes closed
-sessions, and machine-recovery waits must be registered anew after resume.
-
-Local QA uses `.tmp/qa/home` instead of the operator's `CHAOS_HOME`; override
-that test home with `CHAOS_QA_HOME`. `just test` builds the current journald
-binary before running the suite so SQLite tests do not launch a stale binary.
+After explicit resume, automatic wakes remain interrupted until operator input.
+Register machine-recovery waits anew; closed sessions do not recover unattended.
 
 ## SQLITE
 
@@ -120,8 +78,7 @@ chaos config bootstrap set storage_url env:CHAOS_DATABASE_URL
 The resulting `~/.chaos/config.toml` holds only that reference (and optionally
 `egress_url`); every other setting lives in the database.
 
-The schema is tested against PostgreSQL 18 and uses nothing newer than
-PostgreSQL 10. Migrations run on first connect, so an empty database is all
+PostgreSQL 10 or later is required. Migrations run on first connect; an empty database is all
 FreeChaOS needs — but it will not create the database or the role for you.
 When PostgreSQL is selected, connection or migration failure stops startup.
 FreeChaOS never falls back to SQLite for an explicitly selected PostgreSQL
@@ -135,11 +92,8 @@ This also applies to FreeBSD hosts without D-Bus Secret Service.
 ### Shared credential vault
 
 `$CHAOS_HOME/secrets/local.age` holds settings credentials, provider accounts in
-`keyring`/`auto` mode, and named secrets. One OS-held key unlocks it once per
-process. Reads share the in-memory unlock key; file changes invalidate the
-decrypted snapshot. Writes are locked across processes and atomically replaced.
-`auto` no longer falls back to plaintext. The provider `file` mode (the existing
-default) and `ephemeral` mode are unchanged.
+`keyring`/`auto` mode, and named secrets. Its unlock key uses the OS credential
+store. `auto` does not fall back to plaintext.
 
 Legacy per-item Keychain items are never read or imported; credentials that
 only live there must be re-entered. Back up both the encrypted vault and its
@@ -206,24 +160,15 @@ CHAOS_STORAGE_URL=sqlite::memory: chaos exec "say hi"
 
 ## MIGRATING AN EXISTING INSTALL
 
-There is no export path between the two backends. Pointing `storage_url` at a
-fresh PostgreSQL database gives you an empty history; the old
-`~/.chaos/chaos.sqlite` stays where it is and is picked up again the moment
-`storage_url` is removed.
-
-The model catalog cache is format-versioned too. Rows written before the
-`raw_catalog_v1` envelope are treated as misses, so after upgrading let each
-provider refresh once online before relying on offline catalog lookups or TTL
-renewal.
+There is no cross-backend export. A fresh database starts with empty history;
+the old database remains untouched. To return to it, explicitly select its URL.
+After upgrading, refresh provider catalogs online before relying on offline use.
 
 ## NOTES
 
 Manually entered literal URLs sit in plaintext in the bootstrap file; keep it
 at mode `0600`. Prefer onboarding's encrypted-vault reference or `env:VARIABLE`.
 FreeChaOS does not read `.pgpass`.
-
-`chaos_journald` is only started for a mounted SQLite backend. PostgreSQL uses
-the mounted pool directly and does not create or write `chaos.sqlite`.
 
 ## FILES
 

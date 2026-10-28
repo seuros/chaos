@@ -70,76 +70,29 @@ depend on the terminal's palette and capabilities.
 
 ## Top bar
 
-The activity eye (`◉`) follows the currently viewed agent. It breathes while
-recent work is observed; only the eye's styling breathes, never the transcript
-background or status text. Colors follow `accent`, `warning`, `error`, and `top_bar_dim`.
-RGB accents breathe smoothly on true-color terminals; terminal-defined ANSI
-colors use dim/normal/bold levels. Set `tui.animations=false` to keep it static:
+The activity eye (`◉`) follows the viewed agent and breathes during recent work.
+Set `tui.animations=false` for a static eye and literal status labels:
 
 ```sh
 chaos config set tui.animations false
 ```
 
-Working, idle, and tool captions use system-seeded randomness, changing every
-10–60 seconds without immediate repeats. Tool captions carry a `🔧` marker.
-Phase and active-peer changes can select a different catalog; redraws and runtime
-traffic do not reset the timer. Interrupted captions are selected once and stay
-fixed until the phase changes.
+After 30 seconds without observed work, `No activity · Ns` means **quiet,
+possibly stalled**, not frozen. Silent reasoning/tools may still be running;
+the indicator never cancels or retries work. `/agent` shows literal per-agent
+states. `Others:` includes background agents; a quiet or failed sibling can
+change the eye's warning color even while the viewed agent is busy.
 
-Quiet, input, retry, and error signals take precedence over captions.
-Starting, waiting, and closed/disconnected states keep their explicit labels.
-Setting `tui.animations=false` restores literal labels and disables caption timers.
-`/agent` always shows the literal phase.
+The pinned row shows local time, power, relevant disk space, and thermals,
+refreshed approximately every 30 seconds. `?` means unavailable or incomplete,
+not healthy. Disk space is the lowest available percentage across workspace,
+state, and temporary filesystems, not all drives. CPU Celsius is the highest
+physical channel, not an average; macOS may show thermal pressure instead.
+Headless/SSH hints do not identify the chassis.
 
-After 30 seconds without observed work, it becomes steady warning-colored and
-shows `No activity · Ns` (or `Tools · no activity Ns`). This means **quiet,
-possibly stalled**, not proof of a frozen model: reasoning and tools can be
-silent. Waiting on agents, operator input, reconnecting, errors, interruption,
-and closed/disconnected event sources have distinct states. This is advisory;
-it never cancels or retries work.
-
-Each agent has its own activity clock, including background agents. `Others:`
-summarizes the other tracked agents, including the parent when viewing a child.
-A quiet or failed sibling makes the eye warning/error-colored even if the
-viewed agent is busy. `/agent` shows per-agent state and the ages of its last
-observed activity and runtime event, sampled when the picker opens. Switching
-transcripts does not reset these clocks; replayed history is not live activity.
-Estimated token progress may update the runtime-event age, but **never** renews
-observed activity. Runtime traffic is not a provider/model heartbeat.
-
-The eye has highest layout priority and remains when its labels no longer fit.
-The eye stops breathing when idle, while captions use a random 10–60-second
-timer. Hiding the top bar stops both; with animations disabled, idle captions
-have no timer. Quiet-state detection continues with animations disabled.
-
-The pinned row includes local time (`HH:MM`) and live `chaos-machine` observations:
-form factor, headless/SSH hints, current power, relevant disk space, and thermals.
-Headless describes display detection, not chassis; SSH does not imply headless.
-
-Machine reads run off the drawing thread, approximately every 30 seconds and when
-the active workspace/configuration changes. The clock updates at minute boundaries
-even while a probe is slow. Hiding the row stops its polling. Failed/timed-out reads
-clear old values and show a neutral `machine ?`, not a health claim.
-
-The power indicator is hidden on machines identified as desktops; an absent
-battery alone does not establish that classification. On other machines, power
-shows AC without low-battery coloring for dead/removed batteries on external
-power, or `power ?` when the source is unknown. System/UPS percentages stay
-individual, separated by `/`.
-
-Disk space is the lowest caller-available percentage among the active workspace,
-state, and temporary filesystems, not all mounted drives or a combined capacity.
-A trailing `?` means some relevant storage observations are unavailable.
-
-CPU Celsius shows the highest observed **physical** CPU channel, not a package
-average. Control/unknown-scale readings are never relabeled as physical Celsius.
-OS thermal state and CPU threshold alerts take precedence over that numeric label;
-unsupported thermal observations are hidden, not reported as zero or cool.
-
-Warning colors use the same global `machine_warnings` policy as model checks (see
-`chaos-mcp(7)`). Warnings get layout priority over routine readings and the clock;
-whole widgets disappear when the terminal is too narrow. These indicators neither
-notify the model continuously nor interrupt tools or save work automatically.
+Narrow terminals hide lower-priority widgets. Warning colors follow
+`machine_warnings`; see [chaos-mcp(7)](./chaos-mcp.7.md).
+UI readings do not continuously notify the model, interrupt tools, or save work.
 
 ## Message styles
 

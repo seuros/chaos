@@ -200,10 +200,8 @@ not sent to the model.
 
 Click a tree row to select it; click a selected server again to fold/unfold it.
 The mouse wheel navigates the tree or scrolls the preview under the pointer.
-Closing the pane cancels pending reads. Refreshes preserve live resource
-identities and expanded groups; switching processes clears them.
-Mounting, removing or resetting MCP servers in the displayed session automatically
-refreshes the Inspector from that session's live registry, not its startup config.
+Closing the pane cancels pending reads. Switching processes resets the tree;
+server changes refresh it automatically.
 
 JSON objects and arrays display as expandable trees. `Enter` switches between
 the resource list and JSON navigation; arrow keys select and fold nodes,
@@ -212,14 +210,10 @@ Click JSON nodes to select or fold them; `j` toggles the JSON and plain-text vie
 Invalid, overly large, or deeply nested
 JSON keeps the plain-text preview.
 
-PNG, JPEG and WebP resource blobs show a local Unicode half-block preview, fitted
-to the pane. Transparency is composited onto neutral gray to keep black and white
-artwork visible. Text and image metadata remain scrollable above it. Only the first
-image is considered; other binary content is omitted. Preview decoding is limited
-to 4 MiB of image bytes, 4096 pixels per side and 8 megapixels, and runs off the UI
-thread. Chat image previews share these decoding limits. Unsupported, corrupt or
-oversized resource images show an explanation instead.
-No image is uploaded, and no Kitty/Sixel terminal support is required.
+The first PNG, JPEG, or WebP image previews locally without upload or special
+terminal support. Limits: 4 MiB, 4096 pixels per side, and 8 megapixels;
+unsupported/corrupt/oversized images show an explanation. Other binary content
+is omitted.
 
 ## TERMINAL NOTES
 

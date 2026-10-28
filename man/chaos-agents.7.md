@@ -35,7 +35,7 @@ of a frontmatter field, but not both. The built-in default role is intentionally
 unconstrained and does not require instructions.
 
 ```toml
-# ~/.chaos/agents/researcher.toml
+# researcher.toml — import with chaos agents import
 name = "researcher"
 description = "Research code and summarize findings."
 nickname_candidates = ["Hypatia", "Noether"]

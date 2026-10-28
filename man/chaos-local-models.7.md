@@ -11,17 +11,8 @@ chaos-local-models - use a self-hosted or LAN model server as a FreeChaOS provid
 
 ## DESCRIPTION
 
-Any server that speaks the OpenAI HTTP API can be a FreeChaOS provider. This
-includes vLLM, Ollama, llama.cpp's `llama-server`, LocalAI, SGLang, and
-NVIDIA NIM. The server may run on the same machine, on a
-workstation such as an NVIDIA DGX Spark, or on any host reachable over the
-LAN. No API key is required unless the server enforces one.
-
-Every such server is added the same way: a custom provider entry with a
-`base_url`, as described in [chaos-providers(7)](./chaos-providers.7.md).
-This page covers what the server must provide, how to add the entry, the
-wire format choice, per-server notes, and the failure modes seen in
-practice.
+Use a local or LAN OpenAI-compatible server through a custom provider entry.
+No API key is needed unless the server requires one.
 
 ## REQUIREMENTS
 
@@ -154,11 +145,6 @@ Mistral. `--reasoning-parser` separates thinking from the answer. Both
 releases had incomplete Responses streaming for non-Harmony models, so
 prefer `chat_completions` on unknown versions.
 
-On AMD ROCm hosts, pre-built wheels exist for Python 3.12 only
-(`--extra-index-url https://wheels.vllm.ai/rocm/`). Arch Linux additionally
-needs the `hipsparselt` package and a stub `libmpi_cxx.so.40`, which
-OpenMPI 5 no longer ships.
-
 ### Ollama
 
 ```bash
@@ -214,10 +200,8 @@ then check the firewall on the server host.
 the variable is empty, or FreeChaOS predates keyless Chat Completions
 support. Remove `env_key` for a keyless server or export the variable.
 
-**"System message must be at the beginning"** — the model's chat template
-(Qwen3.6/3.8) accepts a single leading system message. FreeChaOS folds its
-instruction blocks into one and sends later notices as user messages for
-custom providers; a server still reporting this runs an older FreeChaOS.
+**"System message must be at the beginning"** — update FreeChaOS for compatibility
+with single-system-message chat templates such as Qwen3.6/3.8.
 
 **Tool calls appear as text and the turn repeats** — the server returned
 `finish_reason: "tool_calls"` without a structured `tool_calls` array.

@@ -115,15 +115,10 @@ use progress notes for work performed. Details show pending clarifications, with
 `next_after` for further pages. `clarifications --after SEQUENCE` continues a page;
 starting at zero includes the retained history of incorporated clarifications.
 
-In Plan mode, the model can explicitly request a background rewrite:
-
-```json
-{"action":"consolidate","task":"T1","request_id":"rewrite-1","provider":"PROVIDER","model":"MODEL"}
-```
-
-Choose the provider and model from `chaos://models`. Appending a clarification
-does not start a rewrite. The job receives only the item's title, body, and
-captured clarifications, with no tools or conversation history.
+In Plan mode, request consolidation when accumulated clarifications make a body
+hard to follow. Choose the provider/model from `chaos://models`; appending a
+clarification alone does not start a rewrite. The job sees the title, body, and
+clarifications, not tools or conversation history.
 
 Successful jobs publish the revised body automatically, without changing status,
 ordering, or dependencies. Clarifications added while a job runs remain pending.
@@ -175,16 +170,11 @@ Status changes require a reason. Add notes to record context.
 To complete a plan, first complete or cancel every task. Cancelling a plan
 leaves its tasks unchanged. Reopen a completed or cancelled plan before editing it.
 
-## MODEL TOOLS AND RESUME
+## MODEL WORKFLOW AND RESUME
 
-| Session state | Planning tool |
-|---------------|---------------|
-| Plan mode | `plan`: discovery, reads, authoring, attachment, and progress |
-| Execution, attached | `plan_progress`: reads, transitions, notes, complete/cancel, detach |
-| Execution, unattached | No planning tool |
-
-Plan mode allows editing plans, not project files. The model can switch to Plan
-mode to revise an approved plan and return to execution afterward.
+Use Plan mode to author/revise plans, not project files. Return to execution
+afterward; attached plans retain compact progress tools. Unattached execution
+sessions have no planning tool.
 
 Attach a plan explicitly to work on it. It stays attached across mode switches
 and session resume. Subagents receive a plan only when explicitly attached;
@@ -196,4 +186,4 @@ or detach a plan.
 
 ## SEE ALSO
 
-chaos-modes(7)
+[chaos-modes(7)](./chaos-modes.7.md)

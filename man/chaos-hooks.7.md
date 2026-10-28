@@ -11,8 +11,8 @@ chaos-hooks - manage database-backed lifecycle hooks
 
 ## DESCRIPTION
 
-Hooks run shell commands on `session_start`, `before_turn`, or `stop`. Definitions
-live in the existing SQLite/PostgreSQL database, independently of user settings.
+Hooks run shell commands on `session_start`, `before_turn`, or `stop`.
+Manage them with `chaos hooks` or the native hook tools.
 Neither global, system, nor project `hooks.json` files are loaded at runtime.
 
 ## MANAGEMENT
@@ -44,22 +44,12 @@ imported hook separately.
 - `chaos://hooks`: visible global/current-project definitions, revisions,
   installation approval state, and reasons a hook is inactive.
 - `chaos://hooks/{id}`: one visible definition.
-- `hooks_create`, `hooks_update`, `hooks_set_enabled`, `hooks_delete`: manage a
-  change under `hook_approval_policy`. The default `on-request` policy waits for
-  human form elicitation, including disable/delete.
-- `hooks_preview`: validate a proposed action without writing or executing.
 
-Read resources again after changes; built-in subscriptions return snapshots.
-Management tools are in the `session` capability group and mutations obey the
-active mode's mutation capability.
-
-Under `on-request`, the human sees the exact old/new definition, event, project scope, current
-working directory, timeout, and whether recurring execution is being authorized.
-The client must return `accept` with `approve: true`. Decline, cancel, timeout,
-disconnect, headless mode, and unavailable elicitation never change a hook.
-There is no model-callable approval endpoint or `approved` input. Updates require
-the current `expected_revision`; a concurrent change invalidates the proposal.
-Creating with the same ID never creates a duplicate.
+Enable the `session` group for native management; use `hooks_preview` before a
+proposed change. Under default `hook_approval_policy = "on-request"`, every mutation,
+including disable/delete, requires human approval with `approve: true`. Without
+accepted elicitation, nothing changes. Headless mode does not bypass approval.
+Use the latest resource revision for updates; reread after conflicts or changes.
 
 Approvals are installation-local and bound to the exact stored revision. Editing
 a hook invalidates previous approvals on all installations; only the approving
@@ -100,8 +90,7 @@ authority-bearing policy. Agent roles, including trusted project roles and
 built-in personas, inherit the parent's effective hook policy and cannot override
 it. The tools do not accept approval fields.
 
-Both routes use the same validated, revision-checked writes and installation-local
-grants as interactive approval. Project scope/trust, active-mode mutation rules,
+Project scope/trust, active-mode mutation rules,
 execution-policy denies, sandboxing, and environment filtering still apply.
 Automatic management does not resurrect revoked approvals during execution.
 An explicit enable authorizes the current revision on this installation again.
@@ -131,10 +120,8 @@ back the binary alone does not roll back its state.
 
 ## EXECUTION
 
-Project hooks require current database project trust. The kernel reloads hooks
-at lifecycle boundaries; preview and execution share a snapshot. Changes do not
-interrupt a dispatch already running. Storage/validation failures stop the turn
-rather than silently skipping hooks. No filesystem fallback exists.
+Project hooks require project trust. Changes apply at the next lifecycle boundary,
+not to commands already running. Storage/validation failures stop the turn.
 
 Commands run in the session's working directory with its filtered environment,
 current filesystem/network sandbox, and execution-policy deny checks. Hook
@@ -149,8 +136,7 @@ chaos config set hook_output_limit_kib 1024
 ```
 
 Hook process groups are terminated on cancellation/timeout.
-Existing event input/output JSON semantics are unchanged. Results are ordered
-global-before-project, then by `order` and stable ID; matching commands can run
+Results are ordered global-before-project, then by `order` and stable ID; commands can run
 concurrently. Event origins use `chaos://hooks/{id}`.
 
 Do not embed credentials in command strings; those strings are visible through

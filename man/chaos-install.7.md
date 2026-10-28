@@ -11,11 +11,7 @@ chaos-install - build, install, and debug FreeChaOS from source
 
 ## DESCRIPTION
 
-This page describes the supported host requirements, local build commands,
-installation path, and logging controls for FreeChaOS.
-
-In an installed system, this page would typically be installed as
-`share/man/man7/chaos-install.7`.
+Build, install, and diagnose FreeChaOS.
 
 ## REQUIREMENTS
 
@@ -30,17 +26,10 @@ In an installed system, this page would typically be installed as
 
 ### Prebuilt releases
 
-The repository's `install.sh` downloads a release archive and its `.sha256`
-asset, verifies SHA-256 before extraction, then checks all four required
-binaries before replacing any installed binary. It requires `sha256sum`,
-`shasum`, or FreeBSD `sha256`. Missing/malformed checksums, digest mismatches,
-and incomplete bundles stop installation.
-The bundled `scripts/dist-install.sh` likewise rejects incomplete bundles
-before replacing binaries; it does not download or authenticate archives.
-
-This is integrity checking against the same GitHub release, not an independent
-signature or provenance guarantee. Replacement of the four binaries is still
-sequential, not a transactional bundle update.
+Use the repository's `install.sh` for stable releases. It requires `sha256sum`,
+`shasum`, or FreeBSD `sha256`; bad checksums and incomplete bundles stop installation.
+Checksums from the same release are not independent signatures. Binary replacement
+is not transactional; check the installed bundle after an interrupted update.
 
 ### NixOS
 
@@ -58,16 +47,9 @@ build prerequisites for source installs.
 
 ### Per-commit builds
 
-Every successful `linux-build` workflow on `master` publishes both Linux x86_64
-and macOS Apple Silicon bundles to the immutable `build-<full-commit-SHA>`
-prerelease. The workflow retains its historical name. Each bundle contains all
-four runtime binaries, `install.sh`, and `SOURCE_REVISION`; each archive has a
-separate `.sha256` asset. Clamp tests and executable smoke checks run before
-publication; consult `rust-ci` separately for full test results.
-
-These builds do not replace the latest stable release. The top-level
-`install.sh` uses stable-release asset names, so download per-commit builds
-explicitly. For example, on Apple Silicon macOS (with GitHub CLI installed):
+Per-commit Linux x86_64 and Apple Silicon bundles use the immutable prerelease
+`build-<full-commit-SHA>`. Download these explicitly rather than using the stable
+installer. On Apple Silicon macOS with GitHub CLI:
 
 ```bash
 sha='REPLACE_WITH_FULL_COMMIT_SHA'
@@ -80,14 +62,10 @@ shasum -a 256 -c "$asset.sha256" && \
 ```
 
 Linux assets use `chaos-linux-x86_64-<full-commit-SHA>.tar.gz` and require
-Debian bookworm-compatible glibc (2.36+) and `libdbus-1-3`. Mac builds are
-produced on `macos-26`; Intel Macs are not included. Published builds are never
-overwritten by workflow reruns. Pull-request builds upload Actions artifacts
-without publishing a release.
+Debian bookworm-compatible glibc (2.36+) and `libdbus-1-3`.
+Intel Mac bundles are not available.
 
 ### Install from source
-
-Ask `chaos` to set up your environment. Then:
 
 ```bash
 just install
@@ -96,8 +74,6 @@ just install
 That drops the `chaos` binary into `~/.cargo/bin` (release profile,
 `-C target-cpu=native`). Add `~/.cargo/bin` to your `PATH` if it
 isn't already.
-
-If something is missing during the build, ask again.
 
 ### Drivers
 
@@ -144,11 +120,8 @@ just build
 
 ### Build without the TUI, ACP, or MCP daemon
 
-The `chaos-cli` package enables independent `tui`, `acp`, and `mcpd` features
-by default. Disable all three to exclude the interactive console, ACP agent,
-and MCP daemon, including `chaos-console`, `libui`, Ratatui, crossterm,
-`chaos-acpd`, `acp-host`, `agent-client-protocol`, and `chaos-mcpd`, from the
-binary's dependency graph:
+The `tui`, `acp`, and `mcpd` features are enabled by default.
+Use `--no-default-features` for a minimal CLI, then select what to retain:
 
 ```bash
 cargo build --release --locked -p chaos-cli --bin chaos --no-default-features
@@ -170,13 +143,9 @@ cargo build --release --locked -p chaos-cli --bin chaos --no-default-features --
 The minimal binary retains `serve`, `taskd`, `exec` (including
 `exec resume`), review, account/configuration management, models, and completions.
 Without `acp`, it omits `acp` from commands, help, and completions.
-MCP client commands (`mcp list/get/add/remove/login/logout`) and external MCP
-tools remain available; shared MCP libraries are still used internally.
-Without `mcpd`, it omits `mcp serve`, `serve --mcp`, and `--mcp-allowed-origin`,
-but clamping and its hidden `clamp-session-bridge` remain available. The bridge
-belongs to the clamp transport, not the MCP daemon.
-The HTTP `/mcp` route is not compiled in and returns
-404, while ordinary HTTP trigger/session APIs remain available.
+MCP client commands, external tools, and clamping remain available.
+Without `mcpd`, MCP serving flags are absent and `/mcp` returns 404;
+ordinary HTTP trigger/session APIs remain available.
 Without `tui`, it omits the interactive prompt, `resume`/`fork` pickers, and TUI-only flags.
 Running it without a subcommand returns an explanatory error, not a daemon.
 Use launchd/systemd to supervise the chosen foreground service.
@@ -193,10 +162,8 @@ from these Cargo features.
 
 ### Shared build cache
 
-Mr. Boxington (`mbx`) is an optional Cargo frontend for local builds and the
-compiler cache used by GitHub test CI. It shares cached compilations across
-checkouts without sharing Cargo's target-directory lock. It is build tooling,
-not a FreeChaOS runtime dependency.
+Mr. Boxington (`mbx`) optionally caches compilations across checkouts.
+It is not required to build or run FreeChaOS.
 
 The repository pins mbx 1.8.3 in `mise.toml`. On Linux or Apple Silicon macOS:
 
@@ -209,22 +176,10 @@ mise exec -- just cargo=mbx qa
 Without mise, install `cargo install mbx --version 1.8.3 --locked`, then use
 `just cargo=mbx build` or `just cargo=mbx qa`. Direct commands such as
 `mbx check -p chaos-pwd` and `mbx nextest run -p chaos-pwd` also work.
-The QA recipes still apply the usual temporary-directory and environment
-isolation.
 
-Plain `just` recipes continue to use Cargo, so mbx is not required on FreeBSD
-or other hosts without a prebuilt mbx release. Formatting and dependency
-maintenance also continue to use plain Cargo. This integration does not run
-`mbx setup`, edit global Cargo/mise settings, or require mise's newer automatic
-Cargo wrappers. To compare against an uncached invocation when a global wrapper
-is already installed, use `MBX_DISABLE=1 just cargo=cargo check`.
-
-The shared policy in `.mbx.toml` keeps build-script execution caching disabled:
-`bin/chaos/build.rs` reads the clock, and native dependencies probe the host.
-C/C++ caching is also disabled until it has been qualified against the SQLite
-link failure previously seen with sccache. Rust compilation caching remains
-enabled. Do not set `RUSTC_WRAPPER=sccache` alongside mbx: mbx defers to an
-existing wrapper instead of caching those compilations.
+Plain `just` recipes, formatting, and dependency maintenance use Cargo.
+For an uncached check, use `MBX_DISABLE=1 just cargo=cargo check`.
+Do not combine mbx with `RUSTC_WRAPPER=sccache`.
 
 Existing `target/` directories are preserved unless an interactive user accepts
 mbx's migration prompt. New checkouts may get a managed `target` symlink; use
@@ -241,26 +196,6 @@ mbx doctor
 mbx cache stats
 mbx gc --dry-run
 ```
-
-### CI cache scope
-
-`.github/workflows/rust-ci.yml` installs the SHA-pinned mbx action after Rust,
-then runs both the runtime-binary build and nextest through mbx. Its GitHub
-backend transports the pruned Cargo `target` tree and registry, replacing the
-previous cargo-home and disabled sccache setup. Managed target views and native
-link-object caching are disabled by the action in this mode, so runtime-binary
-paths and Cargo timing artifacts stay under the ordinary `target/` tree.
-
-Only successful pushes to the default branch publish a cache. Pull requests,
-including forks, and manual workflow runs are restore-only. The key separates
-mbx version, workspace cache policy, target triple, OS/architecture, and Rust
-compiler identity. Keep the mbx version in `mise.toml`, the action input, and
-the cache generation aligned when upgrading.
-
-Release jobs, including the Gitea/FreeBSD path, are deliberately unchanged.
-Do not add this shared mbx cache to production release jobs: upstream recommends
-excluding remote compiler caches from published artifacts' build path. CI
-cache-hit reports and timings should be measured before claiming a speedup.
 
 ## LOGGING AND TRACING
 
@@ -294,19 +229,9 @@ The non-interactive mode (`chaos exec`) defaults to `RUST_LOG=error`, printed in
 
 ### Startup checkpoints
 
-The TUI's default log filter also records `chaos_snitch::startup=info`.
-Each checkpoint has `scope`, `stage`, cumulative `elapsed_ms`, and incremental
-`duration_ms`. Early milestones are replayed once tracing is installed.
-
-`scope=console` measures frontend entry, configuration, storage, logging,
-terminal readiness, first successful frame, and coreboot. `scope=kernel_session`
-measures journal/auth readiness, MCP scheduling, and session readiness. First
-frame can be an onboarding/picker frame; it does not mean the model session is
-ready. MCP scheduling likewise does not mean all servers have connected.
-
-To keep startup records when overriding `RUST_LOG`, include
-`chaos_snitch::startup=info`. These checkpoints contain no prompts, paths, or
-credentials and make no provider requests.
+For slow startup, retain `chaos_snitch::startup=info` in `RUST_LOG` (enabled by
+default). Compare `stage`, `elapsed_ms`, and `duration_ms` to locate delays.
+A visible first frame does not mean the session or MCP servers are ready.
 
 See the Rust docs on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) for configuration options.
 

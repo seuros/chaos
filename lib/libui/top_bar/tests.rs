@@ -327,6 +327,7 @@ fn full_bar_preserves_visual_order_and_priorities() {
             ("multiplexer", 120),
             ("storage", 200),
             ("persistence", 255),
+            ("disk", 210),
             ("battery", 240),
             ("clock", 220),
         ]
@@ -334,7 +335,10 @@ fn full_bar_preserves_visual_order_and_priorities() {
     let version_width = widgets[0].spec().min_width as u16;
     let version = text(&render(&widgets[..1], version_width + 2));
     let expected = format!(
-        " {} │ host │ linux (arch) │ x86_64 │ seccomp │ podman │ tmux %3 SQLITE │ ⚠ log │ ● 87% │ 12:34 ",
+        concat!(
+            " {} │ host │ linux (arch) │ x86_64 │ seccomp │ podman │ ",
+            "tmux %3 SQLITE │ ⚠ log │ disk ? │ ● 87% │ 12:34 "
+        ),
         version.trim()
     );
     let width = crate::width::display_width(&expected) as u16;
@@ -354,6 +358,7 @@ fn full_bar_preserves_visual_order_and_priorities() {
         "tmux %3",
         "SQLITE",
         "⚠ log",
+        "disk ?",
         "● 87%",
         "12:34",
     ] {

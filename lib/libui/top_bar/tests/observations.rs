@@ -265,6 +265,35 @@ fn disk_shows_tightest_relevant_filesystem_without_summing_or_hiding_failures() 
 }
 
 #[test]
+fn disk_distinguishes_no_snapshot_from_missing_or_unusable_measurements() {
+    let (tx, rx) = watch::channel(None);
+    let mut bar = [widgets::disk::new(rx)];
+    assert!(text(&render(&bar, 8)).trim().is_empty());
+
+    let mut status = machine_status(PowerInfo::default());
+    for filesystems in [
+        vec![],
+        vec![Filesystem {
+            targets: vec![],
+            ..filesystem(500)
+        }],
+        vec![Filesystem {
+            total_bytes: 0,
+            ..filesystem(500)
+        }],
+    ] {
+        status.storage.filesystems = filesystems;
+        tx.send_replace(Some(Arc::new(status.clone())));
+        refresh_all(&mut bar);
+        assert_eq!(text(&render(&bar, 8)), " disk ? ");
+    }
+    status.storage.filesystems = vec![filesystem(500)];
+    tx.send_replace(Some(Arc::new(status)));
+    refresh_all(&mut bar);
+    assert_eq!(text(&render(&bar, 17)), " disk 50.0% free ");
+}
+
+#[test]
 fn thermals_never_relabel_control_scales_or_missing_data_as_physical_celsius() {
     let mut status = machine_status(PowerInfo::default());
     status.machine.thermal.cpu_temperatures = vec![

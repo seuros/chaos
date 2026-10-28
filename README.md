@@ -262,8 +262,21 @@ whose remote points at a forge whose CLI is installed and authenticated: `gh`
 for GitHub, `glab` for GitLab, `tea` for Gitea and Forgejo. Run the CLI's
 login command once; skipper stores no tokens of its own.
 
-Run `just qa` for formatting, compilation, Clippy, and the all-features nextest
-suite (cargo-nextest 0.9.99 or newer). On macOS, nextest launches `chaos-console`
+Run `just qa` for formatting, compilation, Clippy, and the production/default-feature
+nextest suite (cargo-nextest 0.9.99 or newer). Its dependency guard requires Ring
+and rejects AWS-LC; it does not need CMake.
+
+Additional coverage is explicit, in separate Cargo invocations:
+
+- `just qa-features` checks optional workspace features, excluding `mcp-guest`
+  from feature selection (it remains an application dependency).
+- `just qa-tls ring` and `just qa-tls aws-lc` check, lint, and test the standalone
+  MCP client with exactly one TLS backend. The AWS-LC job requires CMake
+  (`upkg install cmake`); both jobs reject mixed-provider dependency graphs.
+- `just qa-full` runs all of the above. CI requires the production suite,
+  optional workspace features on Linux, and isolated TLS jobs on Linux and macOS.
+
+On macOS, nextest launches `chaos-console`
 and `libui` test binaries through hard links in `<build-profile>/nextest-ui/`.
 This avoids AppKit's pre-main scan of Cargo's large `deps` directory without
 raising test timeouts. Explicit target runners take precedence over this wrapper.

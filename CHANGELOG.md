@@ -17,6 +17,8 @@ should. There is no patch level; the build timestamp is the patch.
   such as `github-actions[bot]` before sending the request.
 
 ### Changed
+- Prefer major-only requirements for stable dependencies (including ACP,
+  schemars, Tokio, and UUID), with exact resolved versions in `Cargo.lock`.
 - Refresh workspace dependencies, including ACP 3.6, Tokio 1.54, ICU4X 2.4,
   resvg 0.49, LRU 0.19, and vt100 0.18. Caches allocate lazily; terminal tests
   use native scrollback-aware resizing. Remove unused dependencies and enable

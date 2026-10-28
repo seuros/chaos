@@ -4,8 +4,12 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+#[cfg(any(target_os = "linux", test))]
+mod linux;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+mod process;
 
 /// A failed or unsupported probe is never a successful empty measurement.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -28,10 +32,10 @@ pub enum SpotlightState {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IndexerProcess {
     pub pid: u32,
-    /// Executable basename, not a command line or launchd service label.
+    /// Executable basename, not a command line or service label.
     pub name: String,
-    /// macOS `ps`'s decaying CPU average (up to a minute), not an instantaneous
-    /// sample, per-workspace attribution, or indexing throughput.
+    /// `ps` CPU average: decaying (up to a minute) on macOS, process-lifetime
+    /// on Linux. Not instantaneous, per-workspace, or indexing throughput.
     pub cpu_percent: f64,
 }
 
@@ -39,16 +43,18 @@ pub struct IndexerProcess {
 pub struct IndexingSnapshot {
     pub observed_at: SystemTime,
     pub workspace: PathBuf,
-    /// Actual mount point resolved from the workspace, not an assumed `/`.
+    /// macOS mount point resolved from the workspace, not an assumed `/`.
+    /// Not collected on Linux.
     pub volume: Option<PathBuf>,
     pub spotlight: IndexingObservation<SpotlightState>,
     /// Visible host processes, not just processes indexing this workspace.
     pub processes: IndexingObservation<Vec<IndexerProcess>>,
 }
 
-/// Inspect Spotlight for this existing absolute workspace and visible indexers.
+/// Inspect visible indexers, plus workspace-volume Spotlight state on macOS.
 ///
-/// macOS only; other platforms return `unsupported` without executing probes.
+/// Linux reports known indexer processes, not a universal indexing enabled state.
+/// Other platforms return `unsupported` without executing probes.
 /// Each subprocess has a one-second deadline and bounded output. Filesystem
 /// resolution is synchronous I/O; use a bounded blocking worker in async callers.
 pub fn inspect_indexing(workspace: &Path) -> IndexingSnapshot {
@@ -63,7 +69,11 @@ pub fn inspect_indexing(workspace: &Path) -> IndexingSnapshot {
     {
         macos::inspect(snapshot)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::inspect(snapshot)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     snapshot
 }
 

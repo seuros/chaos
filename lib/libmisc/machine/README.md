@@ -111,11 +111,23 @@ or by cleanup even on ordinary disks.
 
 ### Explicit indexing diagnostics
 
-`inspect_indexing(workspace)` adds read-only macOS Spotlight diagnostics for an
-existing absolute workspace. It resolves symlinks and queries the actual mount
-point with `mdutil -s`, never all volumes or an assumed `/`. A separate `ps`
-query lists visible Spotlight/indexer executable basenames, PIDs, and CPU
-estimates. Exact executable names are matched, not command-line substrings.
+`inspect_indexing(workspace)` adds read-only indexing diagnostics on macOS and
+Linux. On macOS, it resolves an existing absolute workspace's symlinks and queries
+the actual mount point with `mdutil -s`, never all volumes or an assumed `/`.
+A separate `ps` query lists visible Spotlight/indexer executable basenames,
+PIDs, and CPU estimates. Exact executable names are matched, not command-line
+substrings.
+
+On Linux, a bounded `ps` query selects known Tracker/LocalSearch, KDE Baloo, and
+`updatedb` processes. Because Linux task names can truncate to 15 bytes, candidates
+are confirmed against full executable basenames through `/proc/PID/exe`.
+Inaccessible candidates return an explicit failure, not an empty or partial list;
+processes that exit during observation are skipped. Only recognized, visible
+processes are covered; renamed tasks, hidden PIDs, and other indexers may be missed.
+No user-session D-Bus connection, service control, or configuration changes are used.
+There is no universal Linux indexing switch: `spotlight` remains `unsupported`
+and `volume` is null on Linux. An empty process list does not mean indexing is
+disabled.
 
 The kernel includes this snapshot in the top-level `indexing` field of explicit
 `chaos://machine` reads. Top-bar updates and automatic warning/recovery checks
@@ -125,17 +137,18 @@ do not collect it. No background enforcement or automatic mitigation is added.
 `permission_denied`, `timed_out`, or `unsupported`. Only available probes have a
 `value`: Spotlight is `enabled`/`disabled`; processes is an array, possibly empty.
 Missing/failed probes are not reported as disabled or as no indexers running.
-Other platforms return `unsupported` without spawning these commands.
+FreeBSD returns `unsupported` without spawning these commands.
 
-Both commands use absolute executable paths, the C locale, no shell, no sudo,
+All commands use absolute executable paths, the C locale, no shell, no sudo,
 bounded output, and a one-second deadline each. Timed-out children are killed
 and reaped; the kernel's existing observation deadline also bounds the resource
 wait. Filesystem resolution remains best-effort synchronous I/O.
 
 Process observations cover the visible host, **not just this workspace**, and
-do not establish which volume a process is indexing. `cpu_percent` is macOS
-`ps`'s decaying average over up to a minute, not an instantaneous sample; values
-may exceed 100. Process names alone do not prove useful indexing work or pressure.
+do not establish which volume a process is indexing. `cpu_percent` is
+`ps`'s decaying average over up to a minute on macOS and a process-lifetime average
+on Linux, not an instantaneous sample; values may exceed 100.
+Process names alone do not prove useful indexing work or pressure.
 No settings, launchd jobs, indexes, model packs, or SIP protections are changed.
 
 `inspect_machine()` returns machine, power, and thermal observations.

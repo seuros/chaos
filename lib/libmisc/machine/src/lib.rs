@@ -8,7 +8,7 @@
 //! synchronous I/O: use a blocking worker in async applications. Snapshots are
 //! not atomic or cached; collect again before making a resource decision.
 
-#[cfg(any(target_os = "macos", test))]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod command;
 mod indexing;
 mod power;

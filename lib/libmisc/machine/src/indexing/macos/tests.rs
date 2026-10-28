@@ -1,12 +1,5 @@
+use super::super::tests::output;
 use super::*;
-
-fn output(text: &str) -> Output {
-    Output {
-        success: true,
-        stdout: text.as_bytes().to_vec(),
-        stderr: Vec::new(),
-    }
-}
 
 #[test]
 fn spotlight_requires_exact_unambiguous_states() {
@@ -21,10 +14,7 @@ fn spotlight_requires_exact_unambiguous_states() {
             SpotlightState::Disabled,
         ),
     ] {
-        assert_eq!(
-            observation(spotlight(&output(text))),
-            IndexingObservation::Available { value }
-        );
+        assert_eq!(spotlight(&output(text)), Ok(value));
     }
     for text in [
         "",
@@ -37,40 +27,6 @@ fn spotlight_requires_exact_unambiguous_states() {
             panic!("unrecognized indexing state must be unavailable: {text:?}");
         };
     }
-}
-
-#[test]
-fn validation_rejects_failures_before_parsing_measurements() {
-    for (success, stdout, stderr, expected) in [
-        (
-            false,
-            "Indexing enabled.",
-            "Operation not permitted",
-            Error::PermissionDenied,
-        ),
-        (true, "Permission denied", "", Error::PermissionDenied),
-        (true, "", "Not authorized", Error::PermissionDenied),
-        (
-            false,
-            "Indexing disabled.",
-            "",
-            Error::Unavailable("probe exited unsuccessfully".into()),
-        ),
-    ] {
-        let mut probe = output(stdout);
-        probe.success = success;
-        probe.stderr = stderr.as_bytes().to_vec();
-        assert_eq!(spotlight(&probe).as_ref(), Err(&expected));
-        assert_eq!(processes(&probe).as_ref(), Err(&expected));
-    }
-    let mut invalid = output("");
-    invalid.stdout = vec![0xff];
-    let Err(Error::Unavailable(_)) = spotlight(&invalid) else {
-        panic!("invalid indexing encoding must be unavailable");
-    };
-    let Err(Error::Unavailable(_)) = processes(&invalid) else {
-        panic!("invalid process encoding must be unavailable");
-    };
 }
 
 #[test]
@@ -87,7 +43,7 @@ fn process_matching_uses_basename_not_substring_or_arguments() {
         " 102 99.0 /usr/bin/grep mdworker\n",
         " 103 0.0 mdworker_shared\n",
     ));
-    let value = processes(&probe).expect("valid process table");
+    let value = processes(&probe, is_indexer).expect("valid process table");
     assert_eq!(
         value.iter().map(|process| process.pid).collect::<Vec<_>>(),
         vec![12, 80, 90, 103]
@@ -97,26 +53,6 @@ fn process_matching_uses_basename_not_substring_or_arguments() {
         value[1].cpu_percent, 123.4,
         "multicore values may exceed 100"
     );
-    assert_eq!(
-        processes(&output("1 0.0 /sbin/launchd\n2 0.0 /usr/bin/unrelated\n")),
-        Ok(vec![])
-    );
-    for text in [
-        "",
-        "\n",
-        "not a process table",
-        "1 0.0 /sbin/launchd\ntruncated row",
-        "5 NaN mdworker",
-        "5 inf mdworker",
-        "5 -1.0 mdworker",
-        "5 0,1 mdworker",
-        "5 0.1 ",
-        "oops 0.1 mdworker",
-    ] {
-        let Err(Error::Unavailable(_)) = processes(&output(text)) else {
-            panic!("malformed process table must be unavailable: {text:?}");
-        };
-    }
 }
 
 #[cfg(target_os = "macos")]

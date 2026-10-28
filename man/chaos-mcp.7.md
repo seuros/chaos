@@ -197,8 +197,11 @@ directory, ChaOS home/cache/log paths, and temporary filesystem.
 macOS reports thermal pressure.
 
 On macOS, `indexing` reports workspace-volume Spotlight state and visible host
-indexers with averaged CPU usage. Probes are read-only and on demand, with explicit
-availability status. Other platforms report `unsupported`.
+indexers with averaged CPU usage. On Linux, it reports recognized visible
+Tracker/LocalSearch, Baloo, and `updatedb` executables with process-lifetime CPU
+averages; Spotlight state remains `unsupported` and volume is null. An empty
+process list does not establish that indexing is disabled. Probes are read-only
+and on demand, with explicit availability status. FreeBSD reports `unsupported`.
 
 ### Machine warnings
 

@@ -45,8 +45,8 @@ pub use indexing::{
 };
 pub use power::{BatteryInfo, BatteryKind, BatteryState, PowerInfo, PowerSource};
 pub use profile::{
-    DisplayState, ExecutionEnvironment, FormFactor, FormFactorEvidence, MachineProfile,
-    SessionContext,
+    DisplayState, ExecutionEnvironment, FormFactor, FormFactorEvidence, FreebsdAcpiDiagnostics,
+    MachineProfile, SessionContext,
 };
 pub use storage::{
     Filesystem, FilesystemBacking, FilesystemId, ResolvedStorageTarget, StorageFailure,

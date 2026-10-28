@@ -1,5 +1,7 @@
 #[cfg(target_os = "freebsd")]
 mod abi;
+#[cfg(target_os = "freebsd")]
+mod acpi;
 mod display;
 mod firmware;
 mod power;
@@ -36,6 +38,7 @@ pub(crate) fn detect() -> (crate::MachineProfile, crate::PowerInfo) {
         model: firmware::read(c"smbios.system.product").and_then(firmware::model),
         displays: display::read(),
         execution_environment,
+        freebsd_acpi: Some(acpi::read()),
         ..MachineProfile::default()
     };
     if execution_environment == ExecutionEnvironment::NoneDetected {

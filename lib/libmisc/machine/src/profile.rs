@@ -75,6 +75,28 @@ pub struct MachineProfile {
     pub displays: DisplayState,
     pub execution_environment: ExecutionEnvironment,
     pub session: SessionContext,
+    /// Raw FreeBSD driver observations, not evidence of display attachment.
+    /// Omitted on other platforms and when host probes are suppressed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freebsd_acpi: Option<FreebsdAcpiDiagnostics>,
+}
+
+/// Read-only ACPI driver values, independent of chassis/display classification.
+///
+/// Keys are OS-local sysctl names, not stable hardware identifiers. A missing
+/// inventory means enumeration failed or the interface is unavailable; a null
+/// value means that particular leaf could not be read. Unrecognized integer
+/// values are preserved rather than normalized into a successful observation.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct FreebsdAcpiDiagnostics {
+    /// `dev.acpi_lid.<unit>.state`: 0 closed, 1 open according to the driver.
+    /// The driver caches this state and assumes open on firmware-query failure.
+    /// This does not establish physical lid position or sensor health.
+    pub driver_lid_states: Option<std::collections::BTreeMap<String, Option<i32>>>,
+    /// `hw.acpi.video.<output>.active`: 0 inactive, 1 active according to the
+    /// driver. Missing firmware `_DCS` is reported active; other query failures
+    /// may be reported inactive. Neither value proves attachment/headlessness.
+    pub driver_video_activity: Option<std::collections::BTreeMap<String, Option<i32>>>,
 }
 
 pub(crate) fn classify(

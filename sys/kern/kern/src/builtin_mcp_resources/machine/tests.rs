@@ -115,6 +115,55 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
 }
 
 #[tokio::test]
+async fn machine_resource_and_guidance_follow_the_capped_disk_policy() {
+    let mut config = crate::config::test_config();
+    let cwd = Path::new("/active");
+    for (total, available, cap, warns) in [
+        (4_000_000_000_000, 200_000_000_000, 20 << 30, false),
+        (4 << 40, 20 << 30, 20 << 30, true),
+        (4 << 40, (20 << 30) + 1, 20 << 30, false),
+        (20 << 30, 1 << 30, 20 << 30, true),
+        (20 << 30, (1 << 30) + 1, 20 << 30, false),
+        (4 << 40, 8 << 30, 8 << 30, true),
+    ] {
+        config.machine_warnings.disk_free_bytes_cap = cap;
+        let text = machine_json_with_observer(&config, cwd, |_| {
+            let mut status = observation(&config, cwd, SystemTime::UNIX_EPOCH);
+            let filesystem = &mut status.storage.filesystems[0];
+            filesystem.total_bytes = total;
+            filesystem.available_bytes = available;
+            status.warnings = crate::machine_warnings::evaluate(
+                &config.machine_warnings,
+                &status.machine,
+                &status.storage,
+            );
+            status.warning_instruction = crate::machine_warnings::instructions(&status.warnings);
+            ready(Ok(status))
+        })
+        .await
+        .unwrap();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value["storage"]["filesystems"][0]["available_bytes"],
+            available
+        );
+        assert_eq!(
+            value["warnings"].as_array().unwrap().len(),
+            usize::from(warns)
+        );
+        if warns {
+            assert_eq!(value["warnings"][0]["kind"], "low_disk_space");
+            assert_eq!(value["warnings"][0]["available_bytes"], available);
+            let instruction = value["warning_instruction"].as_str().unwrap();
+            assert!(instruction.contains("GiB ("));
+            assert!(instruction.contains("%) available."));
+        } else {
+            assert!(value.get("warning_instruction").is_none());
+        }
+    }
+}
+
+#[tokio::test]
 async fn machine_resource_propagates_observation_failure_without_a_snapshot() {
     let config = crate::config::test_config();
     let error = machine_json_with_observer(&config, Path::new("/active"), |_| {

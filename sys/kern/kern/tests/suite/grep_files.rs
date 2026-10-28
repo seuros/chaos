@@ -22,7 +22,7 @@ async fn grep_files_tool_collects_matches() -> Result<()> {
     let alpha = search_dir.join("alpha.rs");
     let beta = search_dir.join("beta.rs");
     let gamma = search_dir.join("gamma.txt");
-    std::fs::write(&alpha, "alpha needle\n")?;
+    std::fs::write(&alpha, "before\nalpha needle\nafter\n")?;
     std::fs::write(&beta, "beta needle\n")?;
     std::fs::write(&gamma, "needle in text but excluded\n")?;
 
@@ -31,6 +31,7 @@ async fn grep_files_tool_collects_matches() -> Result<()> {
         "pattern": "needle",
         "path": search_dir.to_string_lossy(),
         "include": "*.rs",
+        "context_lines": 1,
     })
     .to_string();
 
@@ -52,6 +53,17 @@ async fn grep_files_tool_collects_matches() -> Result<()> {
     let output = parse_grep_output(&content)?;
     assert_eq!(output["match_count"], 2, "content: {content}");
     assert_eq!(output["limit"], 100, "content: {content}");
+    assert_eq!(output["output_mode"], "content");
+    let alpha_match = output["matches"]
+        .as_array()
+        .expect("matches array")
+        .iter()
+        .find(|entry| entry["path"] == alpha.to_string_lossy().as_ref())
+        .expect("alpha match");
+    assert_eq!(alpha_match["line_number"], 2);
+    assert_eq!(alpha_match["text"], "alpha needle");
+    assert_eq!(alpha_match["context_before"][0]["text"], "before");
+    assert_eq!(alpha_match["context_after"][0]["text"], "after");
 
     let entries = collect_file_names(&output)?;
     assert_eq!(entries.len(), 2, "content: {content}");
@@ -128,7 +140,7 @@ fn collect_file_names(output: &Value) -> Result<HashSet<String>> {
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("missing matches array in grep_files output"))?
         .iter()
-        .filter_map(Value::as_str)
+        .filter_map(|entry| entry["path"].as_str())
         .filter_map(|line| {
             if line.trim().is_empty() {
                 return None;

@@ -9,11 +9,14 @@ use tokio::time::Instant;
 use crate::config::MachineWarningsConfig;
 use crate::machine_status::{MachineStatus, ObservationRequest};
 use crate::machine_warnings::MachineWarning;
+use crate::machine_warnings::disk::DiskThresholds;
 
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_GAP: Duration = Duration::from_secs(60);
 
+mod identity;
 mod lifecycle;
+use identity::same_condition;
 use lifecycle::{Observation, RecoveryObservationEvent, Wait};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -52,8 +55,8 @@ pub(crate) struct Recovery {
     pub owner_revision: u64,
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
-    observation: Observation,
     pub generation: u64,
+    observation: Observation,
     wait: Wait,
     interruptions: VecDeque<(Instant, Vec<&'static str>)>,
 }
@@ -260,23 +263,36 @@ impl Recovery {
         let status = self.status(config, now);
         let state = match self.phase() {
             Phase::Recovered => {
-                "Recovery confirmed by stable observations. Reassess before resuming; recovery does not prove the previous workload is sustainable. You may reduce workload or stop rather than retry."
+                "Recovery confirmed by stable observations. Reassess before resuming; \
+                 recovery does not prove the previous workload is sustainable. \
+                 You may reduce workload or stop rather than retry."
             }
             Phase::Stabilizing => {
-                "Recovery is being observed but is not yet confirmed. Keep interruption-sensitive/heavy work paused."
+                "Recovery is being observed but is not yet confirmed. \
+                 Keep interruption-sensitive/heavy work paused."
             }
             Phase::Unavailable => {
                 "Recovery measurements unavailable; missing observations are not safety clearance."
             }
             Phase::Blocked => {
-                "Recovery target exceeds resource capacity; operator configuration or resource changes are required."
+                "Recovery target exceeds resource capacity; \
+                 operator configuration or resource changes are required."
             }
             _ => {
                 "Machine warning remains unresolved; keep interruption-sensitive/heavy work paused."
             }
         };
         Some(format!(
-            "Machine recovery (harness host): {state}\n🩺 Kernel health checks and notifications are automatic. Required stable observation: {} seconds. Recent warning episodes (last hour): power {}, thermal {}, disk {}. Repeated thermal interruptions warrant reducing workload or stopping, not blindly restarting. Expected heat below configured/OS warning thresholds is not itself a warning. Avoid repeating unchanged notices. To opt into one recovery wake, checkpoint essential work and stop/check your heavy background processes, then call wait_for_machine_recovery alone if available. Waiting never stops existing processes automatically.",
+            "Machine recovery (harness host): {state}\n\
+             🩺 Kernel health checks and notifications are automatic. \
+             Required stable observation: {} seconds. \
+             Recent warning episodes (last hour): power {}, thermal {}, disk {}. \
+             Repeated thermal interruptions warrant reducing workload or stopping, \
+             not blindly restarting. Expected heat below configured/OS warning thresholds \
+             is not itself a warning. Avoid repeating unchanged notices. \
+             To opt into one recovery wake, checkpoint essential work and stop/check \
+             your heavy background processes, then call wait_for_machine_recovery alone \
+             if available. Waiting never stops existing processes automatically.",
             status.required_seconds,
             status.interruptions_last_hour[0].count,
             status.interruptions_last_hour[1].count,
@@ -290,41 +306,6 @@ fn cause(warning: &MachineWarning) -> &'static str {
         MachineWarning::LowBattery { .. } => "power",
         MachineWarning::LowDiskSpace { .. } => "disk",
         MachineWarning::Thermal { .. } | MachineWarning::CpuTemperature { .. } => "thermal",
-    }
-}
-
-fn same_condition(a: &MachineWarning, b: &MachineWarning) -> bool {
-    match (a, b) {
-        (
-            MachineWarning::LowBattery {
-                name: a,
-                battery_kind: ak,
-                ..
-            },
-            MachineWarning::LowBattery {
-                name: b,
-                battery_kind: bk,
-                ..
-            },
-        ) => a == b && ak == bk,
-        (
-            MachineWarning::LowDiskSpace { filesystem: a, .. },
-            MachineWarning::LowDiskSpace { filesystem: b, .. },
-        ) => a == b,
-        (MachineWarning::Thermal { .. }, MachineWarning::Thermal { .. }) => true,
-        (
-            MachineWarning::CpuTemperature {
-                sensor: a,
-                temperature_kind: ak,
-                ..
-            },
-            MachineWarning::CpuTemperature {
-                sensor: b,
-                temperature_kind: bk,
-                ..
-            },
-        ) => a == b && ak == bk,
-        _ => false,
     }
 }
 
@@ -408,16 +389,8 @@ fn recovered(
             {
                 return Err("triggering storage target unavailable or remounted");
             }
-            let total = u128::from(fs.total_bytes);
-            let available = u128::from(fs.available_bytes);
-            let percent = u128::from(config.disk_free_percent)
-                + u128::from(config.recovery_disk_margin_percent);
-            let bytes = (total * u128::from(config.disk_free_percent)).div_ceil(100)
-                + u128::from(config.recovery_disk_margin_bytes);
-            if percent > 100 || bytes > total {
-                return Err("recovery target exceeds filesystem capacity");
-            }
-            Ok(available * 100 >= total * percent && available >= bytes)
+            let bytes = DiskThresholds::new(config, fs.total_bytes).recovery_bytes?;
+            Ok(u128::from(fs.available_bytes) >= bytes)
         }
     }
 }

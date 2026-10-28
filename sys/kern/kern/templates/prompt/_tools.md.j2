@@ -5,6 +5,24 @@
 {% if "enable_tools" in tools %}
 - Use `enable_tools` to activate the groups required by the task.
 {% endif %}
+{% if "filesystem" in disabled_groups %}
+- Enable `filesystem` for file inspection; avoid shell substitutes.
+{% endif %}
+{% if "read_file" in tools %}
+- Prefer `read_file` over `cat`/`head`/`sed`; bound slices with `offset` and `limit`.
+{% endif %}
+{% if "grep_files" in tools %}
+- Prefer `grep_files` over `grep`/`rg`: numbered matches by default, `context_lines` for context, `output_mode: "files"` for paths, `next_offset` for pagination.
+{% endif %}
+{% if "locate_files" in tools %}
+- Prefer `locate_files` over `find`/`rg --files` for names and globs.
+{% endif %}
+{% if "list_dir" in tools %}
+- Prefer `list_dir` over `ls` for directory listings.
+{% endif %}
+{% if "read_file" in tools or "grep_files" in tools or "locate_files" in tools or "list_dir" in tools %}
+- Run independent filesystem calls in parallel. Use shell for builds, tests, and operations without dedicated tools.
+{% endif %}
 {% if "read_session_history" in tools or "search_session_history" in tools %}
 - Use the session-history tools to retrieve earlier conversation context.
 {% endif %}

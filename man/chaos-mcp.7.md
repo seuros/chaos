@@ -211,13 +211,26 @@ Restart to apply changes. Project configuration cannot override this host policy
 | `machine_warnings.enabled` | `true` | Enable warning evaluation and automatic model-request checks |
 | `machine_warnings.probe_timeout_ms` | `3000` | Observation wait budget, including queued probes; integer 1–60000 ms |
 | `machine_warnings.battery_percent` | `5` | Warn at or below this charge percentage; integer 0–100 |
-| `machine_warnings.disk_free_percent` | `5` | Warn at or below this caller-available percentage; integer 0–100 |
+| `machine_warnings.disk_free_percent` | `5` | Warn at or below this caller-available percentage and the byte cap; integer 0–100 |
+| `machine_warnings.disk_free_bytes_cap` | `21474836480` | Cap the warning reserve at 20 GiB; positive integer bytes |
 | `machine_warnings.thermal` | `true` | Warn on OS thermal warning/critical state or a CPU channel reaching its own critical limit |
 | `machine_warnings.cpu_temperature_celsius` | unset | Additional physical CPU temperature threshold; finite −100–250°C, inclusive |
 | `machine_warnings.recovery_stable_seconds` | `300` | Continuous observed recovery before an opted-in wake; integer 30–86400 seconds |
 | `machine_warnings.recovery_temperature_margin_celsius` | `5.0` | Headroom below a triggering sensor's threshold; finite 0.1–100 degrees on that channel's scale |
-| `machine_warnings.recovery_disk_margin_percent` | `2` | Additional free percentage points above the warning threshold; integer 0–100 |
-| `machine_warnings.recovery_disk_margin_bytes` | `1073741824` | Additional free bytes above the warning threshold; required alongside the percentage margin |
+| `machine_warnings.recovery_disk_margin_percent` | `2` | Additional free percentage points for recovery, subject to the byte cap; integer 0–100 |
+| `machine_warnings.recovery_disk_margin_bytes` | `1073741824` | Additional free bytes above the capped warning reserve; also required for recovery |
+
+Disk warnings require both limits: `available <= min(total * percent / 100, cap)`.
+A 4 TB disk with 200 GB available does not warn; the default reserve caps at
+20 GiB. Small disks retain percentage-based reserves. Existing configurations
+inherit the cap unless overridden.
+
+Disk recovery requires the greater of the capped percentage-with-margin reserve
+and the capped warning reserve plus the byte margin. Percentage-derived recovery
+reserves round up to whole bytes. Defaults require 21 GiB on large disks, followed
+by the stable observation window—not 7% of their capacity. Impossible recovery
+targets remain blocked. This policy does not predict depletion or guarantee a
+large write will fit.
 
 ### Opt-in recovery wake
 

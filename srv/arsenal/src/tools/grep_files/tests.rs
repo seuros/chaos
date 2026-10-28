@@ -1,123 +1,10 @@
 use super::*;
 
+use std::fs::File;
 use std::os::unix::fs::symlink;
 
-/// Behavior table for narrow output mechanics. The deeper semantic tests below
-/// exercise multi-line regexes, ordering, file-input mode, and case overrides.
-#[test]
-fn search_baseline_metrics() {
-    // Each row is a (setup, pattern, glob, limit) scenario with its expected
-    // hit count; if any row drifts the whole table fails the user-facing
-    // contract.
-    struct Case<'a> {
-        label: &'a str,
-        files: &'a [(&'a str, &'a [u8])],
-        pattern: &'a str,
-        glob: Option<&'a str>,
-        limit: usize,
-        expect_hits: usize,
-        expected_names: &'a [&'a str],
-    }
-    let cases = [
-        Case {
-            label: "two matches across files",
-            files: &[
-                ("match_one.txt", b"alpha beta gamma"),
-                ("match_two.txt", b"alpha delta"),
-                ("other.txt", b"omega"),
-            ],
-            pattern: "alpha",
-            glob: None,
-            limit: 10,
-            expect_hits: 2,
-            expected_names: &["match_one.txt", "match_two.txt"],
-        },
-        Case {
-            label: "glob narrows to one extension",
-            files: &[
-                ("match_one.rs", b"alpha beta gamma"),
-                ("match_two.txt", b"alpha delta"),
-            ],
-            pattern: "alpha",
-            glob: Some("*.rs"),
-            limit: 10,
-            expect_hits: 1,
-            expected_names: &["match_one.rs"],
-        },
-        Case {
-            label: "limit trims alphabetically late matches",
-            files: &[
-                ("one.txt", b"alpha one"),
-                ("two.txt", b"alpha two"),
-                ("three.txt", b"alpha three"),
-            ],
-            pattern: "alpha",
-            glob: None,
-            limit: 2,
-            expect_hits: 2,
-            expected_names: &[],
-        },
-        Case {
-            label: "no hits stays empty",
-            files: &[("one.txt", b"omega")],
-            pattern: "alpha",
-            glob: None,
-            limit: 5,
-            expect_hits: 0,
-            expected_names: &[],
-        },
-        Case {
-            label: "non-UTF-8 still scans against ASCII term",
-            files: &[("latin1.txt", &[0xff, b'a', b'l', b'p', b'h', b'a', 0xfe])],
-            pattern: "alpha",
-            glob: None,
-            limit: 10,
-            expect_hits: 1,
-            expected_names: &["latin1.txt"],
-        },
-        Case {
-            label: "symlink alias is not double-counted",
-            files: &[("match.txt", b"alpha beta gamma")],
-            pattern: "alpha",
-            glob: None,
-            limit: 10,
-            expect_hits: 1,
-            expected_names: &["match.txt"],
-        },
-    ];
-    for case in &cases {
-        let temp = tempfile::tempdir().expect("create temp dir");
-        for (name, body) in case.files {
-            std::fs::write(temp.path().join(name), *body).unwrap();
-        }
-        if case.label == "symlink alias is not double-counted" {
-            let alias = temp.path().join("match-link.txt");
-            symlink(temp.path().join("match.txt"), &alias).unwrap();
-        }
-        let hits = run_grep_search(case.pattern, case.glob, temp.path(), case.limit, None)
-            .expect("search failed");
-        assert_eq!(
-            hits.len(),
-            case.expect_hits,
-            "{}: {}",
-            case.label,
-            hits.len()
-        );
-        for name in case.expected_names {
-            assert!(
-                hits.iter().any(|p| p.ends_with(*name)),
-                "{}: missing {name}, got {hits:?}",
-                case.label
-            );
-        }
-    }
-
-    // Invalid regex surfaces a typed error before the regex engine ever
-    // touches disk; the empty dir keeps the test cheap.
-    let temp = tempfile::tempdir().unwrap();
-    let err = run_grep_search("[invalid", None, temp.path(), 10, None).unwrap_err();
-    assert!(err.contains("invalid regex"));
-}
+#[path = "tests/baseline.rs"]
+mod baseline;
 
 #[test]
 fn search_accepts_a_single_file_and_returns_an_absolute_path() {
@@ -192,6 +79,7 @@ async fn search_case_mode_is_optional_and_can_override_smart_case() {
         let mut arguments = serde_json::json!({
             "pattern": pattern,
             "path": dir,
+            "output_mode": "files",
         });
         if let Some(case_sensitive) = case_sensitive {
             arguments["case_sensitive"] = serde_json::json!(case_sensitive);
@@ -212,4 +100,230 @@ async fn search_case_mode_is_optional_and_can_override_smart_case() {
         names.sort_unstable();
         assert_eq!(names, expected, "{arguments}");
     }
+}
+
+#[tokio::test]
+async fn content_is_default_and_returns_numbered_lines_with_context() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("controller.rb");
+    std::fs::write(
+        &file,
+        "before\r\n  def current_company # current_company\r\nafter\r\n",
+    )
+    .unwrap();
+    let output = execute_structured(&serde_json::json!({
+        "pattern": "current_company",
+        "path": file,
+        "context_lines": 1,
+    }))
+    .await
+    .unwrap();
+    assert_eq!(output["output_mode"], "content");
+    assert_eq!(
+        output["match_count"], 1,
+        "one result per line, not occurrence"
+    );
+    assert_eq!(output["matches"][0]["path"], serde_json::json!(file));
+    assert_eq!(output["matches"][0]["line_number"], 2);
+    assert_eq!(
+        output["matches"][0]["text"],
+        "  def current_company # current_company"
+    );
+    assert_eq!(output["matches"][0]["truncated"], false);
+    assert_eq!(
+        output["matches"][0]["context_before"],
+        serde_json::json!([{"line_number": 1, "text": "before", "truncated": false}])
+    );
+    assert_eq!(
+        output["matches"][0]["context_after"],
+        serde_json::json!([{"line_number": 3, "text": "after", "truncated": false}])
+    );
+    assert_eq!(output["has_more"], false);
+    assert!(output["next_offset"].is_null());
+}
+
+#[tokio::test]
+async fn content_preserves_multiline_matches_and_empty_line_anchors() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("lines.txt");
+    let contents = "prefix\nalpha\nbeta\n\nlast";
+    for (body, pattern, expected_lines) in [
+        (contents, r"alpha\nbeta", vec![2, 3]),
+        (contents, "(?s)alpha.*last", vec![2, 3, 4, 5]),
+        (contents, "^$", vec![4]),
+        (contents, r"\z", vec![5]),
+        (contents, "last", vec![5]),
+        (contents, "absent", vec![]),
+        ("alpha\n", "^$", vec![2]),
+        ("alpha\n", r"\z", vec![2]),
+        ("alpha\r\n", r"\z", vec![2]),
+        ("alpha\n\n", "^$", vec![2, 3]),
+        ("alpha\nbeta\n", r"alpha\nbeta", vec![1, 2]),
+        ("alpha\n", "^", vec![1, 2]),
+        ("alpha", "^$", vec![]),
+        ("\n", "^$", vec![1, 2]),
+        ("alpha\n", "alpha", vec![1]),
+    ] {
+        std::fs::write(&file, body).unwrap();
+        let output = execute_structured(&serde_json::json!({
+            "pattern": pattern,
+            "path": file,
+        }))
+        .await
+        .unwrap();
+        let lines: Vec<_> = output["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["line_number"].as_u64().unwrap())
+            .collect();
+        assert_eq!(lines, expected_lines, "{body:?}: {pattern}");
+        if pattern == "^$" || (pattern == r"\z" && body.ends_with('\n')) {
+            for entry in output["matches"].as_array().unwrap() {
+                assert_eq!(entry["text"], "", "{body:?}: {pattern}");
+            }
+        }
+        assert_eq!(output["has_more"], false);
+    }
+}
+
+#[tokio::test]
+async fn both_modes_paginate_without_losing_matches_or_claiming_more_at_exact_limit() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("a.txt"),
+        "needle one\nneedle two\nneedle three\n",
+    )
+    .unwrap();
+    std::fs::write(temp.path().join("b.txt"), "needle four\n").unwrap();
+    for (mode, expected_count) in [("content", 4), ("files", 2)] {
+        let mut offset = 0;
+        let mut matches = Vec::new();
+        loop {
+            let output = execute_structured(&serde_json::json!({
+                "pattern": "needle",
+                "path": temp.path(),
+                "output_mode": mode,
+                "limit": 1,
+                "offset": offset,
+            }))
+            .await
+            .unwrap();
+            assert_eq!(output["match_count"], 1);
+            matches.extend(output["matches"].as_array().unwrap().iter().cloned());
+            if !output["has_more"].as_bool().unwrap() {
+                assert!(output["next_offset"].is_null());
+                break;
+            }
+            let next = output["next_offset"].as_u64().unwrap();
+            assert!(next > offset);
+            offset = next;
+        }
+        assert_eq!(matches.len(), expected_count);
+        let unique: std::collections::HashSet<_> =
+            matches.iter().map(ToString::to_string).collect();
+        assert_eq!(unique.len(), expected_count);
+    }
+}
+
+#[tokio::test]
+async fn snippets_and_pages_are_bounded_and_non_utf8_text_still_matches() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("many.txt");
+    let line = format!("needle {}\n", "é".repeat(600));
+    std::fs::write(&file, line.repeat(400)).unwrap();
+    let output = execute_structured(&serde_json::json!({
+        "pattern": "needle",
+        "path": file,
+        "limit": 2000,
+        "context_lines": 2,
+    }))
+    .await
+    .unwrap();
+    assert!(output["has_more"].as_bool().unwrap());
+    assert!(output["match_count"].as_u64().unwrap() < 400);
+    assert_eq!(output["next_offset"], output["match_count"]);
+    for entry in output["matches"].as_array().unwrap() {
+        assert!(entry["text"].as_str().unwrap().len() <= 500);
+        assert_eq!(entry["truncated"], true);
+        assert!(!entry["text"].as_str().unwrap().contains('�'));
+    }
+    assert!(output.to_string().len() < MAX_OUTPUT_BYTES + 1024);
+
+    std::fs::write(&file, [0xff, b'a', b'l', b'p', b'h', b'a', 0xfe]).unwrap();
+    let output = execute_structured(&serde_json::json!({"pattern": "alpha", "path": file}))
+        .await
+        .unwrap();
+    assert_eq!(output["matches"][0]["text"], "�alpha�");
+
+    std::fs::write(
+        &file,
+        format!("{}needle{}", "é".repeat(900), "tail".repeat(500)),
+    )
+    .unwrap();
+    let output = execute_structured(&serde_json::json!({"pattern": "needle", "path": file}))
+        .await
+        .unwrap();
+    let text = output["matches"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("needle"),
+        "long-line clipping must retain the match"
+    );
+    assert!(text.starts_with('…'));
+    assert!(!text.contains('�'));
+    assert!(text.len() <= 500);
+}
+
+#[tokio::test]
+async fn search_respects_ignore_rules_and_skips_binary_and_oversized_files() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(temp.path().join("ignored.txt"), "needle").unwrap();
+    std::fs::write(temp.path().join("binary.txt"), b"needle\0").unwrap();
+    std::fs::write(temp.path().join("keep.txt"), "needle").unwrap();
+    let large = File::create(temp.path().join("large.txt")).unwrap();
+    large.set_len(MAX_FILE_SIZE + 1).unwrap();
+    symlink(temp.path().join("keep.txt"), temp.path().join("alias.txt")).unwrap();
+    for mode in ["content", "files"] {
+        let output = execute_structured(&serde_json::json!({
+            "pattern": "needle",
+            "path": temp.path(),
+            "output_mode": mode,
+        }))
+        .await
+        .unwrap();
+        assert_eq!(output["match_count"], 1, "{output}");
+        assert!(output["matches"][0].to_string().contains("keep.txt"));
+    }
+}
+
+#[tokio::test]
+async fn validates_search_options_and_preserves_literal_spaces_in_regexes() {
+    let temp = tempfile::tempdir().unwrap();
+    let file = temp.path().join("one.txt");
+    std::fs::write(&file, "alpha\n alpha \n").unwrap();
+    for invalid in [
+        serde_json::json!({"pattern": " "}),
+        serde_json::json!({"pattern": "alpha", "limit": 0}),
+        serde_json::json!({"pattern": "["}),
+        serde_json::json!({"pattern": "alpha", "include": "["}),
+        serde_json::json!({"pattern": "alpha", "context_lines": 21}),
+        serde_json::json!({"pattern": "alpha", "output_mode": "files", "context_lines": 1}),
+        serde_json::json!({"pattern": "alpha", "output_mode": "unknown"}),
+        serde_json::json!({"pattern": "alpha", "offset": -1}),
+    ] {
+        let mut arguments = invalid;
+        arguments["path"] = serde_json::json!(file);
+        assert!(execute_structured(&arguments).await.is_err(), "{arguments}");
+    }
+    let output = execute_structured(&serde_json::json!({
+        "pattern": " alpha ",
+        "path": file,
+        "limit": 9000,
+    }))
+    .await
+    .unwrap();
+    assert_eq!(output["limit"], MAX_LIMIT);
+    assert_eq!(output["match_count"], 1);
+    assert_eq!(output["matches"][0]["line_number"], 2);
 }

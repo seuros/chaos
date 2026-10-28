@@ -15,10 +15,14 @@ pub struct MachineWarningsConfig {
     #[serde(deserialize_with = "percentage")]
     #[schemars(range(min = 0, max = 100))]
     pub battery_percent: u8,
-    /// Warn for a relevant filesystem at or below this available percentage.
+    /// Warn at or below this available percentage, subject to disk_free_bytes_cap.
     #[serde(deserialize_with = "percentage")]
     #[schemars(range(min = 0, max = 100))]
     pub disk_free_percent: u8,
+    /// Cap the disk warning reserve in bytes. Default: 20 GiB; must be positive.
+    #[serde(deserialize_with = "disk_bytes_cap")]
+    #[schemars(range(min = 1))]
+    pub disk_free_bytes_cap: u64,
     /// Warn on OS thermal warnings or a CPU channel reaching its own critical limit.
     pub thermal: bool,
     /// Optional additional threshold for physical CPU temperatures only.
@@ -37,11 +41,11 @@ pub struct MachineWarningsConfig {
     #[serde(deserialize_with = "recovery_temperature")]
     #[schemars(range(min = 0.1, max = 100))]
     pub recovery_temperature_margin_celsius: f64,
-    /// Additional free percentage points above the disk warning threshold.
+    /// Additional free percentage points for recovery, subject to disk_free_bytes_cap.
     #[serde(deserialize_with = "percentage")]
     #[schemars(range(min = 0, max = 100))]
     pub recovery_disk_margin_percent: u8,
-    /// Additional free bytes above the disk warning threshold (also required).
+    /// Additional free bytes above the capped warning reserve (also required).
     pub recovery_disk_margin_bytes: u64,
 }
 
@@ -52,6 +56,7 @@ impl Default for MachineWarningsConfig {
             probe_timeout_ms: 3_000,
             battery_percent: 5,
             disk_free_percent: 5,
+            disk_free_bytes_cap: 20 << 30,
             thermal: true,
             cpu_temperature_celsius: None,
             recovery_stable_seconds: 300,
@@ -61,6 +66,14 @@ impl Default for MachineWarningsConfig {
             recovery_disk_margin_bytes: 1 << 30,
         }
     }
+}
+
+fn disk_bytes_cap<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let value = u64::deserialize(deserializer)?;
+    if value == 0 {
+        return Err(serde::de::Error::custom("disk byte cap must be positive"));
+    }
+    Ok(value)
 }
 
 fn recovery_seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {

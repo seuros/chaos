@@ -71,11 +71,16 @@ fn settings_reject_unknown_bootstrap_and_positive_grants() {
 #[test]
 fn machine_warnings_are_validated_user_settings() {
     let home = tempfile::tempdir().unwrap();
-    let settings =
-        toml::from_str("[machine_warnings]\nbattery_percent=8\ndisk_free_percent=3").unwrap();
+    let settings = toml::from_str(
+        "[machine_warnings]\nbattery_percent=8\ndisk_free_percent=3\n\
+         disk_free_bytes_cap=1073741824",
+    )
+    .unwrap();
     assert!(validate(&settings, home.path()).is_ok());
-    let invalid = toml::from_str("[machine_warnings]\nbattery_percent=101").unwrap();
-    assert!(validate(&invalid, home.path()).is_err());
+    for setting in ["battery_percent=101", "disk_free_bytes_cap=0"] {
+        let invalid = toml::from_str(&format!("[machine_warnings]\n{setting}")).unwrap();
+        assert!(validate(&invalid, home.path()).is_err());
+    }
 }
 
 #[test]

@@ -14,18 +14,14 @@ impl<'a> McpInstructionsDocument<'a> {
         Self { servers }
     }
 
-    /// Server identity/capability attributes with instruction text preserved in CDATA.
+    /// Server identity and model-facing capability summaries, with instructions in CDATA.
     pub(super) fn to_xml(&self) -> io::Result<String> {
         let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
         writer
             .create_element("mcp_server_instructions")
             .write_inner_content(|writer| {
                 for server in self.servers {
-                    // Experimental payloads can contain maps in arbitrary order.
-                    // Keep the prompt stable even with serde_json/preserve_order.
-                    let mut capabilities = server.capabilities.clone();
-                    capabilities.sort_all_objects();
-                    let capabilities = capabilities.to_string();
+                    let capabilities = capability_summary(&server.capabilities);
                     writer
                         .create_element("server")
                         .with_attribute(("name", server.server_name.as_str()))
@@ -48,4 +44,24 @@ impl<'a> McpInstructionsDocument<'a> {
         String::from_utf8(writer.into_inner())
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
+}
+
+fn capability_summary(capabilities: &serde_json::Value) -> String {
+    let Some(capabilities) = capabilities.as_object() else {
+        return String::new();
+    };
+    let mut names = Vec::new();
+    let mut has_other = false;
+    for name in capabilities.keys() {
+        match name.as_str() {
+            "prompts" | "resources" | "tools" => names.push(name.as_str()),
+            _ => has_other = true,
+        }
+    }
+    // Keep the prompt stable even with serde_json/preserve_order.
+    names.sort_unstable();
+    if has_other {
+        names.push("other*");
+    }
+    names.join(", ")
 }

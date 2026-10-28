@@ -21,6 +21,25 @@ fn tools(names: &str) -> Vec<ToolSpec> {
         .collect()
 }
 
+fn render_runtime(names: &str, enabled_groups: &str) -> String {
+    let catalog = crate::tools::groups::build_catalog().unwrap();
+    let state = catalog.new_state();
+    catalog
+        .set_groups_enabled(&state, enabled_groups.split_whitespace(), true)
+        .unwrap();
+    runtime_instructions(
+        &tools(names),
+        ToolGroupFilter {
+            catalog: &catalog,
+            state: &state,
+        },
+        ModeCapabilities::default(),
+        &SessionSource::Api,
+        false,
+        false,
+    )
+}
+
 #[test]
 fn renderer_uses_plain_text_strict_fields_and_product_global() -> anyhow::Result<()> {
     let engine = template_environment();
@@ -59,21 +78,7 @@ fn bundled_runtime_renders() {
 
 #[test]
 fn progress_guidance_requires_an_attached_plan_tool() {
-    let catalog = crate::tools::groups::build_catalog().unwrap();
-    let state = catalog.new_state();
-    let render = |names| {
-        runtime_instructions(
-            &tools(names),
-            ToolGroupFilter {
-                catalog: &catalog,
-                state: &state,
-            },
-            ModeCapabilities::default(),
-            &SessionSource::Api,
-            false,
-            false,
-        )
-    };
+    let render = |names| render_runtime(names, "");
     let unattached = render("switch_mode read_file");
     assert!(!unattached.contains("# Attached plan"));
     assert!(!unattached.contains("plan_progress"));
@@ -85,6 +90,41 @@ fn progress_guidance_requires_an_attached_plan_tool() {
     let fixed = render("plan_progress");
     assert!(fixed.contains("# Attached plan"));
     assert!(!fixed.contains("switch to Plan mode yourself"));
+}
+
+#[test]
+fn filesystem_guidance_tracks_visible_tools_and_disabled_groups() {
+    for (names, enabled, should_enable, visible_filesystem) in [
+        ("exec_command", false, false, false),
+        ("enable_tools exec_command", false, true, false),
+        ("enable_tools exec_command", true, false, false),
+        ("read_file", true, false, true),
+        (
+            "read_file grep_files locate_files list_dir",
+            true,
+            false,
+            true,
+        ),
+    ] {
+        let text = render_runtime(names, if enabled { "filesystem" } else { "" });
+        assert_eq!(
+            text.contains("Enable `filesystem`"),
+            should_enable,
+            "{names}"
+        );
+        assert_eq!(
+            text.contains("Run independent filesystem calls in parallel"),
+            visible_filesystem,
+            "{names}"
+        );
+        for tool in ["read_file", "grep_files", "locate_files", "list_dir"] {
+            assert_eq!(
+                text.contains(&format!("Prefer `{tool}`")),
+                names.split_whitespace().any(|name| name == tool),
+                "{names}: {text}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -149,7 +189,8 @@ fn runtime_selects_sections_from_capabilities() -> anyhow::Result<()> {
         assert_eq!(
             sections,
             expected.split_whitespace().collect(),
-            "tools={names}, enabled_groups={enabled_groups}, mutation={mutation}, terminal={terminal}"
+            "tools={names}, enabled_groups={enabled_groups}, \
+             mutation={mutation}, terminal={terminal}"
         );
     }
     Ok(())

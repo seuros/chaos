@@ -9,6 +9,9 @@ use crate::chaos::{Session, TurnContext};
 
 const POST_EXIT_CLOSE_WAIT_CAP: Duration = Duration::from_millis(50);
 
+#[cfg(test)]
+mod tests;
+
 struct CollectionData {
     output: Vec<u8>,
     deadline: Instant,
@@ -161,7 +164,7 @@ impl Collection {
         let Some(receiver) = self.data_mut().pause.as_mut() else {
             return;
         };
-        if receiver.has_changed().is_err() {
+        if receiver.is_closed() {
             self.data_mut().pause = None;
             return;
         }

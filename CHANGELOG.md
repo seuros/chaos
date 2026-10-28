@@ -9,10 +9,26 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.14.7] - 2026-10-28
+
 ### Added
 - MCP resource reads and subscriptions accept an optional `parameters` map
   with a URI template, using `mcp-host` 0.15 to percent-encode raw string values
   such as `github-actions[bot]` before sending the request.
+
+### Changed
+- Prefer major-only requirements for stable dependencies (including ACP,
+  schemars, Tokio, and UUID), with exact resolved versions in `Cargo.lock`.
+- Refresh workspace dependencies, including ACP 3.6, Tokio 1.54, ICU4X 2.4,
+  resvg 0.49, LRU 0.19, and vt100 0.18. Caches allocate lazily; terminal tests
+  use native scrollback-aware resizing. Remove unused dependencies and enable
+  Rust-version-aware dependency resolution.
+- Use unicode-width 0.2.3's native halfwidth sound-mark measurements, removing
+  the compatibility adjustment that would now double-count their columns.
+- ACP 3.6 validates initialization negotiation inside the SDK; incompatible
+  replies surface as protocol errors and still close the transport.
+- Keep OpenTelemetry on 0.32 and `time` on 0.3.47 to match Rama 0.4's APIs
+  and exact version requirements.
 
 ### Fixed
 - `/mcp` omits resource and resource-template sections for servers that do not

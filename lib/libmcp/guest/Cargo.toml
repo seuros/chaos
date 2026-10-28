@@ -47,7 +47,7 @@ thiserror = { workspace = true }
 # Not the workspace's: that one carries every feature chaos uses (ring,
 # socks5, unix...), which would reach every application depending on the
 # published crate.
-rama = { version = "0.4.0", default-features = false, features = ["std"] }
+rama = { version = "0.4", default-features = false, features = ["std"] }
 tokio-stream = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 

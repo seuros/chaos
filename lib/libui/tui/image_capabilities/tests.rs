@@ -54,7 +54,10 @@ fn late_tmux_replies_are_drained_until_input_goes_quiet() {
 
     let quiet = Duration::from_millis(20);
     let limit = Duration::from_millis(200);
-    assert_eq!(drain_late_replies(reader.as_fd(), quiet, limit), replies.len());
+    assert_eq!(
+        drain_late_replies(reader.as_fd(), quiet, limit),
+        replies.len()
+    );
     assert_eq!(drain_late_replies(reader.as_fd(), quiet, limit), 0);
     drop(writer);
 }

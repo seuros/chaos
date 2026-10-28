@@ -44,6 +44,11 @@ allow = [
 ]
 confidence-threshold = 0.8
 
+# unicodeit's generated TeX symbol tables carry the upstream LPPL license.
+[[licenses.exceptions]]
+crate = "unicodeit"
+allow = ["LPPL-1.3c"]
+
 [licenses.private]
 ignore = false
 

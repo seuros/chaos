@@ -37,4 +37,5 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-util = { workspace = true, features = ["codec"] }
 
 [package.metadata.cargo-shear]
-ignored = ["chaos-abi", "chaos-ipc"]
+# Examples reuse acp-guest's support module through #[path] outside this crate.
+ignored = ["chaos-abi", "chaos-ipc", "libc", "tokio-util"]

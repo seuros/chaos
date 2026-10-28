@@ -13,7 +13,7 @@ pub(crate) const DEFAULT_OUTPUT_LIMIT_BYTES: u64 = 128 * 1024;
 
 /// Human label for a byte limit: whole KiB when it divides evenly, bytes otherwise.
 pub(crate) fn output_limit_label(bytes: u64) -> String {
-    if bytes > 0 && bytes % 1024 == 0 {
+    if bytes > 0 && bytes.is_multiple_of(1024) {
         format!("{} KiB", bytes / 1024)
     } else {
         format!("{bytes} bytes")

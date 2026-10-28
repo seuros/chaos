@@ -28,7 +28,6 @@ url = { workspace = true }
 usage = { workspace = true }
 
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
-pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",

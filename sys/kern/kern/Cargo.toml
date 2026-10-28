@@ -136,7 +136,6 @@ url = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4", "v5"] }
 which = { workspace = true }
 wildmatch = { workspace = true }
-zip = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = { workspace = true }
@@ -186,4 +185,4 @@ wiremock = { workspace = true }
 zstd = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["openssl-sys", "wildmatch", "zip", "chaos-locate", "chaos-watchdog", "insta", "wiremock", "chaos-doas"]
+ignored = ["openssl-sys", "wildmatch", "chaos-locate", "chaos-watchdog", "insta", "wiremock", "chaos-doas"]

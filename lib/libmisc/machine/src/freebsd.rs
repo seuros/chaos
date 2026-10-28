@@ -1,19 +1,26 @@
-use crate::power::source_from_supplies;
-use crate::{BatteryInfo, BatteryKind, BatteryState, PowerInfo};
-
+#[cfg(target_os = "freebsd")]
+mod abi;
+mod display;
+mod firmware;
+mod power;
 mod thermal;
 #[cfg(target_os = "freebsd")]
 pub(crate) use thermal::read as read_thermal;
 
 #[cfg(target_os = "freebsd")]
-pub(crate) fn detect() -> (crate::MachineProfile, PowerInfo) {
+pub(crate) fn detect() -> (crate::MachineProfile, crate::PowerInfo) {
     use crate::sysctl::{integer, string};
-    use crate::{ExecutionEnvironment, MachineProfile};
+    use crate::{ExecutionEnvironment, MachineProfile, PowerInfo};
 
-    if integer(c"security.jail.jailed") == Some(1) {
+    let jailed = integer(c"security.jail.jailed");
+    if jailed != Some(0) {
         return (
             MachineProfile {
-                execution_environment: ExecutionEnvironment::Container,
+                execution_environment: if jailed == Some(1) {
+                    ExecutionEnvironment::Container
+                } else {
+                    ExecutionEnvironment::Unknown
+                },
                 ..MachineProfile::default()
             },
             PowerInfo::default(),
@@ -24,70 +31,21 @@ pub(crate) fn detect() -> (crate::MachineProfile, PowerInfo) {
         Some(_) => ExecutionEnvironment::VirtualMachine,
         None => ExecutionEnvironment::Unknown,
     };
-    let power = from_acpi(
-        integer(c"hw.acpi.acline"),
-        integer(c"hw.acpi.battery.units"),
-        integer(c"hw.acpi.battery.life"),
-        integer(c"hw.acpi.battery.state"),
-    );
+    let power = power::read();
     let mut profile = MachineProfile {
+        model: firmware::read(c"smbios.system.product").and_then(firmware::model),
+        displays: display::read(),
         execution_environment,
         ..MachineProfile::default()
     };
-    if execution_environment != ExecutionEnvironment::VirtualMachine {
+    if execution_environment == ExecutionEnvironment::NoneDetected {
+        let chassis = firmware::read(c"smbios.chassis.type")
+            .as_deref()
+            .and_then(firmware::chassis_code);
         (profile.form_factor, profile.form_factor_evidence) =
-            crate::profile::classify(None, None, &power);
+            crate::profile::classify(chassis, profile.model.as_deref(), &power);
     }
     (profile, power)
-}
-
-fn from_acpi(
-    ac: Option<i32>,
-    units: Option<i32>,
-    life: Option<i32>,
-    state: Option<i32>,
-) -> PowerInfo {
-    let external_power = match ac {
-        Some(0) => Some(false),
-        Some(1) => Some(true),
-        _ => None,
-    };
-    let batteries = match units {
-        Some(0) => Some(Vec::new()),
-        Some(1..) => {
-            // FreeBSD's life/state sysctls describe the aggregate system battery.
-            let present = match state {
-                Some(7) => Some(false), // ACPI_BATT_STAT_NOT_PRESENT
-                Some(0..=6) => Some(true),
-                _ => None,
-            };
-            let charge_percent = if present == Some(false) {
-                None
-            } else {
-                life.filter(|value| (0..=100).contains(value))
-                    .map(|value| value as u8)
-            };
-            let state = match state {
-                Some(1 | 5) => BatteryState::Discharging,
-                Some(2 | 6) => BatteryState::Charging,
-                Some(0 | 4) => BatteryState::Idle,
-                _ => BatteryState::Unknown,
-            };
-            Some(vec![BatteryInfo {
-                name: "system".into(),
-                kind: BatteryKind::System,
-                present,
-                charge_percent,
-                state,
-            }])
-        }
-        _ => None,
-    };
-    PowerInfo {
-        source: source_from_supplies(external_power, batteries.as_deref()),
-        external_power,
-        batteries,
-    }
 }
 
 #[cfg(test)]

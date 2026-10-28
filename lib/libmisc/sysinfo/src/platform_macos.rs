@@ -1,20 +1,16 @@
 //! macOS-specific system fact detection.
 //!
-//! Gathers information from `sysctl`, `uname`, IOKit (via
-//! `core-foundation`), and `pmset`.
+//! Gathers information from native `sysctl` and `uname` interfaces.
 
 use super::sysctl::{sysctl_string, sysctl_u32, sysctl_u64};
 use super::{
-    SandboxKind, SystemInfo, detect_disk, detect_display_server, detect_hostname, detect_locale,
+    SandboxKind, SystemInfo, detect_display_server, detect_hostname, detect_locale,
     detect_os_version, detect_shell, detect_timezone,
 };
 use std::mem;
 
 /// Construct a fully-populated [`SystemInfo`] for this macOS host.
 pub(super) fn detect() -> SystemInfo {
-    let (disk_total, disk_available) = detect_disk();
-    let (has_battery, battery_level, charger_connected) = detect_power();
-
     SystemInfo {
         os: "macos".into(),
         os_version: detect_os_version(),
@@ -26,13 +22,6 @@ pub(super) fn detect() -> SystemInfo {
         memory_available: detect_memory_available(),
         cpu_cores: detect_cpu_cores(),
         cpu_model: detect_cpu_model(),
-        disk_total,
-        disk_available,
-
-        has_battery,
-        battery_level,
-        charger_connected,
-
         uptime_secs: detect_uptime(),
         sandbox_type: SandboxKind::for_platform(),
         in_container: false, // macOS doesn't run in containers
@@ -99,67 +88,3 @@ fn detect_uptime() -> u64 {
         0
     }
 }
-
-// ── Power / Battery ──────────────────────────────────────────────────
-
-pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
-    // Use `pmset -g batt` for battery info — simpler than IOKit bindings.
-    let Ok(mut child) = std::process::Command::new("/usr/bin/pmset")
-        .args(["-g", "batt"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    else {
-        return (false, None, false);
-    };
-
-    // A background refresh must not leave an unbounded command behind.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return (false, None, false);
-            }
-        }
-    }
-    let Ok(output) = child.wait_with_output() else {
-        return (false, None, false);
-    };
-    if !output.status.success() {
-        return (false, None, false);
-    }
-    parse_power(&String::from_utf8_lossy(&output.stdout))
-}
-
-fn parse_power(text: &str) -> (bool, Option<u8>, bool) {
-    // No battery on desktops
-    if !text.contains("Battery") && !text.contains("InternalBattery") {
-        return (false, None, false);
-    }
-
-    let has_battery = true;
-    let charger_connected = text.contains("AC Power");
-
-    // Parse percentage from line like "InternalBattery-0 (id=...)	85%; charging;"
-    let battery_level = text
-        .lines()
-        .find(|l| l.contains("InternalBattery"))
-        .and_then(|line| {
-            line.split_whitespace()
-                .find(|w| w.ends_with("%;"))
-                .or_else(|| line.split_whitespace().find(|w| w.ends_with('%')))
-                .and_then(|w| w.trim_end_matches(&['%', ';'][..]).parse().ok())
-        });
-
-    (has_battery, battery_level, charger_connected)
-}
-
-#[cfg(test)]
-#[path = "platform_macos/tests.rs"]
-mod tests;

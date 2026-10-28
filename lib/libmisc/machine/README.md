@@ -6,6 +6,10 @@ by this crate.** The kernel exposes fresh observations through `chaos://machine`
 its separate warning policy can instruct the model to checkpoint and notify the
 operator. The terminal top bar consumes the same observations and kernel policy.
 
+This crate is the sole owner of power and task-scoped storage probes.
+`chaos-sysinfo` retains startup/session facts, not a second battery API or stale
+cached battery/disk-capacity fields.
+
 ## Independent facts
 
 - **Form factor:** laptop, desktop, server, tablet, other, or unknown, with the
@@ -48,6 +52,11 @@ not configured warning thresholds.
 - Missing, faulted, disabled, unreadable, malformed, or implausible values are
   unknown. The broad sanity range of -100°C through 250°C is not a health
   threshold; valid zero/subzero and overheating readings are preserved.
+- FreeBSD reads ACPI thermal-zone flags reported by the OS, independently of
+  CPU channels. Passive throttling is a warning; standby, suspend, and shutdown
+  flags are critical. Zero flags establish normal only for readable zones with
+  valid sensor and trip-point support, and only with complete zone enumeration.
+  Celsius readings are never compared against trip points to invent a state.
 - macOS reports OS thermal warning/pressure state, not fabricated Celsius.
   `NSProcessInfo` fair/serious pressure means warning; critical means critical.
   Its nominal value also covers unsupported hardware, so only a successful
@@ -188,12 +197,35 @@ with the same deadline and single-worker limit as the resource and model checks.
 
 | | Linux | macOS | FreeBSD |
 |---|---|---|---|
-| Form factor | SMBIOS chassis; system-battery fallback | Recognized model identifier; system-battery fallback | System-battery fallback |
-| Power | sysfs power supplies | `pmset -g batt`, bounded to two seconds | ACPI sysctls |
-| Displays | DRM connector status | CoreGraphics online display list | Unknown |
+| Form factor | SMBIOS chassis; system-battery fallback | Recognized model identifier; system-battery fallback | Loader SMBIOS identity via `kenv(2)`; system-battery fallback |
+| Power | sysfs power supplies | `pmset -g batt`, bounded to two seconds | Per-battery ACPI ioctls; AC-adapter sysctl |
+| Displays | DRM connector status | CoreGraphics online display list | Read-only DRM connector ioctls |
 | CPU temperature | Recognized hwmon/thermal-zone channels, millidegrees Celsius | Unavailable | CPU temperature/Tjmax sysctls, decikelvin |
-| OS thermal state | Unknown | IOPM warnings plus `NSProcessInfo` elevated pressure | Unknown |
+| OS thermal state | Unknown | IOPM warnings plus `NSProcessInfo` elevated pressure | ACPI thermal-zone flags |
 | Storage | `statvfs` / `statfs` | `statvfs` / `statfs` | `statvfs` / `statfs` |
+
+FreeBSD probes use existing native interfaces, never subprocesses or GULAG
+telemetry mirrors. The optional MAC policy is not required, loaded, or modified.
+Only public model/chassis fields are read from `kenv`, not serial numbers or a
+full environment dump. These remain firmware observations, not attestations.
+Jails, including callers whose jail status cannot be established, do not probe
+host identity, batteries, displays, or thermals.
+
+Battery enumeration uses read-only `/dev/acpi` requests and preserves individual
+units rather than presenting an aggregate percentage as a physical battery.
+If access fails, units change during collection, or any unit cannot be queried,
+the inventory is unavailable; known external power remains independent.
+There is no second aggregate-battery implementation or privileged fallback.
+ACPI supplies are system batteries, not a general UPS inventory.
+
+Display detection requires accessible primary DRM devices under `/dev/dri`.
+Missing devices, denied access, unknown connectors, empty connector inventories,
+and unresolved hotplug races are unknown, not headless. Allocation and retries
+are bounded. No explicit DRM-master request, modesetting, or forced connector
+reprobe is performed, including when opening a primary device implicitly makes
+the reader master. Legacy/non-DRM display devices are not guessed from SSH or
+graphical-session variables. Header checks cover the small ioctl bindings on
+FreeBSD; DRM-header checks run when the development headers are installed.
 
 An inaccessible macOS Quartz session is not headless evidence. Generic Apple
 identifiers such as `Mac14,2` do not identify chassis by

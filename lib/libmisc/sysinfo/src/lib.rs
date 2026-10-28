@@ -1,11 +1,12 @@
 //! Centralized system information.
 //!
-//! Provides a single [`SystemInfo`] struct with OS, hardware, power, and
+//! Provides a single [`SystemInfo`] struct with OS, hardware, and
 //! runtime information gathered once at startup and cached for the lifetime
 //! of the process.  Platform-specific detection lives in separate files
 //! (`platform_linux.rs`, `platform_macos.rs`, `platform_freebsd.rs`) that
 //! each implement the same `detect() -> SystemInfo` entry point.
-//! Dynamic consumers should use [`power_info`] instead of the cached power fields.
+//! Fresh power, thermal, and task-scoped storage observations belong to
+//! `chaos-machine`, not this startup cache.
 
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -52,27 +53,6 @@ pub fn hostname() -> String {
     detect_hostname()
 }
 
-/// A fresh best-effort power snapshot. An unavailable battery is not displayed;
-/// a detected battery with an unreadable percentage has `battery_level: None`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PowerInfo {
-    pub has_battery: bool,
-    pub battery_level: Option<u8>,
-    pub charger_connected: bool,
-}
-
-/// Read current power state, independently of the startup snapshot.
-///
-/// This performs platform I/O; call it from a background worker, not a renderer.
-pub fn power_info() -> PowerInfo {
-    let (has_battery, battery_level, charger_connected) = platform::detect_power();
-    PowerInfo {
-        has_battery,
-        battery_level: battery_level.filter(|level| *level <= 100),
-        charger_connected,
-    }
-}
-
 // ── Struct ───────────────────────────────────────────────────────────
 
 /// Snapshot of the host environment, collected once at startup.
@@ -104,19 +84,6 @@ pub struct SystemInfo {
     pub cpu_cores: u32,
     /// CPU model string (e.g. `"AMD Ryzen 9 7950X"`).
     pub cpu_model: String,
-    /// Total size of the working partition in bytes.
-    pub disk_total: u64,
-    /// Free space on the working partition in bytes.
-    pub disk_available: u64,
-
-    // ── Power ────────────────────────────────────────────────────
-    /// Whether the machine has a battery (laptop heuristic).
-    pub has_battery: bool,
-    /// Battery charge percentage 0–100, `None` if no battery.
-    pub battery_level: Option<u8>,
-    /// Whether AC power / charger is connected.
-    pub charger_connected: bool,
-
     // ── Runtime ──────────────────────────────────────────────────
     /// Seconds since boot.
     pub uptime_secs: u64,
@@ -219,18 +186,6 @@ pub(crate) fn detect_os_version() -> String {
         c_str.to_string_lossy().into_owned()
     } else {
         "unknown".into()
-    }
-}
-
-/// Disk stats via `statvfs` on the current working directory.
-pub(crate) fn detect_disk() -> (u64, u64) {
-    let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statvfs(c".".as_ptr(), &mut stat) } == 0 {
-        let total = stat.f_blocks as u64 * stat.f_frsize as u64;
-        let avail = stat.f_bavail as u64 * stat.f_frsize as u64;
-        (total, avail)
-    } else {
-        (0, 0)
     }
 }
 

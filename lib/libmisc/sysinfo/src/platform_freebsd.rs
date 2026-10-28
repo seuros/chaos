@@ -4,15 +4,13 @@
 
 use super::sysctl::{sysctl_string, sysctl_u32, sysctl_u64};
 use super::{
-    SandboxKind, SystemInfo, detect_disk, detect_display_server, detect_hostname, detect_locale,
+    SandboxKind, SystemInfo, detect_display_server, detect_hostname, detect_locale,
     detect_os_version, detect_shell, detect_timezone,
 };
 use std::mem;
 
 /// Construct a fully-populated [`SystemInfo`] for this FreeBSD host.
 pub(super) fn detect() -> SystemInfo {
-    let (disk_total, disk_available) = detect_disk();
-    let (has_battery, battery_level, charger_connected) = detect_power();
     let (in_container, container_type) = detect_jail();
 
     SystemInfo {
@@ -26,13 +24,6 @@ pub(super) fn detect() -> SystemInfo {
         memory_available: detect_memory_available(),
         cpu_cores: detect_cpu_cores(),
         cpu_model: detect_cpu_model(),
-        disk_total,
-        disk_available,
-
-        has_battery,
-        battery_level,
-        charger_connected,
-
         uptime_secs: detect_uptime(),
         sandbox_type: SandboxKind::for_platform(),
         in_container,
@@ -93,24 +84,6 @@ fn detect_uptime() -> u64 {
         (now.tv_sec - tv.tv_sec).max(0) as u64
     } else {
         0
-    }
-}
-
-// ── Power / Battery ──────────────────────────────────────────────────
-
-pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
-    // hw.acpi.battery.life — percentage
-    // hw.acpi.battery.state — 0=not charging, 1=discharging, 2=charging
-    // hw.acpi.acline — 1=on AC, 0=on battery
-    let life = sysctl_u32("hw.acpi.battery.life");
-    let acline = sysctl_u32("hw.acpi.acline");
-
-    match life {
-        Some(pct) => {
-            let charger = acline.unwrap_or(0) == 1;
-            (true, Some(pct.min(100) as u8), charger)
-        }
-        None => (false, None, false),
     }
 }
 

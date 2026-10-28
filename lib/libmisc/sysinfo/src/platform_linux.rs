@@ -4,8 +4,8 @@
 //! syscalls.  No external crates beyond `libc`.
 
 use super::{
-    SandboxKind, SystemInfo, detect_disk, detect_display_server, detect_has_network,
-    detect_hostname, detect_locale, detect_os_version, detect_shell, detect_timezone,
+    SandboxKind, SystemInfo, detect_display_server, detect_has_network, detect_hostname,
+    detect_locale, detect_os_version, detect_shell, detect_timezone,
 };
 use std::fs;
 use std::path::Path;
@@ -13,8 +13,6 @@ use std::path::Path;
 /// Construct a fully-populated [`SystemInfo`] for this Linux host.
 pub(super) fn detect() -> SystemInfo {
     let (mem_total, mem_available) = detect_memory();
-    let (disk_total, disk_available) = detect_disk();
-    let (has_battery, battery_level, charger_connected) = detect_power();
     let (in_container, container_type) = detect_container();
 
     SystemInfo {
@@ -28,13 +26,6 @@ pub(super) fn detect() -> SystemInfo {
         memory_available: mem_available,
         cpu_cores: detect_cpu_cores(),
         cpu_model: detect_cpu_model(),
-        disk_total,
-        disk_available,
-
-        has_battery,
-        battery_level,
-        charger_connected,
-
         uptime_secs: detect_uptime(),
         sandbox_type: SandboxKind::for_platform(),
         in_container,
@@ -110,55 +101,6 @@ fn detect_uptime() -> u64 {
         .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok())
         .map(|v| v as u64)
         .unwrap_or(0)
-}
-
-// ── Power / Battery ──────────────────────────────────────────────────
-
-pub(super) fn detect_power() -> (bool, Option<u8>, bool) {
-    let supply = Path::new("/sys/class/power_supply");
-    if !supply.exists() {
-        return (false, None, false);
-    }
-
-    let mut has_battery = false;
-    let mut battery_level: Option<u8> = None;
-    let mut charger_connected = false;
-
-    let Ok(entries) = fs::read_dir(supply) else {
-        return (false, None, false);
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let type_path = path.join("type");
-        let Ok(supply_type) = fs::read_to_string(&type_path) else {
-            continue;
-        };
-        let supply_type = supply_type.trim();
-
-        match supply_type {
-            "Battery" => {
-                has_battery = true;
-                if battery_level.is_none() {
-                    battery_level = fs::read_to_string(path.join("capacity"))
-                        .ok()
-                        .and_then(|s| s.trim().parse().ok());
-                }
-            }
-            "Mains" | "USB" => {
-                let online = fs::read_to_string(path.join("online"))
-                    .ok()
-                    .and_then(|s| s.trim().parse::<u8>().ok())
-                    .unwrap_or(0);
-                if online == 1 {
-                    charger_connected = true;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    (has_battery, battery_level, charger_connected)
 }
 
 // ── Distro ───────────────────────────────────────────────────────────

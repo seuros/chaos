@@ -11,8 +11,6 @@ fn sysinfo_fields_populated() {
     assert!(facts.memory_total > 0, "memory_total must be > 0");
     assert!(facts.cpu_cores > 0, "cpu_cores must be > 0");
     assert!(!facts.cpu_model.is_empty(), "cpu_model must not be empty");
-    assert!(facts.disk_total > 0, "disk_total must be > 0");
-    assert!(facts.disk_available > 0, "disk_available must be > 0");
 }
 
 #[test]
@@ -74,11 +72,6 @@ fn serialization_has_expected_keys() {
         "memory_available",
         "cpu_cores",
         "cpu_model",
-        "disk_total",
-        "disk_available",
-        "has_battery",
-        "battery_level",
-        "charger_connected",
         "uptime_secs",
         "sandbox_type",
         "in_container",
@@ -93,6 +86,20 @@ fn serialization_has_expected_keys() {
 
     for key in expected_keys {
         assert!(obj.contains_key(key), "missing key: {key}");
+    }
+    // Dynamic observations have one owner: chaos-machine. Do not recreate a
+    // second power/storage source in startup metadata or fabricate defaults.
+    for key in [
+        "disk_total",
+        "disk_available",
+        "has_battery",
+        "battery_level",
+        "charger_connected",
+    ] {
+        assert!(
+            !obj.contains_key(key),
+            "dynamic field in startup cache: {key}"
+        );
     }
 }
 

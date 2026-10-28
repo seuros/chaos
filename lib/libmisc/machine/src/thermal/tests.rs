@@ -39,9 +39,21 @@ fn sanity_checks_preserve_zero_subzero_and_overheating() {
 }
 
 #[test]
-fn native_machine_snapshot_includes_thermal_observations() {
-    let thermal = crate::inspect_machine().thermal;
-    eprintln!("native thermal observation: {thermal:?}");
+fn native_machine_snapshot_includes_platform_observations() {
+    let snapshot = crate::inspect_machine();
+    println!(
+        "{}",
+        serde_json::to_string(&snapshot).expect("serialize native snapshot")
+    );
+    #[cfg(target_os = "freebsd")]
+    if crate::sysctl::integer(c"security.jail.jailed") != Some(0) {
+        assert!(snapshot.profile.model.is_none());
+        assert_eq!(snapshot.profile.displays, crate::DisplayState::Unknown);
+        assert_eq!(snapshot.power, crate::PowerInfo::default());
+        assert!(snapshot.thermal.cpu_temperatures.is_empty());
+        assert_eq!(snapshot.thermal.state, ThermalState::Unknown);
+    }
+    let thermal = snapshot.thermal;
     assert_eq!(thermal.macos.is_some(), cfg!(target_os = "macos"));
     for sensor in thermal.cpu_temperatures {
         assert!(!sensor.id.is_empty());

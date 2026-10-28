@@ -8,6 +8,8 @@ use serde::Serialize;
 
 use crate::config::MachineWarningsConfig;
 
+pub(crate) mod disk;
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MachineWarning {
@@ -66,8 +68,8 @@ pub(crate) fn evaluate(
     for filesystem in &storage.filesystems {
         if !filesystem.targets.is_empty()
             && let Some(available_percent) = filesystem.available_percent()
-            && u128::from(filesystem.available_bytes) * 100
-                <= u128::from(filesystem.total_bytes) * u128::from(config.disk_free_percent)
+            && u128::from(filesystem.available_bytes)
+                <= disk::DiskThresholds::new(config, filesystem.total_bytes).warning_bytes
         {
             warnings.push(MachineWarning::LowDiskSpace {
                 filesystem: filesystem.id,
@@ -143,6 +145,7 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
             }
             MachineWarning::LowDiskSpace {
                 targets,
+                available_bytes,
                 available_percent,
                 ..
             } => {
@@ -159,8 +162,9 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
                         roles.push(role);
                     }
                 }
+                let available_gib = *available_bytes as f64 / (1_u64 << 30) as f64;
                 facts.push(format!(
-                    "Disk ({}): {available_percent:.1}% available.",
+                    "Disk ({}): {available_gib:.1} GiB ({available_percent:.1}%) available.",
                     roles.join("/")
                 ));
                 "make storage space available"
@@ -191,8 +195,9 @@ pub(crate) fn instructions(warnings: &[MachineWarning]) -> Option<String> {
     Some(format!(
         "Machine warning (harness host): {}\n\
          🩺 Kernel health checks and notifications are automatic. \
-         Save essential work and a minimal checkpoint to verified persistent storage outside /tmp and other temporary directories; \
-         verify the write succeeded. If unavailable, tell the operator. Do not rely on suspend to preserve data. \
+         Save essential work and a minimal checkpoint to verified persistent storage \
+         outside /tmp and other temporary directories; verify the write succeeded. \
+         If unavailable, tell the operator. Do not rely on suspend to preserve data. \
          Pause heavy or interruption-sensitive work, including flashing. \
          Tell the operator to {}; avoid repeating unchanged notifications. \
          Do not delete files or suspend the machine automatically.",

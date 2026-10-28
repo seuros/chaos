@@ -1,7 +1,18 @@
 use super::*;
 use chaos_machine::*;
 
+mod disk;
+
 fn snapshot(config: &MachineWarningsConfig, temperature: f64, available: u64) -> MachineStatus {
+    snapshot_on_disk(config, temperature, 100 << 30, available)
+}
+
+fn snapshot_on_disk(
+    config: &MachineWarningsConfig,
+    temperature: f64,
+    total: u64,
+    available: u64,
+) -> MachineStatus {
     let machine = MachineSnapshot {
         observed_at: SystemTime::UNIX_EPOCH,
         os: "test",
@@ -34,7 +45,7 @@ fn snapshot(config: &MachineWarningsConfig, temperature: f64, available: u64) ->
             },
             filesystem_type: None,
             backing: FilesystemBacking::Other,
-            total_bytes: 100 << 30,
+            total_bytes: total,
             available_bytes: available,
             available_inodes: None,
             read_only: false,
@@ -277,27 +288,23 @@ fn thermal_unknown_and_filesystem_remount_are_not_recovery() {
         .is_err()
     );
     let low = snapshot(&config, 80.0, 1 << 30);
-    status.storage.filesystems[0].id.device = 2;
-    assert!(recovered(&low.warnings[0], &status, &config).is_err());
-}
-
-#[test]
-fn disk_requires_both_margins_and_reports_impossible_targets() {
-    let config = MachineWarningsConfig::default();
-    let mut status = snapshot(&config, 70.0, 20 << 30);
-    // On a small filesystem the absolute byte margin is the stronger requirement.
-    status.storage.filesystems[0].total_bytes = 10 << 30;
-    status.storage.filesystems[0].available_bytes = 1 << 30;
-    let warning = snapshot(&config, 70.0, 1 << 30).warnings.remove(0);
-    assert_eq!(recovered(&warning, &status, &config), Ok(false));
-    status.storage.filesystems[0].available_bytes = 2 << 30;
-    assert_eq!(recovered(&warning, &status, &config), Ok(true));
-    status.storage.filesystems[0].total_bytes = 512 << 20;
-    status.storage.filesystems[0].available_bytes = 400 << 20;
-    assert_eq!(
-        recovered(&warning, &status, &config),
-        Err("recovery target exceeds filesystem capacity")
-    );
+    for failure in 0..7 {
+        let mut missing = status.clone();
+        let filesystem = &mut missing.storage.filesystems[0];
+        match failure {
+            0 => missing.storage.filesystems.clear(),
+            1 => filesystem.id.device = 2,
+            2 => filesystem.id.filesystem = 2,
+            3 => filesystem.targets.clear(),
+            4 => filesystem.total_bytes = 0,
+            5 => filesystem.available_bytes = filesystem.total_bytes + 1,
+            _ => filesystem.targets[0].target.path = "/remounted".into(),
+        }
+        assert!(
+            recovered(&low.warnings[0], &missing, &config).is_err(),
+            "case {failure}"
+        );
+    }
 }
 
 #[test]

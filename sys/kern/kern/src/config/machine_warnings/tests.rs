@@ -9,6 +9,7 @@ fn machine_warnings_defaults_and_partial_overrides() {
             .unwrap();
     assert_eq!(configured.machine_warnings.battery_percent, 8);
     assert_eq!(configured.machine_warnings.disk_free_percent, 5);
+    assert_eq!(configured.machine_warnings.disk_free_bytes_cap, 20 << 30);
     assert_eq!(
         configured.machine_warnings.cpu_temperature_celsius,
         Some(90.0)
@@ -24,12 +25,28 @@ fn machine_warnings_defaults_and_partial_overrides() {
 }
 
 #[test]
+fn disk_byte_caps_are_positive_and_round_trip() {
+    for cap in [1, 1 << 30, 20 << 30, u64::MAX] {
+        let configured: MachineWarningsConfig =
+            serde_json::from_value(serde_json::json!({"disk_free_bytes_cap": cap})).unwrap();
+        assert_eq!(configured.disk_free_bytes_cap, cap);
+        let restored: MachineWarningsConfig =
+            serde_json::from_value(serde_json::to_value(&configured).unwrap()).unwrap();
+        assert_eq!(restored, configured);
+    }
+}
+
+#[test]
 fn machine_warnings_reject_invalid_thresholds_and_typos() {
     for setting in [
         "battery_percent = 101",
         "battery_percent = -1",
         "disk_free_percent = 256",
         "disk_free_percent = 5.5",
+        "disk_free_bytes_cap = 0",
+        "disk_free_bytes_cap = -1",
+        "disk_free_bytes_cap = 1.5",
+        "disk_free_bytes_cap = '20 GiB'",
         "cpu_temperature_celsius = nan",
         "cpu_temperature_celsius = inf",
         "cpu_temperature_celsius = 251.0",

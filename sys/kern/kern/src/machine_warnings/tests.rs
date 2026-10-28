@@ -154,6 +154,40 @@ fn storage_is_per_relevant_filesystem_with_exact_threshold_comparison() {
 }
 
 #[test]
+fn disk_warnings_require_both_percentage_and_byte_limits() {
+    let mut machine = machine();
+    machine.power = PowerInfo::default();
+    let gib = 1_u64 << 30;
+    for (total, available, cap, warns) in [
+        (4_000_000_000_000, 200_000_000_000, 20 * gib, false),
+        (4 << 40, 20 * gib - 1, 20 * gib, true),
+        (4 << 40, 20 * gib, 20 * gib, true),
+        (4 << 40, 20 * gib + 1, 20 * gib, false),
+        (20 * gib, gib, 20 * gib, true),
+        (20 * gib, gib + 1, 20 * gib, false),
+        (4 << 40, 8 * gib, 8 * gib, true),
+        (4 << 40, 8 * gib + 1, 8 * gib, false),
+        (10_001, 500, 20 * gib, true),
+        (10_001, 501, 20 * gib, false),
+        (u64::MAX, 20 * gib, 20 * gib, true),
+        (u64::MAX, 20 * gib + 1, 20 * gib, false),
+    ] {
+        let config = MachineWarningsConfig {
+            disk_free_bytes_cap: cap,
+            ..Default::default()
+        };
+        let mut snapshot = storage(available);
+        snapshot.filesystems[0].total_bytes = total;
+        let warnings = evaluate(&config, &machine, &snapshot);
+        assert_eq!(
+            !warnings.is_empty(),
+            warns,
+            "total={total}, available={available}, cap={cap}"
+        );
+    }
+}
+
+#[test]
 fn missing_invalid_capacity_and_failed_probes_are_not_zero_free_space() {
     let mut machine = machine();
     machine.power = PowerInfo::default();
@@ -179,12 +213,13 @@ fn large_filesystems_do_not_round_just_above_the_threshold_down_to_low_space() {
     let mut snapshot = storage(0);
     snapshot.filesystems[0].total_bytes = 20_u64 << 56;
     snapshot.filesystems[0].available_bytes = snapshot.filesystems[0].total_bytes / 20;
-    assert_eq!(
-        evaluate(&MachineWarningsConfig::default(), &machine, &snapshot).len(),
-        1
-    );
+    let config = MachineWarningsConfig {
+        disk_free_bytes_cap: u64::MAX,
+        ..Default::default()
+    };
+    assert_eq!(evaluate(&config, &machine, &snapshot).len(), 1);
     snapshot.filesystems[0].available_bytes += 1;
-    assert!(evaluate(&MachineWarningsConfig::default(), &machine, &snapshot).is_empty());
+    assert!(evaluate(&config, &machine, &snapshot).is_empty());
 }
 
 #[test]
@@ -259,11 +294,13 @@ fn warning_instructions_are_emitted_only_for_warnings_without_raw_names() {
     let mut machine = machine();
     machine.power.batteries.as_mut().unwrap()[0].name = "UNTRUSTED_NAME".into();
     machine.thermal.state = ThermalState::Critical;
-    let mut snapshot = storage(0);
+    let mut snapshot = storage(5 << 30);
+    snapshot.filesystems[0].total_bytes = 100 << 30;
     snapshot.filesystems[0].targets[0].target.path = "/UNTRUSTED_PATH".into();
     let warnings = evaluate(&MachineWarningsConfig::default(), &machine, &snapshot);
     let message = instructions(&warnings).unwrap();
     assert!(!message.is_empty());
     assert!(!message.contains("UNTRUSTED"));
+    assert!(message.contains("5.0 GiB (5.0%) available."));
     assert!(instructions(&[]).is_none());
 }

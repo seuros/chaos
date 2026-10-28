@@ -15,7 +15,7 @@ async fn machine_warnings_reach_the_request_as_ephemeral_developer_input() {
             role: StorageRole::Workspace,
             path: "/workspace".into(),
         }],
-        available_bytes: 1,
+        available_bytes: 1 << 30,
         available_percent: 1.0,
     }])
     .expect("low disk warning");
@@ -40,6 +40,7 @@ async fn machine_warnings_reach_the_request_as_ephemeral_developer_input() {
         assert_eq!(text, warning);
         assert!(text.contains("Machine warning (harness host)"));
         assert!(text.contains("Disk ("));
+        assert!(text.contains("1.0 GiB (1.0%) available."));
         assert!(text.contains("minimal checkpoint"));
         assert!(text.contains("Tell the operator"));
     }

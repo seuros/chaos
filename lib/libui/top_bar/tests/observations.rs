@@ -247,6 +247,16 @@ fn disk_shows_tightest_relevant_filesystem_without_summing_or_hiding_failures() 
     tx.send_replace(Some(Arc::new(status.clone())));
     refresh_all(&mut bar);
     assert_eq!(text(&render(&bar[..1], 18)), " disk 0.0% free ? ");
+
+    // A low percentage on a large disk does not imply a kernel warning.
+    status.storage.unavailable.clear();
+    status.storage.filesystems[1].total_bytes = 4 << 40;
+    status.storage.filesystems[1].available_bytes = 200 << 30;
+    tx.send_replace(Some(Arc::new(status.clone())));
+    refresh_all(&mut bar);
+    assert_eq!(text(&render(&bar[..1], 16)), " disk 4.9% free ");
+    assert_eq!(bar[0].spec().priority, 210);
+
     status.storage.filesystems.clear();
     tx.send_replace(Some(Arc::new(status)));
     refresh_all(&mut bar);

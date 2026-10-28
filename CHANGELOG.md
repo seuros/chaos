@@ -9,6 +9,11 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- MCP resource reads and subscriptions accept an optional `parameters` map
+  with a URI template, using `mcp-host` 0.15 to percent-encode raw string values
+  such as `github-actions[bot]` before sending the request.
+
 ### Fixed
 - `/mcp` omits resource and resource-template sections for servers that do not
   advertise the MCP `resources` capability, rather than showing `(none)`.

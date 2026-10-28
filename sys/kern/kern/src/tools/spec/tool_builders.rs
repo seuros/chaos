@@ -1521,15 +1521,21 @@ pub(crate) fn create_list_mcp_resource_templates_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
-    let properties = mcp_resource_uri_properties(
-        "Resource URI from list_mcp_resources, or tasks:// / tasks://get/<id> / tasks://result/<id>.",
-    );
+    let properties = mcp_resource_uri_properties(concat!(
+        "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
+        "Use list_mcp_resources or list_mcp_resource_templates to discover it. ",
+        "Also supports tasks:// / tasks://get/<id> / tasks://result/<id>.",
+    ));
 
     ToolSpec::Function(ResponsesApiTool {
         name: "read_mcp_resource".to_string(),
-        description:
-            "Read a resource by URI. Omit server for internal resources and tasks; specify the configured server for external MCP resources and tasks."
-                .to_string(),
+        description: concat!(
+            "Read a resource by URI. For templates, supply raw string parameters and ",
+            "let URI-template expansion percent-encode them. Omit server for internal ",
+            "resources and tasks; specify the configured server ",
+            "for external MCP resources and tasks.",
+        )
+        .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -1542,9 +1548,11 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
-    let mut properties = mcp_resource_uri_properties(
-        "Resource URI to subscribe to or unsubscribe from. The URI is passed to the server without requiring the resource to currently exist or appear in list_mcp_resources.",
-    );
+    let mut properties = mcp_resource_uri_properties(concat!(
+        "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
+        "The expanded URI is passed to the server without requiring the resource ",
+        "to currently exist or appear in list_mcp_resources.",
+    ));
     properties.insert(
         "subscribed".to_string(),
         JsonSchema::Boolean {
@@ -1586,6 +1594,26 @@ fn mcp_resource_uri_properties(uri_description: &str) -> BTreeMap<String, JsonSc
             "uri".to_string(),
             JsonSchema::String {
                 description: Some(uri_description.to_string()),
+            },
+        ),
+        (
+            "parameters".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(
+                    JsonSchema::String {
+                        description: Some(
+                            concat!(
+                                "Raw, decoded template parameter value ",
+                                "(for example github-actions[bot]); ",
+                                "do not percent-encode it yourself.",
+                            )
+                            .to_string(),
+                        ),
+                    }
+                    .into(),
+                ),
             },
         ),
     ])

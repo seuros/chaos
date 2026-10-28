@@ -3,6 +3,72 @@ use crate::builtin_mcp_resources;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
+#[test]
+fn resource_uri_templates_encode_bot_authors_and_optional_query_parameters() {
+    for (parameters, expected) in [
+        (
+            json!({
+                "state": "open",
+                "author": "github-actions[bot]",
+                "repo": "seuros/behavior_machines",
+            }),
+            "skipper://prs/open/github-actions%5Bbot%5D?repo=seuros%2Fbehavior_machines",
+        ),
+        (
+            json!({"state": "open", "author": "dependabot[bot]"}),
+            "skipper://prs/open/dependabot%5Bbot%5D",
+        ),
+        (
+            json!({"state": "open", "author": "me", "repo": "owner/repo?x=1&y=#tag"}),
+            "skipper://prs/open/me?repo=owner%2Frepo%3Fx%3D1%26y%3D%23tag",
+        ),
+    ] {
+        let args: ResourceUriArgs = parse_args(Some(json!({
+            "server": "skipper",
+            "uri": "skipper://prs/{state}/{author}{?repo}",
+            "parameters": parameters,
+        })))
+        .expect("resource arguments");
+        assert_eq!(args.server.as_deref(), Some("skipper"));
+        assert_eq!(
+            resolve_resource_uri(args.uri, args.parameters).expect("expanded URI"),
+            expected,
+        );
+    }
+}
+
+#[test]
+fn concrete_resource_uris_without_parameters_are_not_reencoded() {
+    for uri in [
+        "skipper://prs/open/github-actions%5Bbot%5D?repo=seuros/behavior_machines",
+        "memo://host/a+b?x=1&y=2",
+        "tasks://result/opaque/id",
+    ] {
+        let args: ResourceUriArgs = parse_args(Some(json!({"uri": uri}))).unwrap();
+        assert_eq!(
+            resolve_resource_uri(args.uri, args.parameters).unwrap(),
+            uri
+        );
+    }
+}
+
+#[test]
+fn resource_uri_templates_reject_invalid_templates_and_non_string_parameters() {
+    for uri in ["memo://host/{", "memo://host/{}", "relative/{name}"] {
+        assert!(resolve_resource_uri(uri.into(), Some(HashMap::new())).is_err());
+    }
+    assert!(resolve_resource_uri(" \t".into(), None).is_err());
+    for value in [json!(1), json!(false), json!([]), Value::Null] {
+        let arguments = Some(json!({
+            "uri": "memo://host/{name}",
+            "parameters": {"name": value},
+            "subscribed": true,
+        }));
+        assert!(parse_args::<ResourceUriArgs>(arguments.clone()).is_err());
+        assert!(parse_args::<ResourceSubscriptionArgs>(arguments).is_err());
+    }
+}
+
 fn resource(uri: &str, name: &str) -> ResourceInfo {
     ResourceInfo {
         uri: uri.to_string(),
@@ -124,13 +190,19 @@ async fn internal_subscription_falls_back_to_snapshot_and_unsubscribe_is_noop() 
     let expected = read_resource_contents(&session, &turn, None, uri)
         .await
         .expect("read internal resource");
-    for subscribed in [true, false] {
+    for (uri_argument, parameters, subscribed) in [
+        (uri, Value::Null, true),
+        (uri, Value::Null, false),
+        ("chaos://{resource}", json!({"resource": "sessions"}), true),
+        ("chaos://{resource}", json!({"resource": "sessions"}), false),
+    ] {
         let output = handle_resource_subscription(
             session.clone(),
             turn.clone(),
             "subscription-fallback".to_string(),
             Some(json!({
-                "uri": uri,
+                "uri": uri_argument,
+                "parameters": parameters,
                 "subscribed": subscribed
             })),
         )
@@ -293,30 +365,44 @@ async fn internal_resources_require_serverless_reads() {
     let session = Arc::new(session);
     let turn = Arc::new(turn);
     for server in ["chaos_local", "chaos", "local", "guessed-server"] {
-        let result = handle_read_resource(
+        for arguments in [
+            json!({"server": server, "uri": "chaos://sessions"}),
+            json!({
+                "server": server,
+                "uri": "chaos://{resource}",
+                "parameters": {"resource": "sessions"},
+            }),
+        ] {
+            let result = handle_read_resource(
+                session.clone(),
+                turn.clone(),
+                "global-read".into(),
+                Some(arguments),
+            )
+            .await;
+            assert!(result.is_err(), "must not redirect {server}");
+        }
+    }
+    for arguments in [
+        json!({"uri": "chaos://sessions"}),
+        json!({"uri": "chaos://{resource}", "parameters": {"resource": "sessions"}}),
+    ] {
+        let output = handle_read_resource(
             session.clone(),
             turn.clone(),
-            "global-read".into(),
-            Some(json!({"server": server, "uri": "chaos://sessions"})),
+            "internal-read".into(),
+            Some(arguments),
         )
-        .await;
-        assert!(result.is_err(), "must not redirect {server}");
+        .await
+        .expect("serverless internal read");
+        let text = function_call_output_content_items_to_text(&output.body).unwrap();
+        let value: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(output.success, Some(true));
+        assert!(value.get("server").is_none());
+        assert_eq!(value["uri"], "chaos://sessions");
+        assert!(value["contents"].is_array());
+        assert!(value.get("snapshot").is_none());
     }
-    let output = handle_read_resource(
-        session,
-        turn,
-        "internal-read".into(),
-        Some(json!({"uri": "chaos://sessions"})),
-    )
-    .await
-    .expect("serverless internal read");
-    let text = function_call_output_content_items_to_text(&output.body).unwrap();
-    let value: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(output.success, Some(true));
-    assert!(value.get("server").is_none());
-    assert_eq!(value["uri"], "chaos://sessions");
-    assert!(value["contents"].is_array());
-    assert!(value.get("snapshot").is_none());
 }
 
 #[test]

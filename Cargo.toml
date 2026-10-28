@@ -253,7 +253,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.14.0", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.15.0", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3.3.0", default-features = false }

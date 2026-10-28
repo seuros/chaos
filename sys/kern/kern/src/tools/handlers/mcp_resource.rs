@@ -62,12 +62,16 @@ struct ListResourceTemplatesArgs {
 struct ResourceUriArgs {
     server: Option<String>,
     uri: String,
+    #[serde(default)]
+    parameters: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ResourceSubscriptionArgs {
     server: Option<String>,
     uri: String,
+    #[serde(default)]
+    parameters: Option<HashMap<String, String>>,
     subscribed: bool,
 }
 
@@ -861,9 +865,13 @@ async fn handle_read_resource(
     arguments: Option<Value>,
 ) -> Result<FunctionToolOutput, FunctionCallError> {
     let args: ResourceUriArgs = parse_args(arguments.clone())?;
-    let ResourceUriArgs { server, uri } = args;
+    let ResourceUriArgs {
+        server,
+        uri,
+        parameters,
+    } = args;
     let server = normalize_resource_server(server)?;
-    let uri = normalize_required_string("uri", uri)?;
+    let uri = resolve_resource_uri(uri, parameters)?;
 
     let invocation = McpInvocation {
         server: None,
@@ -918,6 +926,22 @@ async fn handle_read_resource(
         payload_result,
     )
     .await
+}
+
+fn resolve_resource_uri(
+    uri: String,
+    parameters: Option<HashMap<String, String>>,
+) -> Result<String, FunctionCallError> {
+    let uri = normalize_required_string("uri", uri)?;
+    match parameters {
+        Some(parameters) => mcp_host::registry::resources::expand_uri_template(&uri, &parameters)
+            .map_err(|error| {
+                FunctionCallError::RespondToModel(format!(
+                    "could not expand resource URI template: {error}"
+                ))
+            }),
+        None => Ok(uri),
+    }
 }
 
 pub(super) fn normalize_resource_server(
@@ -975,10 +999,11 @@ async fn handle_resource_subscription(
     let ResourceSubscriptionArgs {
         server,
         uri,
+        parameters,
         subscribed,
     } = args;
     let server = normalize_resource_server(server)?;
-    let uri = normalize_required_string("uri", uri)?;
+    let uri = resolve_resource_uri(uri, parameters)?;
 
     let invocation = McpInvocation {
         server: None,

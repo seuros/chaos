@@ -68,7 +68,7 @@ chaos-context = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-mcp-runtime = { workspace = true }
 chaos-mcp-protocol = { workspace = true }
-# Used by test_stdio_server binary only; server-side MCP SDK for test fixture
+# Server-side MCP SDK for fixtures and shared resource URI-template expansion.
 mcp-host = { workspace = true }
 chaos-proc = { workspace = true }
 chaos-realpath = { workspace = true }

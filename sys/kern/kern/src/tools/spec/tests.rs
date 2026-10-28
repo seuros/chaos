@@ -23,6 +23,33 @@ use pretty_assertions::assert_eq;
 use super::*;
 
 #[test]
+fn resource_tools_offer_optional_string_template_parameters() {
+    for spec in [
+        tool_builders::create_read_mcp_resource_tool(),
+        tool_builders::create_set_mcp_resource_subscription_tool(),
+    ] {
+        let ToolSpec::Function(tool) = spec else {
+            panic!("function tool");
+        };
+        let schema = serde_json::to_value(tool.parameters).unwrap();
+        assert_eq!(schema["properties"]["parameters"]["type"], "object");
+        assert_eq!(
+            schema["properties"]["parameters"]["additionalProperties"]["type"],
+            "string",
+        );
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.contains(&json!("uri")));
+        assert!(!required.contains(&json!("parameters")));
+        assert!(
+            schema["properties"]["uri"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("RFC 6570")
+        );
+    }
+}
+
+#[test]
 fn internal_resource_and_task_schemas_allow_omitted_server() {
     for spec in [
         tool_builders::create_read_mcp_resource_tool(),

@@ -4826,7 +4826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c93ead32f1aded3f2ce985c3af4b4492f403a3f0d433250362eb845732d74893"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -6921,9 +6921,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c20561bcdac1a322f007c50eb78776977d91f1beec00d1fd4683bc351fa496d"
+checksum = "79a1ba2d913f7fefee9542fd3f20854619da2c83202a8995ebf7fa97b216d0ac"
 dependencies = [
  "arc-swap",
  "async-stream",
@@ -6957,9 +6957,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host-macros"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a805a321320a38a7f5336160573e75f5c33ce70ccbcf346062dcc48415b57f6"
+checksum = "a95db1c6f1c5a1a673c5403fc2dda7de1583f6a0bf07c097dca7714f15f9c2d0"
 dependencies = [
  "darling 0.24.1",
  "proc-macro-crate",
@@ -11086,7 +11086,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",

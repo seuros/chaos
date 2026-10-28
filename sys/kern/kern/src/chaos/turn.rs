@@ -46,10 +46,13 @@ use super::Session;
 use super::TurnContext;
 
 mod execution;
+mod lifecycle;
 mod preparation;
 mod progress;
 mod sampling;
 
+use lifecycle::TurnControlEvent;
+use lifecycle::TurnLifecycle;
 use preparation::run_auto_compact;
 use preparation::run_pre_sampling_compact;
 use progress::TurnProgressTracker;
@@ -173,12 +176,14 @@ async fn finalize_context_hook(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     outcome: ContextHookOutcome,
+    lifecycle: &mut TurnLifecycle,
 ) -> bool {
     for completed in outcome.completed_events {
         sess.send_event(turn_context, EventMsg::HookCompleted(completed))
             .await;
     }
     if outcome.should_stop {
+        lifecycle.apply(TurnControlEvent::Stop);
         return true;
     }
     if let Some(additional_context) = outcome.additional_context {
@@ -257,16 +262,41 @@ pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 ///
 pub(crate) async fn run_turn(
     task_context: Arc<crate::tasks::SessionTaskContext>,
-    mut turn_context: Arc<TurnContext>,
+    turn_context: Arc<TurnContext>,
     input: Vec<UserInput>,
     origin: crate::tasks::RegularTask,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> Option<String> {
+    let mut lifecycle = TurnLifecycle::default();
+    let result = run_turn_inner(
+        task_context,
+        turn_context,
+        input,
+        origin,
+        prewarmed_client_session,
+        cancellation_token.clone(),
+        &mut lifecycle,
+    )
+    .await;
+    lifecycle.close(cancellation_token.is_cancelled());
+    result
+}
+
+async fn run_turn_inner(
+    task_context: Arc<crate::tasks::SessionTaskContext>,
+    mut turn_context: Arc<TurnContext>,
+    input: Vec<UserInput>,
+    origin: crate::tasks::RegularTask,
+    prewarmed_client_session: Option<ModelClientSession>,
+    cancellation_token: CancellationToken,
+    lifecycle: &mut TurnLifecycle,
+) -> Option<String> {
     let sess = task_context.clone_session();
     let completion_turn = origin == crate::tasks::RegularTask::Completion;
     let owner_turn = origin == crate::tasks::RegularTask::Owner;
     if input.is_empty() && owner_turn {
+        lifecycle.apply(TurnControlEvent::Stop);
         return None;
     }
 
@@ -280,6 +310,7 @@ pub(crate) async fn run_turn(
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
     // when they would push the thread over the compaction threshold.
+    lifecycle.apply(TurnControlEvent::Compact);
     if run_pre_sampling_compact(
         &sess,
         &turn_context,
@@ -292,6 +323,7 @@ pub(crate) async fn run_turn(
         error!("Failed to run pre-sampling compact");
         return None;
     }
+    lifecycle.apply(TurnControlEvent::Compacted);
 
     sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
@@ -381,7 +413,12 @@ pub(crate) async fn run_turn(
     }
 
     loop {
+        if cancellation_token.is_cancelled() {
+            lifecycle.cancel();
+            break;
+        }
         if sess.machine_recovery_parked().await {
+            lifecycle.apply(TurnControlEvent::Park);
             break;
         }
         let pending_session_start = sess.take_pending_session_start_source().await;
@@ -422,7 +459,7 @@ pub(crate) async fn run_turn(
             let outcome = hooks
                 .run_session_start(session_start_request, Some(turn_context.sub_id.clone()))
                 .await;
-            if finalize_context_hook(&sess, &turn_context, outcome.into()).await {
+            if finalize_context_hook(&sess, &turn_context, outcome.into(), lifecycle).await {
                 break;
             }
         }
@@ -431,7 +468,7 @@ pub(crate) async fn run_turn(
             let previews = hooks.preview_before_turn(&before_turn_request);
             emit_hook_started_events(&sess, &turn_context, previews).await;
             let outcome = hooks.run_before_turn(before_turn_request).await;
-            if finalize_context_hook(&sess, &turn_context, outcome.into()).await {
+            if finalize_context_hook(&sess, &turn_context, outcome.into(), lifecycle).await {
                 break;
             }
         }
@@ -490,10 +527,11 @@ pub(crate) async fn run_turn(
         // the mutable session policy before every sample so the immediate
         // follow-up request receives the new instructions and tool surface.
         let sampling_turn_context = sess.effective_turn_context(&turn_context).await;
-        if sampling_turn_context.model_info.slug != turn_context.model_info.slug
+        if sampling_turn_context.model_info.slug != turn_context.model_info.slug {
+            lifecycle.apply(TurnControlEvent::Compact);
             // Distillation carries a large future; keep the extra boundary
             // check out of the turn task's inline stack state.
-            && Box::pin(run_pre_sampling_compact(
+            if Box::pin(run_pre_sampling_compact(
                 &sess,
                 &sampling_turn_context,
                 Some(&turn_context),
@@ -501,9 +539,11 @@ pub(crate) async fn run_turn(
             ))
             .await
             .is_err()
-        {
-            error!("Failed to compact at model-change sampling boundary");
-            return None;
+            {
+                error!("Failed to compact at model-change sampling boundary");
+                return None;
+            }
+            lifecycle.apply(TurnControlEvent::Compacted);
         }
         // Subsequent allotment checks and compaction must use the model that
         // actually sampled, including across repeated model switches.
@@ -530,6 +570,7 @@ pub(crate) async fn run_turn(
             Arc::clone(&turn_context),
             Arc::clone(&turn_diff_tracker),
             &mut client_session,
+            lifecycle,
             &mut turn_progress,
             Some(turn_metadata_header.as_str()),
             sampling_request_input,
@@ -540,6 +581,7 @@ pub(crate) async fn run_turn(
         {
             Ok(sampling_request_output) => {
                 if sess.machine_recovery_parked().await {
+                    lifecycle.apply(TurnControlEvent::Park);
                     break;
                 }
                 let SamplingRequestResult {
@@ -553,6 +595,7 @@ pub(crate) async fn run_turn(
                 // immediately, while compact_now is acted on here at the next
                 // safe turn-loop boundary.
                 if sess.compaction_requested(turn_context.as_ref()).await {
+                    lifecycle.apply(TurnControlEvent::Compact);
                     match run_auto_compact(
                         &sess,
                         &turn_context,
@@ -560,15 +603,24 @@ pub(crate) async fn run_turn(
                     )
                     .await
                     {
-                        Ok(()) => continue,
+                        Ok(()) => {
+                            lifecycle.apply(TurnControlEvent::Compacted);
+                            continue;
+                        }
                         Err(err) => {
+                            lifecycle.apply(TurnControlEvent::CompactFailed);
                             sess.clear_compaction_request().await;
-                            warn!(%err, "agent-requested compaction failed; returning to normal automatic compaction");
+                            warn!(
+                                %err,
+                                "agent-requested compaction failed; \
+                                 returning to normal automatic compaction"
+                            );
                             sess.send_event(
                                 &turn_context,
                                 EventMsg::Warning(WarningEvent {
                                     message: format!(
-                                        "Agent-requested compaction failed; normal automatic compaction remains active: {err}"
+                                        "Agent-requested compaction failed; \
+                                         normal automatic compaction remains active: {err}"
                                     ),
                                 }),
                             )
@@ -604,12 +656,14 @@ pub(crate) async fn run_turn(
                     && token_limit_reached
                     && compaction_reflex_follow_up_allowed
                 {
+                    lifecycle.apply(TurnControlEvent::FollowUp);
                     continue;
                 }
 
                 // as long as compaction works well in getting us way below the token limit, we
                 // shouldn't worry about being in an infinite loop.
                 if token_limit_reached && needs_follow_up {
+                    lifecycle.apply(TurnControlEvent::Compact);
                     if run_auto_compact(
                         &sess,
                         &turn_context,
@@ -620,10 +674,12 @@ pub(crate) async fn run_turn(
                     {
                         return None;
                     }
+                    lifecycle.apply(TurnControlEvent::Compacted);
                     continue;
                 }
 
                 if !needs_follow_up {
+                    lifecycle.apply(TurnControlEvent::Finish);
                     last_agent_message = sampling_request_last_agent_message;
                     let mut stop_request = chaos_dtrace::StopRequest {
                         session_id: sess.conversation_id,
@@ -673,16 +729,7 @@ pub(crate) async fn run_turn(
                             }
                         }
                     };
-                    for run in stop_previews {
-                        sess.send_event(
-                            &turn_context,
-                            EventMsg::HookStarted(crate::protocol::HookStartedEvent {
-                                turn_id: Some(turn_context.sub_id.clone()),
-                                run,
-                            }),
-                        )
-                        .await;
-                    }
+                    emit_hook_started_events(&sess, &turn_context, stop_previews).await;
                     let stop_outcome = hooks.run_stop(stop_request).await;
                     // The path is intentionally valid only while Stop handlers
                     // execute. A background hook must copy it before returning.
@@ -702,12 +749,15 @@ pub(crate) async fn run_turn(
                             )
                             .await;
                             stop_hook_active = true;
+                            lifecycle.apply(TurnControlEvent::HookContinuation);
                             continue;
                         } else {
                             sess.send_event(
                                 &turn_context,
                                 EventMsg::Warning(WarningEvent {
-                                    message: "Stop hook requested continuation without a prompt; ignoring the block.".to_string(),
+                                    message: "Stop hook requested continuation without a prompt; \
+                                              ignoring the block."
+                                        .to_string(),
                                 }),
                             )
                             .await;
@@ -715,6 +765,7 @@ pub(crate) async fn run_turn(
                     }
                     if stop_outcome.should_stop {
                         sess.state.lock().await.goal.pause("stop_hook");
+                        lifecycle.apply(TurnControlEvent::Stop);
                         break;
                     }
                     if owner_turn {
@@ -738,6 +789,7 @@ pub(crate) async fn run_turn(
                                     // Success/pause get a wrap-up response, not
                                     // a forced end. Terminal state makes the
                                     // next stop a no-op unless evidence changes.
+                                    lifecycle.apply(TurnControlEvent::GoalContinuation);
                                     continue;
                                 }
                             }
@@ -780,7 +832,8 @@ pub(crate) async fn run_turn(
                             }
                             HookResult::FailedAbort(error) => {
                                 let message = format!(
-                                    "after_agent hook '{hook_name}' failed and aborted turn completion: {error}"
+                                    "after_agent hook '{hook_name}' failed \
+                                     and aborted turn completion: {error}"
                                 );
                                 warn!(
                                     turn_id = %turn_context.sub_id,
@@ -805,12 +858,15 @@ pub(crate) async fn run_turn(
                         .await;
                         return None;
                     }
+                    lifecycle.apply(TurnControlEvent::Complete);
                     break;
                 }
+                lifecycle.apply(TurnControlEvent::FollowUp);
                 continue;
             }
             Err(ChaosErr::TurnAborted) => {
                 // Aborted turn is reported via a different event.
+                lifecycle.cancel();
                 break;
             }
             Err(ChaosErr::InvalidImageRequest()) => {
@@ -819,6 +875,7 @@ pub(crate) async fn run_turn(
                     "Invalid image detected; sanitizing tool output to prevent poisoning",
                 );
                 if state.history.replace_last_turn_images("Invalid image") {
+                    lifecycle.apply(TurnControlEvent::RepairContext);
                     continue;
                 }
                 drop(state);
@@ -838,6 +895,7 @@ pub(crate) async fn run_turn(
                     %message,
                     "provider rejected encrypted reasoning; dropped it from history and retrying"
                 );
+                lifecycle.apply(TurnControlEvent::RepairContext);
                 continue;
             }
             Err(e) => {

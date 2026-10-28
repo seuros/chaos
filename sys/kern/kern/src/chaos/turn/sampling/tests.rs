@@ -1,4 +1,56 @@
 use super::*;
+use std::assert_matches;
+
+fn retry_lifecycle() -> TurnLifecycle {
+    let mut lifecycle = TurnLifecycle::default();
+    lifecycle.apply(TurnControlEvent::Sample);
+    lifecycle.apply(TurnControlEvent::AttemptSettled);
+    assert!(lifecycle.try_retry(0));
+    lifecycle
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_backoff_cancels_without_waiting_for_delay() {
+    let mut lifecycle = retry_lifecycle();
+    let token = CancellationToken::new();
+    let started = tokio::time::Instant::now();
+    let cancel = async {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        token.cancel();
+    };
+    let (result, ()) = tokio::join!(
+        wait_for_retry(&mut lifecycle, Duration::from_secs(60), &token),
+        cancel
+    );
+    assert_matches!(result, Err(ChaosErr::TurnAborted));
+    assert_eq!(started.elapsed(), Duration::from_secs(1));
+    lifecycle.close(true);
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancellation_wins_when_retry_timer_is_already_ready() {
+    let mut lifecycle = retry_lifecycle();
+    let token = CancellationToken::new();
+    token.cancel();
+    assert_matches!(
+        wait_for_retry(&mut lifecycle, Duration::ZERO, &token).await,
+        Err(ChaosErr::TurnAborted)
+    );
+    lifecycle.close(true);
+}
+
+#[tokio::test(start_paused = true)]
+async fn elapsed_retry_reenters_preparation_before_sampling() {
+    let mut lifecycle = retry_lifecycle();
+    wait_for_retry(
+        &mut lifecycle,
+        Duration::from_secs(1),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    lifecycle.apply(TurnControlEvent::Sample);
+}
 
 #[test]
 fn appends_labeled_mcp_server_instructions() {

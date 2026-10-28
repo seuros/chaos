@@ -36,6 +36,8 @@ use super::super::response_parsing::{
     flush_assistant_text_segments_for_item, handle_assistant_item_done_in_plan_mode,
 };
 use super::SamplingRequestResult;
+use super::lifecycle::TurnControlEvent;
+use super::lifecycle::TurnLifecycle;
 use super::progress::TurnProgressTracker;
 
 #[allow(clippy::too_many_arguments)]
@@ -51,6 +53,7 @@ pub(super) async fn try_run_sampling_request(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     client_session: &mut ModelClientSession,
+    lifecycle: &mut TurnLifecycle,
     turn_metadata_header: Option<&str>,
     turn_diff_tracker: SharedTurnDiffTracker,
     progress: &mut TurnProgressTracker,
@@ -132,7 +135,8 @@ pub(super) async fn try_run_sampling_request(
         };
 
         let event = match event {
-            Some(res) => res?,
+            Some(Ok(event)) => event,
+            Some(Err(error)) => break Err(error),
             None => {
                 break Err(ChaosErr::Stream(
                     "stream closed before response.completed".into(),
@@ -184,9 +188,14 @@ pub(super) async fn try_run_sampling_request(
                     cancellation_token: cancellation_token.child_token(),
                 };
 
-                let output_result = handle_output_item_done(&mut ctx, item, previously_active_item)
-                    .instrument(handle_responses)
-                    .await?;
+                let output_result =
+                    match handle_output_item_done(&mut ctx, item, previously_active_item)
+                        .instrument(handle_responses)
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(error) => break Err(error),
+                    };
                 if let Some(tool_future) = output_result.tool_future {
                     in_flight.push_back(tool_future);
                 }
@@ -426,6 +435,10 @@ pub(super) async fn try_run_sampling_request(
         }
     };
 
+    lifecycle.apply(TurnControlEvent::StreamEnded);
+    if cancellation_token.is_cancelled() {
+        lifecycle.cancel();
+    }
     flush_assistant_text_segments_all(
         &sess,
         &turn_context,

@@ -14,6 +14,8 @@ use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_chaos::TestChaos;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
+use serde_json::json;
+use std::assert_matches;
 
 fn sse_incomplete() -> String {
     let fixture = find_resource!("tests/fixtures/incomplete_sse.json")
@@ -108,4 +110,72 @@ async fn retries_on_early_close() {
     );
 
     server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn early_close_after_tool_dispatch_preserves_results_without_replaying() -> anyhow::Result<()>
+{
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let test = test_chaos()
+        .with_config(|config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(1);
+        })
+        .build(&server)
+        .await?;
+    let input = test.cwd.path().join("sample-input.txt");
+    std::fs::write(&input, "settled-tool-result")?;
+    let call_id = "read-before-disconnect";
+    let first = responses::sse(vec![
+        responses::ev_response_created("incomplete-tool-response"),
+        responses::ev_function_call(
+            call_id,
+            "read_file",
+            &json!({"file_path": input, "limit": 1}).to_string(),
+        ),
+        // Intentionally omit response.completed after dispatching the tool.
+    ]);
+    let next = responses::sse(vec![
+        responses::ev_assistant_message("next-message", "resumed"),
+        responses::ev_completed("next-response"),
+    ]);
+    let mock = responses::mount_sse_sequence(&server, vec![first, next]).await;
+
+    test.process
+        .submit(
+            test.process
+                .user_turn(
+                    vec![UserInput::Text {
+                        text: "read the input".into(),
+                        text_elements: Vec::new(),
+                    }],
+                    None,
+                )
+                .await,
+        )
+        .await?;
+    let error = wait_for_event(&test.process, |event| matches!(event, EventMsg::Error(_))).await;
+    assert_matches!(
+        error,
+        EventMsg::Error(error) if error.message.contains("automatic retry refused")
+    );
+    wait_for_event(&test.process, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert_eq!(mock.requests().len(), 1, "failed sample must not replay");
+
+    test.submit_turn("continue using the recorded result")
+        .await?;
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[1]
+            .function_call_output_text(call_id)
+            .is_some_and(|output| output.contains("settled-tool-result")),
+        "tool output must settle into history even when the stream fails"
+    );
+    Ok(())
 }

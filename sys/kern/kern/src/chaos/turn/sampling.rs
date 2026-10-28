@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
@@ -24,6 +25,8 @@ use super::super::Session;
 use super::super::TurnContext;
 use super::SamplingRequestResult;
 use super::execution::try_run_sampling_request;
+use super::lifecycle::TurnControlEvent;
+use super::lifecycle::TurnLifecycle;
 use super::progress::TurnProgressTracker;
 
 mod machine_warnings;
@@ -122,6 +125,7 @@ pub(super) async fn run_sampling_request(
     turn_context: Arc<TurnContext>,
     turn_diff_tracker: SharedTurnDiffTracker,
     client_session: &mut ModelClientSession,
+    lifecycle: &mut TurnLifecycle,
     progress: &mut TurnProgressTracker,
     turn_metadata_header: Option<&str>,
     input: Vec<chaos_ipc::models::ResponseItem>,
@@ -173,6 +177,10 @@ pub(super) async fn run_sampling_request(
     let history_len = prompt.input.len();
     prompt.request_local_start = Some(history_len);
     loop {
+        if cancellation_token.is_cancelled() {
+            lifecycle.cancel();
+            return Err(ChaosErr::TurnAborted);
+        }
         // Request-local guidance and warnings are refreshed after tool batches
         // and retries. Never persist them in history, where they become stale.
         prompt.input.truncate(history_len);
@@ -220,11 +228,13 @@ pub(super) async fn run_sampling_request(
             turn_context.approval_policy.value(),
         );
         prompt.input.extend(machine_input.iter().cloned());
-        let err = match Box::pin(try_run_sampling_request(
+        lifecycle.apply(TurnControlEvent::Sample);
+        let outcome = Box::pin(try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
             Arc::clone(&turn_context),
             client_session,
+            lifecycle,
             turn_metadata_header,
             Arc::clone(&turn_diff_tracker),
             progress,
@@ -233,8 +243,14 @@ pub(super) async fn run_sampling_request(
             &prompt,
             cancellation_token.child_token(),
         ))
-        .await
-        {
+        .await;
+        if cancellation_token.is_cancelled() || matches!(&outcome, Err(ChaosErr::TurnAborted)) {
+            sess.discard_machine_wait_request(&turn_context).await;
+            lifecycle.cancel();
+            return Err(ChaosErr::TurnAborted);
+        }
+        lifecycle.apply(TurnControlEvent::AttemptSettled);
+        let err = match outcome {
             Ok(output) => {
                 sess.finish_machine_wait_request(&turn_context, tool_runtime.call_count())
                     .await;
@@ -268,6 +284,12 @@ pub(super) async fn run_sampling_request(
         // Use the configured provider-specific stream retry budget.
         let max_retries = turn_context.provider.stream_max_retries();
         if retries < max_retries {
+            if !lifecycle.try_retry(tool_runtime.call_count()) {
+                return Err(ChaosErr::Fatal(format!(
+                    "Sampling stream failed after tool dispatch; automatic retry refused \
+                     to avoid repeating actions. Inspect tool results before continuing: {err}"
+                )));
+            }
             retries += 1;
             let delay = match &err {
                 ChaosErr::Stream(_, requested_delay) => {
@@ -289,9 +311,27 @@ pub(super) async fn run_sampling_request(
                 err,
             )
             .await;
-            tokio::time::sleep(delay).await;
+            wait_for_retry(lifecycle, delay, &cancellation_token).await?;
         } else {
             return Err(err);
+        }
+    }
+}
+
+async fn wait_for_retry(
+    lifecycle: &mut TurnLifecycle,
+    delay: Duration,
+    cancellation_token: &CancellationToken,
+) -> ChaosResult<()> {
+    tokio::select! {
+        biased;
+        _ = cancellation_token.cancelled() => {
+            lifecycle.cancel();
+            Err(ChaosErr::TurnAborted)
+        }
+        _ = tokio::time::sleep(delay) => {
+            lifecycle.apply(TurnControlEvent::RetryElapsed);
+            Ok(())
         }
     }
 }

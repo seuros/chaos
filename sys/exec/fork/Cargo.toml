@@ -17,10 +17,8 @@ chaos-session = { workspace = true }
 anyhow = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-kern = { workspace = true }
-chaos-pwd = { workspace = true }
 chaos-snitch = { workspace = true }
 chaos-ipc = { workspace = true }
-chaos-realpath = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-uptime = { workspace = true }
 chaos-jail-report = { workspace = true }
@@ -49,7 +47,7 @@ alcatraz = { workspace = true }
 assert_cmd = { workspace = true }
 chaos-diff = { workspace = true }
 chaos-which = { workspace = true }
-chaos-proc = { workspace = true }
+chaos-realpath = { workspace = true }
 core_test_support = { workspace = true }
 libc = { workspace = true }
 predicates = { workspace = true }

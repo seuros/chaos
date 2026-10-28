@@ -1,6 +1,7 @@
 use std::fmt::{self};
 use std::io::Write;
 use std::io::{self};
+use std::num::NonZeroU16;
 
 use ratatui::prelude::CrosstermBackend;
 
@@ -32,8 +33,8 @@ impl VT100Backend {
         crossterm::style::force_color_output(true);
         Self {
             crossterm_backend: CrosstermBackend::new(vt100::Parser::new(
-                height,
-                width,
+                NonZeroU16::new(height).unwrap_or(NonZeroU16::MIN),
+                NonZeroU16::new(width).unwrap_or(NonZeroU16::MIN),
                 scrollback_len,
             )),
         }
@@ -43,6 +44,9 @@ impl VT100Backend {
         self.crossterm_backend.writer()
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 impl Write for VT100Backend {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -103,12 +107,12 @@ impl Backend for VT100Backend {
 
     fn size(&self) -> io::Result<Size> {
         let (rows, cols) = self.vt100().screen().size();
-        Ok(Size::new(cols, rows))
+        Ok(Size::new(cols.get(), rows.get()))
     }
 
     fn window_size(&mut self) -> io::Result<WindowSize> {
         Ok(WindowSize {
-            columns_rows: self.vt100().screen().size().into(),
+            columns_rows: self.size()?,
             // Arbitrary size, we don't rely on this in testing.
             pixels: Size {
                 width: 640,

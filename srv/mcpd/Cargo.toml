@@ -20,7 +20,6 @@ chaos-cron = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-sh = { workspace = true }
-chaos-proc = { workspace = true }
 chaos-getopt = { workspace = true }
 chaos-conv = { workspace = true }
 mcp-host = { workspace = true }
@@ -40,7 +39,7 @@ tracing = { workspace = true, features = ["log"] }
 chaos-snitch = { workspace = true }
 
 [dev-dependencies]
-chaos-test-fixtures = { workspace = true }
+chaos-proc = { workspace = true }
 core_test_support = { workspace = true }
 mcp-host = { workspace = true }
 mcp_test_support = { workspace = true }

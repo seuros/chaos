@@ -18,11 +18,11 @@ impl<K, V> BlockingLruCache<K, V>
 where
     K: Eq + Hash,
 {
-    /// Creates a cache with the provided non-zero capacity.
+    /// Creates a cache that allocates as entries arrive, up to `capacity`.
     #[must_use]
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
-            inner: Mutex::new(LruCache::new(capacity)),
+            inner: Mutex::new(LruCache::sparse(capacity)),
         }
     }
 
@@ -32,13 +32,7 @@ where
         V: Clone,
     {
         if let Some(mut guard) = lock_if_runtime(&self.inner) {
-            if let Some(v) = guard.get(&key) {
-                return v.clone();
-            }
-            let v = value();
-            // Insert and return a clone to keep ownership in the cache.
-            guard.put(key, v.clone());
-            return v;
+            return guard.get_or_insert(key, value).clone();
         }
         value()
     }
@@ -53,12 +47,7 @@ where
         V: Clone,
     {
         if let Some(mut guard) = lock_if_runtime(&self.inner) {
-            if let Some(v) = guard.get(&key) {
-                return Ok(v.clone());
-            }
-            let v = value()?;
-            guard.put(key, v.clone());
-            return Ok(v);
+            return guard.try_get_or_insert(key, value).cloned();
         }
         value()
     }
@@ -140,3 +129,6 @@ pub fn sha1_digest(bytes: &[u8]) -> [u8; 20] {
     out.copy_from_slice(&result);
     out
 }
+
+#[cfg(test)]
+mod tests;

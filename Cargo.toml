@@ -126,10 +126,10 @@ exclude = [
     "drivers/helmsman",
     "drivers/skipper",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
-version = "47.14.6"
+version = "47.14.7"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -222,9 +222,9 @@ chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
 chaos-machine = { path = "lib/libmisc/machine" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
-    libui = { path = "lib/libui" }
-    chaos-chassis = { path = "lib/libui/chassis" }
-    chaos-termcap = { path = "lib/libui/termcap" }
+libui = { path = "lib/libui" }
+chaos-chassis = { path = "lib/libui/chassis" }
+chaos-termcap = { path = "lib/libui/termcap" }
 chaos-highlight = { path = "lib/libui/highlight" }
 chaos-scm = { path = "lib/libutil/scm" }
 chaos-dispatch = { path = "lib/libutil/dispatch" }
@@ -256,7 +256,7 @@ mcp_test_support = { path = "srv/mcpd/tests/common" }
 mcp-host = { version = "0.15.0", default-features = false, features = ["stdio", "macros"] }
 
 # External
-agent-client-protocol = { version = "3.3.0", default-features = false }
+agent-client-protocol = { version = "3.6.0", default-features = false }
 age = "0.12.1"
 ansi-to-tui = "8.0.1"
 anyhow = "1"
@@ -286,13 +286,13 @@ futures = { version = "0.3", default-features = false }
 gethostname = "1.1.0"
 globset = "0.4"
 http = "1.5.0"
-icu_decimal = "2.3"
-icu_locale_core = "2.3"
-icu_provider = { version = "2.3", features = ["sync"] }
-ignore = "0.4.33"
+icu_decimal = "2.4"
+icu_locale_core = "2.4"
+icu_provider = { version = "2.4", features = ["sync"] }
+ignore = "0.4.34"
 image = { version = "^0.25.10", default-features = false }
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
-resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts"] }
+resvg = { version = "0.49.0", default-features = false, features = ["text", "system-fonts"] }
 include_dir = "0.7.4"
 jiff = { version = "0.2.38", features = ["serde"] }
 indexmap = "2.14.2"
@@ -304,18 +304,18 @@ apple-native-keyring-store = "1.0"
 linux-keyutils-keyring-store = "1.0"
 dbus-secret-service-keyring-store = { version = "1.0", features = ["crypto-rust"] }
 landlock = "0.4.7"
-libc = "0.2.190"
+libc = "0.2.191"
 log = "0.4"
-lru = "0.18.5"
+lru = "0.19.0"
 mime_guess = "2.0.5"
 mimalloc = { version = "0.1", default-features = false }
-minijinja = { version = "3.0.0", features = ["serde"] }
+minijinja = { version = "3.0.4", features = ["serde"] }
 mlua = { version = "0.12.2", features = ["lua54", "vendored", "async", "serialize", "send"] }
 model2vec-rs = { version = "=0.3.0", default-features = false, features = ["local-only", "fancy-regex"] }
 multimap = "0.10.1"
-notify = "8.2.0"
+notify = "8.2.1"
 objc2-foundation = { version = "0.3.2", default-features = false }
-openssl-sys = "*"
+openssl-sys = "0.9.117"
 # Keep the telemetry family aligned with Rama 0.4's OpenTelemetry 0.32 types.
 opentelemetry-appender-tracing = "0.32.0"
 opentelemetry-http = { version = "0.32.0", default-features = false }
@@ -340,17 +340,17 @@ ratatui-hypertile = "0.4.2"
 ratatui-hypertile-extras = { version = "0.4.2", default-features = false, features = [
     "crossterm",
 ] }
-ratatui-image = { version = "12.0.0-rc.2", default-features = false, features = ["tokio"] }
+ratatui-image = { version = "12.0.0-rc.3", default-features = false, features = ["tokio"] }
 ratatui-macros = "0.7.2"
 regex = "1.13.1"
 regex-lite = "0.1.9"
-rustls = { version = "0.23.45", default-features = false, features = [
+rustls = { version = "0.23.46", default-features = false, features = [
     "ring",
     "std",
 ] }
-rustls-native-certs = "0.8.4"
+rustls-native-certs = "0.8.5"
 rustls-pki-types = "1.15.1"
-schemars = "1.2.2"
+schemars = "1.2.3"
 seccompiler = "0.5.0"
 semver = "1.0"
 serde = "1"
@@ -359,13 +359,13 @@ serde_path_to_error = "0.1.20"
 state-machines = { version = "0.32.1", features = ["dynamic", "async", "runtime-send"] }
 breaker-machines = { version = "0.20.0", features = ["async"] }
 chrono-machines = { version = "0.9", features = ["std"] }
-throttle-machines = { version = "0.3" }
+throttle-machines = { version = "0.3.1" }
 serial_test = "4.0.1"
 sha1 = "0.11.0"
 sha2 = "0.11"
 hmac = "0.13"
 shlex = "2.0.1"
-similar = "3.2.0"
+similar = "3.2.1"
 socket2 = "0.6.5"
 sqlx = { version = "0.9.0", default-features = false, features = [
     "json",
@@ -381,7 +381,7 @@ sqlx = { version = "0.9.0", default-features = false, features = [
 strum = "0.28.0"
 strum_macros = "0.28.0"
 supports-color = "3.0.2"
-termprofile = { version = "0.2.4", features = ["convert"] }
+termprofile = { version = "0.2.5", features = ["convert"] }
 supports-hyperlinks = "3.2"
 syntect = "5"
 sys-locale = "0.3.2"
@@ -394,12 +394,12 @@ thiserror = "2.0.21"
 # Rama 0.4 pins time to =0.3.47; newer 0.3 releases cannot resolve alongside it.
 time = "0.3.47"
 tiny_http = "0.12"
-tokio = "1"
+tokio = "1.54.1"
 tokio-stream = "0.1.19"
 tokio-test = "0.4"
-tokio-util = "0.7.19"
-toml = "1.1.7"
-toml_edit = "0.25.16"
+tokio-util = "0.7.20"
+toml = "1.1.8"
+toml_edit = "0.25.17"
 tracing = "0.1.44"
 tracing-test = "0.2.6"
 tree-sitter = "0.27.1"
@@ -408,16 +408,15 @@ tui-input = { version = "0.15.5", default-features = false, features = ["crosste
 tui-tree-widget = "0.24.1"
 # uds_windows removed — Chaos targets Linux/macOS/FreeBSD only
 unicode-segmentation = "1.13.3"
-unicode-width = "0.2"
+unicode-width = "0.2.3"
 url = "2"
 urlencoding = "2.1"
-uuid = "1.27.0"
-vt100 = "0.16.2"
+uuid = "1.29.0"
+vt100 = "0.18.1"
 walkdir = "2.5.0"
 webbrowser = "1.2"
 which = "8"
-wildmatch = "2.6.1"
-zip = "8.6.0"
+wildmatch = "2.7.0"
 zstd = "0.14"
 
 wiremock = "0.6"
@@ -425,7 +424,7 @@ zeroize = "1.9.1"
 
 [workspace.dependencies.usage]
 package = "usage-rs"
-version = "7.1.1"
+version = "7.1.3"
 # Usage 7 derives target ::usage_rs; CLI crate roots expose that alias while
 # retaining the workspace's existing `usage` dependency name.
 # No CLI uses flatten_help or HelpAll. Keep diagnostics/help without the
@@ -492,7 +491,6 @@ ignored = [
     "async-stream",
     "env_logger",
     "tar",
-    "zip",
     "opentelemetry_sdk",
     "chaos-ration",
     "chaos-libration",

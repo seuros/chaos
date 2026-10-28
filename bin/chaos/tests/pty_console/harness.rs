@@ -5,6 +5,7 @@ use chaos_pty::{ProcessHandle, SpawnedProcess, TerminalSize};
 use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::streaming_sse::StreamingSseServer;
 use std::collections::HashMap;
+use std::num::NonZeroU16;
 use std::process::Stdio;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -50,7 +51,11 @@ struct TerminalCapture {
 impl TerminalCapture {
     fn new() -> Self {
         Self {
-            parser: vt100::Parser::new(INITIAL_SIZE.rows, INITIAL_SIZE.cols, 0),
+            parser: vt100::Parser::new(
+                NonZeroU16::new(INITIAL_SIZE.rows).unwrap_or(NonZeroU16::MIN),
+                NonZeroU16::new(INITIAL_SIZE.cols).unwrap_or(NonZeroU16::MIN),
+                0,
+            ),
             query_tail: [0; 4],
             output_tail: Vec::new(),
         }
@@ -229,7 +234,8 @@ impl PtyConsole {
                         for reply in terminal.process(&bytes) {
                             if writer.send(reply).await.is_err() {
                                 let mut snapshot = terminal.snapshot();
-                                snapshot.error = Some("PTY input closed during cursor query".into());
+                                snapshot.error =
+                                    Some("PTY input closed during cursor query".into());
                                 snapshot_tx.send_replace(snapshot);
                                 return;
                             }
@@ -238,7 +244,10 @@ impl PtyConsole {
                     }
                     resize = resize_rx.recv() => {
                         let Some((size, ack)) = resize else { break };
-                        terminal.parser.screen_mut().set_size(size.rows, size.cols);
+                        terminal.parser.set_size(
+                            NonZeroU16::new(size.rows).unwrap_or(NonZeroU16::MIN),
+                            NonZeroU16::new(size.cols).unwrap_or(NonZeroU16::MIN),
+                        );
                         let _ = ack.send(());
                     }
                 }
@@ -279,6 +288,7 @@ impl PtyConsole {
     }
 
     pub(super) async fn resize(&self, rows: u16, cols: u16) -> Result<()> {
+        ensure!(rows > 0 && cols > 0, "terminal size must be non-zero");
         let size = TerminalSize { rows, cols };
         let (ack_tx, ack_rx) = oneshot::channel();
         self.resize_tx

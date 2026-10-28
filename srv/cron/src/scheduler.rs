@@ -130,7 +130,7 @@ impl Scheduler {
         };
 
         for job in &jobs {
-            if *self.shutdown_rx.borrow() || self.shutdown_rx.has_changed().is_err() {
+            if *self.shutdown_rx.borrow() || self.shutdown_rx.is_closed() {
                 break;
             }
             info!(job_id = %job.id, name = %job.name, "executing cron job");

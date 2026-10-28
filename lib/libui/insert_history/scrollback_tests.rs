@@ -29,8 +29,7 @@ fn assert_thread(
     expected: &[String],
 ) -> io::Result<()> {
     let mut screen = terminal.backend().vt100().screen().clone();
-    screen.set_scrollback(usize::MAX);
-    let scrollback_len = screen.scrollback();
+    let scrollback_len = screen.scrollback_len();
     let visible_history = terminal.viewport_area.top() - reserved;
     assert_eq!(
         scrollback_len + usize::from(visible_history),

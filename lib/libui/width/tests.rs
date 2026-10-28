@@ -19,6 +19,10 @@ fn display_width_matches_ratatui_layout() {
     assert_eq!(char_width('\u{FF9F}'), 1);
     assert_eq!(char_width('界'), 2);
     assert_eq!(char_width('\u{0301}'), 0);
+
+    for text in ["ｶﾞﾊﾟ", "ｶﾞﾞ", "界ﾞ", "👩‍💻", "e\u{0301}"] {
+        assert_eq!(display_width(text), ratatui::text::Line::from(text).width());
+    }
 }
 
 /// The contract is strictly positive: an exhausted or overdrawn budget is

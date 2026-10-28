@@ -194,28 +194,65 @@ dist output="chaos-dist.tar.gz":
 fmt:
     cargo fmt
 
-# Clippy with all features, deny warnings
+# Clippy with production/default features, deny warnings
 clippy:
-    scripts/with-local-qa-tmp.sh {{cargo}} clippy --workspace --all-features --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --workspace --tests -- -D warnings
 
 # Check compilation without building
 check:
-    scripts/with-local-qa-tmp.sh {{cargo}} check --workspace --all-targets --all-features
+    scripts/with-local-qa-tmp.sh {{cargo}} check --workspace --all-targets
 
-# Run tests with all features
+# Run tests with production/default features
 test *args:
     scripts/with-local-qa-tmp.sh {{cargo}} build -p chaos_journald --bin chaos_journald
-    CHAOS_JOURNALD_BIN="$(cd "${CARGO_TARGET_DIR:-target}/debug" && pwd)/chaos_journald" scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --all-features --no-fail-fast "$@"
+    CHAOS_JOURNALD_BIN="$(cd "${CARGO_TARGET_DIR:-target}/debug" && pwd)/chaos_journald" scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --no-fail-fast "$@"
+
+# Refuse alternate crypto providers in the production/default workspace graph.
+qa-dependencies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo tree --locked --workspace --edges normal,build,dev --prefix none --format '{p}' |
+        bash scripts/check-tls-dependencies.sh production
+
+# Retain optional workspace feature coverage without enabling both MCP TLS providers.
+qa-features:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo tree --locked --workspace --exclude mcp-guest --all-features --edges normal,build,dev --prefix none --format '{p}' |
+        bash scripts/check-tls-dependencies.sh production
+    scripts/with-local-qa-tmp.sh {{cargo}} check --locked --workspace --exclude mcp-guest --all-features --all-targets
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --locked --workspace --exclude mcp-guest --all-features --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh {{cargo}} build -p chaos_journald --bin chaos_journald
+    CHAOS_JOURNALD_BIN="$(cd "${CARGO_TARGET_DIR:-target}/debug" && pwd)/chaos_journald" \
+        scripts/with-local-qa-tmp.sh {{cargo}} nextest run --locked --workspace --exclude mcp-guest --all-features --no-fail-fast
+
+# Check one MCP TLS backend in isolation; AWS-LC additionally needs CMake.
+qa-tls backend="ring":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{backend}}" in
+        ring|aws-lc) ;;
+        *) echo "backend must be ring or aws-lc" >&2; exit 2 ;;
+    esac
+    features="stdio,tls-{{backend}}"
+    cargo tree --locked -p mcp-guest --no-default-features --features "$features" --edges normal,build,dev --prefix none --format '{p}' |
+        bash scripts/check-tls-dependencies.sh "{{backend}}"
+    scripts/with-local-qa-tmp.sh {{cargo}} check --locked -p mcp-guest --no-default-features --features "$features" --all-targets
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --locked -p mcp-guest --no-default-features --features "$features" --tests -- -D warnings
+    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --locked -p mcp-guest --no-default-features --features "$features" --no-fail-fast
 
 # Run the bounded Postgres validation set against a mounted filesystem.
 postgres-validate database_url:
     scripts/with-local-qa-tmp.sh env TEST_DATABASE_URL="{{database_url}}" {{cargo}} nextest run -p chaos-vfs -p chaos-cron -p chaos-proc -p chaos-recall --all-features --no-fail-fast
 
 # Lint + check + clippy (no tests)
-qq: fmt check clippy
+qq: fmt qa-dependencies check clippy
 
-# Full QA: qq + tests
+# Production/default QA: qq + tests; no alternate TLS backend or CMake required.
 qa: qq test
+
+# Complete coverage, with crypto backends in separate Cargo invocations.
+qa-full: qa qa-features (qa-tls "ring") (qa-tls "aws-lc")
 
 # Remove repo-local QA/build leftovers and the repo-local temp root.
 clean-qa:
@@ -235,7 +272,7 @@ outdated:
 
 # Fix clippy warnings automatically
 fix:
-    scripts/with-local-qa-tmp.sh {{cargo}} clippy --fix --workspace --all-features --tests --allow-dirty
+    scripts/with-local-qa-tmp.sh {{cargo}} clippy --fix --workspace --tests --allow-dirty
 
 # Run the MCP server
 mcp-server-run *args:

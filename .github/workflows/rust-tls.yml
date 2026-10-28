@@ -1,0 +1,68 @@
+name: Isolated MCP TLS backends
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  tls:
+    name: ${{ matrix.backend }} — ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [ring, aws-lc]
+        platform:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: macos-26
+            target: aarch64-apple-darwin
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_TARGET: ${{ matrix.platform.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: seuros/setup-upkg@master
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: upkg install just pkg-config libclang-dev
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          upkg install just llvm pkgconf
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+
+      - name: Install AWS-LC build dependency
+        if: matrix.backend == 'aws-lc'
+        run: upkg install cmake
+
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: rust
+          cache: false
+
+      - name: Set up mbx
+        uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          version: "1.8.3"
+          backend: github
+          github-cache-mode: target
+          save-on-workflow-dispatch: "false"
+          cache-generation: chaos-ci-tls-1-${{ matrix.backend }}-${{ matrix.platform.target }}-${{ hashFiles('.mbx.toml') }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.103
+
+      # Package-scoped invocations must not unify with the application graph
+      # or with the other provider, even when Cargo's target cache is shared.
+      - name: Check, lint, and test isolated backend
+        run: just cargo=mbx qa-tls "${{ matrix.backend }}"

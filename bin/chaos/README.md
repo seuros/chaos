@@ -24,7 +24,7 @@ cargo nextest run -p chaos-cli --test pty_console
 ```
 
 On Unix, the tests are enabled with the default `tui` feature and are also
-included in the normal all-features workspace test run.
+included in the normal default-feature workspace test run.
 
 ## Account management
 

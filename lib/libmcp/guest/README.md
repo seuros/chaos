@@ -23,6 +23,11 @@ HTTPS needs a rustls crypto provider, and the crate forces none: enable
 application already compiles into rama and installs as rustls' process
 default. Applications that standardised on one provider build only that one.
 
+From the workspace root, `just qa-tls ring` and `just qa-tls aws-lc` validate
+the two backends independently, including a dependency-graph guard against
+compiling both providers. AWS-LC validation requires CMake; the default
+application QA path does not.
+
 ```toml
 mcp-guest = { version = "0.12.0", default-features = false, features = ["tls-aws-lc"] }
 ```

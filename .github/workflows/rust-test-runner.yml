@@ -25,8 +25,9 @@ jobs:
   tests:
     name: Tests — ${{ inputs.target }}
     runs-on: ${{ inputs.runner }}
-    # Extra kernel rebuilds are opt-in; keep the usual budget for ordinary CI.
-    timeout-minutes: ${{ inputs.feature-checks && 60 || 30 }}
+    # Linux covers both default and optional workspace features; explicit CLI
+    # feature checks also need room for additional kernel rebuilds.
+    timeout-minutes: ${{ (inputs.feature-checks || startsWith(inputs.runner, 'ubuntu-')) && 60 || 30 }}
     defaults:
       run:
         shell: bash
@@ -167,8 +168,32 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "CARGO_BIN_EXE_alcatraz=${TARGET_DIR}/alcatraz" >> "$GITHUB_ENV"
 
-      - name: Full test suite — PostgreSQL
-        run: mbx nextest run --locked --all-features --no-fail-fast --target ${{ inputs.target }} --cargo-profile ci-test --timings
+      - name: Check production TLS dependency graph
+        run: |
+          set -euo pipefail
+          cargo tree --locked --workspace --target ${{ inputs.target }} \
+            --edges normal,build,dev --prefix none --format '{p}' |
+            bash scripts/check-tls-dependencies.sh production
+
+      - name: Production-feature test suite — PostgreSQL
+        run: mbx nextest run --locked --workspace --no-fail-fast --target ${{ inputs.target }} --cargo-profile ci-test --timings
+        env:
+          RUST_BACKTRACE: 1
+          NEXTEST_STATUS_LEVEL: leak
+
+      # Keep optional UI/release/library feature coverage, but do not select
+      # mcp-guest's alternative TLS features in the application workspace graph.
+      # Each guest backend is tested separately by rust-tls.yml.
+      - name: Optional workspace features — Ring
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          cargo tree --locked --workspace --exclude mcp-guest --all-features \
+            --target ${{ inputs.target }} --edges normal,build,dev \
+            --prefix none --format '{p}' |
+            bash scripts/check-tls-dependencies.sh production
+          mbx nextest run --locked --workspace --exclude mcp-guest --all-features \
+            --no-fail-fast --target ${{ inputs.target }} --cargo-profile ci-test
         env:
           RUST_BACKTRACE: 1
           NEXTEST_STATUS_LEVEL: leak
@@ -179,7 +204,7 @@ jobs:
       - name: Additional SQLite durability tests
         if: inputs.sqlite-checks
         run: |
-          env -u TEST_DATABASE_URL mbx nextest run --locked --all-features \
+          env -u TEST_DATABASE_URL mbx nextest run --locked \
             -p chaos-httpd --lib -E 'test(sessions::tests::durability::)' \
             --fail-fast --target ${{ inputs.target }} --cargo-profile ci-test
         env:

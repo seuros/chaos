@@ -39,10 +39,14 @@ jobs:
       target: aarch64-apple-darwin
       feature-checks: ${{ github.event_name == 'workflow_dispatch' && inputs.feature-checks }}
 
+  tls-backends:
+    name: Isolated MCP TLS backends
+    uses: ./.github/workflows/rust-tls.yml
+
   # Keep the required status name stable, and reject skipped downstream jobs.
   results:
     name: CI results (required)
-    needs: [linux-tests, macos-tests]
+    needs: [linux-tests, macos-tests, tls-backends]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -51,7 +55,9 @@ jobs:
         env:
           LINUX_RESULT: ${{ needs.linux-tests.result }}
           MACOS_RESULT: ${{ needs.macos-tests.result }}
+          TLS_RESULT: ${{ needs.tls-backends.result }}
         run: |
           echo "Linux PostgreSQL + SQLite: $LINUX_RESULT"
           echo "macOS PostgreSQL: $MACOS_RESULT"
-          [[ "$LINUX_RESULT" == success && "$MACOS_RESULT" == success ]]
+          echo "Isolated TLS backends: $TLS_RESULT"
+          [[ "$LINUX_RESULT" == success && "$MACOS_RESULT" == success && "$TLS_RESULT" == success ]]

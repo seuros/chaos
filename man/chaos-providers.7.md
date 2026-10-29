@@ -249,6 +249,12 @@ Before compaction, a continuity notice gives the agent a chance to save importan
 state. Use it for concise checkpoints; do not assume all history will remain in
 context afterward.
 
+A deferral extends the current pressure window by at most one reflex reserve
+past the compaction limit (the smaller of the gap to the effective window and a
+quarter of the limit), and never past the fixed safety ceiling. With a 1M
+window and a 400k limit the warning arrives around 300k and a deferral may run
+to 500k; the named ChatGPT preset keeps its 360k ceiling.
+
 To enable bounded agent control over compaction timing:
 
 ```bash

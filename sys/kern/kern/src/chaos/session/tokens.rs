@@ -23,10 +23,35 @@ fn deferral_ceiling_for_windows(
     Some(raw_safety_ceiling.min(distillation_ceiling)).filter(|ceiling| *ceiling > 0)
 }
 
+/// A deferral buys one more reflex reserve past the configured compaction
+/// limit, never the rest of the window: a limit set well below the window
+/// (a 400k limit on a 1M model) must still mean something after `defer_once`.
+/// The window-derived safety ceiling stays binding when it is lower.
+fn deferral_ceiling_for_limits(
+    raw_context_window: i64,
+    effective_context_window: i64,
+    compaction_token_limit: Option<i64>,
+) -> Option<i64> {
+    let window_ceiling =
+        deferral_ceiling_for_windows(raw_context_window, effective_context_window)?;
+    let Some(compaction_token_limit) = compaction_token_limit else {
+        return Some(window_ceiling);
+    };
+    let limit_ceiling = compaction_token_limit.saturating_add(compaction_reflex_reserve(
+        effective_context_window,
+        compaction_token_limit,
+    ));
+    Some(window_ceiling.min(limit_ceiling)).filter(|ceiling| *ceiling > 0)
+}
+
 pub(crate) fn compaction_deferral_ceiling(turn_context: &TurnContext) -> Option<i64> {
     let raw_context_window = turn_context.model_info.context_window?;
     let effective_context_window = turn_context.model_context_window()?;
-    deferral_ceiling_for_windows(raw_context_window, effective_context_window)
+    deferral_ceiling_for_limits(
+        raw_context_window,
+        effective_context_window,
+        turn_context.model_info.auto_compact_token_limit(),
+    )
 }
 
 fn compaction_reflex_reserve(context_window: i64, compaction_token_limit: i64) -> i64 {

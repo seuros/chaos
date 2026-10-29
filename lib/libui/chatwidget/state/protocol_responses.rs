@@ -7,15 +7,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_list_mcp_tools(&mut self, ev: McpListToolsResponseEvent) {
-        self.add_to_history(history_cell::new_mcp_tools_output(
-            &self.config,
-            ev.tools,
-            ev.resources,
-            ev.resource_templates,
-            &ev.auth_statuses,
-            &ev.server_statuses,
-            &ev.server_capabilities,
-        ));
+        self.add_to_history(history_cell::new_mcp_tools_output(&self.config, ev));
     }
 
     pub(crate) fn on_list_custom_prompts(&mut self, ev: ListCustomPromptsResponseEvent) {

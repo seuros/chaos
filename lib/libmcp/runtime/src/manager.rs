@@ -722,6 +722,26 @@ impl McpConnectionManager {
         capabilities
     }
 
+    /// Returns implementation versions without waiting for starting servers.
+    pub async fn server_versions(&self) -> HashMap<String, String> {
+        let mut versions = HashMap::new();
+        for (server_name, client) in &self.clients {
+            if !client
+                .startup_complete
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                continue;
+            }
+            if let Ok(client) = client.client().await {
+                versions.insert(
+                    server_name.clone(),
+                    client.session.server_info().server_info.version,
+                );
+            }
+        }
+        versions
+    }
+
     pub async fn required_startup_failures(
         &self,
         required_servers: &[String],

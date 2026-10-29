@@ -8,6 +8,7 @@ use tracing::error;
 use tracing::warn;
 
 use crate::context_manager::ContextManager;
+use crate::models_manager::observations::ContextWindowObservation;
 
 use super::Session;
 use crate::chaos::PreviousTurnSettings;
@@ -57,6 +58,24 @@ impl Session {
     ) {
         use chaos_ipc::protocol::InitialHistory;
         use chaos_ipc::protocol::SessionSource;
+        // A window the transport observed for a slug the catalog does not
+        // describe is recorded in the rollout. Restore it before the default
+        // turn is built: that turn's model info decides whether pending
+        // compaction control from the rollout is still valid, and the policy
+        // must not lapse for the first turn of a fresh process.
+        let rollout_items = match &conversation_history {
+            InitialHistory::New => &[][..],
+            InitialHistory::Resumed(resumed) => resumed.history.as_slice(),
+            InitialHistory::Forked(rollout_items) => rollout_items.as_slice(),
+        };
+        // Replay every binding in journal order, not just the last model used.
+        for item in rollout_items {
+            if let RolloutItem::ObservedModelContextWindow(record) = item
+                && let Some(observation) = ContextWindowObservation::from_record(record)
+            {
+                self.apply_context_window_observation(&observation).await;
+            }
+        }
         let turn_context = self.new_default_turn().await;
         let is_subagent = {
             let state = self.state.lock().await;
@@ -223,6 +242,53 @@ impl Session {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
             _ => None,
         })
+    }
+
+    /// Record a context window the transport reported for `model` under this
+    /// turn's provider binding. It is persisted to the rollout on receipt, so
+    /// a fresh process resuming the session has it before its first request,
+    /// and applied to the catalog for the next turn's model info.
+    pub(crate) async fn record_observed_context_window(
+        &self,
+        turn_context: &TurnContext,
+        model: &str,
+        context_window: i64,
+    ) {
+        let binding = self
+            .services
+            .models_manager
+            .context_window_binding(&turn_context.config, model);
+        let Some(observation) = ContextWindowObservation::new(binding, context_window) else {
+            return;
+        };
+        if self
+            .state
+            .lock()
+            .await
+            .recorded_context_windows
+            .contains(&observation)
+        {
+            return;
+        }
+        // Persist before marking the observation recorded, so cancellation
+        // cannot suppress a later retry. Deduplicate per session, not per cache.
+        self.persist_rollout_items(&[RolloutItem::ObservedModelContextWindow(
+            observation.to_record(),
+        )])
+        .await;
+        self.apply_context_window_observation(&observation).await;
+    }
+
+    async fn apply_context_window_observation(&self, observation: &ContextWindowObservation) {
+        self.state
+            .lock()
+            .await
+            .recorded_context_windows
+            .record(observation);
+        self.services
+            .models_manager
+            .record_observed_context_window(observation)
+            .await;
     }
 
     /// Records input items: always append to conversation history and

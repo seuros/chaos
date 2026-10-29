@@ -36,6 +36,7 @@ pub(crate) fn builder_from_items(items: &[RolloutItem]) -> Option<ProcessMetadat
         | RolloutItem::Compacted(_)
         | RolloutItem::BackgroundTask(_)
         | RolloutItem::GoalCheckpoint(_)
+        | RolloutItem::ObservedModelContextWindow(_)
         | RolloutItem::CompactionControl(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::EventMsg(_) => None,

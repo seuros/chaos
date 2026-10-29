@@ -692,6 +692,10 @@ async fn server_startup_statuses_report_pending_and_failed_without_blocking() {
             .await
             .expect("capability snapshot should not wait for pending clients");
     assert!(capabilities.is_empty());
+    let versions = tokio::time::timeout(Duration::from_millis(10), manager.server_versions())
+        .await
+        .expect("version snapshot should not wait for pending clients");
+    assert!(versions.is_empty());
 }
 
 #[test]

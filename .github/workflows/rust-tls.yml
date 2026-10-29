@@ -29,13 +29,13 @@ jobs:
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: upkg install just pkg-config libclang-dev
+        run: upkg install pkg-config libclang-dev
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: |
           set -euo pipefail
-          upkg install just llvm pkgconf
+          upkg install llvm pkgconf
           LLVM_PREFIX="$(brew --prefix llvm)"
           echo "LIBCLANG_PATH=${LLVM_PREFIX}/lib" >> "$GITHUB_ENV"
           echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
@@ -49,6 +49,9 @@ jobs:
           install_args: rust
           cache: false
 
+      - name: Install Clippy for the selected toolchain
+        run: rustup component add clippy
+
       - name: Set up mbx
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
@@ -60,7 +63,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: nextest@0.9.103
+          tool: nextest@0.9.103,just@1.46.0
 
       # Package-scoped invocations must not unify with the application graph
       # or with the other provider, even when Cargo's target cache is shared.

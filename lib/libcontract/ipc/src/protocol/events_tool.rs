@@ -152,6 +152,9 @@ pub struct McpListToolsResponseEvent {
     pub server_statuses: std::collections::HashMap<String, McpStartupStatus>,
     #[serde(default)]
     pub server_capabilities: std::collections::HashMap<String, serde_json::Value>,
+    /// Server implementation versions, not negotiated MCP protocol versions.
+    #[serde(default)]
+    pub server_versions: std::collections::HashMap<String, String>,
     /// Fully qualified tool name -> tool definition.
     pub tools: std::collections::HashMap<String, McpTool>,
     /// Known resources grouped by server name.

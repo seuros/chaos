@@ -406,6 +406,78 @@ async fn get_model_info_tracks_fallback_usage() {
         .await;
     assert!(unknown.used_fallback_model_metadata);
     assert_eq!(unknown.slug, "model-that-does-not-exist");
+    assert_eq!(unknown.context_window, None);
+
+    // A window a transport reported for the unknown slug under this provider
+    // binding fills the gap on the next lookup, with the catalog's 80%
+    // auto-compaction default, while the metadata is still marked as fallback.
+    let observation = ContextWindowObservation::new(
+        manager.context_window_binding(&config, "model-that-does-not-exist"),
+        1_000_000,
+    )
+    .expect("valid observation");
+    manager.record_observed_context_window(&observation).await;
+    let observed = manager
+        .get_model_info("model-that-does-not-exist", &config)
+        .await;
+    assert!(observed.used_fallback_model_metadata);
+    assert_eq!(observed.context_window, Some(1_000_000));
+    assert_eq!(observed.auto_compact_token_limit, Some(800_000));
+
+    // An observation recorded under another provider binding is never applied
+    // to this one, even for the same slug.
+    let mut foreign_binding = manager.context_window_binding(&config, "second-unknown-model");
+    foreign_binding.provider = "another-provider".to_string();
+    let foreign_observation =
+        ContextWindowObservation::new(foreign_binding, 1_000_000).expect("valid observation");
+    manager
+        .record_observed_context_window(&foreign_observation)
+        .await;
+    let foreign = manager
+        .get_model_info("second-unknown-model", &config)
+        .await;
+    assert!(foreign.used_fallback_model_metadata);
+    assert_eq!(foreign.context_window, None);
+}
+
+#[tokio::test]
+async fn observed_context_windows_do_not_cross_endpoint_rebinds() {
+    let chaos_home = tempdir().expect("temp dir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
+    let mut config = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .build()
+        .await
+        .expect("config");
+    let manager = ModelsManager::new(
+        chaos_home.path().to_path_buf(),
+        AuthManager::from_auth_for_testing(ChaosAuth::from_api_key("Test API Key")),
+        None,
+        CollaborationModesConfig::default(),
+    );
+    config.model_provider_id = manager.provider_id().to_string();
+    config.model_provider = manager.provider().clone();
+    let observation = ContextWindowObservation::new(
+        manager.context_window_binding(&config, "unknown-model"),
+        1_000_000,
+    )
+    .expect("observation");
+    manager.record_observed_context_window(&observation).await;
+
+    let mut other = manager.provider().clone();
+    other.base_url = Some("https://other.example/v1".to_string());
+    let rebound = manager
+        .rebound_to(manager.provider_id(), other)
+        .expect("rebind");
+    assert_eq!(rebound.observed_context_window("unknown-model").await, None);
+
+    let original = rebound
+        .rebound_to(manager.provider_id(), manager.provider().clone())
+        .expect("rebind back");
+    assert_eq!(
+        original.observed_context_window("unknown-model").await,
+        Some(1_000_000)
+    );
 }
 
 #[tokio::test]

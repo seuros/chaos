@@ -18,9 +18,11 @@ fn snapshot_preserves_runtime_statuses_without_tools() {
         HashMap::new(),
         statuses,
         HashMap::from([("ready".to_string(), serde_json::json!({"resources": {}}))]),
+        HashMap::from([("ready".to_string(), "1.2.3".to_string())]),
     );
 
     assert!(snapshot.tools.is_empty());
+    assert_eq!(snapshot.server_versions["ready"], "1.2.3");
     assert!(snapshot.resources.is_empty());
     assert!(snapshot.resource_templates.is_empty());
     assert_eq!(

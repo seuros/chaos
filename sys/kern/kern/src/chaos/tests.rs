@@ -375,7 +375,7 @@ async fn wait_for_process_rollback_failed(rx: &async_channel::Receiver<Event>) -
     }
 }
 
-async fn attach_rollout_recorder(session: &Arc<Session>) -> ProcessId {
+pub(crate) async fn attach_rollout_recorder(session: &Arc<Session>) -> ProcessId {
     let config = session.get_config().await;
     let process_id = ProcessId::default();
     let recorder = RolloutRecorder::new(

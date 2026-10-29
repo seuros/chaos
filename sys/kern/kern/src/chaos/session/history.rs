@@ -179,13 +179,8 @@ impl Session {
                         ))
                     }
                     CompactionControlAction::DeferOnce => {
-                        // A fresh process has no pressure baseline yet, so a
-                        // `body-after-prefix` deferral whose ceiling depended
-                        // on one does not match and falls back to normal
-                        // automatic compaction.
                         let ceiling = crate::chaos::session::tokens::compaction_deferral_ceiling(
                             turn_context,
-                            /*baseline*/ None,
                         )?;
                         (item.deferral_ceiling == Some(ceiling)).then(|| {
                             chaos_context::pressure::Control::Deferred(

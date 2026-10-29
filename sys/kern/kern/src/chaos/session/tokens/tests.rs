@@ -21,8 +21,28 @@ fn deferral_ceiling_is_one_reserve_past_a_low_compaction_limit() {
     // 1M window, 400k limit: reserve = min(950k - 400k, 400k / 4) = 100k, so a
     // deferral may reach 500k, not the 900k window-derived ceiling.
     assert_eq!(
-        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000)),
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), 0),
         Some(500_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_follows_the_baseline_under_body_after_prefix() {
+    // Under `body-after-prefix` the 400k limit is measured from the window
+    // baseline, so ordinary compaction is due at baseline + 400k and a
+    // deferral may reach one reserve past that: never earlier than the
+    // compaction point, and never above the window ceiling.
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), 150_000),
+        Some(650_000)
+    );
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), 250_000),
+        Some(750_000)
+    );
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), 500_000),
+        Some(900_000)
     );
 }
 
@@ -30,12 +50,12 @@ fn deferral_ceiling_is_one_reserve_past_a_low_compaction_limit() {
 fn deferral_ceiling_keeps_the_window_bound_when_the_limit_is_near_it() {
     // Observed ChatGPT preset: 400k window, 350k limit.
     assert_eq!(
-        deferral_ceiling_for_limits(400_000, 380_000, Some(350_000)),
+        deferral_ceiling_for_limits(400_000, 380_000, Some(350_000), 0),
         Some(360_000)
     );
     // Catalog default: an 80% limit under a 95% effective window.
     assert_eq!(
-        deferral_ceiling_for_limits(200_000, 190_000, Some(160_000)),
+        deferral_ceiling_for_limits(200_000, 190_000, Some(160_000), 0),
         Some(170_000)
     );
 }
@@ -43,7 +63,7 @@ fn deferral_ceiling_keeps_the_window_bound_when_the_limit_is_near_it() {
 #[test]
 fn deferral_ceiling_without_a_compaction_limit_is_the_window_ceiling() {
     assert_eq!(
-        deferral_ceiling_for_limits(400_000, 380_000, None),
+        deferral_ceiling_for_limits(400_000, 380_000, None, 0),
         Some(360_000)
     );
 }

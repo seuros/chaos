@@ -284,6 +284,18 @@ pub(super) async fn try_run_sampling_request(
                 // Update internal state with latest models etag
                 sess.services.models_manager.refresh_if_new_etag(etag).await;
             }
+            ResponseEvent::ModelContextWindow {
+                model,
+                context_window,
+            } => {
+                // A window the transport reported for a model the catalog does
+                // not describe (clamp slugs). Persisted on receipt and applied
+                // to the catalog, so the next turn's model info, in this
+                // process or a fresh one, switches on the compaction reflex
+                // and auto-distillation for the session.
+                sess.record_observed_context_window(&turn_context, &model, context_window)
+                    .await;
+            }
             ResponseEvent::Completed {
                 response_id,
                 token_usage,

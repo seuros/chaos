@@ -113,7 +113,8 @@ fn response_event_records_turn_ttft(event: &ResponseEvent) -> bool {
         | ResponseEvent::Completed { .. }
         | ResponseEvent::ReasoningSummaryPartAdded { .. }
         | ResponseEvent::RateLimits(_)
-        | ResponseEvent::ModelsEtag(_) => false,
+        | ResponseEvent::ModelsEtag(_)
+        | ResponseEvent::ModelContextWindow { .. } => false,
     }
 }
 

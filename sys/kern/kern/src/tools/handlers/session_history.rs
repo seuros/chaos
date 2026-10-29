@@ -337,6 +337,7 @@ fn render_journal_entry(entry: &JournalEntry) -> Option<TranscriptEntry> {
         | RolloutItem::TurnContext(_)
         | RolloutItem::BackgroundTask(_)
         | RolloutItem::GoalCheckpoint(_)
+        | RolloutItem::ObservedModelContextWindow(_)
         | RolloutItem::CompactionControl(_)
         | RolloutItem::EventMsg(_) => {
             return None;

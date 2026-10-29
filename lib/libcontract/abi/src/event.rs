@@ -48,4 +48,8 @@ pub enum TurnEvent {
 
     /// Model catalog version tag (provider-specific, but harmless to expose).
     ModelsEtag(String),
+
+    /// Context window the transport observed for the model that served this
+    /// turn, in tokens, when the provider reports one per response.
+    ModelContextWindow { model: String, context_window: i64 },
 }

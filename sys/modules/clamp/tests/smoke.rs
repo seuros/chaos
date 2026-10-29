@@ -39,7 +39,7 @@ async fn clamp_round_trip() {
     let mut got_result = false;
     while let Ok(Some(msg)) = transport.next_message().await {
         match &msg {
-            Message::Assistant { message } => {
+            Message::Assistant { message, .. } => {
                 eprintln!("[test] assistant: {message}");
             }
             Message::Result { usage, .. } => {

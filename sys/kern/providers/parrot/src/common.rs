@@ -114,6 +114,13 @@ pub enum ResponseEvent {
     },
     RateLimits(RateLimitSnapshot),
     ModelsEtag(String),
+    /// Context window the transport observed for the model that served this
+    /// sample, in tokens (Claude Code reports it under `result.modelUsage`).
+    /// Emitted before `Completed`.
+    ModelContextWindow {
+        model: String,
+        context_window: i64,
+    },
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]

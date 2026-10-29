@@ -53,6 +53,7 @@ pub(crate) fn initial_replay_event_msgs(
             | RolloutItem::TurnContext(_)
             | RolloutItem::BackgroundTask(_)
             | RolloutItem::GoalCheckpoint(_)
+            | RolloutItem::ObservedModelContextWindow(_)
             | RolloutItem::CompactionControl(_)
             | RolloutItem::Compacted(_) => {}
         }

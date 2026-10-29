@@ -106,6 +106,8 @@ mod pending_input;
 mod personality;
 #[path = "prompt_caching.rs"]
 mod prompt_caching;
+#[path = "protected_context.rs"]
+mod protected_context;
 #[path = "quota_exceeded.rs"]
 mod quota_exceeded;
 #[path = "read_file.rs"]

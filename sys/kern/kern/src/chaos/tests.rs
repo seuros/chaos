@@ -511,6 +511,8 @@ async fn make_test_session_config(
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
         inherited_shell_environment: None,
+        protected_context: None,
+        protected_context_warnings: Vec::new(),
     }
 }
 

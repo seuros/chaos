@@ -53,6 +53,7 @@ use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
+use chaos_ipc::protocol::ProtectedContext;
 use chaos_ipc::protocol::ResumedHistory;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionMeta;
@@ -89,6 +90,7 @@ pub enum RolloutRecorderParams {
         base_instructions: BaseInstructions,
         dynamic_tools: Vec<DynamicToolSpec>,
         event_persistence_mode: EventPersistenceMode,
+        protected_context: Option<ProtectedContext>,
     },
     Resume {
         conversation_id: ProcessId,
@@ -141,7 +143,20 @@ impl RolloutRecorderParams {
             base_instructions,
             dynamic_tools,
             event_persistence_mode,
+            protected_context: None,
         }
+    }
+
+    /// Record a protected-context snapshot in the session meta. Has no
+    /// effect on a resume, which never rewrites the meta.
+    pub fn with_protected_context(mut self, snapshot: Option<ProtectedContext>) -> Self {
+        if let RolloutRecorderParams::Create {
+            protected_context, ..
+        } = &mut self
+        {
+            *protected_context = snapshot;
+        }
+        self
     }
 
     pub fn resume(
@@ -360,6 +375,7 @@ impl RolloutRecorder {
                 base_instructions,
                 dynamic_tools,
                 event_persistence_mode,
+                protected_context,
             } => {
                 let session_id = conversation_id;
                 let started_at = OffsetDateTime::now_utc();
@@ -391,6 +407,7 @@ impl RolloutRecorder {
                         Some(dynamic_tools)
                     },
                     memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
+                    protected_context,
                 };
 
                 (

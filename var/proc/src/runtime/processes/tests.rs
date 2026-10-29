@@ -114,6 +114,7 @@ async fn apply_rollout_items_restores_memory_mode_from_session_meta() {
             base_instructions: None,
             dynamic_tools: None,
             memory_mode: Some("polluted".to_string()),
+            protected_context: None,
         },
         git: None,
     })];
@@ -215,6 +216,7 @@ async fn apply_rollout_items_preserves_existing_git_branch_and_fills_missing_git
             base_instructions: None,
             dynamic_tools: None,
             memory_mode: None,
+            protected_context: None,
         },
         git: Some(GitInfo {
             commit_hash: Some("rollout-sha".to_string()),

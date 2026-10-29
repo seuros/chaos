@@ -10,11 +10,12 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
-- Clamp sessions learn the model's context window from Claude Code's
-  `result.modelUsage` and record it when the catalog has no entry for the
-  slug, so the compaction reflex, auto-compaction and `compaction_control`
-  work under clamp without a hardcoded model table. Explicit
-  `model_context_window` and `model_auto_compact_token_limit` still win.
+- `protected_context_files` (capped by `protected_context_max_bytes`, default
+  128 KiB across all files) names files that are read once at session start,
+  stored in the session meta record, and restored word for word in every
+  initial context, including the one rebuilt after each compaction. Resume
+  and fork keep the original snapshot; problems reading a file become startup
+  warnings. See chaos-providers(7).
 
 ## [47.14.7] - 2026-10-28
 

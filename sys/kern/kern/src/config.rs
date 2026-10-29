@@ -111,6 +111,8 @@ pub(crate) const DEFAULT_MINION_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 /// Per-stream hook output cap in KiB when `hook_output_limit_kib` is unset.
 /// Mirrors `chaos_dtrace`'s built-in default; both are 128 KiB.
 pub(crate) const DEFAULT_HOOK_OUTPUT_LIMIT_KIB: u64 = 128;
+/// Default byte cap on the protected-context snapshot.
+pub(crate) const DEFAULT_PROTECTED_CONTEXT_MAX_BYTES: usize = 128 * 1024;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
@@ -404,6 +406,14 @@ pub struct Config {
     /// How the auto-compaction token limit is measured: against the total
     /// active context, or only the tokens grown since the last compaction.
     pub model_auto_compact_token_limit_scope: chaos_context::allotment::Scope,
+
+    /// Files read once at session start and restored verbatim in every
+    /// initial context, so compaction never summarises them away.
+    /// Relative paths resolve against `cwd`.
+    pub protected_context_files: Vec<std::path::PathBuf>,
+
+    /// Byte cap on the protected-context snapshot as a whole.
+    pub protected_context_max_bytes: usize,
 
     /// Whether the model may compact early or defer once within a
     /// harness-computed safety band.
@@ -766,6 +776,15 @@ pub struct ConfigToml {
     /// active context ("total", the default), or only the tokens grown since
     /// the last compaction ("body-after-prefix").
     pub model_auto_compact_token_limit_scope: Option<chaos_context::allotment::Scope>,
+
+    /// Files read once at session start and restored verbatim after every
+    /// compaction. Relative paths resolve against the session cwd.
+    #[serde(default)]
+    pub protected_context_files: Option<Vec<std::path::PathBuf>>,
+
+    /// Byte cap on the protected-context snapshot (default 131072).
+    #[serde(default)]
+    pub protected_context_max_bytes: Option<usize>,
 
     /// Model-visible compaction timing control. `"disabled"` preserves normal
     /// automatic behavior; `"bounded"` also exposes `compact_now` and one

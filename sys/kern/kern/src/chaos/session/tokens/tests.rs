@@ -17,6 +17,38 @@ fn raw_window_safety_fraction_can_be_the_binding_ceiling() {
 }
 
 #[test]
+fn deferral_ceiling_is_one_reserve_past_a_low_compaction_limit() {
+    // 1M window, 400k limit: reserve = min(950k - 400k, 400k / 4) = 100k, so a
+    // deferral may reach 500k, not the 900k window-derived ceiling.
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000)),
+        Some(500_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_keeps_the_window_bound_when_the_limit_is_near_it() {
+    // Observed ChatGPT preset: 400k window, 350k limit.
+    assert_eq!(
+        deferral_ceiling_for_limits(400_000, 380_000, Some(350_000)),
+        Some(360_000)
+    );
+    // Catalog default: an 80% limit under a 95% effective window.
+    assert_eq!(
+        deferral_ceiling_for_limits(200_000, 190_000, Some(160_000)),
+        Some(170_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_without_a_compaction_limit_is_the_window_ceiling() {
+    assert_eq!(
+        deferral_ceiling_for_limits(400_000, 380_000, None),
+        Some(360_000)
+    );
+}
+
+#[test]
 fn compaction_reflex_uses_the_soft_to_hard_limit_gap() {
     assert_eq!(compaction_reflex_reserve(400_000, 350_000), 50_000);
     assert!(!compaction_reflex_due(50_001, 400_000, 350_000));

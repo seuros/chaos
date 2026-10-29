@@ -10,6 +10,9 @@ use crate::error::ChaosErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
 use crate::models_manager::model_info;
+use crate::models_manager::observations::ContextWindowObservation;
+use crate::models_manager::observations::ContextWindows;
+use crate::models_manager::observations::ModelBinding;
 use crate::response_debug_context::extract_response_debug_context;
 use crate::response_debug_context::telemetry_transport_error_message;
 use crate::util::FeedbackRequestTags;
@@ -19,6 +22,7 @@ use chaos_ipc::openai_models::ModelFamily;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelPreset;
 use chaos_ipc::openai_models::ModelsResponse;
+use chaos_ipc::protocol::ModelContextWindowScope;
 use chaos_model_catalog::ModelsCache;
 use chaos_model_catalog::ModelsCacheManager;
 use chaos_model_catalog::ModelsCacheScope;
@@ -181,7 +185,7 @@ pub struct ModelsManager {
     /// describe (clamp models), keyed by provider binding and requested slug.
     /// The map is shared across provider rebinds for the lifetime of the
     /// session, but each manager only reads entries for its own binding.
-    observed_context_windows: Arc<RwLock<HashMap<(String, String), i64>>>,
+    observed_context_windows: Arc<RwLock<ContextWindows>>,
     catalog_mode: CatalogMode,
     automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
@@ -644,36 +648,41 @@ impl ModelsManager {
         )
     }
 
-    /// Remember a context window a transport reported for `model` under the
-    /// `provider_id` binding the turn ran with. It only ever fills a window the
-    /// catalog did not provide; explicit configuration still takes precedence
-    /// when the model info is built.
-    pub(crate) async fn record_observed_context_window(
-        &self,
-        provider_id: &str,
-        model: &str,
-        context_window: i64,
-    ) {
-        if context_window <= 0 {
-            return;
-        }
-        let key = (provider_id.to_string(), model.to_string());
-        let mut observed = self.observed_context_windows.write().await;
-        if observed.get(&key) != Some(&context_window) {
-            info!(
-                provider_id,
-                model, context_window, "recorded observed model context window"
-            );
-            observed.insert(key, context_window);
+    /// Use the turn's binding, which may differ from this manager's binding.
+    pub(crate) fn context_window_binding(&self, config: &Config, model: &str) -> ModelBinding {
+        let auth = self.auth_manager.for_provider(&config.model_provider_id);
+        ModelBinding {
+            provider: config.model_provider_id.clone(),
+            model: model.to_string(),
+            scope: ModelContextWindowScope {
+                wire_api: config.model_provider.wire_api.to_string(),
+                base_url: config.model_provider.effective_base_url(auth.auth_mode()),
+            },
         }
     }
 
-    async fn observed_context_window(&self, model: &str) -> Option<i64> {
+    /// Live updates and replay both apply validated, endpoint-scoped observations.
+    pub(crate) async fn record_observed_context_window(
+        &self,
+        observation: &ContextWindowObservation,
+    ) {
         self.observed_context_windows
-            .read()
+            .write()
             .await
-            .get(&(self.provider_id.clone(), model.to_string()))
-            .copied()
+            .record(observation);
+    }
+
+    async fn observed_context_window(&self, model: &str) -> Option<i64> {
+        let scope = self.cache_scope();
+        let binding = ModelBinding {
+            provider: self.provider_id.clone(),
+            model: model.to_string(),
+            scope: ModelContextWindowScope {
+                wire_api: scope.wire_api,
+                base_url: scope.base_url,
+            },
+        };
+        self.observed_context_windows.read().await.window(&binding)
     }
 
     fn find_model_by_longest_prefix(model: &str, candidates: &[ModelInfo]) -> Option<ModelInfo> {

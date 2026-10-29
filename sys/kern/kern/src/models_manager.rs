@@ -2,6 +2,7 @@ pub mod catalog;
 mod discovery;
 pub mod manager;
 pub mod model_info;
+pub(crate) mod observations;
 pub(crate) mod selection;
 
 // Re-export from chaos-model-catalog so existing crate-internal paths keep working.

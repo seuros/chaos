@@ -50,9 +50,7 @@ pub(crate) async fn restore(
             .filter(|item| {
                 !matches!(
                     item,
-                    RolloutItem::BackgroundTask(_)
-                        | RolloutItem::GoalCheckpoint(_)
-                        | RolloutItem::ObservedModelContextWindow(_)
+                    RolloutItem::BackgroundTask(_) | RolloutItem::GoalCheckpoint(_)
                 )
             })
             .collect(),

@@ -21,7 +21,9 @@ fn result_wire_contract_preserves_usage_and_accepts_extensions() {
                 "inputTokens": 11,
                 "cacheCreationInputTokens": 13,
                 "cacheReadInputTokens": 17,
-                "outputTokens": 19
+                "outputTokens": 19,
+                "contextWindow": 200000,
+                "costUSD": 0.01
             }
         }
     });
@@ -36,7 +38,10 @@ fn result_wire_contract_preserves_usage_and_accepts_extensions() {
     });
     for payload in [payload, extended] {
         let message: Message = serde_json::from_value(payload).expect("result should deserialize");
-        let Message::Result { usage, .. } = message else {
+        let Message::Result {
+            usage, model_usage, ..
+        } = message
+        else {
             panic!("expected result message");
         };
         let usage = usage.expect("usage should be present");
@@ -44,7 +49,46 @@ fn result_wire_contract_preserves_usage_and_accepts_extensions() {
         assert_eq!(usage.cache_creation_input_tokens, 13);
         assert_eq!(usage.cache_read_input_tokens, 17);
         assert_eq!(usage.output_tokens, 19);
+        let model_usage = model_usage.expect("modelUsage should be present");
+        assert_eq!(model_usage["claude-test"].context_window, Some(200_000));
+        assert_eq!(
+            super::observed_context_window(&model_usage, "claude-test"),
+            Some(200_000)
+        );
     }
+}
+
+#[test]
+fn observed_context_window_prefers_requested_model_then_largest_prompt() {
+    let model_usage: super::ModelUsageMap = serde_json::from_value(json!({
+        "claude-haiku": {
+            "inputTokens": 5,
+            "cacheReadInputTokens": 2000,
+            "contextWindow": 200000
+        },
+        "claude-opus[1m]": {
+            "inputTokens": 10,
+            "cacheReadInputTokens": 150000,
+            "contextWindow": 1000000
+        },
+        "legacy": {"inputTokens": 1}
+    }))
+    .expect("model usage should deserialize");
+    assert_eq!(
+        super::observed_context_window(&model_usage, "claude-haiku"),
+        Some(200_000)
+    );
+    assert_eq!(
+        super::observed_context_window(&model_usage, "opus"),
+        Some(1_000_000)
+    );
+    let without_window: super::ModelUsageMap =
+        serde_json::from_value(json!({"legacy": {"inputTokens": 1}}))
+            .expect("model usage should deserialize");
+    assert_eq!(
+        super::observed_context_window(&without_window, "legacy"),
+        None
+    );
 }
 
 #[test]

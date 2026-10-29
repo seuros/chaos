@@ -130,6 +130,49 @@ fn explicit_compaction_limit_overrides_observed_chatgpt_preset() {
 }
 
 #[test]
+fn observed_context_window_fills_missing_catalog_window() {
+    let model = with_observed_context_window(unknown_model(), Some(1_000_000));
+
+    assert_eq!(model.context_window, Some(1_000_000));
+    assert_eq!(model.auto_compact_token_limit, Some(800_000));
+}
+
+#[test]
+fn observed_context_window_never_replaces_a_catalog_window() {
+    let model = with_observed_context_window(sol_model(), Some(1_000_000));
+
+    assert_eq!(model.context_window, Some(272_000));
+    assert_eq!(model.auto_compact_token_limit, None);
+}
+
+#[test]
+fn observed_context_window_ignores_absent_and_non_positive_values() {
+    assert_eq!(
+        with_observed_context_window(unknown_model(), None).context_window,
+        None
+    );
+    assert_eq!(
+        with_observed_context_window(unknown_model(), Some(0)).context_window,
+        None
+    );
+}
+
+#[test]
+fn explicit_config_still_overrides_an_observed_window() {
+    let mut config = test_config();
+    config.model_context_window = Some(500_000);
+    config.model_auto_compact_token_limit = Some(400_000);
+
+    let model = with_config_overrides(
+        with_observed_context_window(unknown_model(), Some(1_000_000)),
+        &config,
+    );
+
+    assert_eq!(model.context_window, Some(500_000));
+    assert_eq!(model.auto_compact_token_limit, Some(400_000));
+}
+
+#[test]
 fn reasoning_summaries_override_only_enables_support() {
     for (model_support, override_support, expected) in [
         (false, true, true),

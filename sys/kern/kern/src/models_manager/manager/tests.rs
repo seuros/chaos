@@ -406,6 +406,20 @@ async fn get_model_info_tracks_fallback_usage() {
         .await;
     assert!(unknown.used_fallback_model_metadata);
     assert_eq!(unknown.slug, "model-that-does-not-exist");
+    assert_eq!(unknown.context_window, None);
+
+    // A window a transport reported for the unknown slug fills the gap on the
+    // next lookup, with the catalog's 80% auto-compaction default, while the
+    // metadata is still marked as fallback.
+    manager
+        .record_observed_context_window("model-that-does-not-exist", 1_000_000)
+        .await;
+    let observed = manager
+        .get_model_info("model-that-does-not-exist", &config)
+        .await;
+    assert!(observed.used_fallback_model_metadata);
+    assert_eq!(observed.context_window, Some(1_000_000));
+    assert_eq!(observed.auto_compact_token_limit, Some(800_000));
 }
 
 #[tokio::test]

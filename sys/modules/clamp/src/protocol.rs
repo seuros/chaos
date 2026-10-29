@@ -118,6 +118,58 @@ pub struct Usage {
     pub output_tokens: u64,
 }
 
+/// Per-model usage reported by Claude Code under `result.modelUsage`.
+///
+/// Claude Code keys this map by the model id it actually called, which can
+/// differ from the requested slug (sidechain helpers, dated ids). Only the
+/// fields Chaos reads are declared; unknown fields are ignored.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    /// Context window of that model in tokens, when Claude Code reports it.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+}
+
+impl ModelUsage {
+    /// Prompt tokens this model saw in the turn, cached or not.
+    fn prompt_tokens(&self) -> u64 {
+        self.input_tokens
+            .saturating_add(self.cache_creation_input_tokens)
+            .saturating_add(self.cache_read_input_tokens)
+    }
+}
+
+/// Model id to usage, as reported under `result.modelUsage`.
+pub type ModelUsageMap = std::collections::BTreeMap<String, ModelUsage>;
+
+/// The context window Claude Code reported for the model that served the turn.
+///
+/// Prefers the entry keyed by the requested model. When Claude Code keys the
+/// primary model differently, the entry that saw the most prompt tokens is the
+/// one that carried the conversation; sidechain helpers only see fragments.
+pub fn observed_context_window(model_usage: &ModelUsageMap, requested_model: &str) -> Option<u64> {
+    if let Some(window) = model_usage
+        .get(requested_model)
+        .and_then(|usage| usage.context_window)
+    {
+        return Some(window);
+    }
+    model_usage
+        .values()
+        .filter(|usage| usage.context_window.is_some())
+        .max_by_key(|usage| usage.prompt_tokens())
+        .and_then(|usage| usage.context_window)
+}
+
 /// A parsed message from Claude Code's stream-json output.
 ///
 /// The `type` field is used for tag-based deserialization but some message
@@ -144,6 +196,8 @@ pub enum Message {
         session_id: Option<String>,
         #[serde(default)]
         usage: Option<Usage>,
+        #[serde(default, rename = "modelUsage")]
+        model_usage: Option<ModelUsageMap>,
     },
 
     /// A system message (e.g., init, rate limit, error).

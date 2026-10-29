@@ -100,7 +100,8 @@ pub(super) async fn collect(mut stream: ResponseStream) -> Result<Collected, Str
             ResponseEvent::ModelsEtag(etag) => budget.count(&etag)?,
             ResponseEvent::Created
             | ResponseEvent::ServerReasoningIncluded(_)
-            | ResponseEvent::ReasoningSummaryPartAdded { .. } => {}
+            | ResponseEvent::ReasoningSummaryPartAdded { .. }
+            | ResponseEvent::ModelContextWindow { .. } => {}
         }
     }
     Err("native Sample provider event limit exceeded".into())

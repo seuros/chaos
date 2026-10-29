@@ -1339,8 +1339,28 @@ impl ModelClientSession {
                         }
                     }
                     Ok(Some(ClampMessage::Result {
-                        session_id, usage, ..
+                        session_id,
+                        usage,
+                        model_usage,
+                        ..
                     })) => {
+                        // Claude Code reports the window of the model that
+                        // served the turn; the catalog has no entry for clamp
+                        // slugs, so this is where the session learns it.
+                        if let Some(context_window) = model_usage
+                            .as_ref()
+                            .and_then(|usage| {
+                                chaos_clamp::observed_context_window(usage, &clamp_model_slug)
+                            })
+                            .and_then(|window| i64::try_from(window).ok())
+                        {
+                            let _ = tx_event
+                                .send(Ok(ResponseEvent::ModelContextWindow {
+                                    model: clamp_model_slug.clone(),
+                                    context_window,
+                                }))
+                                .await;
+                        }
                         if let Some(checkpoint) = session_id.as_deref().and_then(|id| {
                             super::native_resume::Checkpoint::completed(
                                 super::native_resume::Backend::Claude,

@@ -103,6 +103,16 @@ a compatible current model or uses `gemini-3.1-pro-low`.
 
 Chaos instructions and permissions still apply when clamped.
 
+### Context window and compaction under clamp
+
+Claude Code reports the context window of the model that served each turn
+(`result.modelUsage[<model>].contextWindow`). When the catalog has no entry for
+the clamp slug, Chaos records that window as observed for the slug, so from the
+next turn the compaction reflex, auto-compaction and `compaction_control` work
+as they do for API models, with the usual 80% auto-compaction default. Explicit
+`model_context_window` and `model_auto_compact_token_limit` still take
+precedence and apply from the first turn. AGY does not report a window.
+
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP/permission configuration

@@ -148,6 +148,13 @@ impl fmt::Display for McpAuthStatus {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct McpListToolsResponseEvent {
+    #[serde(default)]
+    pub server_statuses: std::collections::HashMap<String, McpStartupStatus>,
+    #[serde(default)]
+    pub server_capabilities: std::collections::HashMap<String, serde_json::Value>,
+    /// Server implementation versions, not negotiated MCP protocol versions.
+    #[serde(default)]
+    pub server_versions: std::collections::HashMap<String, String>,
     /// Fully qualified tool name -> tool definition.
     pub tools: std::collections::HashMap<String, McpTool>,
     /// Known resources grouped by server name.
@@ -156,19 +163,6 @@ pub struct McpListToolsResponseEvent {
     pub resource_templates: std::collections::HashMap<String, Vec<McpResourceTemplate>>,
     /// Authentication status for each configured MCP server.
     pub auth_statuses: std::collections::HashMap<String, McpAuthStatus>,
-    /// Startup state from the active session, independent of configuration enablement.
-    pub server_statuses: std::collections::HashMap<String, McpStartupStatus>,
-    /// Initialize metadata, independent of instructions and visible tool counts.
-    pub server_infos: std::collections::HashMap<String, McpServerInfo>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
-pub struct McpServerInfo {
-    /// Implementation name reported by the server, not the configured alias.
-    pub name: String,
-    /// Implementation version, not the negotiated MCP protocol version.
-    pub version: String,
-    pub capabilities: serde_json::Value,
 }
 
 /// A single tool entry in the all-tools response.

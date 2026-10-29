@@ -687,10 +687,15 @@ async fn server_startup_statuses_report_pending_and_failed_without_blocking() {
         statuses.get("failed"),
         Some(McpStartupStatus::Failed { error }) if error == "401 Unauthorized"
     );
-    let infos = tokio::time::timeout(Duration::from_millis(10), manager.server_infos())
+    let capabilities =
+        tokio::time::timeout(Duration::from_millis(10), manager.server_capabilities())
+            .await
+            .expect("capability snapshot should not wait for pending clients");
+    assert!(capabilities.is_empty());
+    let versions = tokio::time::timeout(Duration::from_millis(10), manager.server_versions())
         .await
-        .expect("metadata snapshot should not wait for pending clients");
-    assert!(infos.is_empty());
+        .expect("version snapshot should not wait for pending clients");
+    assert!(versions.is_empty());
 }
 
 #[test]

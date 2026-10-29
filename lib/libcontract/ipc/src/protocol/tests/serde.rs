@@ -12,17 +12,10 @@ fn mcp_list_tools_response_round_trips_runtime_statuses() -> Result<()> {
         "resources": {},
         "resource_templates": {},
         "auth_statuses": {},
-        "server_infos": {
-            "ready": {
-                "name": "resource-server",
-                "version": "1.0.0",
-                "capabilities": {"tools": {}, "resources": {"subscribe": false}}
-            },
-            "tools_only": {
-                "name": "tool-server",
-                "version": "2.0.0",
-                "capabilities": {"tools": {}}
-            }
+        "server_versions": {"ready": "1.2.3", "tools_only": "0.4.0"},
+        "server_capabilities": {
+            "ready": {"tools": {}, "resources": {"subscribe": false}},
+            "tools_only": {"tools": {}}
         },
         "server_statuses": {
             "ready": {"state": "ready"},
@@ -34,14 +27,15 @@ fn mcp_list_tools_response_round_trips_runtime_statuses() -> Result<()> {
     let event: McpListToolsResponseEvent = serde_json::from_value(value.clone())?;
     assert_eq!(serde_json::to_value(event)?, value);
 
-    for field in ["server_infos", "server_statuses"] {
-        let mut incomplete = value.clone();
-        incomplete
-            .as_object_mut()
-            .expect("response object")
-            .remove(field);
-        assert!(serde_json::from_value::<McpListToolsResponseEvent>(incomplete).is_err());
-    }
+    let legacy: McpListToolsResponseEvent = serde_json::from_value(json!({
+        "tools": {},
+        "resources": {},
+        "resource_templates": {},
+        "auth_statuses": {}
+    }))?;
+    assert!(legacy.server_statuses.is_empty());
+    assert!(legacy.server_capabilities.is_empty());
+    assert!(legacy.server_versions.is_empty());
     Ok(())
 }
 

@@ -11,12 +11,10 @@ use crate::text_formatting::format_and_truncate_tool_result;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_line;
 use chaos_getopt::format_env_display::format_env_display;
-use chaos_ipc::mcp::Resource;
-use chaos_ipc::mcp::ResourceTemplate;
 use chaos_ipc::models::WebSearchAction;
 use chaos_ipc::protocol::McpAuthStatus;
 use chaos_ipc::protocol::McpInvocation;
-use chaos_ipc::protocol::McpServerInfo;
+use chaos_ipc::protocol::McpListToolsResponseEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::request_user_input::RequestUserInputAnswer;
 use chaos_ipc::request_user_input::RequestUserInputQuestion;
@@ -375,16 +373,20 @@ pub fn empty_mcp_output() -> PlainHistoryCell {
 /// Render MCP tools grouped by connection using the fully-qualified tool names.
 pub fn new_mcp_tools_output(
     config: &Config,
-    tools: HashMap<String, chaos_ipc::mcp::Tool>,
-    resources: HashMap<String, Vec<Resource>>,
-    resource_templates: HashMap<String, Vec<ResourceTemplate>>,
-    auth_statuses: &HashMap<String, McpAuthStatus>,
-    server_statuses: &HashMap<String, McpStartupStatus>,
-    server_infos: &HashMap<String, McpServerInfo>,
+    snapshot: McpListToolsResponseEvent,
 ) -> PlainHistoryCell {
     use crate::tool_badges::tool_name_style;
     use crate::tool_badges::tool_name_style_from_annotations;
 
+    let McpListToolsResponseEvent {
+        tools,
+        resources,
+        resource_templates,
+        auth_statuses,
+        server_statuses,
+        server_capabilities,
+        server_versions,
+    } = snapshot;
     let mut lines: Vec<Line<'static>> = vec![
         "/mcp".fg(crate::theme::annotation_color()).into(),
         "".into(),
@@ -430,13 +432,8 @@ pub fn new_mcp_tools_output(
             .copied()
             .unwrap_or(McpAuthStatus::Unsupported);
         let mut header: Vec<Span<'static>> = vec!["  • ".into(), server.clone().into()];
-        if let Some(info) = server_infos.get(server.as_str()) {
-            if !info.name.is_empty() && info.name != *server {
-                header.push(format!("({})", info.name).into());
-            }
-            if !info.version.is_empty() {
-                header.push(format!(" v{}", info.version.trim_start_matches('v')).dim());
-            }
+        if let Some(version) = server_versions.get(server).filter(|v| !v.trim().is_empty()) {
+            header.push(format!(" ({version})").dim());
         }
         if !cfg.enabled {
             header.push(" ".into());
@@ -521,17 +518,15 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        let capabilities = server_infos
-            .get(server.as_str())
-            .map(|info| &info.capabilities);
-        let supports = |name: &str| {
-            capabilities
-                .and_then(|caps| caps.get(name))
+        if tool_entries.is_empty() {
+            if server_capabilities
+                .get(server)
+                .and_then(|capabilities| capabilities.get("tools"))
                 .is_some_and(serde_json::Value::is_object)
-        };
-        if tool_entries.is_empty() && supports("tools") {
-            lines.push("    • Tools: (none)".into());
-        } else if supports("tools") {
+            {
+                lines.push("    • Tools: (none)".into());
+            }
+        } else {
             lines.push("    • Tools:".into());
             for (tool_name, tool) in tool_entries {
                 let name_style = if tool.annotations.is_some() {
@@ -549,7 +544,11 @@ pub fn new_mcp_tools_output(
             }
         }
 
-        if supports("resources") {
+        if server_capabilities
+            .get(server)
+            .and_then(|capabilities| capabilities.get("resources"))
+            .is_some_and(serde_json::Value::is_object)
+        {
             lines.push(resource_listing(
                 "Resources",
                 resources

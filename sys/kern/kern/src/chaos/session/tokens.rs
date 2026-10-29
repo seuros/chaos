@@ -26,31 +26,48 @@ fn deferral_ceiling_for_windows(
 /// A deferral buys one more reflex reserve past the configured compaction
 /// limit, never the rest of the window: a limit set well below the window
 /// (a 400k limit on a 1M model) must still mean something after `defer_once`.
-/// The window-derived safety ceiling stays binding when it is lower.
+/// `scope_offset` is where the limit is measured from: zero for the total
+/// context, the pressure-window baseline for `body-after-prefix`, so the
+/// ceiling always sits one reserve above the point ordinary compaction would
+/// trigger. The window-derived safety ceiling stays binding when it is lower.
 fn deferral_ceiling_for_limits(
     raw_context_window: i64,
     effective_context_window: i64,
     compaction_token_limit: Option<i64>,
+    scope_offset: i64,
 ) -> Option<i64> {
     let window_ceiling =
         deferral_ceiling_for_windows(raw_context_window, effective_context_window)?;
     let Some(compaction_token_limit) = compaction_token_limit else {
         return Some(window_ceiling);
     };
-    let limit_ceiling = compaction_token_limit.saturating_add(compaction_reflex_reserve(
-        effective_context_window,
-        compaction_token_limit,
-    ));
+    let limit_ceiling = scope_offset
+        .saturating_add(compaction_token_limit)
+        .saturating_add(compaction_reflex_reserve(
+            effective_context_window,
+            compaction_token_limit,
+        ));
     Some(window_ceiling.min(limit_ceiling)).filter(|ceiling| *ceiling > 0)
 }
 
-pub(crate) fn compaction_deferral_ceiling(turn_context: &TurnContext) -> Option<i64> {
+/// The absolute active-token ceiling a `defer_once` may run to. `baseline` is
+/// the current pressure window's prefill baseline; it only matters under the
+/// `body-after-prefix` scope, where the compaction limit is relative to it.
+pub(crate) fn compaction_deferral_ceiling(
+    turn_context: &TurnContext,
+    baseline: Option<i64>,
+) -> Option<i64> {
     let raw_context_window = turn_context.model_info.context_window?;
     let effective_context_window = turn_context.model_context_window()?;
+    let scope_offset = match turn_context.config.model_auto_compact_token_limit_scope {
+        chaos_context::allotment::Scope::Total => 0,
+        chaos_context::allotment::Scope::BodyAfterPrefix => baseline.unwrap_or(0),
+    };
     deferral_ceiling_for_limits(
         raw_context_window,
         effective_context_window,
         turn_context.model_info.auto_compact_token_limit(),
+        scope_offset,
     )
 }
 
@@ -122,7 +139,7 @@ impl Session {
             chaos_context::pressure::Control::Deferred(deferral) => {
                 deferral.model == turn_context.model_info.slug
                     && Some(deferral.effective_context_window) == effective_context_window
-                    && Some(deferral.ceiling) == compaction_deferral_ceiling(turn_context)
+                    && Some(deferral.ceiling) == compaction_deferral_ceiling(turn_context, baseline)
             }
             chaos_context::pressure::Control::CompactRequested(request) => {
                 request.model == turn_context.model_info.slug
@@ -146,7 +163,7 @@ impl Session {
             chaos_context::allotment::Limits {
                 auto_distill_token_limit: turn_context.model_info.auto_compact_token_limit(),
                 context_window: effective_context_window,
-                deferral_ceiling: compaction_deferral_ceiling(turn_context),
+                deferral_ceiling: compaction_deferral_ceiling(turn_context, baseline),
             },
             deferred,
         )
@@ -168,7 +185,7 @@ impl Session {
                 .map(chaos_context::pressure::Baseline::tokens);
             let compaction_token_limit = turn_context.model_info.auto_compact_token_limit();
             let context_window = turn_context.model_context_window();
-            let deferral_ceiling = compaction_deferral_ceiling(turn_context);
+            let deferral_ceiling = compaction_deferral_ceiling(turn_context, baseline);
             let deferred = matches!(
                 state.pressure.control(),
                 chaos_context::pressure::Control::Deferred(deferral)

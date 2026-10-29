@@ -129,6 +129,7 @@ impl ToolHandler for CompactionControlHandler {
             window_number,
             live_window_id,
             active_tokens,
+            baseline,
             existing_control,
             reminder_claimed,
             deferral_used,
@@ -138,6 +139,10 @@ impl ToolHandler for CompactionControlHandler {
                 state.pressure.window_number(),
                 state.pressure.window_id().to_string(),
                 state.get_total_token_usage(state.server_reasoning_included()),
+                state
+                    .pressure
+                    .baseline()
+                    .map(chaos_context::pressure::Baseline::tokens),
                 state.pressure.control().clone(),
                 state.pressure.reminder_claimed(),
                 state.pressure.deferral_used(),
@@ -171,7 +176,7 @@ impl ToolHandler for CompactionControlHandler {
                             .to_string(),
                     )
                 })?;
-                let ceiling = compaction_deferral_ceiling(&turn).ok_or_else(|| {
+                let ceiling = compaction_deferral_ceiling(&turn, baseline).ok_or_else(|| {
                     FunctionCallError::RespondToModel(
                         "no safe deferral ceiling is available for the current model".to_string(),
                     )

@@ -14,7 +14,9 @@ should. There is no patch level; the build timestamp is the patch.
   one reflex reserve past the configured compaction limit instead of running to
   the window-derived safety ceiling, so a limit set well below the window (a
   400k limit on a 1M model: ceiling 500k, not 900k) keeps its meaning. The
-  ChatGPT preset and catalog defaults keep their existing ceilings.
+  ChatGPT preset and catalog defaults keep their existing ceilings, and so
+  does the `body-after-prefix` scope, whose limit is relative to a baseline
+  that is not persisted across processes.
 
 ## [47.14.7] - 2026-10-28
 

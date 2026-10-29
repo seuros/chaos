@@ -253,7 +253,10 @@ A deferral extends the current pressure window by at most one reflex reserve
 past the compaction limit (the smaller of the gap to the effective window and a
 quarter of the limit), and never past the fixed safety ceiling. With a 1M
 window and a 400k limit the warning arrives around 300k and a deferral may run
-to 500k; the named ChatGPT preset keeps its 360k ceiling.
+to 500k; the named ChatGPT preset keeps its 360k ceiling. Under
+`model_auto_compact_token_limit_scope = "body-after-prefix"` the limit is
+relative to a pressure-window baseline that is not persisted across processes,
+so a deferral there keeps the window-derived safety ceiling instead.
 
 To enable bounded agent control over compaction timing:
 

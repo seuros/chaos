@@ -1705,7 +1705,6 @@ dependencies = [
  "icu_decimal",
  "icu_locale_core",
  "icu_provider",
- "libc",
  "pretty_assertions",
  "rama",
  "schemars 1.2.3",

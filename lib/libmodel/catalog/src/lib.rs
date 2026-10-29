@@ -5,5 +5,6 @@ mod refresh_strategy;
 pub use cache::ModelsCache;
 pub use cache::ModelsCacheManager;
 pub use cache::ModelsCacheScope;
+pub use model_info::default_auto_compact_token_limit;
 pub use model_info::model_info_from_abi;
 pub use refresh_strategy::RefreshStrategy;

@@ -102,11 +102,10 @@ async fn protected_context_is_a_session_snapshot_that_resume_and_fork_restore() 
     };
     let child_id = forked.process_id;
     let child_turn = turn(&child, &server, "child").await?;
-    // A fork keeps the parent's history and appends its own initial
-    // context, so the snapshot rides once with each initial context, like
-    // every other initial-context section.
+    // The fork keeps other initial context, but replaces the inherited
+    // protected section instead of duplicating it.
     assert_eq!(count(&child_turn, INITIAL_CONTEXT), 2);
-    assert_eq!(count(&child_turn, V1), count(&child_turn, INITIAL_CONTEXT));
+    assert_eq!(count(&child_turn, V1), 1);
     assert_eq!(count(&child_turn, V2), 0);
     let child_history = RolloutRecorder::get_rollout_history_for_process(child_id).await?;
     let child_meta = child_history
@@ -128,15 +127,13 @@ async fn protected_context_is_a_session_snapshot_that_resume_and_fork_restore() 
 
     // Resuming either session from the journal restores V1, never V2.
     let home = Arc::clone(&test.home);
-    // The child's history holds the parent's initial context and its own;
-    // resume adds no further copy to either.
-    for (id, copies) in [(parent_id, 1), (child_id, 2)] {
+    for id in [parent_id, child_id] {
         let resumed = builder.resume(&server, Arc::clone(&home), id).await?;
         let request = turn(&resumed, &server, "after resume").await?;
         assert_eq!(
             count(&request, V1),
-            copies,
-            "resume of {id} restores exactly the copies its history holds"
+            1,
+            "resume of {id} keeps exactly one protected snapshot"
         );
         assert_eq!(
             count(&request, V2),

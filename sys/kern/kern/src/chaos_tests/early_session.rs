@@ -1037,14 +1037,17 @@ async fn set_rate_limits_retains_previous_credits() {
 async fn protected_context_is_restored_once_after_each_compaction() {
     use chaos_context::distill::build_compacted_history;
     use chaos_context::distill::insert_initial_context_before_last_real_user_or_summary;
-    use chaos_ipc::protocol::ProtectedContext;
 
     let (session, turn_context) = make_session_and_context().await;
     let dir = tempfile::tempdir().expect("tempdir");
     let soul = dir.path().join("soul.md");
     std::fs::write(&soul, "PROTECTED_V1").expect("write soul");
-    let (snapshot, warnings) =
-        ProtectedContext::read(std::slice::from_ref(&soul), dir.path(), 1024);
+    let mut config = (*turn_context.config).clone();
+    config.protected_context_files = vec![soul.clone()];
+    config.protected_context_max_bytes = 1024;
+    let (snapshot, warnings) = crate::protected_context::load(&config)
+        .await
+        .expect("load snapshot");
     assert!(warnings.is_empty(), "{warnings:?}");
     session
         .state

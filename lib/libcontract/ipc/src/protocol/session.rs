@@ -247,7 +247,7 @@ pub struct SessionMeta {
     /// Text read once from `protected_context_files` when the session was
     /// created. Rendered into every initial context, including the one
     /// rebuilt after a compaction, so it is never summarised away.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub protected_context: Option<ProtectedContext>,
 }
 
@@ -256,7 +256,6 @@ pub struct SessionMeta {
 pub struct ProtectedContext {
     pub files: Vec<ProtectedContextFile>,
     /// True when the configured byte cap cut the snapshot short.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
 }
 
@@ -268,146 +267,10 @@ pub struct ProtectedContextFile {
     pub text: String,
 }
 
-/// Open `path` for reading only if it is a regular file (symlinks to
-/// regular files are followed). FIFOs, devices and sockets are refused
-/// before any read, so a FIFO without a writer cannot hang session start.
-fn open_regular_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        // Opening a FIFO blocks until a writer appears unless O_NONBLOCK is
-        // set; on a regular file the flag has no effect on reads.
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    #[cfg(not(unix))]
-    if !std::fs::metadata(path)?.is_file() {
-        return Err(not_a_regular_file());
-    }
-    let file = options.open(path)?;
-    // Check the opened handle, not the path, so a swap between check and
-    // open cannot slip a non-regular file through.
-    if !file.metadata()?.is_file() {
-        return Err(not_a_regular_file());
-    }
-    Ok(file)
-}
-
-fn not_a_regular_file() -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidInput, "it is not a regular file")
-}
-
 impl ProtectedContext {
-    /// Read `paths` once, in order, keeping at most `max_bytes` of text in
-    /// total across all files. Relative paths resolve against `cwd`. No file
-    /// is read past what the cap still allows. A file cut by the cap keeps
-    /// its prefix up to a UTF-8 boundary and marks the snapshot truncated.
-    /// Unreadable or non-UTF-8 files are skipped. Every gap is reported in
-    /// the returned warnings. When `paths` is non-empty the snapshot is
-    /// returned even if nothing could be read, so the session records that
-    /// it was taken.
-    pub fn read(
-        paths: &[PathBuf],
-        cwd: &std::path::Path,
-        max_bytes: usize,
-    ) -> (Option<Self>, Vec<String>) {
-        use std::io::Read;
-
-        if paths.is_empty() {
-            return (None, Vec::new());
-        }
-        let mut files = Vec::with_capacity(paths.len());
-        let mut warnings = Vec::new();
-        let mut remaining = max_bytes;
-        let mut truncated = false;
-        for path in paths {
-            let resolved = if path.is_absolute() {
-                path.clone()
-            } else {
-                cwd.join(path)
-            };
-            let shown = resolved.display();
-            if remaining == 0 {
-                truncated = true;
-                warnings.push(format!(
-                    "protected context file {shown} was left out: the {max_bytes}-byte cap was reached"
-                ));
-                continue;
-            }
-            // Read one byte past the allowance so a cut is detectable.
-            let mut bytes = Vec::new();
-            let read = open_regular_file(&resolved)
-                .and_then(|file| file.take(remaining as u64 + 1).read_to_end(&mut bytes));
-            if let Err(err) = read {
-                warnings.push(format!(
-                    "protected context file {shown} was not read: {err}"
-                ));
-                continue;
-            }
-            let cut = bytes.len() > remaining;
-            if cut {
-                bytes.truncate(remaining);
-            }
-            let text = match String::from_utf8(bytes) {
-                Ok(text) => text,
-                // A cut can split a character; keep the valid prefix.
-                Err(err) if cut && err.utf8_error().error_len().is_none() => {
-                    let valid = err.utf8_error().valid_up_to();
-                    let mut bytes = err.into_bytes();
-                    bytes.truncate(valid);
-                    String::from_utf8(bytes).unwrap_or_default()
-                }
-                Err(_) => {
-                    warnings.push(format!(
-                        "protected context file {shown} was not read: it is not UTF-8 text"
-                    ));
-                    continue;
-                }
-            };
-            if cut {
-                truncated = true;
-                warnings.push(format!(
-                    "protected context file {shown} is incomplete: cut to {} bytes by the {max_bytes}-byte cap",
-                    text.len()
-                ));
-            }
-            // Once a file is cut, later files are left out whole rather
-            // than filled into the bytes a character boundary freed.
-            remaining = if cut { 0 } else { remaining - text.len() };
-            files.push(ProtectedContextFile {
-                path: path.display().to_string(),
-                text,
-            });
-        }
-        (Some(Self { files, truncated }), warnings)
-    }
-
     /// Whether the snapshot carries any text to render.
     pub fn is_empty(&self) -> bool {
         self.files.is_empty() && !self.truncated
-    }
-
-    /// The developer-section text for this snapshot.
-    pub fn render(&self) -> String {
-        let mut out = String::from(
-            "<protected_context>\nThe operator marked these files as protected: they are read once when the session starts and restored verbatim after every compaction.\n",
-        );
-        for file in &self.files {
-            out.push_str("<file path=\"");
-            out.push_str(&file.path);
-            out.push_str("\">\n");
-            out.push_str(&file.text);
-            if !file.text.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push_str("</file>\n");
-        }
-        if self.truncated {
-            out.push_str("[protected context truncated at the configured byte cap]\n");
-        }
-        out.push_str("</protected_context>");
-        out
     }
 }
 
@@ -488,6 +351,9 @@ pub enum RolloutItem {
     EventMsg(EventMsg),
     BackgroundTask(crate::background_tasks::TaskJournalEvent),
     GoalCheckpoint(GoalCheckpointItem),
+    /// A context window the transport reported for a model the catalog does
+    /// not describe, recorded when it was received.
+    ObservedModelContextWindow(ObservedModelContextWindowItem),
 }
 
 impl<'de> Deserialize<'de> for RolloutItem {
@@ -506,6 +372,7 @@ impl<'de> Deserialize<'de> for RolloutItem {
             EventMsg(Value),
             BackgroundTask(crate::background_tasks::TaskJournalEvent),
             GoalCheckpoint(GoalCheckpointItem),
+            ObservedModelContextWindow(ObservedModelContextWindowItem),
         }
 
         let item = RolloutItemWire::deserialize(deserializer)?;
@@ -517,6 +384,9 @@ impl<'de> Deserialize<'de> for RolloutItem {
             RolloutItemWire::TurnContext(item) => Ok(Self::TurnContext(item)),
             RolloutItemWire::BackgroundTask(item) => Ok(Self::BackgroundTask(item)),
             RolloutItemWire::GoalCheckpoint(item) => Ok(Self::GoalCheckpoint(item)),
+            RolloutItemWire::ObservedModelContextWindow(item) => {
+                Ok(Self::ObservedModelContextWindow(item))
+            }
             RolloutItemWire::EventMsg(value) => {
                 let is_retired_undo_event = value
                     .get("type")
@@ -540,6 +410,26 @@ pub struct GoalCheckpointItem {
     pub version: u32,
     pub snapshot: Value,
     pub verdict: Option<Value>,
+}
+
+/// A context window observed from the transport for `model` under the
+/// `provider` binding (clamp slugs have no catalog entry). Persisted when the
+/// observation arrives, so a fresh process resuming the session has it
+/// before its first request.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ObservedModelContextWindowItem {
+    pub provider: String,
+    pub model: String,
+    pub context_window: i64,
+    pub scope: ModelContextWindowScope,
+}
+
+/// Endpoint routing identity for a model-window observation. The enclosing
+/// record's provider id identifies the configured account.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
+pub struct ModelContextWindowScope {
+    pub wire_api: String,
+    pub base_url: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]

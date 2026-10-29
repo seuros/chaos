@@ -27,9 +27,6 @@ sys-locale = { workspace = true }
 rama = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
-[target.'cfg(unix)'.dependencies]
-libc = { workspace = true }
-
 [dev-dependencies]
 chaos-test-fixtures = { workspace = true }
 anyhow = { workspace = true }

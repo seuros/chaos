@@ -103,6 +103,21 @@ a compatible current model or uses `gemini-3.1-pro-low`.
 
 Chaos instructions and permissions still apply when clamped.
 
+### Context window and compaction under clamp
+
+Claude Code reports the context window of the model that served each turn
+(`result.modelUsage[<model>].contextWindow`). When the catalog has no entry for
+the clamp slug, Chaos records that window as observed for the slug, so from the
+next turn the compaction reflex, auto-compaction and `compaction_control` work
+as they do for API models, with the usual 80% auto-compaction default. Explicit
+`model_context_window` and `model_auto_compact_token_limit` still take
+precedence and apply from the first turn. AGY does not report a window.
+
+Observations are scoped to the configured account, API protocol and endpoint.
+Resume and fork restore the latest window for each model and scope, including
+ACP resume. Identical reports are recorded only once per session until the
+window changes.
+
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP/permission configuration
@@ -278,15 +293,11 @@ session's meta record and sent as a developer section after
 `developer_instructions`, in every initial context. That includes the context
 rebuilt after each compaction, and the clamp replay. Editing a file later does
 not change a running session. A resumed or forked session keeps the snapshot
-it was created with. A session recorded before this setting existed stays
-unprotected until a new session starts. Fresh sub-agents do not read the
-files.
+it was created with. Fresh sub-agents do not read the files.
 
-The section is sent once per initial context, which is not the same as once
-in the whole prompt. A fork keeps its parent's history and adds its own
-initial context, so a forked session carries the snapshot twice, and each
-further fork adds another copy. The extra copies last until a compaction
-replaces that history with a single initial context.
+The section appears exactly once in the prompt. A fork removes the inherited
+protected section before adding its own initial context, including when that
+section came from a compaction checkpoint. Repeated forks do not multiply it.
 
 A missing, unreadable, non-regular (a FIFO, device or socket) or non-UTF-8
 file produces a startup warning and is

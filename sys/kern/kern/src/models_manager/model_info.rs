@@ -9,6 +9,29 @@ use crate::truncate::approx_bytes_for_tokens;
 // Re-export pure ABI conversion from the catalog crate.
 pub use chaos_model_catalog::model_info_from_abi;
 
+/// Fill a context window the catalog did not provide from one the transport
+/// observed (Claude Code reports it under clamp). A catalog window is never
+/// replaced, and [`with_config_overrides`] runs afterwards, so explicit
+/// `model_context_window` and `model_auto_compact_token_limit` still win. The
+/// auto-compaction default follows the catalog rule (80%) so an observed
+/// window behaves like a fetched one.
+pub(crate) fn with_observed_context_window(
+    mut model: ModelInfo,
+    observed_context_window: Option<i64>,
+) -> ModelInfo {
+    if model.context_window.is_none()
+        && let Some(context_window) = observed_context_window.filter(|window| *window > 0)
+    {
+        model.context_window = Some(context_window);
+        if model.auto_compact_token_limit.is_none() {
+            model.auto_compact_token_limit = Some(
+                chaos_model_catalog::default_auto_compact_token_limit(context_window),
+            );
+        }
+    }
+    model
+}
+
 pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
     model.model_family = config.model_provider.family_for_model(
         &config.model_provider_id,

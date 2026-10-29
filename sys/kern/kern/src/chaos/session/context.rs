@@ -76,12 +76,6 @@ impl Session {
         if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
             developer_sections.push(developer_instructions.to_string());
         }
-        if let Some(protected_context) = protected_context
-            .as_ref()
-            .filter(|protected_context| !protected_context.is_empty())
-        {
-            developer_sections.push(protected_context.render());
-        }
         if matches!(
             turn_context.session_source,
             SessionSource::SubAgent(SubAgentSource::ProcessSpawn { .. })
@@ -135,6 +129,17 @@ impl Session {
             crate::context_manager::updates::build_system_update_item(developer_sections)
         {
             items.push(developer_message);
+        }
+        if let Some(snapshot) = protected_context
+            .as_ref()
+            .filter(|snapshot| !snapshot.is_empty())
+        {
+            items.push(
+                chaos_ipc::models::DeveloperInstructions::new(crate::protected_context::render(
+                    snapshot,
+                ))
+                .into(),
+            );
         }
         if let Some(contextual_user_message) =
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)

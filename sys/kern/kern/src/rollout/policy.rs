@@ -18,6 +18,7 @@ pub fn is_persisted_response_item(item: &RolloutItem, mode: EventPersistenceMode
         RolloutItem::EventMsg(ev) => should_persist_event_msg(ev, mode),
         // Persist structural markers so replay and rollback remain stable.
         RolloutItem::GoalCheckpoint(_)
+        | RolloutItem::ObservedModelContextWindow(_)
         | RolloutItem::BackgroundTask(_)
         | RolloutItem::Compacted(_)
         | RolloutItem::CompactionControl(_)

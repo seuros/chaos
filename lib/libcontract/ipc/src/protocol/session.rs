@@ -268,6 +268,36 @@ pub struct ProtectedContextFile {
     pub text: String,
 }
 
+/// Open `path` for reading only if it is a regular file (symlinks to
+/// regular files are followed). FIFOs, devices and sockets are refused
+/// before any read, so a FIFO without a writer cannot hang session start.
+fn open_regular_file(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        // Opening a FIFO blocks until a writer appears unless O_NONBLOCK is
+        // set; on a regular file the flag has no effect on reads.
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    #[cfg(not(unix))]
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(not_a_regular_file());
+    }
+    let file = options.open(path)?;
+    // Check the opened handle, not the path, so a swap between check and
+    // open cannot slip a non-regular file through.
+    if !file.metadata()?.is_file() {
+        return Err(not_a_regular_file());
+    }
+    Ok(file)
+}
+
+fn not_a_regular_file() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, "it is not a regular file")
+}
+
 impl ProtectedContext {
     /// Read `paths` once, in order, keeping at most `max_bytes` of text in
     /// total across all files. Relative paths resolve against `cwd`. No file
@@ -307,7 +337,7 @@ impl ProtectedContext {
             }
             // Read one byte past the allowance so a cut is detectable.
             let mut bytes = Vec::new();
-            let read = std::fs::File::open(&resolved)
+            let read = open_regular_file(&resolved)
                 .and_then(|file| file.take(remaining as u64 + 1).read_to_end(&mut bytes));
             if let Err(err) = read {
                 warnings.push(format!(

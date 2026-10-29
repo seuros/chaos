@@ -282,7 +282,14 @@ it was created with. A session recorded before this setting existed stays
 unprotected until a new session starts. Fresh sub-agents do not read the
 files.
 
-A missing, unreadable or non-UTF-8 file produces a startup warning and is
+The section is sent once per initial context, which is not the same as once
+in the whole prompt. A fork keeps its parent's history and adds its own
+initial context, so a forked session carries the snapshot twice, and each
+further fork adds another copy. The extra copies last until a compaction
+replaces that history with a single initial context.
+
+A missing, unreadable, non-regular (a FIFO, device or socket) or non-UTF-8
+file produces a startup warning and is
 skipped. If the cap cuts a file short, the file is trimmed at a character
 boundary, a warning names it, and the section is marked truncated. Files that
 come after the cut are left out. The snapshot counts toward the compaction

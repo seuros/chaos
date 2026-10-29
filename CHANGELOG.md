@@ -9,6 +9,13 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- Clamp sessions learn the model's context window from Claude Code's
+  `result.modelUsage` and record it when the catalog has no entry for the
+  slug, so the compaction reflex, auto-compaction and `compaction_control`
+  work under clamp without a hardcoded model table. Explicit
+  `model_context_window` and `model_auto_compact_token_limit` still win.
+
 ## [47.14.7] - 2026-10-28
 
 ### Added

@@ -118,6 +118,55 @@ pub struct Usage {
     pub output_tokens: u64,
 }
 
+/// Per-model usage reported by Claude Code under `result.modelUsage`.
+///
+/// Claude Code keys this map by the model id it actually called (a dated id or
+/// a capability alias), which can differ from the requested slug, and helper
+/// models used on sidechains get their own entries. Only the fields Chaos
+/// reads are declared; unknown fields are ignored.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsage {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    /// Context window of that model in tokens, when Claude Code reports it.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+}
+
+/// Model id to usage, as reported under `result.modelUsage`.
+pub type ModelUsageMap = std::collections::BTreeMap<String, ModelUsage>;
+
+/// The context window Claude Code reported for the model that served the
+/// main thread.
+///
+/// `served_model` is the `message.model` of the last main-thread assistant
+/// message, which is how Claude Code names the model that produced the reply;
+/// the requested slug is the only fallback. Nothing is inferred from usage
+/// volume: a sidechain helper can dominate a turn's tokens without carrying
+/// the conversation, and a primary model without a reported window must not
+/// inherit a helper's.
+pub fn observed_context_window(
+    model_usage: &ModelUsageMap,
+    served_model: Option<&str>,
+    requested_model: &str,
+) -> Option<u64> {
+    let window_for = |model: &str| {
+        model_usage
+            .get(model)
+            .and_then(|usage| usage.context_window)
+    };
+    served_model
+        .and_then(window_for)
+        .or_else(|| window_for(requested_model))
+}
+
 /// A parsed message from Claude Code's stream-json output.
 ///
 /// The `type` field is used for tag-based deserialization but some message
@@ -128,7 +177,12 @@ pub struct Usage {
 pub enum Message {
     /// An assistant response chunk.
     #[serde(rename = "assistant")]
-    Assistant { message: Value },
+    Assistant {
+        message: Value,
+        /// Set on sidechain (sub-agent) messages; `None` on the main thread.
+        #[serde(default)]
+        parent_tool_use_id: Option<String>,
+    },
 
     /// The turn completed.
     #[serde(rename = "result")]
@@ -144,6 +198,8 @@ pub enum Message {
         session_id: Option<String>,
         #[serde(default)]
         usage: Option<Usage>,
+        #[serde(default, rename = "modelUsage")]
+        model_usage: Option<ModelUsageMap>,
     },
 
     /// A system message (e.g., init, rate limit, error).

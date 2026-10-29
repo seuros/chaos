@@ -27,6 +27,7 @@ pub fn apply_rollout_item(
         RolloutItem::EventMsg(event) => apply_event_msg(metadata, event),
         RolloutItem::ResponseItem(item) => apply_response_item(metadata, item),
         RolloutItem::GoalCheckpoint(_)
+        | RolloutItem::ObservedModelContextWindow(_)
         | RolloutItem::BackgroundTask(_)
         | RolloutItem::Compacted(_)
         | RolloutItem::CompactionControl(_) => {}
@@ -43,6 +44,7 @@ pub fn rollout_item_affects_process_metadata(item: &RolloutItem) -> bool {
         RolloutItem::EventMsg(EventMsg::TokenCount(_) | EventMsg::UserMessage(_)) => true,
         RolloutItem::ResponseItem(ResponseItem::Message { role, .. }) => role == "user",
         RolloutItem::GoalCheckpoint(_)
+        | RolloutItem::ObservedModelContextWindow(_)
         | RolloutItem::BackgroundTask(_)
         | RolloutItem::EventMsg(_)
         | RolloutItem::ResponseItem(_)

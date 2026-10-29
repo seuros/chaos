@@ -57,6 +57,30 @@ impl Session {
     ) {
         use chaos_ipc::protocol::InitialHistory;
         use chaos_ipc::protocol::SessionSource;
+        // A window the transport observed for a slug the catalog does not
+        // describe is recorded in the rollout. Restore it before the default
+        // turn is built: that turn's model info decides whether pending
+        // compaction control from the rollout is still valid, and the policy
+        // must not lapse for the first turn of a fresh process.
+        let observed_context_window = match &conversation_history {
+            InitialHistory::New => None,
+            InitialHistory::Resumed(resumed) => {
+                Self::last_observed_context_window_from_rollout(&resumed.history)
+            }
+            InitialHistory::Forked(rollout_items) => {
+                Self::last_observed_context_window_from_rollout(rollout_items)
+            }
+        };
+        if let Some(observed) = observed_context_window {
+            self.services
+                .models_manager
+                .record_observed_context_window(
+                    &observed.provider,
+                    &observed.model,
+                    observed.context_window,
+                )
+                .await;
+        }
         let turn_context = self.new_default_turn().await;
         let is_subagent = {
             let state = self.state.lock().await;
@@ -223,6 +247,44 @@ impl Session {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
             _ => None,
         })
+    }
+
+    /// The most recent context window the transport reported, as recorded in
+    /// the rollout when it arrived.
+    pub(super) fn last_observed_context_window_from_rollout(
+        rollout_items: &[RolloutItem],
+    ) -> Option<chaos_ipc::protocol::ObservedModelContextWindowItem> {
+        rollout_items.iter().rev().find_map(|item| match item {
+            RolloutItem::ObservedModelContextWindow(observed) => Some(observed.clone()),
+            _ => None,
+        })
+    }
+
+    /// Record a context window the transport reported for `model` under this
+    /// turn's provider binding. It is persisted to the rollout on receipt, so
+    /// a fresh process resuming the session has it before its first request,
+    /// and applied to the catalog for the next turn's model info.
+    pub(crate) async fn record_observed_context_window(
+        &self,
+        turn_context: &TurnContext,
+        model: &str,
+        context_window: i64,
+    ) {
+        let observed = chaos_ipc::protocol::ObservedModelContextWindowItem {
+            provider: turn_context.config.model_provider_id.clone(),
+            model: model.to_string(),
+            context_window,
+        };
+        self.persist_rollout_items(&[RolloutItem::ObservedModelContextWindow(observed.clone())])
+            .await;
+        self.services
+            .models_manager
+            .record_observed_context_window(
+                &observed.provider,
+                &observed.model,
+                observed.context_window,
+            )
+            .await;
     }
 
     /// Records input items: always append to conversation history and

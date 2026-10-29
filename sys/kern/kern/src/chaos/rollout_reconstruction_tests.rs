@@ -9,6 +9,92 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::CompactionControlAction;
 use chaos_ipc::protocol::CompactionControlItem;
 use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and_pending_control() {
+    use crate::chaos::tests::attach_rollout_recorder;
+    use crate::chaos::tests::make_session_and_context_with_rx;
+    use crate::config::AgentCompactionControl;
+    use chaos_context::pressure::Control;
+    use chaos_context::pressure::Deferral;
+
+    // Session A runs a slug the catalog does not describe, as clamp does.
+    let (session_a, turn_a, _events_a) = make_session_and_context_with_rx().await;
+    assert!(turn_a.model_info.used_fallback_model_metadata);
+    assert_eq!(turn_a.model_context_window(), None);
+    let process_id = attach_rollout_recorder(&session_a).await;
+
+    // The transport reports the window during the turn. It is persisted on
+    // receipt, not when a later turn context happens to be recorded.
+    session_a
+        .record_observed_context_window(turn_a.as_ref(), &turn_a.model_info.slug, 1_000_000)
+        .await;
+    session_a.flush_rollout().await;
+    let recorder = session_a
+        .services
+        .rollout
+        .lock()
+        .await
+        .clone()
+        .expect("session A records a rollout");
+    let persisted = recorder.snapshot_rollout_items();
+    let observed = persisted
+        .iter()
+        .find_map(|item| match item {
+            RolloutItem::ObservedModelContextWindow(item) => Some(item.clone()),
+            _ => None,
+        })
+        .expect("the observation is persisted");
+    assert_eq!(observed.provider, turn_a.config.model_provider_id);
+    assert_eq!(observed.model, turn_a.model_info.slug);
+    assert_eq!(observed.context_window, 1_000_000);
+
+    // Session B is a fresh process with its own catalog. It resumes the
+    // persisted records plus a deferral granted under the observed window.
+    let (session_b, turn_b, _events_b) = make_session_and_context_with_rx().await;
+    {
+        let mut state = session_b.state.lock().await;
+        let mut config = (*state.session_configuration.original_config_do_not_use).clone();
+        config.agent_compaction_control = AgentCompactionControl::Bounded;
+        state.session_configuration.original_config_do_not_use = std::sync::Arc::new(config);
+    }
+    assert_eq!(turn_b.model_context_window(), None);
+    let deferral = CompactionControlItem {
+        // No compaction has happened yet, so this is pressure window 0.
+        window_number: 0,
+        window_id: "window-0".to_string(),
+        action: CompactionControlAction::DeferOnce,
+        model: turn_b.model_info.slug.clone(),
+        effective_context_window: 950_000,
+        deferral_ceiling: Some(900_000),
+        active_tokens: 850_000,
+    };
+    let mut history = persisted;
+    history.push(RolloutItem::CompactionControl(deferral.clone()));
+    session_b
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: process_id,
+            history,
+        }))
+        .await;
+
+    // The resumed policy is in force before any request, and the pending
+    // deferral was kept rather than discarded against a windowless context.
+    let resumed = session_b.new_default_turn().await;
+    assert_eq!(resumed.model_info.context_window, Some(1_000_000));
+    assert_eq!(resumed.model_context_window(), Some(950_000));
+    assert_eq!(resumed.model_info.auto_compact_token_limit(), Some(800_000));
+    let state = session_b.state.lock().await;
+    assert_eq!(
+        state.pressure.control(),
+        &Control::Deferred(Deferral {
+            model: deferral.model,
+            effective_context_window: 950_000,
+            ceiling: 900_000,
+        })
+    );
+}
+
 fn user_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
         id: None,

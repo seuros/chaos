@@ -177,6 +177,11 @@ enum CatalogMode {
 pub struct ModelsManager {
     remote_models: Arc<RwLock<Vec<ModelInfo>>>,
     pub(super) picker_catalog: Arc<RwLock<super::catalog::ModelPickerCatalog>>,
+    /// Context windows transports reported for slugs the catalog does not
+    /// describe (clamp models), keyed by provider binding and requested slug.
+    /// The map is shared across provider rebinds for the lifetime of the
+    /// session, but each manager only reads entries for its own binding.
+    observed_context_windows: Arc<RwLock<HashMap<(String, String), i64>>>,
     catalog_mode: CatalogMode,
     automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
@@ -253,6 +258,7 @@ impl ModelsManager {
         Self {
             remote_models: Arc::new(RwLock::new(remote_models)),
             picker_catalog: Arc::default(),
+            observed_context_windows: Arc::default(),
             catalog_mode,
             automatic_catalog_refresh: true,
             collaboration_modes_config,
@@ -293,17 +299,17 @@ impl ModelsManager {
         if self.catalog_mode == CatalogMode::Custom {
             return None;
         }
-        Some(
-            Self::new_with_provider_binding(
-                self.cache_manager.home().to_path_buf(),
-                self.auth_manager.for_provider(provider_id),
-                None,
-                self.collaboration_modes_config,
-                provider_id.to_string(),
-                provider,
-            )
-            .with_automatic_catalog_refresh(self.automatic_catalog_refresh),
+        let mut rebound = Self::new_with_provider_binding(
+            self.cache_manager.home().to_path_buf(),
+            self.auth_manager.for_provider(provider_id),
+            None,
+            self.collaboration_modes_config,
+            provider_id.to_string(),
+            provider,
         )
+        .with_automatic_catalog_refresh(self.automatic_catalog_refresh);
+        rebound.observed_context_windows = Arc::clone(&self.observed_context_windows);
+        Some(rebound)
     }
 
     /// Whether this manager has the exact configured provider/account binding.
@@ -629,7 +635,45 @@ impl ModelsManager {
             error!("failed to refresh Anthropic models: {err}");
         }
         let remote_models = self.get_remote_models().await;
-        Self::construct_model_info_from_candidates(model, &remote_models, config)
+        let observed_context_window = self.observed_context_window(model).await;
+        Self::construct_model_info_from_candidates(
+            model,
+            &remote_models,
+            observed_context_window,
+            config,
+        )
+    }
+
+    /// Remember a context window a transport reported for `model` under the
+    /// `provider_id` binding the turn ran with. It only ever fills a window the
+    /// catalog did not provide; explicit configuration still takes precedence
+    /// when the model info is built.
+    pub(crate) async fn record_observed_context_window(
+        &self,
+        provider_id: &str,
+        model: &str,
+        context_window: i64,
+    ) {
+        if context_window <= 0 {
+            return;
+        }
+        let key = (provider_id.to_string(), model.to_string());
+        let mut observed = self.observed_context_windows.write().await;
+        if observed.get(&key) != Some(&context_window) {
+            info!(
+                provider_id,
+                model, context_window, "recorded observed model context window"
+            );
+            observed.insert(key, context_window);
+        }
+    }
+
+    async fn observed_context_window(&self, model: &str) -> Option<i64> {
+        self.observed_context_windows
+            .read()
+            .await
+            .get(&(self.provider_id.clone(), model.to_string()))
+            .copied()
     }
 
     fn find_model_by_longest_prefix(model: &str, candidates: &[ModelInfo]) -> Option<ModelInfo> {
@@ -671,6 +715,7 @@ impl ModelsManager {
     fn construct_model_info_from_candidates(
         model: &str,
         candidates: &[ModelInfo],
+        observed_context_window: Option<i64>,
         config: &Config,
     ) -> ModelInfo {
         // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
@@ -710,6 +755,8 @@ impl ModelsManager {
                 })
             }
         };
+        let model_info =
+            model_info::with_observed_context_window(model_info, observed_context_window);
         model_info::with_config_overrides(model_info, config)
     }
 
@@ -1113,7 +1160,9 @@ impl ModelsManager {
         } else {
             &[]
         };
-        Self::construct_model_info_from_candidates(model, candidates, config)
+        Self::construct_model_info_from_candidates(
+            model, candidates, /*observed_context_window*/ None, config,
+        )
     }
 }
 

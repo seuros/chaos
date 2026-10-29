@@ -186,6 +186,13 @@ impl From<ResponseEvent> for TurnEvent {
             }
             ResponseEvent::RateLimits(snapshot) => TurnEvent::RateLimits(snapshot),
             ResponseEvent::ModelsEtag(etag) => TurnEvent::ModelsEtag(etag),
+            ResponseEvent::ModelContextWindow {
+                model,
+                context_window,
+            } => TurnEvent::ModelContextWindow {
+                model,
+                context_window,
+            },
         }
     }
 }
@@ -225,6 +232,13 @@ impl From<TurnEvent> for ResponseEvent {
             }
             TurnEvent::RateLimits(snapshot) => ResponseEvent::RateLimits(snapshot),
             TurnEvent::ModelsEtag(etag) => ResponseEvent::ModelsEtag(etag),
+            TurnEvent::ModelContextWindow {
+                model,
+                context_window,
+            } => ResponseEvent::ModelContextWindow {
+                model,
+                context_window,
+            },
         }
     }
 }

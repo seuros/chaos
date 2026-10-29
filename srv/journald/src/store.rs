@@ -165,6 +165,7 @@ pub(crate) fn journal_item_type(item: &RolloutItem) -> &'static str {
         RolloutItem::EventMsg(_) => "event_msg",
         RolloutItem::BackgroundTask(_) => "background_task",
         RolloutItem::GoalCheckpoint(_) => "goal_checkpoint",
+        RolloutItem::ObservedModelContextWindow(_) => "observed_model_context_window",
     }
 }
 

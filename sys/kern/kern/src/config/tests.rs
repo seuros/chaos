@@ -1008,6 +1008,8 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         model_auto_compact_token_limit: None,
         model_auto_compact_token_limit_scope: Default::default(),
         agent_compaction_control: Default::default(),
+        protected_context_files: Vec::new(),
+        protected_context_max_bytes: crate::config::DEFAULT_PROTECTED_CONTEXT_MAX_BYTES,
         recall_automatic: false,
         hook_approval_policy: Default::default(),
         hook_output_limit_kib: 128,

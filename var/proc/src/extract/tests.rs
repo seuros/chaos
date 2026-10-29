@@ -174,6 +174,7 @@ fn turn_context_does_not_override_session_cwd() {
                 base_instructions: None,
                 dynamic_tools: None,
                 memory_mode: None,
+                protected_context: None,
             },
             git: None,
         }),

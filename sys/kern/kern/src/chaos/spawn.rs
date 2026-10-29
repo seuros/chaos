@@ -5,6 +5,7 @@ use async_channel::Sender;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::Event;
+use chaos_ipc::protocol::ProtectedContext;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::protocol::Submission;
@@ -208,6 +209,26 @@ impl Chaos {
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
 
+        // The protected context is read once per session, when it is
+        // created. A resumed or forked session keeps the snapshot recorded in
+        // its meta, so edits to the files after the session started never
+        // change what it carries; a stored session from before this setting
+        // stays unprotected rather than reading today's files on every
+        // resume. Fresh sub-agents do not read the operator's files.
+        let (protected_context, protected_context_warnings) = match &conversation_history {
+            InitialHistory::Resumed(_) | InitialHistory::Forked(_) => {
+                (conversation_history.get_protected_context(), Vec::new())
+            }
+            InitialHistory::New if matches!(session_source, SessionSource::SubAgent(_)) => {
+                (None, Vec::new())
+            }
+            InitialHistory::New => ProtectedContext::read(
+                &config.protected_context_files,
+                &config.cwd,
+                config.protected_context_max_bytes,
+            ),
+        };
+
         // Respect process-start tools. When missing (resumed/forked processes), read from the db
         // first, then fall back to rollout-file tools.
         let persisted_tools = if dynamic_tools.is_empty() {
@@ -298,6 +319,8 @@ impl Chaos {
             dynamic_tools,
             persist_extended_history,
             inherited_shell_environment,
+            protected_context,
+            protected_context_warnings,
         };
 
         // Generate a unique ID for the lifetime of this Chaos session.

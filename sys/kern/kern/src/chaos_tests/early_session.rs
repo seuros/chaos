@@ -979,6 +979,8 @@ async fn set_rate_limits_retains_previous_credits() {
         dynamic_tools: Vec::new(),
         persist_extended_history: false,
         inherited_shell_environment: None,
+        protected_context: None,
+        protected_context_warnings: Vec::new(),
     };
 
     let mut state = SessionState::new(session_configuration);
@@ -1029,4 +1031,65 @@ async fn set_rate_limits_retains_previous_credits() {
             plan_type: initial.plan_type,
         })
     );
+}
+
+#[tokio::test]
+async fn protected_context_is_restored_once_after_each_compaction() {
+    use chaos_context::distill::build_compacted_history;
+    use chaos_context::distill::insert_initial_context_before_last_real_user_or_summary;
+    use chaos_ipc::protocol::ProtectedContext;
+
+    let (session, turn_context) = make_session_and_context().await;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let soul = dir.path().join("soul.md");
+    std::fs::write(&soul, "PROTECTED_V1").expect("write soul");
+    let (snapshot, warnings) =
+        ProtectedContext::read(std::slice::from_ref(&soul), dir.path(), 1024);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    session
+        .state
+        .lock()
+        .await
+        .session_configuration
+        .protected_context = snapshot;
+    // The file changes after the snapshot; nothing rebuilt later may see it.
+    std::fs::write(&soul, "PROTECTED_V2").expect("rewrite soul");
+
+    let count = |items: &[ResponseItem], marker: &str| {
+        serde_json::to_string(items)
+            .expect("serialize history")
+            .matches(marker)
+            .count()
+    };
+    let initial = session.build_initial_context(&turn_context).await;
+    assert_eq!(count(&initial, "PROTECTED_V1"), 1);
+    let rendered = serde_json::to_string(&initial).expect("serialize");
+    let developer = rendered
+        .find("PROTECTED_V1")
+        .expect("protected text is present");
+    let environment = rendered
+        .find("<environment_context>")
+        .expect("environment context is present");
+    assert!(
+        developer < environment,
+        "the protected section precedes the environment context"
+    );
+
+    let mut history = initial;
+    history.push(user_message("first request"));
+    for round in 0..2 {
+        let user_messages = crate::distill::collect_user_messages(&history);
+        let compacted = build_compacted_history(Vec::new(), &user_messages, "summary");
+        assert_eq!(
+            count(&compacted, "PROTECTED_V1"),
+            0,
+            "the summary history alone drops developer context (round {round})"
+        );
+        history = insert_initial_context_before_last_real_user_or_summary(
+            compacted,
+            session.build_initial_context(&turn_context).await,
+        );
+        assert_eq!(count(&history, "PROTECTED_V1"), 1, "round {round}");
+        assert_eq!(count(&history, "PROTECTED_V2"), 0, "round {round}");
+    }
 }

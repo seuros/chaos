@@ -9,6 +9,14 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- `protected_context_files` (capped by `protected_context_max_bytes`, default
+  128 KiB across all files) names files that are read once at session start,
+  stored in the session meta record, and restored word for word in every
+  initial context, including the one rebuilt after each compaction. Resume
+  and fork keep the original snapshot; problems reading a file become startup
+  warnings. See chaos-providers(7).
+
 ## [47.14.7] - 2026-10-28
 
 ### Added

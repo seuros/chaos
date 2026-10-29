@@ -106,6 +106,13 @@ impl InitialHistory {
     pub fn get_dynamic_tools(&self) -> Option<Vec<DynamicToolSpec>> {
         self.find_session_meta()?.dynamic_tools.clone()
     }
+
+    /// The protected-context snapshot taken when the session was created.
+    /// A resumed or forked session keeps this text even if the files it was
+    /// read from have changed since.
+    pub fn get_protected_context(&self) -> Option<ProtectedContext> {
+        self.find_session_meta()?.protected_context.clone()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, Default)]
@@ -237,6 +244,141 @@ pub struct SessionMeta {
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_mode: Option<String>,
+    /// Text read once from `protected_context_files` when the session was
+    /// created. Rendered into every initial context, including the one
+    /// rebuilt after a compaction, so it is never summarised away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_context: Option<ProtectedContext>,
+}
+
+/// A snapshot of operator-chosen files that must survive compaction verbatim.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ProtectedContext {
+    pub files: Vec<ProtectedContextFile>,
+    /// True when the configured byte cap cut the snapshot short.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// One file's contents as read at session start.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ProtectedContextFile {
+    /// The path as configured (relative paths are kept relative).
+    pub path: String,
+    pub text: String,
+}
+
+impl ProtectedContext {
+    /// Read `paths` once, in order, keeping at most `max_bytes` of text in
+    /// total across all files. Relative paths resolve against `cwd`. No file
+    /// is read past what the cap still allows. A file cut by the cap keeps
+    /// its prefix up to a UTF-8 boundary and marks the snapshot truncated.
+    /// Unreadable or non-UTF-8 files are skipped. Every gap is reported in
+    /// the returned warnings. When `paths` is non-empty the snapshot is
+    /// returned even if nothing could be read, so the session records that
+    /// it was taken.
+    pub fn read(
+        paths: &[PathBuf],
+        cwd: &std::path::Path,
+        max_bytes: usize,
+    ) -> (Option<Self>, Vec<String>) {
+        use std::io::Read;
+
+        if paths.is_empty() {
+            return (None, Vec::new());
+        }
+        let mut files = Vec::with_capacity(paths.len());
+        let mut warnings = Vec::new();
+        let mut remaining = max_bytes;
+        let mut truncated = false;
+        for path in paths {
+            let resolved = if path.is_absolute() {
+                path.clone()
+            } else {
+                cwd.join(path)
+            };
+            let shown = resolved.display();
+            if remaining == 0 {
+                truncated = true;
+                warnings.push(format!(
+                    "protected context file {shown} was left out: the {max_bytes}-byte cap was reached"
+                ));
+                continue;
+            }
+            // Read one byte past the allowance so a cut is detectable.
+            let mut bytes = Vec::new();
+            let read = std::fs::File::open(&resolved)
+                .and_then(|file| file.take(remaining as u64 + 1).read_to_end(&mut bytes));
+            if let Err(err) = read {
+                warnings.push(format!(
+                    "protected context file {shown} was not read: {err}"
+                ));
+                continue;
+            }
+            let cut = bytes.len() > remaining;
+            if cut {
+                bytes.truncate(remaining);
+            }
+            let text = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                // A cut can split a character; keep the valid prefix.
+                Err(err) if cut && err.utf8_error().error_len().is_none() => {
+                    let valid = err.utf8_error().valid_up_to();
+                    let mut bytes = err.into_bytes();
+                    bytes.truncate(valid);
+                    String::from_utf8(bytes).unwrap_or_default()
+                }
+                Err(_) => {
+                    warnings.push(format!(
+                        "protected context file {shown} was not read: it is not UTF-8 text"
+                    ));
+                    continue;
+                }
+            };
+            if cut {
+                truncated = true;
+                warnings.push(format!(
+                    "protected context file {shown} is incomplete: cut to {} bytes by the {max_bytes}-byte cap",
+                    text.len()
+                ));
+            }
+            // Once a file is cut, later files are left out whole rather
+            // than filled into the bytes a character boundary freed.
+            remaining = if cut { 0 } else { remaining - text.len() };
+            files.push(ProtectedContextFile {
+                path: path.display().to_string(),
+                text,
+            });
+        }
+        (Some(Self { files, truncated }), warnings)
+    }
+
+    /// Whether the snapshot carries any text to render.
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty() && !self.truncated
+    }
+
+    /// The developer-section text for this snapshot.
+    pub fn render(&self) -> String {
+        let mut out = String::from(
+            "<protected_context>\nThe operator marked these files as protected: they are read once when the session starts and restored verbatim after every compaction.\n",
+        );
+        for file in &self.files {
+            out.push_str("<file path=\"");
+            out.push_str(&file.path);
+            out.push_str("\">\n");
+            out.push_str(&file.text);
+            if !file.text.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str("</file>\n");
+        }
+        if self.truncated {
+            out.push_str("[protected context truncated at the configured byte cap]\n");
+        }
+        out.push_str("</protected_context>");
+        out
+    }
 }
 
 /// Keep old tool visibility fields readable only at the journal boundary.
@@ -292,6 +434,7 @@ impl Default for SessionMeta {
             base_instructions: None,
             dynamic_tools: None,
             memory_mode: None,
+            protected_context: None,
         }
     }
 }

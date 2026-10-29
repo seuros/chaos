@@ -39,6 +39,7 @@ impl Session {
             previous_turn_settings,
             collaboration_mode,
             base_instructions,
+            protected_context,
         ) = {
             let state = self.state.lock().await;
             (
@@ -46,6 +47,7 @@ impl Session {
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
+                state.session_configuration.protected_context.clone(),
             )
         };
         if let Some(model_switch_message) =
@@ -73,6 +75,12 @@ impl Session {
         );
         if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
             developer_sections.push(developer_instructions.to_string());
+        }
+        if let Some(protected_context) = protected_context
+            .as_ref()
+            .filter(|protected_context| !protected_context.is_empty())
+        {
+            developer_sections.push(protected_context.render());
         }
         if matches!(
             turn_context.session_source,

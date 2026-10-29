@@ -199,9 +199,13 @@ macOS reports thermal pressure.
 On macOS, `indexing` reports workspace-volume Spotlight state and visible host
 indexers with averaged CPU usage. On Linux, it reports recognized visible
 Tracker/LocalSearch, Baloo, and `updatedb` executables with process-lifetime CPU
-averages; Spotlight state remains `unsupported` and volume is null. An empty
-process list does not establish that indexing is disabled. Probes are read-only
-and on demand, with explicit availability status. FreeBSD reports `unsupported`.
+averages. FreeBSD reports recognized desktop indexers and native `locate`
+binary helpers with decaying CPU averages, confirming accounting names through
+native executable-path queries. Shell-script parents and generic `find`/`sort`
+processes are not attributed to indexing. Spotlight state remains `unsupported`
+and volume is null on Linux/FreeBSD. An empty process list does not establish that
+indexing is disabled. Probes are read-only and on demand, with explicit
+availability status; hidden processes and unrecognized indexers may be missed.
 
 ### Machine warnings
 

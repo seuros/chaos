@@ -1,25 +1,7 @@
 use super::IndexerProcess;
+use super::process::INDEXERS;
 use crate::command::{Error, Output};
 use std::path::PathBuf;
-
-// Filesystem/content indexer basenames.
-const INDEXERS: &[&str] = &[
-    "tracker-store",
-    "tracker-miner-fs",
-    "tracker-miner-fs-3",
-    "tracker-extract",
-    "tracker-extract-3",
-    "tracker-writeback",
-    "tracker-writeback-3",
-    "localsearch-3",
-    "localsearch-extractor-3",
-    "localsearch-writeback-3",
-    "baloo_file",
-    "baloo_file_extractor",
-    "updatedb",
-    "updatedb.mlocate",
-    "updatedb.plocate",
-];
 
 #[cfg(target_os = "linux")]
 pub(super) fn inspect(mut snapshot: super::IndexingSnapshot) -> super::IndexingSnapshot {

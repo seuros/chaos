@@ -53,9 +53,6 @@ fn serialization_preserves_failures_separately_from_empty_measurements() {
 fn other_platforms_do_not_guess_spotlight_status() {
     let snapshot = inspect_indexing(Path::new("/workspace"));
     assert_eq!(snapshot.spotlight, IndexingObservation::Unsupported);
-    #[cfg(not(target_os = "linux"))]
-    assert_eq!(snapshot.processes, IndexingObservation::Unsupported);
-    #[cfg(target_os = "linux")]
     assert_ne!(snapshot.processes, IndexingObservation::Unsupported);
     assert!(snapshot.volume.is_none());
 }

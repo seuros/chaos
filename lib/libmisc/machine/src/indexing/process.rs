@@ -3,7 +3,26 @@
 use super::{IndexerProcess, IndexingObservation};
 use crate::command::{Error, Output};
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+// Portable content-indexer and updatedb executable basenames.
+#[cfg(any(target_os = "linux", target_os = "freebsd", test))]
+pub(super) const INDEXERS: &[&str] = &[
+    "tracker-store",
+    "tracker-miner-fs",
+    "tracker-miner-fs-3",
+    "tracker-extract",
+    "tracker-extract-3",
+    "tracker-writeback",
+    "tracker-writeback-3",
+    "localsearch-3",
+    "localsearch-extractor-3",
+    "localsearch-writeback-3",
+    "baloo_file",
+    "baloo_file_extractor",
+    "updatedb",
+    "updatedb.mlocate",
+    "updatedb.plocate",
+];
+
 pub(super) fn query() -> Result<Output, Error> {
     use std::ffi::OsStr;
     use std::time::Duration;
@@ -11,9 +30,15 @@ pub(super) fn query() -> Result<Output, Error> {
     crate::command::run(
         "/bin/ps",
         &[
+            OsStr::new("-ww"),
             OsStr::new("-A"),
             OsStr::new("-o"),
-            OsStr::new("pid=,pcpu=,comm="),
+            // FreeBSD treats everything after the first '=' as a header.
+            OsStr::new("pid="),
+            OsStr::new("-o"),
+            OsStr::new("pcpu="),
+            OsStr::new("-o"),
+            OsStr::new("comm="),
         ],
         Duration::from_secs(1),
     )

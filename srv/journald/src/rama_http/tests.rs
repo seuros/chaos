@@ -152,6 +152,7 @@ async fn initialize_process_round_trip_over_http() {
             base_instructions: None,
             dynamic_tools: None,
             memory_mode: None,
+            protected_context: None,
         },
         git: None,
     });

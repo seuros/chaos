@@ -106,6 +106,13 @@ impl InitialHistory {
     pub fn get_dynamic_tools(&self) -> Option<Vec<DynamicToolSpec>> {
         self.find_session_meta()?.dynamic_tools.clone()
     }
+
+    /// The protected-context snapshot taken when the session was created.
+    /// A resumed or forked session keeps this text even if the files it was
+    /// read from have changed since.
+    pub fn get_protected_context(&self) -> Option<ProtectedContext> {
+        self.find_session_meta()?.protected_context.clone()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, Default)]
@@ -237,6 +244,34 @@ pub struct SessionMeta {
     pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_mode: Option<String>,
+    /// Text read once from `protected_context_files` when the session was
+    /// created. Rendered into every initial context, including the one
+    /// rebuilt after a compaction, so it is never summarised away.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protected_context: Option<ProtectedContext>,
+}
+
+/// A snapshot of operator-chosen files that must survive compaction verbatim.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ProtectedContext {
+    pub files: Vec<ProtectedContextFile>,
+    /// True when the configured byte cap cut the snapshot short.
+    pub truncated: bool,
+}
+
+/// One file's contents as read at session start.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ProtectedContextFile {
+    /// The path as configured (relative paths are kept relative).
+    pub path: String,
+    pub text: String,
+}
+
+impl ProtectedContext {
+    /// Whether the snapshot carries any text to render.
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty() && !self.truncated
+    }
 }
 
 /// Keep old tool visibility fields readable only at the journal boundary.
@@ -292,6 +327,7 @@ impl Default for SessionMeta {
             base_instructions: None,
             dynamic_tools: None,
             memory_mode: None,
+            protected_context: None,
         }
     }
 }

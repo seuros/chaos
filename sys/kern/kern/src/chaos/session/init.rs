@@ -210,7 +210,8 @@ impl Session {
                         } else {
                             EventPersistenceMode::Limited
                         },
-                    ),
+                    )
+                    .with_protected_context(session_configuration.protected_context.clone()),
                 )
             }
             InitialHistory::Resumed(resumed_history) => (
@@ -351,7 +352,11 @@ impl Session {
         .await;
         let mut post_session_configured_events = Vec::<Event>::new();
 
-        for message in &config.startup_warnings {
+        for message in config
+            .startup_warnings
+            .iter()
+            .chain(&session_configuration.protected_context_warnings)
+        {
             post_session_configured_events.push(Event {
                 id: "".to_owned(),
                 msg: EventMsg::Warning(WarningEvent {

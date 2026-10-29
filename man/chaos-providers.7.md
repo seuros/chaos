@@ -285,6 +285,37 @@ raw window and effective input capacity minus 20,000 tokens (360,000 for
 `observed-400k`). Doing nothing retains automatic compaction.
 Decisions survive resume, not forks.
 
+### Protected context
+
+A compaction summary keeps the gist of a session but not its exact words.
+Use `protected_context_files` for any file that has to survive compaction
+word for word, such as the agent's identity document or memory index:
+
+```toml
+protected_context_files = ["soul.md", "/home/agent/identity/memory/MEMORY.md"]
+protected_context_max_bytes = 131072  # default; the cap covers all files together
+```
+
+Relative paths resolve against the session's working directory. The files are
+read **once, when the session is created**. The snapshot is stored in the
+session's meta record and sent as a developer section after
+`developer_instructions`, in every initial context. That includes the context
+rebuilt after each compaction, and the clamp replay. Editing a file later does
+not change a running session. A resumed or forked session keeps the snapshot
+it was created with. Fresh sub-agents do not read the files.
+
+The section appears exactly once in the prompt. A fork removes the inherited
+protected section before adding its own initial context, including when that
+section came from a compaction checkpoint. Repeated forks do not multiply it.
+
+A missing, unreadable, non-regular (a FIFO, device or socket) or non-UTF-8
+file produces a startup warning and is
+skipped. If the cap cuts a file short, the file is trimmed at a character
+boundary, a warning names it, and the section is marked truncated. Files that
+come after the cut are left out. The snapshot counts toward the compaction
+limit. A host with a large stable prefix can measure only growth with
+`model_auto_compact_token_limit_scope = "body-after-prefix"`.
+
 ### Terminal session titles
 
 Chaos can mirror the active session's durable process name into the terminal

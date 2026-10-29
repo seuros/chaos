@@ -131,10 +131,20 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
-                let rollout_items = rollout_items
+                let mut rollout_items = rollout_items
                     .into_iter()
                     .filter(|item| !matches!(item, RolloutItem::BackgroundTask(_)))
                     .collect::<Vec<_>>();
+                if let Some(snapshot) = self
+                    .state
+                    .lock()
+                    .await
+                    .session_configuration
+                    .protected_context
+                    .as_ref()
+                {
+                    crate::protected_context::remove_inherited(&mut rollout_items, snapshot);
+                }
                 self.apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
                 // Forks inherit transcript history, not a pending decision made

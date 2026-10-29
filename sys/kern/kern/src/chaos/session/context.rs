@@ -39,6 +39,7 @@ impl Session {
             previous_turn_settings,
             collaboration_mode,
             base_instructions,
+            protected_context,
         ) = {
             let state = self.state.lock().await;
             (
@@ -46,6 +47,7 @@ impl Session {
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
+                state.session_configuration.protected_context.clone(),
             )
         };
         if let Some(model_switch_message) =
@@ -127,6 +129,17 @@ impl Session {
             crate::context_manager::updates::build_system_update_item(developer_sections)
         {
             items.push(developer_message);
+        }
+        if let Some(snapshot) = protected_context
+            .as_ref()
+            .filter(|snapshot| !snapshot.is_empty())
+        {
+            items.push(
+                chaos_ipc::models::DeveloperInstructions::new(crate::protected_context::render(
+                    snapshot,
+                ))
+                .into(),
+            );
         }
         if let Some(contextual_user_message) =
             crate::context_manager::updates::build_contextual_user_message(contextual_user_sections)

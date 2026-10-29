@@ -359,6 +359,11 @@ pub(crate) struct SessionConfiguration {
     pub(super) dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
     pub(super) persist_extended_history: bool,
     pub(super) inherited_shell_environment: Option<Arc<ShellEnvironment>>,
+    /// Snapshot of `protected_context_files`, taken once when the session
+    /// was created (or restored from its meta record on resume and fork).
+    pub(super) protected_context: Option<chaos_ipc::protocol::ProtectedContext>,
+    /// Problems reading the protected files, surfaced as startup warnings.
+    pub(super) protected_context_warnings: Vec<String>,
 }
 
 impl SessionConfiguration {

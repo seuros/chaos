@@ -13,6 +13,7 @@ use crate::config::Config;
 use crate::config::ConfigOverrides;
 use crate::config::ConfigToml;
 use crate::config::DEFAULT_HOOK_OUTPUT_LIMIT_KIB;
+use crate::config::DEFAULT_PROTECTED_CONTEXT_MAX_BYTES;
 use crate::config::Permissions;
 use crate::config::agent_roles;
 use crate::config::parsing;
@@ -650,6 +651,10 @@ impl Config {
                 .model_auto_compact_token_limit_scope
                 .unwrap_or_default(),
             agent_compaction_control: cfg.agent_compaction_control.unwrap_or_default(),
+            protected_context_files: cfg.protected_context_files.unwrap_or_default(),
+            protected_context_max_bytes: cfg
+                .protected_context_max_bytes
+                .unwrap_or(DEFAULT_PROTECTED_CONTEXT_MAX_BYTES),
             recall_automatic: cfg.recall_automatic,
             hook_approval_policy: cfg.hook_approval_policy.unwrap_or_default(),
             hook_output_limit_kib: cfg

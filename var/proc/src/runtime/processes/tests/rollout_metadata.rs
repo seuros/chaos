@@ -18,6 +18,7 @@ fn meta(tools: Option<Vec<DynamicToolSpec>>, memory_mode: Option<&str>) -> Rollo
             base_instructions: None,
             dynamic_tools: tools,
             memory_mode: memory_mode.map(str::to_string),
+            protected_context: None,
         },
         git: None,
     })

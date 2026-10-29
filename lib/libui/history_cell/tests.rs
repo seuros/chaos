@@ -121,6 +121,7 @@ pub(crate) async fn history_cell_suite() {
     mcp_tools_output_masks_sensitive_values().await;
     mcp_tools_output_uses_runtime_status().await;
     mcp_tools_output_uses_resource_capability().await;
+    mcp_tools_output_uses_tools_capability_and_version().await;
     empty_agent_message_cell_transcript();
     prefixed_wrapped_history_cell_indents_wrapped_lines();
     prefixed_wrapped_history_cell_does_not_split_url_like_token();
@@ -392,15 +393,18 @@ async fn mcp_tools_output_masks_sensitive_values() {
     ]);
     let cell = new_mcp_tools_output(
         &config,
-        tools,
-        HashMap::new(),
-        HashMap::new(),
-        &auth_statuses,
-        &server_statuses,
-        &HashMap::from([
-            ("docs".to_string(), json!({"tools": {}})),
-            ("http".to_string(), json!({"tools": {}})),
-        ]),
+        chaos_ipc::protocol::McpListToolsResponseEvent {
+            tools,
+            resources: HashMap::new(),
+            resource_templates: HashMap::new(),
+            auth_statuses,
+            server_statuses,
+            server_capabilities: HashMap::from([
+                ("docs".to_string(), json!({"tools": {}})),
+                ("http".to_string(), json!({"tools": {}})),
+            ]),
+            server_versions: HashMap::new(),
+        },
     );
     let rendered = render_lines(&cell.display_lines(120)).join("\n");
 
@@ -442,12 +446,15 @@ async fn mcp_tools_output_uses_runtime_status() {
     let render = |statuses: &HashMap<String, McpStartupStatus>| {
         let cell = new_mcp_tools_output(
             &config,
-            HashMap::new(),
-            HashMap::new(),
-            HashMap::new(),
-            &HashMap::new(),
-            statuses,
-            &HashMap::new(),
+            chaos_ipc::protocol::McpListToolsResponseEvent {
+                tools: HashMap::new(),
+                resources: HashMap::new(),
+                resource_templates: HashMap::new(),
+                auth_statuses: HashMap::new(),
+                server_statuses: statuses.clone(),
+                server_capabilities: HashMap::new(),
+                server_versions: HashMap::new(),
+            },
         );
         render_lines(&cell.display_lines(120)).join("\n")
     };
@@ -502,12 +509,15 @@ async fn mcp_tools_output_uses_resource_capability() {
         };
         let cell = new_mcp_tools_output(
             &config,
-            HashMap::new(),
-            resources,
-            templates,
-            &HashMap::new(),
-            &statuses,
-            &capabilities,
+            chaos_ipc::protocol::McpListToolsResponseEvent {
+                tools: HashMap::new(),
+                resources,
+                resource_templates: templates,
+                auth_statuses: HashMap::new(),
+                server_statuses: statuses.clone(),
+                server_capabilities: capabilities,
+                server_versions: HashMap::new(),
+            },
         );
         render_lines(&cell.display_lines(120)).join("\n")
     };
@@ -532,6 +542,61 @@ async fn mcp_tools_output_uses_resource_capability() {
     let populated = render(Some(json!({"resources": {}})), true);
     assert!(populated.contains("    • Resources: guide (docs://guide)"));
     assert!(populated.contains("    • Resource templates: page (docs://{page})"));
+}
+
+async fn mcp_tools_output_uses_tools_capability_and_version() {
+    let (_chaos_home, mut config) = test_config().await;
+    let server_config: McpServerConfig =
+        serde_json::from_value(json!({"command": "test-mcp-server"})).expect("server config");
+    config
+        .mcp_servers
+        .set(HashMap::from([("docs".to_string(), server_config)]))
+        .expect("set server");
+
+    for (capabilities, version, expected_header, shows_tools) in [
+        (None, None, "  • docs", false),
+        (
+            Some(json!({"resources": {}})),
+            Some("1.2.3"),
+            "  • docs (1.2.3)",
+            false,
+        ),
+        (Some(json!({"tools": null})), Some(""), "  • docs", false),
+        (
+            Some(json!({"tools": {}})),
+            Some("0.4.0"),
+            "  • docs (0.4.0)",
+            true,
+        ),
+        (
+            Some(json!({"tools": {"listChanged": false}})),
+            Some("  "),
+            "  • docs",
+            true,
+        ),
+    ] {
+        let cell = new_mcp_tools_output(
+            &config,
+            chaos_ipc::protocol::McpListToolsResponseEvent {
+                tools: HashMap::new(),
+                resources: HashMap::new(),
+                resource_templates: HashMap::new(),
+                auth_statuses: HashMap::new(),
+                server_statuses: HashMap::from([("docs".to_string(), McpStartupStatus::Ready)]),
+                server_capabilities: capabilities
+                    .map(|value| ("docs".to_string(), value))
+                    .into_iter()
+                    .collect(),
+                server_versions: version
+                    .map(|value| ("docs".to_string(), value.to_string()))
+                    .into_iter()
+                    .collect(),
+            },
+        );
+        let rendered = render_lines(&cell.display_lines(120)).join("\n");
+        assert!(rendered.contains(&format!("{expected_header}\n    • Status: connected")));
+        assert_eq!(rendered.contains("    • Tools: (none)"), shows_tools);
+    }
 }
 
 fn empty_agent_message_cell_transcript() {

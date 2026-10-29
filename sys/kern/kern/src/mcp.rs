@@ -58,6 +58,7 @@ pub async fn collect_mcp_snapshot(config: &Config) -> McpListToolsResponseEvent 
         return McpListToolsResponseEvent {
             server_statuses: HashMap::new(),
             server_capabilities: HashMap::new(),
+            server_versions: HashMap::new(),
             tools: HashMap::new(),
             resources: HashMap::new(),
             resource_templates: HashMap::new(),
@@ -166,6 +167,7 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
     );
     let server_statuses = mcp_connection_manager.server_startup_statuses().await;
     let server_capabilities = mcp_connection_manager.server_capabilities().await;
+    let server_versions = mcp_connection_manager.server_versions().await;
     build_mcp_snapshot(
         tools,
         resources,
@@ -173,6 +175,7 @@ pub(crate) async fn collect_mcp_snapshot_from_manager(
         auth_status_entries,
         server_statuses,
         server_capabilities,
+        server_versions,
     )
 }
 
@@ -188,6 +191,7 @@ pub(crate) async fn collect_mcp_snapshot_from_registry(
     );
     let server_statuses = manager.server_startup_statuses().await;
     let server_capabilities = manager.server_capabilities().await;
+    let server_versions = manager.server_versions().await;
     build_mcp_snapshot(
         tools,
         resources,
@@ -195,6 +199,7 @@ pub(crate) async fn collect_mcp_snapshot_from_registry(
         auth_status_entries,
         server_statuses,
         server_capabilities,
+        server_versions,
     )
 }
 
@@ -205,6 +210,7 @@ fn build_mcp_snapshot(
     auth_status_entries: HashMap<String, crate::mcp::auth::McpAuthStatusEntry>,
     server_statuses: HashMap<String, McpStartupStatus>,
     server_capabilities: HashMap<String, Value>,
+    server_versions: HashMap<String, String>,
 ) -> McpListToolsResponseEvent {
     let auth_statuses = auth_status_entries
         .iter()
@@ -302,6 +308,7 @@ fn build_mcp_snapshot(
     McpListToolsResponseEvent {
         server_statuses,
         server_capabilities,
+        server_versions,
         tools,
         resources,
         resource_templates,

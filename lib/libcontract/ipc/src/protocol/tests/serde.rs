@@ -12,6 +12,7 @@ fn mcp_list_tools_response_round_trips_runtime_statuses() -> Result<()> {
         "resources": {},
         "resource_templates": {},
         "auth_statuses": {},
+        "server_versions": {"ready": "1.2.3", "tools_only": "0.4.0"},
         "server_capabilities": {
             "ready": {"tools": {}, "resources": {"subscribe": false}},
             "tools_only": {"tools": {}}
@@ -34,6 +35,7 @@ fn mcp_list_tools_response_round_trips_runtime_statuses() -> Result<()> {
     }))?;
     assert!(legacy.server_statuses.is_empty());
     assert!(legacy.server_capabilities.is_empty());
+    assert!(legacy.server_versions.is_empty());
     Ok(())
 }
 

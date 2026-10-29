@@ -24,6 +24,7 @@ fn turn(id: &str, provider: &str, model: &str) -> Vec<RolloutItem> {
             network: None,
             model: model.into(),
             model_provider: provider.to_owned(),
+            observed_context_window: None,
             personality: None,
             collaboration_mode: None,
             effort: Some(ReasoningEffort::High),

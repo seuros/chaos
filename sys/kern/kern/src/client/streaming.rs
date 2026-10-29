@@ -1313,9 +1313,21 @@ impl ModelClientSession {
 
             let mut full_text = String::new();
             let mut last_assistant_usage = None;
+            // Claude Code's own name for the model that produced the last
+            // main-thread reply; sidechain (sub-agent) messages are skipped.
+            let mut last_main_thread_model: Option<String> = None;
             loop {
                 match transport.next_message().await {
-                    Ok(Some(ClampMessage::Assistant { message })) => {
+                    Ok(Some(ClampMessage::Assistant {
+                        message,
+                        parent_tool_use_id,
+                    })) => {
+                        if parent_tool_use_id.is_none()
+                            && let Some(model) =
+                                message.get("model").and_then(|model| model.as_str())
+                        {
+                            last_main_thread_model = Some(model.to_string());
+                        }
                         if let Some(raw_usage) = message.get("usage").cloned() {
                             match serde_json::from_value::<chaos_clamp::Usage>(raw_usage) {
                                 Ok(usage) => last_assistant_usage = Some(usage),
@@ -1344,13 +1356,17 @@ impl ModelClientSession {
                         model_usage,
                         ..
                     })) => {
-                        // Claude Code reports the window of the model that
-                        // served the turn; the catalog has no entry for clamp
-                        // slugs, so this is where the session learns it.
+                        // Claude Code reports the window of each model it used;
+                        // the catalog has no entry for clamp slugs, so this is
+                        // where the session learns the main-thread model's.
                         if let Some(context_window) = model_usage
                             .as_ref()
                             .and_then(|usage| {
-                                chaos_clamp::observed_context_window(usage, &clamp_model_slug)
+                                chaos_clamp::observed_context_window(
+                                    usage,
+                                    last_main_thread_model.as_deref(),
+                                    &clamp_model_slug,
+                                )
                             })
                             .and_then(|window| i64::try_from(window).ok())
                         {

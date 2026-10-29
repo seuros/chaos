@@ -183,6 +183,7 @@ fn turn_context_does_not_override_session_cwd() {
         &mut metadata,
         &RolloutItem::TurnContext(TurnContextItem {
             model_provider: "openai".into(),
+            observed_context_window: None,
             turn_id: Some("turn-1".to_string()),
             trace_id: None,
             cwd: PathBuf::from("/parent/workspace"),
@@ -219,6 +220,7 @@ fn turn_context_sets_cwd_when_session_cwd_missing() {
         &mut metadata,
         &RolloutItem::TurnContext(TurnContextItem {
             model_provider: "openai".into(),
+            observed_context_window: None,
             turn_id: Some("turn-1".to_string()),
             trace_id: None,
             cwd: PathBuf::from("/fallback/workspace"),

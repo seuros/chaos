@@ -408,11 +408,15 @@ async fn get_model_info_tracks_fallback_usage() {
     assert_eq!(unknown.slug, "model-that-does-not-exist");
     assert_eq!(unknown.context_window, None);
 
-    // A window a transport reported for the unknown slug fills the gap on the
-    // next lookup, with the catalog's 80% auto-compaction default, while the
-    // metadata is still marked as fallback.
+    // A window a transport reported for the unknown slug under this provider
+    // binding fills the gap on the next lookup, with the catalog's 80%
+    // auto-compaction default, while the metadata is still marked as fallback.
     manager
-        .record_observed_context_window("model-that-does-not-exist", 1_000_000)
+        .record_observed_context_window(
+            manager.provider_id(),
+            "model-that-does-not-exist",
+            1_000_000,
+        )
         .await;
     let observed = manager
         .get_model_info("model-that-does-not-exist", &config)
@@ -420,6 +424,17 @@ async fn get_model_info_tracks_fallback_usage() {
     assert!(observed.used_fallback_model_metadata);
     assert_eq!(observed.context_window, Some(1_000_000));
     assert_eq!(observed.auto_compact_token_limit, Some(800_000));
+
+    // An observation recorded under another provider binding is never applied
+    // to this one, even for the same slug.
+    manager
+        .record_observed_context_window("another-provider", "second-unknown-model", 1_000_000)
+        .await;
+    let foreign = manager
+        .get_model_info("second-unknown-model", &config)
+        .await;
+    assert!(foreign.used_fallback_model_metadata);
+    assert_eq!(foreign.context_window, None);
 }
 
 #[tokio::test]

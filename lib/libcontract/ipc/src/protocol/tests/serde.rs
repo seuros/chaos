@@ -371,6 +371,7 @@ fn turn_context_item_deserializes_without_network() -> Result<()> {
 fn turn_context_item_serializes_network_when_present() -> Result<()> {
     let item = TurnContextItem {
         model_provider: "openai".into(),
+        observed_context_window: None,
         turn_id: None,
         trace_id: None,
         cwd: PathBuf::from("/tmp"),

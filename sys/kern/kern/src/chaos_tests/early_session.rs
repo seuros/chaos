@@ -574,6 +574,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
     let previous_model = "forked-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),

@@ -178,9 +178,10 @@ pub struct ModelsManager {
     remote_models: Arc<RwLock<Vec<ModelInfo>>>,
     pub(super) picker_catalog: Arc<RwLock<super::catalog::ModelPickerCatalog>>,
     /// Context windows transports reported for slugs the catalog does not
-    /// describe (clamp models), keyed by the slug Chaos requested. Shared
-    /// across provider rebinds for the lifetime of the session.
-    observed_context_windows: Arc<RwLock<HashMap<String, i64>>>,
+    /// describe (clamp models), keyed by provider binding and requested slug.
+    /// The map is shared across provider rebinds for the lifetime of the
+    /// session, but each manager only reads entries for its own binding.
+    observed_context_windows: Arc<RwLock<HashMap<(String, String), i64>>>,
     catalog_mode: CatalogMode,
     automatic_catalog_refresh: bool,
     collaboration_modes_config: CollaborationModesConfig,
@@ -643,20 +644,27 @@ impl ModelsManager {
         )
     }
 
-    /// Remember a context window a transport reported for `model`. It only
-    /// ever fills a window the catalog did not provide; explicit configuration
-    /// still takes precedence when the model info is built.
-    pub(crate) async fn record_observed_context_window(&self, model: &str, context_window: i64) {
+    /// Remember a context window a transport reported for `model` under the
+    /// `provider_id` binding the turn ran with. It only ever fills a window the
+    /// catalog did not provide; explicit configuration still takes precedence
+    /// when the model info is built.
+    pub(crate) async fn record_observed_context_window(
+        &self,
+        provider_id: &str,
+        model: &str,
+        context_window: i64,
+    ) {
         if context_window <= 0 {
             return;
         }
+        let key = (provider_id.to_string(), model.to_string());
         let mut observed = self.observed_context_windows.write().await;
-        if observed.get(model) != Some(&context_window) {
+        if observed.get(&key) != Some(&context_window) {
             info!(
-                model,
-                context_window, "recorded observed model context window"
+                provider_id,
+                model, context_window, "recorded observed model context window"
             );
-            observed.insert(model.to_string(), context_window);
+            observed.insert(key, context_window);
         }
     }
 
@@ -664,7 +672,7 @@ impl ModelsManager {
         self.observed_context_windows
             .read()
             .await
-            .get(model)
+            .get(&(self.provider_id.clone(), model.to_string()))
             .copied()
     }
 

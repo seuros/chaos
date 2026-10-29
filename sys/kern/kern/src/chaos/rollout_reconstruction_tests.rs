@@ -88,6 +88,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -122,12 +123,50 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
 }
 
 #[tokio::test]
+async fn record_initial_history_resumed_restores_the_observed_context_window() {
+    let (session, turn_context) = make_session_and_context().await;
+    // A clamp-style slug: nothing in the catalog describes it.
+    let clamp_model = "clamp-only-model";
+    let before = session
+        .services
+        .models_manager
+        .get_model_info(clamp_model, &turn_context.config)
+        .await;
+    assert!(before.used_fallback_model_metadata);
+    assert_eq!(before.context_window, None);
+
+    let recorded_context_item = TurnContextItem {
+        model: clamp_model.to_string(),
+        observed_context_window: Some(1_000_000),
+        ..turn_context.to_turn_context_item()
+    };
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ProcessId::default(),
+            history: vec![RolloutItem::TurnContext(recorded_context_item)],
+        }))
+        .await;
+
+    // The first resumed turn builds its model info from the catalog, which
+    // now carries the window: the compaction limit is in force before the
+    // first request, not only once a new result arrives.
+    let restored = session
+        .services
+        .models_manager
+        .get_model_info(clamp_model, &turn_context.config)
+        .await;
+    assert_eq!(restored.context_window, Some(1_000_000));
+    assert_eq!(restored.auto_compact_token_limit, Some(800_000));
+}
+
+#[tokio::test]
 async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lifecycle_turn_with_missing_turn_context_id()
  {
     let (session, turn_context) = make_session_and_context().await;
     let previous_model = "previous-rollout-model";
     let mut previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -709,6 +748,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -781,6 +821,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             .expect("serialize seeded reference context item"),
         serde_json::to_value(Some(TurnContextItem {
             model_provider: turn_context.config.model_provider_id.clone(),
+            observed_context_window: None,
             turn_id: Some(turn_context.sub_id.clone()),
             trace_id: turn_context.trace_id.clone(),
             cwd: turn_context.cwd.clone(),
@@ -812,6 +853,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -918,6 +960,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
     let unmatched_abort_turn_id = "other-turn".to_string();
     let current_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(current_turn_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -1020,6 +1063,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),
@@ -1162,6 +1206,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
     let previous_model = "previous-rollout-model";
     let previous_context_item = TurnContextItem {
         model_provider: turn_context.config.model_provider_id.clone(),
+        observed_context_window: None,
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
         cwd: turn_context.cwd.clone(),

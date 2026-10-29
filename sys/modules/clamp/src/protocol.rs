@@ -120,9 +120,10 @@ pub struct Usage {
 
 /// Per-model usage reported by Claude Code under `result.modelUsage`.
 ///
-/// Claude Code keys this map by the model id it actually called, which can
-/// differ from the requested slug (sidechain helpers, dated ids). Only the
-/// fields Chaos reads are declared; unknown fields are ignored.
+/// Claude Code keys this map by the model id it actually called (a dated id or
+/// a capability alias), which can differ from the requested slug, and helper
+/// models used on sidechains get their own entries. Only the fields Chaos
+/// reads are declared; unknown fields are ignored.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelUsage {
@@ -139,35 +140,31 @@ pub struct ModelUsage {
     pub context_window: Option<u64>,
 }
 
-impl ModelUsage {
-    /// Prompt tokens this model saw in the turn, cached or not.
-    fn prompt_tokens(&self) -> u64 {
-        self.input_tokens
-            .saturating_add(self.cache_creation_input_tokens)
-            .saturating_add(self.cache_read_input_tokens)
-    }
-}
-
 /// Model id to usage, as reported under `result.modelUsage`.
 pub type ModelUsageMap = std::collections::BTreeMap<String, ModelUsage>;
 
-/// The context window Claude Code reported for the model that served the turn.
+/// The context window Claude Code reported for the model that served the
+/// main thread.
 ///
-/// Prefers the entry keyed by the requested model. When Claude Code keys the
-/// primary model differently, the entry that saw the most prompt tokens is the
-/// one that carried the conversation; sidechain helpers only see fragments.
-pub fn observed_context_window(model_usage: &ModelUsageMap, requested_model: &str) -> Option<u64> {
-    if let Some(window) = model_usage
-        .get(requested_model)
-        .and_then(|usage| usage.context_window)
-    {
-        return Some(window);
-    }
-    model_usage
-        .values()
-        .filter(|usage| usage.context_window.is_some())
-        .max_by_key(|usage| usage.prompt_tokens())
-        .and_then(|usage| usage.context_window)
+/// `served_model` is the `message.model` of the last main-thread assistant
+/// message, which is how Claude Code names the model that produced the reply;
+/// the requested slug is the only fallback. Nothing is inferred from usage
+/// volume: a sidechain helper can dominate a turn's tokens without carrying
+/// the conversation, and a primary model without a reported window must not
+/// inherit a helper's.
+pub fn observed_context_window(
+    model_usage: &ModelUsageMap,
+    served_model: Option<&str>,
+    requested_model: &str,
+) -> Option<u64> {
+    let window_for = |model: &str| {
+        model_usage
+            .get(model)
+            .and_then(|usage| usage.context_window)
+    };
+    served_model
+        .and_then(window_for)
+        .or_else(|| window_for(requested_model))
 }
 
 /// A parsed message from Claude Code's stream-json output.
@@ -180,7 +177,12 @@ pub fn observed_context_window(model_usage: &ModelUsageMap, requested_model: &st
 pub enum Message {
     /// An assistant response chunk.
     #[serde(rename = "assistant")]
-    Assistant { message: Value },
+    Assistant {
+        message: Value,
+        /// Set on sidechain (sub-agent) messages; `None` on the main thread.
+        #[serde(default)]
+        parent_tool_use_id: Option<String>,
+    },
 
     /// The turn completed.
     #[serde(rename = "result")]

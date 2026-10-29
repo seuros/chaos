@@ -452,6 +452,11 @@ pub struct TurnContextItem {
     pub user_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub developer_instructions: Option<String>,
+    /// Context window a transport observed for `model` when the catalog had
+    /// none (clamp slugs). Restored into the catalog on resume so the
+    /// compaction policy in force survives a fresh process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_context_window: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_output_json_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]

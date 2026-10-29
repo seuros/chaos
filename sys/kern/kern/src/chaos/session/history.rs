@@ -107,6 +107,20 @@ impl Session {
                     state.set_token_info(Some(info));
                 }
 
+                // A window the transport observed for a slug the catalog does
+                // not describe lives on the recorded turn context. Restore it
+                // before the first resumed turn builds its model info, so the
+                // compaction policy that was in force does not lapse for a
+                // turn in a fresh process.
+                if let Some((provider_id, model, context_window)) =
+                    Self::last_observed_context_window_from_rollout(&rollout_items)
+                {
+                    self.services
+                        .models_manager
+                        .record_observed_context_window(&provider_id, &model, context_window)
+                        .await;
+                }
+
                 if !is_subagent {
                     self.flush_rollout().await;
                 }
@@ -221,6 +235,25 @@ impl Session {
         use chaos_ipc::protocol::EventMsg;
         rollout_items.iter().rev().find_map(|item| match item {
             RolloutItem::EventMsg(EventMsg::TokenCount(ev)) => ev.info.clone(),
+            _ => None,
+        })
+    }
+
+    /// The most recent `(provider, model, window)` a turn context recorded as
+    /// observed from the transport.
+    pub(super) fn last_observed_context_window_from_rollout(
+        rollout_items: &[RolloutItem],
+    ) -> Option<(String, String, i64)> {
+        rollout_items.iter().rev().find_map(|item| match item {
+            RolloutItem::TurnContext(turn_context) => {
+                turn_context.observed_context_window.map(|context_window| {
+                    (
+                        turn_context.model_provider.clone(),
+                        turn_context.model.clone(),
+                        context_window,
+                    )
+                })
+            }
             _ => None,
         })
     }

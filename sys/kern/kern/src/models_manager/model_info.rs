@@ -24,7 +24,9 @@ pub(crate) fn with_observed_context_window(
     {
         model.context_window = Some(context_window);
         if model.auto_compact_token_limit.is_none() {
-            model.auto_compact_token_limit = Some(context_window * 80 / 100);
+            model.auto_compact_token_limit = Some(
+                chaos_model_catalog::default_auto_compact_token_limit(context_window),
+            );
         }
     }
     model

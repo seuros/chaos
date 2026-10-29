@@ -29,6 +29,18 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
     session_a
         .record_observed_context_window(turn_a.as_ref(), &turn_a.model_info.slug, 1_000_000)
         .await;
+    // Duplicates and invalid values do not create journal noise. A second
+    // model's latest observation must not hide the first model on resume.
+    for (model, window) in [
+        (turn_a.model_info.slug.as_str(), 1_000_000),
+        ("second-model", 200_000),
+        ("second-model", 250_000),
+        ("second-model", 0),
+    ] {
+        session_a
+            .record_observed_context_window(turn_a.as_ref(), model, window)
+            .await;
+    }
     session_a.flush_rollout().await;
     let recorder = session_a
         .services
@@ -38,6 +50,13 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
         .clone()
         .expect("session A records a rollout");
     let persisted = recorder.snapshot_rollout_items();
+    assert_eq!(
+        persisted
+            .iter()
+            .filter(|item| matches!(item, RolloutItem::ObservedModelContextWindow(_)))
+            .count(),
+        3
+    );
     let observed = persisted
         .iter()
         .find_map(|item| match item {
@@ -48,6 +67,10 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
     assert_eq!(observed.provider, turn_a.config.model_provider_id);
     assert_eq!(observed.model, turn_a.model_info.slug);
     assert_eq!(observed.context_window, 1_000_000);
+    assert_eq!(
+        observed.scope.wire_api,
+        turn_a.config.model_provider.wire_api.to_string()
+    );
 
     // Session B is a fresh process with its own catalog. It resumes the
     // persisted records plus a deferral granted under the observed window.
@@ -71,6 +94,7 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
     };
     let mut history = persisted;
     history.push(RolloutItem::CompactionControl(deferral.clone()));
+    let fork_history = history.clone();
     session_b
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             conversation_id: process_id,
@@ -84,6 +108,12 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
     assert_eq!(resumed.model_info.context_window, Some(1_000_000));
     assert_eq!(resumed.model_context_window(), Some(950_000));
     assert_eq!(resumed.model_info.auto_compact_token_limit(), Some(800_000));
+    let second = session_b
+        .services
+        .models_manager
+        .get_model_info("second-model", &turn_b.config)
+        .await;
+    assert_eq!(second.context_window, Some(250_000));
     let state = session_b.state.lock().await;
     assert_eq!(
         state.pressure.control(),
@@ -93,6 +123,19 @@ async fn observed_context_window_is_persisted_on_receipt_and_restores_policy_and
             ceiling: 900_000,
         })
     );
+    drop(state);
+
+    let (fork, _, _fork_events) = make_session_and_context_with_rx().await;
+    fork.record_initial_history(InitialHistory::Forked(fork_history))
+        .await;
+    let fork_turn = fork.new_default_turn().await;
+    assert_eq!(fork_turn.model_info.context_window, Some(1_000_000));
+    let second = fork
+        .services
+        .models_manager
+        .get_model_info("second-model", &fork_turn.config)
+        .await;
+    assert_eq!(second.context_window, Some(250_000));
 }
 
 fn user_message(text: &str) -> ResponseItem {

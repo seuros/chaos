@@ -8,6 +8,7 @@ use crate::chaos::PreviousTurnSettings;
 use crate::chaos::SessionConfiguration;
 use crate::chaos::title_reflex::SessionTitleReflex;
 use crate::context_manager::ContextManager;
+use crate::models_manager::observations::ContextWindows;
 use crate::protocol::RateLimitSnapshot;
 use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
@@ -34,6 +35,8 @@ pub(crate) struct SessionState {
     pub(crate) session_title_reflex: SessionTitleReflex,
     pub(crate) machine_recovery: crate::machine_recovery::Recovery,
     pub(crate) goal: crate::goal::GoalGate,
+    /// Journaled observations are session-local even when model caches are shared.
+    pub(crate) recorded_context_windows: ContextWindows,
 }
 
 impl SessionState {
@@ -53,6 +56,7 @@ impl SessionState {
             session_title_reflex: SessionTitleReflex::default(),
             machine_recovery: Default::default(),
             goal: Default::default(),
+            recorded_context_windows: Default::default(),
         }
     }
 

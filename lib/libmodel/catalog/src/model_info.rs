@@ -12,6 +12,11 @@ use chaos_ipc::openai_models::WebSearchToolType;
 // 4 bytes per token approximation, same constant as kern's truncate module.
 const APPROX_BYTES_PER_TOKEN: i64 = 4;
 
+/// The catalog's 80% compaction default, without overflowing large token counts.
+pub fn default_auto_compact_token_limit(context_window: i64) -> i64 {
+    (context_window / 5) * 4 + (context_window % 5) * 4 / 5
+}
+
 /// Convert a provider-neutral `AbiModelInfo` into `ModelInfo`.
 ///
 /// Produces catalog metadata only — `base_instructions` is left empty and must
@@ -61,7 +66,7 @@ pub fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         supports_parallel_tool_calls: true,
         supports_image_detail_original: abi.supports_images,
         context_window,
-        auto_compact_token_limit: context_window.map(|w| w * 80 / 100),
+        auto_compact_token_limit: context_window.map(default_auto_compact_token_limit),
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities,

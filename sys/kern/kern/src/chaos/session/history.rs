@@ -8,6 +8,7 @@ use tracing::error;
 use tracing::warn;
 
 use crate::context_manager::ContextManager;
+use crate::models_manager::observations::ContextWindowObservation;
 
 use super::Session;
 use crate::chaos::PreviousTurnSettings;
@@ -62,24 +63,18 @@ impl Session {
         // turn is built: that turn's model info decides whether pending
         // compaction control from the rollout is still valid, and the policy
         // must not lapse for the first turn of a fresh process.
-        let observed_context_window = match &conversation_history {
-            InitialHistory::New => None,
-            InitialHistory::Resumed(resumed) => {
-                Self::last_observed_context_window_from_rollout(&resumed.history)
-            }
-            InitialHistory::Forked(rollout_items) => {
-                Self::last_observed_context_window_from_rollout(rollout_items)
-            }
+        let rollout_items = match &conversation_history {
+            InitialHistory::New => &[][..],
+            InitialHistory::Resumed(resumed) => resumed.history.as_slice(),
+            InitialHistory::Forked(rollout_items) => rollout_items.as_slice(),
         };
-        if let Some(observed) = observed_context_window {
-            self.services
-                .models_manager
-                .record_observed_context_window(
-                    &observed.provider,
-                    &observed.model,
-                    observed.context_window,
-                )
-                .await;
+        // Replay every binding in journal order, not just the last model used.
+        for item in rollout_items {
+            if let RolloutItem::ObservedModelContextWindow(record) = item
+                && let Some(observation) = ContextWindowObservation::from_record(record)
+            {
+                self.apply_context_window_observation(&observation).await;
+            }
         }
         let turn_context = self.new_default_turn().await;
         let is_subagent = {
@@ -249,17 +244,6 @@ impl Session {
         })
     }
 
-    /// The most recent context window the transport reported, as recorded in
-    /// the rollout when it arrived.
-    pub(super) fn last_observed_context_window_from_rollout(
-        rollout_items: &[RolloutItem],
-    ) -> Option<chaos_ipc::protocol::ObservedModelContextWindowItem> {
-        rollout_items.iter().rev().find_map(|item| match item {
-            RolloutItem::ObservedModelContextWindow(observed) => Some(observed.clone()),
-            _ => None,
-        })
-    }
-
     /// Record a context window the transport reported for `model` under this
     /// turn's provider binding. It is persisted to the rollout on receipt, so
     /// a fresh process resuming the session has it before its first request,
@@ -270,20 +254,40 @@ impl Session {
         model: &str,
         context_window: i64,
     ) {
-        let observed = chaos_ipc::protocol::ObservedModelContextWindowItem {
-            provider: turn_context.config.model_provider_id.clone(),
-            model: model.to_string(),
-            context_window,
+        let binding = self
+            .services
+            .models_manager
+            .context_window_binding(&turn_context.config, model);
+        let Some(observation) = ContextWindowObservation::new(binding, context_window) else {
+            return;
         };
-        self.persist_rollout_items(&[RolloutItem::ObservedModelContextWindow(observed.clone())])
-            .await;
+        if self
+            .state
+            .lock()
+            .await
+            .recorded_context_windows
+            .contains(&observation)
+        {
+            return;
+        }
+        // Persist before marking the observation recorded, so cancellation
+        // cannot suppress a later retry. Deduplicate per session, not per cache.
+        self.persist_rollout_items(&[RolloutItem::ObservedModelContextWindow(
+            observation.to_record(),
+        )])
+        .await;
+        self.apply_context_window_observation(&observation).await;
+    }
+
+    async fn apply_context_window_observation(&self, observation: &ContextWindowObservation) {
+        self.state
+            .lock()
+            .await
+            .recorded_context_windows
+            .record(observation);
         self.services
             .models_manager
-            .record_observed_context_window(
-                &observed.provider,
-                &observed.model,
-                observed.context_window,
-            )
+            .record_observed_context_window(observation)
             .await;
     }
 

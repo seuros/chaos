@@ -113,6 +113,11 @@ as they do for API models, with the usual 80% auto-compaction default. Explicit
 `model_context_window` and `model_auto_compact_token_limit` still take
 precedence and apply from the first turn. AGY does not report a window.
 
+Observations are scoped to the configured account, API protocol and endpoint.
+Resume and fork restore the latest window for each model and scope, including
+ACP resume. Identical reports are recorded only once per session until the
+window changes.
+
 ### Antigravity setup
 
 Use a dedicated private home: Chaos replaces its MCP/permission configuration

@@ -385,6 +385,15 @@ pub struct ObservedModelContextWindowItem {
     pub provider: String,
     pub model: String,
     pub context_window: i64,
+    pub scope: ModelContextWindowScope,
+}
+
+/// Endpoint routing identity for a model-window observation. The enclosing
+/// record's provider id identifies the configured account.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
+pub struct ModelContextWindowScope {
+    pub wire_api: String,
+    pub base_url: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]

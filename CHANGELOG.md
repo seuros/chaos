@@ -9,6 +9,15 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Changed
+- A compaction deferral (`compaction_control` `defer_once`) now extends at most
+  one reflex reserve past the configured compaction limit instead of running to
+  the window-derived safety ceiling, so a limit set well below the window (a
+  400k limit on a 1M model: ceiling 500k, not 900k) keeps its meaning. The
+  ChatGPT preset and catalog defaults keep their existing ceilings, and so
+  does the `body-after-prefix` scope, whose limit is relative to a baseline
+  that is not persisted across processes.
+
 ### Added
 - Clamp sessions learn the model's context window from Claude Code's
   `result.modelUsage` and record it when the catalog has no entry for the

@@ -1,4 +1,5 @@
 use super::*;
+use chaos_context::allotment::Scope;
 
 #[test]
 fn observed_400k_window_keeps_distillation_reserve() {
@@ -13,6 +14,50 @@ fn raw_window_safety_fraction_can_be_the_binding_ceiling() {
     assert_eq!(
         deferral_ceiling_for_windows(300_000, 295_000),
         Some(270_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_is_one_reserve_past_a_low_compaction_limit() {
+    // 1M window, 400k limit: reserve = min(950k - 400k, 400k / 4) = 100k, so a
+    // deferral may reach 500k, not the 900k window-derived ceiling.
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), Scope::Total),
+        Some(500_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_keeps_the_window_ceiling_under_body_after_prefix() {
+    // Under `body-after-prefix` the 400k limit is relative to a window
+    // baseline that is not persisted across processes, so the ceiling stays
+    // the window-derived one rather than a value that could not be
+    // re-derived on resume.
+    assert_eq!(
+        deferral_ceiling_for_limits(1_000_000, 950_000, Some(400_000), Scope::BodyAfterPrefix),
+        Some(900_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_keeps_the_window_bound_when_the_limit_is_near_it() {
+    // Observed ChatGPT preset: 400k window, 350k limit.
+    assert_eq!(
+        deferral_ceiling_for_limits(400_000, 380_000, Some(350_000), Scope::Total),
+        Some(360_000)
+    );
+    // Catalog default: an 80% limit under a 95% effective window.
+    assert_eq!(
+        deferral_ceiling_for_limits(200_000, 190_000, Some(160_000), Scope::Total),
+        Some(170_000)
+    );
+}
+
+#[test]
+fn deferral_ceiling_without_a_compaction_limit_is_the_window_ceiling() {
+    assert_eq!(
+        deferral_ceiling_for_limits(400_000, 380_000, None, Scope::Total),
+        Some(360_000)
     );
 }
 

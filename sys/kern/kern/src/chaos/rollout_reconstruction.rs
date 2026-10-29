@@ -242,6 +242,7 @@ impl Session {
                 | RolloutItem::EventMsg(_)
                 | RolloutItem::BackgroundTask(_)
                 | RolloutItem::GoalCheckpoint(_)
+                | RolloutItem::ObservedModelContextWindow(_)
                 | RolloutItem::CompactionControl(_)
                 | RolloutItem::SessionMeta(_) => {}
             }
@@ -291,6 +292,7 @@ impl Session {
                 RolloutItem::EventMsg(_)
                 | RolloutItem::BackgroundTask(_)
                 | RolloutItem::GoalCheckpoint(_)
+                | RolloutItem::ObservedModelContextWindow(_)
                 | RolloutItem::CompactionControl(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::SessionMeta(_) => {}

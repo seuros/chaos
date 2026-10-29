@@ -315,6 +315,9 @@ pub enum RolloutItem {
     EventMsg(EventMsg),
     BackgroundTask(crate::background_tasks::TaskJournalEvent),
     GoalCheckpoint(GoalCheckpointItem),
+    /// A context window the transport reported for a model the catalog does
+    /// not describe, recorded when it was received.
+    ObservedModelContextWindow(ObservedModelContextWindowItem),
 }
 
 impl<'de> Deserialize<'de> for RolloutItem {
@@ -333,6 +336,7 @@ impl<'de> Deserialize<'de> for RolloutItem {
             EventMsg(Value),
             BackgroundTask(crate::background_tasks::TaskJournalEvent),
             GoalCheckpoint(GoalCheckpointItem),
+            ObservedModelContextWindow(ObservedModelContextWindowItem),
         }
 
         let item = RolloutItemWire::deserialize(deserializer)?;
@@ -344,6 +348,9 @@ impl<'de> Deserialize<'de> for RolloutItem {
             RolloutItemWire::TurnContext(item) => Ok(Self::TurnContext(item)),
             RolloutItemWire::BackgroundTask(item) => Ok(Self::BackgroundTask(item)),
             RolloutItemWire::GoalCheckpoint(item) => Ok(Self::GoalCheckpoint(item)),
+            RolloutItemWire::ObservedModelContextWindow(item) => {
+                Ok(Self::ObservedModelContextWindow(item))
+            }
             RolloutItemWire::EventMsg(value) => {
                 let is_retired_undo_event = value
                     .get("type")
@@ -367,6 +374,17 @@ pub struct GoalCheckpointItem {
     pub version: u32,
     pub snapshot: Value,
     pub verdict: Option<Value>,
+}
+
+/// A context window observed from the transport for `model` under the
+/// `provider` binding (clamp slugs have no catalog entry). Persisted when the
+/// observation arrives, so a fresh process resuming the session has it
+/// before its first request.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct ObservedModelContextWindowItem {
+    pub provider: String,
+    pub model: String,
+    pub context_window: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema)]
@@ -452,11 +470,6 @@ pub struct TurnContextItem {
     pub user_instructions: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub developer_instructions: Option<String>,
-    /// Context window a transport observed for `model` when the catalog had
-    /// none (clamp slugs). Restored into the catalog on resume so the
-    /// compaction policy in force survives a fresh process.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub observed_context_window: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub final_output_json_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]

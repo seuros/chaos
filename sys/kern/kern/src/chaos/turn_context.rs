@@ -262,12 +262,6 @@ impl TurnContext {
             summary: self.reasoning_summary,
             user_instructions: self.user_instructions.clone(),
             developer_instructions: self.developer_instructions.clone(),
-            // Only a window the transport observed: the catalog gave none
-            // (fallback metadata) and no explicit window is configured.
-            observed_context_window: (self.config.model_context_window.is_none()
-                && self.model_info.used_fallback_model_metadata)
-                .then_some(self.model_info.context_window)
-                .flatten(),
             final_output_json_schema: self.final_output_json_schema.clone(),
             truncation_policy: Some(self.truncation_policy.into()),
         }

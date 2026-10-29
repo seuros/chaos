@@ -289,18 +289,11 @@ pub(super) async fn try_run_sampling_request(
                 context_window,
             } => {
                 // A window the transport reported for a model the catalog does
-                // not describe (clamp slugs). The next turn's model info picks
-                // it up, which switches on the compaction reflex and
-                // auto-distillation for the session. Scoped to the provider
-                // binding this turn ran under, so another account's catalog
-                // never inherits it.
-                sess.services
-                    .models_manager
-                    .record_observed_context_window(
-                        &turn_context.config.model_provider_id,
-                        &model,
-                        context_window,
-                    )
+                // not describe (clamp slugs). Persisted on receipt and applied
+                // to the catalog, so the next turn's model info, in this
+                // process or a fresh one, switches on the compaction reflex
+                // and auto-distillation for the session.
+                sess.record_observed_context_window(&turn_context, &model, context_window)
                     .await;
             }
             ResponseEvent::Completed {

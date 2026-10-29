@@ -126,3 +126,34 @@ fn meta_round_trips_the_snapshot_and_old_meta_reads_without_one() {
         None
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn non_regular_files_are_skipped_without_blocking_and_symlinks_are_followed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fifo = dir.path().join("pipe");
+    let c_path = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).expect("path");
+    // SAFETY: c_path is a valid NUL-terminated path.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0, "mkfifo");
+    std::fs::write(dir.path().join("real.md"), "real text").expect("write");
+    std::os::unix::fs::symlink(dir.path().join("real.md"), dir.path().join("link.md"))
+        .expect("symlink");
+
+    // A FIFO with no writer would block a plain open forever; run the read
+    // on a thread so a regression fails the test instead of hanging it.
+    let cwd = dir.path().to_path_buf();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let paths = vec![PathBuf::from("pipe"), PathBuf::from("link.md")];
+        let _ = tx.send(ProtectedContext::read(&paths, &cwd, 1024));
+    });
+    let (snapshot, warnings) = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("reading a FIFO must not block");
+    let snapshot = snapshot.expect("snapshot recorded");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("pipe") && warnings[0].contains("not a regular file"));
+    assert_eq!(snapshot.files.len(), 1);
+    assert_eq!(snapshot.files[0].path, "link.md");
+    assert_eq!(snapshot.files[0].text, "real text");
+}

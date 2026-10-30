@@ -132,6 +132,7 @@ fn fingerprint(config: &Config, auth: &AuthManager) -> Result<String, ApiError> 
     }
     let p = &config.permissions;
     let env = &p.shell_environment_policy;
+    let clamp_settings = config.clamp_settings();
     let roles: BTreeMap<_, _> = config
         .agent_roles
         .iter()
@@ -191,6 +192,14 @@ fn fingerprint(config: &Config, auth: &AuthManager) -> Result<String, ApiError> 
             "hook_policy": config.hook_approval_policy,
             "web_search": config.web_search_mode.get(),
             "sandbox_helper": config.alcatraz_exe,
+        },
+        "clamp_transport": {
+            "enabled": config.clamp,
+            "backend": format!("{:?}", clamp_settings.backend),
+            "environment_exclusions": clamp_settings.env_remove,
+            "claude_resume_dir": clamp_settings.claude_resume_dir,
+            "claude_cwd": clamp_settings.claude_cwd,
+            "antigravity": clamp_settings.antigravity,
         },
         "credential": credential_material(credential.as_ref())?,
         "provider_credentials": config.model_providers.keys().map(|id| {

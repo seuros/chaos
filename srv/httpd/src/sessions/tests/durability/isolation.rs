@@ -15,7 +15,7 @@ fn store_like(fixture: &Fixture, digest: Option<String>, recovery_only: bool) ->
 }
 
 #[tokio::test]
-async fn changed_credentials_cwd_permissions_or_tools_cannot_take_over_retained_history() {
+async fn changed_credentials_cwd_permissions_tools_or_clamp_cannot_take_over_retained_history() {
     let (_home, state) = crate::test_support::server_state(8192, false).await;
     let original =
         Arc::new(PinnedPolicy::new(state.config.clone(), state.auth_manager.clone()).unwrap());
@@ -49,6 +49,11 @@ async fn changed_credentials_cwd_permissions_or_tools_cannot_take_over_retained_
     tools.mcp_servers.set(servers).unwrap();
     candidates.push(Arc::new(
         PinnedPolicy::new(Arc::new(tools), state.auth_manager.clone()).unwrap(),
+    ));
+    let mut clamp = state.config.as_ref().clone();
+    clamp.antigravity.model = Some("different-subscription-route".into());
+    candidates.push(Arc::new(
+        PinnedPolicy::new(Arc::new(clamp), state.auth_manager.clone()).unwrap(),
     ));
     let changed_auth = chaos_kern::test_support::auth_manager_from_auth_with_home(
         chaos_kern::ChaosAuth::from_api_key("different-test-credential"),

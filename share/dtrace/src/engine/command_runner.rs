@@ -96,7 +96,10 @@ pub(crate) async fn run_command(
             .ok_or_else(|| anyhow::anyhow!("missing hook stderr"))?;
         // Drain outputs while writing input, with one timeout covering every pipe.
         let write = async {
-            stdin.write_all(input_json.as_bytes()).await?;
+            match stdin.write_all(input_json.as_bytes()).await {
+                Err(error) if error.kind() != std::io::ErrorKind::BrokenPipe => return Err(error),
+                _ => {}
+            }
             drop(stdin);
             Ok::<_, std::io::Error>(())
         };

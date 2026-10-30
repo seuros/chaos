@@ -743,11 +743,10 @@ impl ModelClientSession {
             .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
         let clamp_state = Arc::clone(&self.client.state);
         let client = self.client.clone();
-        let (tx_event, rx_event) =
-            mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(256);
-
+        let (output, rx_event) = mpsc::channel(256);
         let session_telemetry = session_telemetry.clone();
-        tokio::spawn(async move {
+        let (tx_event, events) = mpsc::channel(256);
+        let worker = async move {
             let mut guard = clamp_state.antigravity_transport.lock().await;
             let checkpoint = match clamp_state.antigravity_resume.take() {
                 Ok(checkpoint) => checkpoint,
@@ -881,6 +880,7 @@ impl ModelClientSession {
                 };
 
                 let mut config = AntigravityConfig {
+                    env_remove: clamp_settings.env_remove.clone(),
                     cli_path: settings.cli_path.clone(),
                     home: settings.home.clone(),
                     cwd: Some(clamp_cwd.clone()),
@@ -1051,7 +1051,6 @@ impl ModelClientSession {
                         .await;
                 }
                 Err(error) => {
-                    guard.take();
                     let _ = tx_event
                         .send(Err(antigravity_failure(
                             &error,
@@ -1060,7 +1059,10 @@ impl ModelClientSession {
                         .await;
                 }
             }
-        });
+        };
+        self.client
+            .spawn_clamp_worker(output, events, Box::pin(worker))
+            .await?;
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);
         Ok(map_response_stream(stream, session_telemetry))
@@ -1093,15 +1095,14 @@ impl ModelClientSession {
         let full_prompt_state = render_clamp_full_prompt(prompt);
         let continuation_input = super::native_resume::rendered_input(prompt);
         let checkpoint_input = super::native_resume::rendered_history_input(prompt);
-        let clamp_cwd = self
+        let clamp_settings = self
             .client
             .state
             .clamp_settings
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .claude_cwd
             .clone();
-        let clamp_cwd = match clamp_cwd {
+        let clamp_cwd = match clamp_settings.claude_cwd.clone() {
             Some(cwd) => cwd,
             None => std::env::current_dir()?,
         };
@@ -1110,11 +1111,10 @@ impl ModelClientSession {
 
         let clamp_state = Arc::clone(&self.client.state);
 
-        let (tx_event, rx_event) =
-            mpsc::channel::<std::result::Result<ResponseEvent, chaos_parrot::error::ApiError>>(256);
-
+        let (output, rx_event) = mpsc::channel(256);
         let session_telemetry = session_telemetry.clone();
-        tokio::spawn(async move {
+        let (tx_event, events) = mpsc::channel(256);
+        let worker = async move {
             let mut guard = clamp_state.clamp_transport.lock().await;
             let checkpoint = match clamp_state.claude_resume.take() {
                 Ok(checkpoint) => checkpoint,
@@ -1137,10 +1137,15 @@ impl ModelClientSession {
                 )
             });
             if continuation.is_none()
-                && let Some(transport) = guard.take()
-                && let Err(error) = transport.shutdown().await
+                && let Some(transport) = guard.as_mut()
             {
-                warn!("failed to shut down stale Claude transport: {error}");
+                if let Err(error) = transport.terminate().await {
+                    let _ = tx_event
+                        .send(Err(clamp_failure(&error, "clamp_runtime_failed")))
+                        .await;
+                    return;
+                }
+                *guard = None;
             }
             let session = clamp_state
                 .session
@@ -1203,6 +1208,7 @@ impl ModelClientSession {
                 };
 
                 let config = ClampConfig {
+                    env_remove: clamp_settings.env_remove.clone(),
                     system_prompt: Some(system_prompt.clone()),
                     cwd: Some(clamp_cwd.clone()),
                     resume_session_id: continuation.as_ref().map(|(id, _)| id.clone()),
@@ -1238,7 +1244,8 @@ impl ModelClientSession {
                     ..Default::default()
                 };
                 match ClampTransport::spawn(config).await {
-                    Ok(mut t) => {
+                    Ok(t) => {
+                        let t = guard.insert(t);
                         if let Err(e) = t.initialize().await {
                             let _ = tx_event
                                 .send(Err(clamp_failure(&e, "clamp_startup_failed")))
@@ -1250,7 +1257,6 @@ impl ModelClientSession {
                         {
                             chaos_clamp::set_cached_models(models);
                         }
-                        *guard = Some(t);
                     }
                     Err(e) => {
                         let _ = tx_event
@@ -1279,7 +1285,6 @@ impl ModelClientSession {
                 || chaos_clamp::is_cached_model(&clamp_model_slug))
                 && let Err(e) = transport.set_model(&clamp_model_slug).await
             {
-                *guard = None;
                 let _ = tx_event
                     .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                     .await;
@@ -1304,7 +1309,6 @@ impl ModelClientSession {
                 .unwrap_or(full_prompt_state.as_str());
 
             if let Err(e) = transport.send_user_message(content).await {
-                *guard = None;
                 let _ = tx_event
                     .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                     .await;
@@ -1414,17 +1418,14 @@ impl ModelClientSession {
                     Ok(Some(ClampMessage::System { .. })) => {}
                     Ok(Some(_)) => {}
                     Ok(None) => {
-                        *guard = None;
                         let _ = tx_event
-                            .send(Ok(ResponseEvent::Completed {
-                                response_id: "clamped-eof".to_string(),
-                                token_usage: None,
+                            .send(Err(chaos_parrot::error::ApiError::InvalidRequest {
+                                message: "Claude stream ended without a result".into(),
                             }))
                             .await;
                         break;
                     }
                     Err(e) => {
-                        *guard = None;
                         let _ = tx_event
                             .send(Err(clamp_failure(&e, "clamp_runtime_failed")))
                             .await;
@@ -1432,7 +1433,10 @@ impl ModelClientSession {
                     }
                 }
             }
-        });
+        };
+        self.client
+            .spawn_clamp_worker(output, events, Box::pin(worker))
+            .await?;
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);
         let response_stream = map_response_stream(stream, session_telemetry);

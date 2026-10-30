@@ -1,7 +1,7 @@
 //! Server-owned, at-least-once delivery. No redirect, body collection or executor replay.
 use chaos_snitch::tracing;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use chaos_journald::{
     ExecutionDelivery, ExecutionDeliveryRequest as DeliveryRequest, ExecutionRequest,
@@ -96,44 +96,49 @@ impl WebhookConfig {
         Ok(())
     }
 
-    pub(crate) fn check_environment(
-        &self,
+    pub(crate) fn check_control_plane_environment(
         config: &chaos_kern::config::Config,
-        env: &str,
+        environment_names: &[&str],
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            !chaos_kern::exec_env::create_env(&config.permissions.shell_environment_policy, None)
-                .contains_key(env),
-            "webhook signing variable must be excluded from the command environment",
-        );
+        let command_environment =
+            chaos_kern::exec_env::create_env(&config.permissions.shell_environment_policy, None);
+        for env in environment_names {
+            anyhow::ensure!(
+                !command_environment.contains_key(*env),
+                "HTTP control-plane credentials must be excluded from the command environment",
+            );
+        }
         for server in config.mcp_servers.get().values() {
             let material = serde_json::to_value(server)?;
-            let selected = material
-                .get("env_vars")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|vars| vars.iter().any(|v| v.as_str() == Some(env)))
-                || material
-                    .get("env")
-                    .and_then(serde_json::Value::as_object)
-                    .is_some_and(|vars| vars.contains_key(env))
-                || material
-                    .get("bearer_token_env_var")
-                    .and_then(serde_json::Value::as_str)
-                    == Some(env)
-                || material
-                    .get("env_http_headers")
-                    .and_then(serde_json::Value::as_object)
-                    .is_some_and(|headers| headers.values().any(|v| v.as_str() == Some(env)));
-            anyhow::ensure!(
-                !selected,
-                "webhook signing variable must not be selected by MCP tools"
-            );
+            for env in environment_names {
+                let selected = material
+                    .get("env_vars")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|vars| vars.iter().any(|v| v.as_str() == Some(*env)))
+                    || material
+                        .get("env")
+                        .and_then(serde_json::Value::as_object)
+                        .is_some_and(|vars| vars.contains_key(*env))
+                    || material
+                        .get("bearer_token_env_var")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(*env)
+                    || material
+                        .get("env_http_headers")
+                        .and_then(serde_json::Value::as_object)
+                        .is_some_and(|headers| headers.values().any(|v| v.as_str() == Some(env)));
+                anyhow::ensure!(
+                    !selected,
+                    "HTTP control-plane credentials must not be selected by MCP tools"
+                );
+            }
         }
         Ok(())
     }
 
-    fn request(&self, delivery: &ExecutionDelivery, timestamp: u64) -> Request {
-        let timestamp = timestamp.to_string();
+    fn request(&self, delivery: &ExecutionDelivery, timestamp: jiff::Timestamp) -> Request {
+        // The signature protocol uses integer Unix seconds, not a formatted date.
+        let timestamp = timestamp.as_second().to_string();
         let event_id = delivery.status.event_id.to_string();
         let mut mac = Hmac::<Sha256>::new_from_slice(self.secret.as_bytes())
             .expect("HMAC accepts any key size");
@@ -225,8 +230,7 @@ impl WebhookConfig {
                     let Some(delivery) = self.claim(store, &manager.daemon_id).await? else {
                         return Ok::<_, anyhow::Error>(false);
                     };
-                    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-                    let request = self.request(&delivery, timestamp);
+                    let request = self.request(&delivery, jiff::Timestamp::now());
                     let success = matches!(
                         tokio::time::timeout(Duration::from_secs(10), client.serve(request)).await,
                         Ok(Ok(response)) if response.status().is_success()
@@ -256,5 +260,43 @@ impl WebhookConfig {
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn control_plane_credentials_cannot_be_selected_by_mcp_tools() {
+        let (_home, state) = crate::test_support::server_state(8192, false).await;
+        let names = [
+            "CHAOS_BEARER_TOKEN",
+            "CHAOS_RECOVERY_TOKEN",
+            "CHAOS_SESSION_WEBHOOK_SECRET",
+        ];
+        let mut config = state.config.as_ref().clone();
+        WebhookConfig::check_control_plane_environment(&config, &names).unwrap();
+
+        for name in names {
+            let mut servers = config.mcp_servers.get().clone();
+            servers.insert(
+                "selected-env".into(),
+                serde_json::from_value(serde_json::json!({
+                    "command": "unexecuted-server",
+                    "env_vars": [name],
+                }))
+                .unwrap(),
+            );
+            config.mcp_servers.set(servers).unwrap();
+            assert!(
+                WebhookConfig::check_control_plane_environment(&config, &names).is_err(),
+                "{name} must not be selectable by MCP"
+            );
+            config
+                .mcp_servers
+                .set(state.config.mcp_servers.get().clone())
+                .unwrap();
+        }
     }
 }

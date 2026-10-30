@@ -61,6 +61,30 @@ async fn output_limit_is_taken_from_the_shell() {
     assert_eq!(result.stdout, "0123456789abcdef");
 }
 
+#[tokio::test]
+async fn hook_may_exit_without_reading_stdin() {
+    let shell = CommandShell {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into()],
+        builder: None,
+        output_limit_bytes: DEFAULT_OUTPUT_LIMIT_BYTES,
+    };
+    let handler = ConfiguredHandler {
+        event_name: chaos_ipc::protocol::HookEventName::BeforeTurn,
+        command: "printf done".into(),
+        matcher: None,
+        timeout_sec: 5,
+        status_message: None,
+        source_path: "chaos://hooks/test".into(),
+        display_order: 0,
+    };
+    let input = "x".repeat(1024 * 1024);
+    let result = run_command(&shell, &handler, &input, &std::env::temp_dir()).await;
+    assert_eq!(result.error, None);
+    assert_eq!(result.exit_code, Some(0));
+    assert_eq!(result.stdout, "done");
+}
+
 #[test]
 fn output_limit_label_prefers_whole_kib() {
     assert_eq!(output_limit_label(128 * 1024), "128 KiB");

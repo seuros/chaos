@@ -1,4 +1,5 @@
 use super::AuthRequestTelemetryContext;
+mod clamp_worker;
 mod provider_binding;
 use super::ClampLocalToolKind;
 use super::ClampToolRouting;

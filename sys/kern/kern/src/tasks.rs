@@ -497,6 +497,9 @@ impl Session {
         }
 
         task.handle.abort();
+        if let Err(error) = self.services.model_client.stop_clamp_worker().await {
+            warn!(%error, "native inference containment is unconfirmed");
+        }
 
         let session_ctx = Arc::new(SessionTaskContext::new(Arc::clone(self)));
         session_task

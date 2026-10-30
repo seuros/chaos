@@ -19,8 +19,8 @@ use chaos_snitch::TelemetryAuthMode;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses;
 use core_test_support::test_chaos::test_chaos;
-use futures::StreamExt;
 use pretty_assertions::assert_eq;
+use rama::futures::StreamExt;
 use tempfile::TempDir;
 use wiremock::matchers::header;
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
 use chaos_journald::{InvocationReceipt, InvocationStart};
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 
 #[derive(Debug, Default)]
 pub(crate) struct AdmissionEpoch {

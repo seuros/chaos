@@ -1,4 +1,5 @@
 use super::*;
+use rama::futures;
 use std::assert_matches;
 use std::io;
 

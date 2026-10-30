@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use chaos_recall::{RecallConfig, RecallService, RecallState};
 use chaos_vfs::Vfs;
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
 use crate::chaos::{Session, TurnContext};

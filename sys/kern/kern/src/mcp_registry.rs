@@ -26,7 +26,7 @@ use chaos_traits::catalog::CatalogTool;
 use chaos_traits::router::Adapter;
 use chaos_traits::router::AdapterError;
 use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
-use futures::future::join_all;
+use rama::futures::future::join_all;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;

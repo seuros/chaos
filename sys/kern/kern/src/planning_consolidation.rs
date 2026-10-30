@@ -8,7 +8,7 @@ use chaos_ipc::protocol::SessionSource;
 use chaos_proc::planning::{
     ConsolidationInput, ConsolidationJob, ConsolidationRequest, ConsolidationState, PlanningActor,
 };
-use futures::StreamExt;
+use rama::futures::StreamExt;
 use serde::Serialize;
 
 use crate::background_tasks::TaskRegistry;

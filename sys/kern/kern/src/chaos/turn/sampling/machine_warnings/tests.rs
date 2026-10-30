@@ -1,6 +1,7 @@
 use super::*;
 use crate::machine_warnings::{MachineWarning, instructions};
 use chaos_machine::{FilesystemId, StorageRole, StorageTarget};
+use rama::futures;
 use std::cell::Cell;
 use std::future::{pending, ready};
 

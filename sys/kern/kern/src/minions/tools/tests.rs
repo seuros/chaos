@@ -29,6 +29,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::RolloutItem;
 use pretty_assertions::assert_eq;
+use rama::futures;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;

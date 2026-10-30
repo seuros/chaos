@@ -3,11 +3,12 @@
 //! Prewarming only performs an upgrade, never inference or credential refresh.
 //! Requests carry full history: socket reuse does not imply server-side history
 //! continuation. A changed endpoint or handshake header drops the old socket.
+use rama::telemetry::tracing;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use futures::{SinkExt, StreamExt};
 use jiff::SignedDuration;
+use rama::futures::{SinkExt, StreamExt};
 use rama::http::HeaderMap;
 use rama::http::StatusCode;
 use rama::http::ws::handshake::client::{

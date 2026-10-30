@@ -11,12 +11,12 @@ use chaos_client::StreamResponse;
 use rama::bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::Method;
+use rama::telemetry::tracing::instrument;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use serde_json::to_value;
 use std::sync::Arc;
-use tracing::instrument;
 
 pub(crate) struct EndpointSession<T: HttpTransport, A: AuthProvider> {
     transport: T,

@@ -3,7 +3,8 @@ use super::manager::ModelsManager;
 use crate::config::Config;
 use crate::error::{ChaosErr, Result};
 use chaos_ipc::openai_models::ModelPreset;
-use futures::StreamExt;
+use rama::futures;
+use rama::futures::StreamExt;
 use std::collections::{HashMap, HashSet};
 
 const SELECTION_ID_PREFIX: &str = "chaos:model:";

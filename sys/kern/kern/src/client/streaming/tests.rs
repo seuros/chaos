@@ -4,12 +4,13 @@ use super::clamp_usage_to_token_usage;
 use chaos_clamp::AntigravityUsage;
 use chaos_clamp::Usage;
 use chaos_ipc::openai_models::ReasoningEffort;
+use rama::futures;
 
 mod sampling;
 
 #[tokio::test]
 async fn canceling_kernel_stream_releases_provider_even_when_no_more_events_arrive() {
-    use futures::StreamExt;
+    use rama::futures::StreamExt;
     use tokio::sync::mpsc;
 
     const TEST_DEADLINE: jiff::SignedDuration = jiff::SignedDuration::from_secs(5);

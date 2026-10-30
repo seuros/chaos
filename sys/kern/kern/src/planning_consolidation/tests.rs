@@ -377,7 +377,7 @@ async fn metered_session_cannot_dispatch_through_an_independent_consolidation_cl
 -> anyhow::Result<()> {
     use crate::invocation::{InvocationAccountingError, ProviderInvocationSink};
     use chaos_journald::{InvocationReceipt, InvocationStart};
-    use futures::future::BoxFuture;
+    use rama::futures::future::BoxFuture;
 
     #[derive(Debug)]
     struct Metered;

@@ -3,11 +3,11 @@ use super::*;
 use crate::chaos::{Session, TurnContext};
 use crate::run_observer::Observer;
 use chaos_synopsis::tree::{Domain, ValidatedTree, compile_workflow};
-use futures::FutureExt;
 use mcp_host::bt::{Node as BtNode, Step, TreeTool};
 use mcp_host::prelude::{ExecutionContext, Server, ToolError, ToolOutput as McpOutput};
 use mcp_host::protocol::types::JsonRpcRequest;
 use mcp_host::registry::tools::{Tool, ToolBreakerConfig, ToolFuture};
+use rama::futures::FutureExt;
 use serde_json::{Value, json};
 
 pub(super) fn failure(error: impl std::fmt::Display) -> FunctionCallError {

@@ -26,7 +26,6 @@ url = { workspace = true }
 rama = { workspace = true }
 
 [dev-dependencies]
-tracing = { workspace = true }
 chaos-test-fixtures = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }

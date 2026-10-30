@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use super::*;
-use futures::StreamExt;
+use rama::futures;
+use rama::futures::StreamExt;
 use std::sync::Mutex;
 
 /// Captures exchanges in memory for assertions.

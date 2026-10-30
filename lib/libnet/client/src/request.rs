@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use rama::bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::Method;
 use rama::http::StatusCode;

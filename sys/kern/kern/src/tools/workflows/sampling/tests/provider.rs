@@ -3,7 +3,7 @@ use super::*;
 use crate::client::ModelClient;
 use crate::invocation::{InvocationAccountingError, ProviderInvocationSink};
 use chaos_journald::{InvocationReceipt, InvocationStart};
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 use serde_json::Value;
 use std::sync::{
     Arc, Mutex,

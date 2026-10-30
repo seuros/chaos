@@ -4,6 +4,7 @@ use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::router::ToolRouter;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use chaos_synopsis::runs::RunStatus;
+use rama::futures;
 
 #[tokio::test]
 async fn explicit_user_input_call_requires_the_origin_aware_ask_bridge() -> anyhow::Result<()> {

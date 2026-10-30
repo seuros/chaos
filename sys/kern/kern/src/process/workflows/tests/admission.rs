@@ -1,6 +1,6 @@
 use super::*;
 use chaos_ipc::protocol::{Op, Submission};
-use futures::FutureExt;
+use rama::futures::FutureExt;
 use serde_json::json;
 
 async fn runner(

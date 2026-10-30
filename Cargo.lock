@@ -1360,12 +1360,10 @@ dependencies = [
 name = "chaos-client"
 version = "47.14.7"
 dependencies = [
- "bytes",
  "chaos-abi",
  "chaos-which",
  "chrono-machines",
  "cookie_store",
- "futures",
  "pretty_assertions",
  "rama",
  "rustls",
@@ -1800,7 +1798,6 @@ dependencies = [
  "encoding_rs",
  "env-flags",
  "futures",
- "http",
  "image",
  "include_dir",
  "indexmap 2.14.2",
@@ -1821,7 +1818,6 @@ dependencies = [
  "quick-xml 0.42.0",
  "rama",
  "rand 0.10.3",
- "regex",
  "regex-lite",
  "schemars 1.2.3",
  "seccompiler",
@@ -2049,14 +2045,12 @@ version = "47.14.7"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
- "bytes",
  "chaos-abi",
  "chaos-client",
  "chaos-ipc",
  "chaos-libration",
  "chaos-services",
  "chaos-test-fixtures",
- "futures",
  "jiff",
  "pretty_assertions",
  "rama",
@@ -2090,7 +2084,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tracing",
  "url",
 ]
 
@@ -2473,7 +2466,6 @@ dependencies = [
  "pretty_assertions",
  "rama",
  "rand 0.10.3",
- "regex",
  "schemars 1.2.3",
  "serde",
  "serde_json",

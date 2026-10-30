@@ -23,7 +23,7 @@ use chaos_ipc::models::FunctionCallOutputPayload;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_lex::strip_proposed_plan_blocks;
-use futures::Future;
+use rama::futures::Future;
 use tracing::debug;
 use tracing::instrument;
 

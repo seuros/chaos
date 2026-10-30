@@ -10,6 +10,7 @@ use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
 use rama::http::body::util::BodyExt;
+use rama::telemetry::tracing;
 use serde_json::Value;
 use std::sync::Arc;
 

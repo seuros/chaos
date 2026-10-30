@@ -1,6 +1,6 @@
 use super::*;
 use crate::invocation::InvocationAccountingError;
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Notify;

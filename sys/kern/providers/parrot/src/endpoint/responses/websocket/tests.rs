@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use base64::Engine;
-use futures::{SinkExt, StreamExt};
 use jiff::SignedDuration;
 use rama::ServiceInput;
+use rama::futures::{SinkExt, StreamExt};
 use rama::http::ws::protocol::{Message, Role};
 use rama::http::ws::runtime::AsyncWebSocket;
 use serde_json::{Value, json};

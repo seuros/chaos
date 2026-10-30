@@ -1,5 +1,14 @@
 pub(crate) const POLICY_DECISION_EVENT_NAME: &str = super::POLICY_DECISION_EVENT_NAME;
 
+use rama::telemetry::tracing;
+use rama::telemetry::tracing::Event;
+use rama::telemetry::tracing::Id;
+use rama::telemetry::tracing::Metadata;
+use rama::telemetry::tracing::Subscriber;
+use rama::telemetry::tracing::field::Field;
+use rama::telemetry::tracing::field::Visit;
+use rama::telemetry::tracing::span::Attributes;
+use rama::telemetry::tracing::span::Record;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
@@ -7,15 +16,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use tracing::Event;
-use tracing::Id;
-use tracing::Metadata;
-use tracing::Subscriber;
-use tracing::field::Field;
-use tracing::field::Visit;
-use tracing::span::Attributes;
-use tracing::span::Record;
-use tracing::subscriber::Interest;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CapturedEvent {
@@ -47,10 +47,6 @@ impl EventCollector {
 impl Subscriber for EventCollector {
     fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
         true
-    }
-
-    fn register_callsite(&self, _metadata: &'static Metadata<'static>) -> Interest {
-        Interest::always()
     }
 
     fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
@@ -137,7 +133,7 @@ where
     Fut: Future<Output = T>,
 {
     let collector = EventCollector::default();
-    let _guard = tracing::subscriber::set_default(collector.clone());
+    let _guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(collector.clone()));
     let output = f().await;
     let events = collector.events();
     (output, events)

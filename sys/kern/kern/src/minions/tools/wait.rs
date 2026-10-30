@@ -9,9 +9,9 @@ use super::{
     function_arguments, parse_arguments, tool_output_json_text, tool_output_response_item,
 };
 use crate::minions::status::is_final;
-use futures::FutureExt;
-use futures::StreamExt;
-use futures::stream::FuturesUnordered;
+use rama::futures::FutureExt;
+use rama::futures::StreamExt;
+use rama::futures::stream::FuturesUnordered;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::Duration;

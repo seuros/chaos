@@ -6,11 +6,9 @@ name = "chaos-client"
 version.workspace = true
 
 [dependencies]
-bytes = { workspace = true }
 chaos-abi = { workspace = true }
 chrono-machines = { workspace = true }
 cookie_store = { workspace = true }
-futures = { workspace = true }
 rama = { workspace = true }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }

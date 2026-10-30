@@ -1,5 +1,6 @@
 use super::*;
 use pretty_assertions::assert_eq;
+use rama::futures;
 
 async fn registration_fixture(
     table: &ProcessTable,

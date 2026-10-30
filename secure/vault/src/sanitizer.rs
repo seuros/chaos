@@ -1,4 +1,4 @@
-use regex::Regex;
+use rama::utils::thirdparty::regex::Regex;
 use std::sync::LazyLock;
 
 static OPENAI_KEY_REGEX: LazyLock<Regex> = LazyLock::new(|| compile_regex(r"sk-[A-Za-z0-9]{20,}"));

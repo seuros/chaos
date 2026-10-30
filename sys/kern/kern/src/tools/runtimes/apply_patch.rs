@@ -27,7 +27,7 @@ use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_realpath::AbsolutePathBuf;
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;

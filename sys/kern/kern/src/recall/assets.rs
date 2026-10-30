@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use chaos_client::{Egress, RamaTransport, Request};
-use futures::StreamExt;
+use rama::futures::StreamExt;
 use rama::http::{Method, StatusCode, header};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;

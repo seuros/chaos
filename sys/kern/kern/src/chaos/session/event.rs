@@ -12,8 +12,8 @@ use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_ipc::user_input::UserInput;
-use futures::FutureExt;
-use futures::future::Either;
+use rama::futures::FutureExt;
+use rama::futures::future::Either;
 use std::future::Future;
 use tracing::debug;
 

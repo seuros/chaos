@@ -1,8 +1,8 @@
 //! Native inference stays owned until its subprocess has been reaped.
 use std::sync::atomic::Ordering;
 
-use futures::FutureExt;
-use futures::future::BoxFuture;
+use rama::futures::FutureExt;
+use rama::futures::future::BoxFuture;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

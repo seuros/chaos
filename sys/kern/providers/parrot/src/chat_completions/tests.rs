@@ -1,5 +1,6 @@
 use super::*;
 use chaos_test_fixtures::TEST_MODEL;
+use rama::futures;
 
 #[test]
 fn output_cap_is_opt_in_for_streaming_and_structured_chat() {

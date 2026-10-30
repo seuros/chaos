@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::util::resolve_path;
 use chaos_ipc::api::GitSha;
 use chaos_ipc::protocol::GitInfo;
-use futures::future::join_all;
+use rama::futures::future::join_all;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::process::Command;

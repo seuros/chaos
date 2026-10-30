@@ -1,5 +1,6 @@
 use super::*;
 use crate::tools::context::ToolPayload;
+use rama::futures;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 

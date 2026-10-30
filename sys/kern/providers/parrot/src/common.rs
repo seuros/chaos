@@ -7,7 +7,7 @@ use chaos_abi::ReasoningSummary as ReasoningSummaryConfig;
 use chaos_abi::ResponseItem;
 use chaos_abi::TokenUsage;
 use chaos_abi::Verbosity as VerbosityConfig;
-use futures::Stream;
+use rama::futures::Stream;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;

@@ -5,7 +5,7 @@ use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::ResponseItem;
 pub use chaos_parrot::common::ResponseEvent;
-use futures::Stream;
+use rama::futures::Stream;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashSet;

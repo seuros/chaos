@@ -87,7 +87,7 @@ impl TreeInteractions for ExternalInteractions {
 mod tests {
     use super::*;
     use chaos_synopsis::runs::{RunKind, RunRegistry};
-    use futures::FutureExt;
+    use rama::futures::FutureExt;
     use serde_json::json;
 
     #[tokio::test]

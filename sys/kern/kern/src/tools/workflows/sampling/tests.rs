@@ -1,6 +1,6 @@
 use super::*;
 use crate::client_common::{ResponseEvent, ResponseStream};
-use futures::FutureExt;
+use rama::futures::FutureExt;
 use serde_json::json;
 use tokio::sync::mpsc;
 

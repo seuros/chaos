@@ -57,7 +57,7 @@ fn xai(provider: Provider) -> XaiAdapter<StaticAuthProvider> {
 
 #[tokio::test]
 async fn lsd_wire_selection_reaches_the_native_inference_adapter() {
-    use futures::StreamExt;
+    use rama::futures::StreamExt;
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -129,7 +129,7 @@ async fn enabled_websocket_and_prewarm_cannot_bypass_configured_egress() {
 #[tokio::test]
 async fn egress_preserves_streams_and_gateway_errors_without_contacting_vendor() {
     use chaos_client::{HttpTransport, Request, TransportError};
-    use futures::StreamExt;
+    use rama::futures::StreamExt;
     use rama::http::Method;
 
     let vendor = MockServer::start().await;

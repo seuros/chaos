@@ -3,6 +3,7 @@
 //! Covers the Responses API (HTTP or session-local WS), Anthropic Messages API, Chat Completions
 //! API, LSD native API, and the clamped first-party CLI paths.
 
+use rama::futures;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -32,7 +33,7 @@ use chaos_parrot::chat_completions::ChatCompletionsAdapter;
 use chaos_parrot::openai::OpenAiAdapter;
 use chaos_parrot::requests::responses::Compression;
 use chaos_snitch::SessionTelemetry;
-use futures::StreamExt;
+use rama::futures::StreamExt;
 use rama::http::HeaderMap as ApiHeaderMap;
 use rama::http::HeaderValue;
 use rama::http::StatusCode;

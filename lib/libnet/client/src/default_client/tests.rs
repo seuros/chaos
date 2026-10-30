@@ -1,6 +1,7 @@
 use super::*;
 use rama::error::BoxError;
 use rama::error::extra::OpaqueError;
+use rama::futures;
 use rama::service::service_fn;
 use rama::telemetry::opentelemetry::global;
 use rama::telemetry::opentelemetry::propagation::Extractor;

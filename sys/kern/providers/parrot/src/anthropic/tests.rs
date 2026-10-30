@@ -1,5 +1,5 @@
 use super::*;
-use futures::stream;
+use rama::futures::stream;
 use rama::http::header::AUTHORIZATION;
 use serde_json::Map;
 use serde_json::json;

@@ -32,7 +32,7 @@ use crate::tools::sandboxing::with_cached_approval;
 use chaos_ipc::models::PermissionProfile;
 use chaos_ipc::protocol::ReviewDecision;
 use chaos_pf::NetworkProxy;
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 use std::collections::HashMap;
 use std::path::PathBuf;
 

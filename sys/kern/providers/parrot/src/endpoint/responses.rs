@@ -19,11 +19,12 @@ use rama::bytes::Bytes;
 use rama::http::HeaderMap;
 use rama::http::HeaderValue;
 use rama::http::Method;
+use rama::telemetry::tracing;
+use rama::telemetry::tracing::debug;
+use rama::telemetry::tracing::instrument;
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use tracing::debug;
-use tracing::instrument;
 
 mod websocket;
 pub use websocket::ResponsesWebSocket;

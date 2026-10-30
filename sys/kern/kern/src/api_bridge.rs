@@ -5,6 +5,7 @@ use chaos_parrot::TransportError;
 use chaos_parrot::error::ApiError;
 use chaos_parrot::rate_limits::parse_rate_limit_for_limit;
 use jiff::Timestamp;
+use rama::http;
 use rama::http::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::Value;

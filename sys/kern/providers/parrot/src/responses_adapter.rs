@@ -110,7 +110,7 @@ impl<A: AuthProvider> ResponsesAdapter<A> {
         let (tx_event, rx_event) = mpsc::channel(1600);
         tokio::spawn(async move {
             let mut api_stream = api_stream;
-            use futures::StreamExt;
+            use rama::futures::StreamExt;
             loop {
                 let event = tokio::select! {
                     _ = tx_event.closed() => return,

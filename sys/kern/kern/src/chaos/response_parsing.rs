@@ -13,9 +13,9 @@ use chaos_lex::AssistantTextStreamParser;
 use chaos_lex::ProposedPlanSegment;
 use chaos_lex::extract_proposed_plan_text;
 use chaos_lex::strip_citations;
-use futures::future::BoxFuture;
-use futures::prelude::*;
-use futures::stream::FuturesOrdered;
+use rama::futures::future::BoxFuture;
+use rama::futures::prelude::*;
+use rama::futures::stream::FuturesOrdered;
 use state_machines::state_machine;
 
 use super::Session;

@@ -15,7 +15,7 @@ use chaos_pf::{
     NetworkProxyState, build_config_state,
 };
 use chaos_realpath::AbsolutePathBuf;
-use futures::future::BoxFuture;
+use rama::futures::future::BoxFuture;
 
 use crate::{AntigravityEgress, AntigravitySandbox};
 

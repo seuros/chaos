@@ -4,7 +4,6 @@
 //! wire format and streams `TurnEvent`s back from the SSE response.
 
 use crate::provider::Provider;
-use bytes::Bytes;
 use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
 use chaos_abi::ContentItem;
@@ -15,10 +14,13 @@ use chaos_abi::TurnEvent;
 use chaos_abi::TurnRequest;
 use chaos_abi::TurnStream;
 use chaos_libration::UsageSniffer;
+use rama::bytes::Bytes;
 use rama::error::BoxError;
+use rama::futures;
 use rama::futures::StreamExt;
 use rama::http::HeaderMap;
 use rama::http::sse::EventStream;
+use rama::telemetry::tracing;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;

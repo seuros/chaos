@@ -23,7 +23,7 @@ use chaos_ipc::models::ResponseInputItem;
 #[cfg(test)]
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::user_input::UserInput;
-use futures::prelude::*;
+use rama::futures::prelude::*;
 use tracing::error;
 use tracing::warn;
 

@@ -2,6 +2,7 @@
 use anyhow::{Context, ensure};
 use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::hooks::{HookDefinition, HookRegistration};
+use rama::utils::thirdparty::regex;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

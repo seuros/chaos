@@ -4,6 +4,7 @@ use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::NetworkAccess;
 use chaos_ipc::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
+use rama::futures;
 
 struct DummyApprovableTool;
 

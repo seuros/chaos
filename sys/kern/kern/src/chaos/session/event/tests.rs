@@ -10,7 +10,8 @@ use chaos_ipc::protocol::TurnAbortedEvent;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::WarningEvent;
-use futures::FutureExt;
+use rama::futures;
+use rama::futures::FutureExt;
 use std::sync::Arc;
 use tempfile::TempDir;
 

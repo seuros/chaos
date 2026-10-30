@@ -18,7 +18,6 @@ chaos-client = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-pf = { workspace = true }
 chaos-realpath = { workspace = true }
-futures = { workspace = true }
 libc = { workspace = true }
 mcp-host = { workspace = true }
 rama = { workspace = true }
@@ -32,6 +31,7 @@ which = { workspace = true }
 
 [dev-dependencies]
 acp-guest = { path = "../../../lib/libacp/guest", version = "0.1.0" }
+futures = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-util = { workspace = true, features = ["codec"] }

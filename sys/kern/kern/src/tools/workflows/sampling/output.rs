@@ -1,7 +1,7 @@
 use crate::client_common::{ResponseEvent, ResponseStream};
 use chaos_ipc::models::{ContentItem, ResponseItem};
 use chaos_ipc::protocol::{RateLimitSnapshot, TokenUsage};
-use futures::StreamExt;
+use rama::futures::StreamExt;
 use std::io::Write;
 
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;

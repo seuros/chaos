@@ -1,5 +1,5 @@
-use bytes::Bytes;
 use rama::Service;
+use rama::bytes::Bytes;
 use rama::http::Body;
 use rama::http::HeaderMap;
 use rama::http::HeaderName;

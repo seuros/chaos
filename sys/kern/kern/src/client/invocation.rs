@@ -4,7 +4,7 @@ use chaos_ipc::config_types::{ReasoningSummary, ServiceTier};
 use chaos_ipc::openai_models::{ModelInfo, ReasoningEffort};
 use chaos_journald::{InvocationPurpose, InvocationReceipt, InvocationStart, InvocationTokenUsage};
 use chaos_snitch::SessionTelemetry;
-use futures::StreamExt;
+use rama::futures::StreamExt;
 
 use super::{ModelClient, ModelClientSession};
 use crate::client_common::{Prompt, ResponseEvent, ResponseStream};

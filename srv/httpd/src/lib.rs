@@ -193,7 +193,7 @@ pub async fn run_main(
     };
 
     // 6. Build the kernel config.
-    let config = ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .cli_overrides(cli_kv_overrides)
         .harness_overrides(overrides)
         .build()
@@ -201,6 +201,11 @@ pub async fn run_main(
     if serve_cli.sessions && config.clamp && !serve_cli.session_recovery_only {
         bail!("retained HTTP sessions do not yet support clamp transports");
     }
+    config.clamp_env_remove = vec![
+        "CHAOS_BEARER_TOKEN".into(),
+        "CHAOS_RECOVERY_TOKEN".into(),
+        serve_cli.session_webhook_secret_env.clone(),
+    ];
     if serve_cli.session_scope.is_some() && config.ephemeral {
         bail!("durable retained sessions cannot use ephemeral history");
     }
@@ -208,10 +213,15 @@ pub async fn run_main(
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
 
-    if let Some(webhook) = &webhook
-        && !serve_cli.session_recovery_only
-    {
-        webhook.check_environment(&config, &serve_cli.session_webhook_secret_env)?;
+    if serve_cli.sessions && !serve_cli.session_recovery_only {
+        webhooks::WebhookConfig::check_control_plane_environment(
+            &config,
+            &[
+                "CHAOS_BEARER_TOKEN",
+                "CHAOS_RECOVERY_TOKEN",
+                serve_cli.session_webhook_secret_env.as_str(),
+            ],
+        )?;
     }
 
     // 8. Enforce login restrictions.

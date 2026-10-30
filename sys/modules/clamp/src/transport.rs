@@ -26,7 +26,6 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::BufWriter;
-use tokio::process::Child;
 use tokio::process::ChildStdin;
 use tokio::process::ChildStdout;
 use tokio::process::Command;
@@ -68,6 +67,8 @@ pub type McpMessageHandler = Arc<
 pub struct ClampConfig {
     /// Path to the `claude` binary. If None, we search PATH.
     pub cli_path: Option<PathBuf>,
+    /// Daemon-only environment names that must never reach the native CLI.
+    pub env_remove: Vec<String>,
     /// Whether to launch Claude Code in bare mode.
     pub bare_mode: bool,
     /// Working directory for the subprocess.
@@ -132,6 +133,7 @@ impl Default for ClampConfig {
     fn default() -> Self {
         Self {
             cli_path: None,
+            env_remove: Vec::new(),
             bare_mode: false,
             cwd: None,
             resume_session_id: None,
@@ -182,7 +184,7 @@ pub struct ClampTransport {
     /// Request ID counter.
     request_counter: AtomicU64,
     /// The child process handle.
-    child: Child,
+    child: crate::child::NativeChild,
     /// Keep private configuration files available until the transport is dropped.
     _config_files: ClampConfigFiles,
     /// Whether the transport has been initialized.
@@ -336,6 +338,7 @@ fn build_command(
     cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    cmd.kill_on_drop(true);
 
     // Environment: identify ourselves as an SDK client
     cmd.env("CLAUDE_CODE_ENTRYPOINT", "sdk-chaos");
@@ -345,6 +348,9 @@ fn build_command(
         cmd.env("ANTHROPIC_BASE_URL", base_url);
     }
 
+    for name in &config.env_remove {
+        cmd.env_remove(name);
+    }
     Ok((cmd, files))
 }
 
@@ -386,13 +392,14 @@ impl ClampTransport {
         info!(cli = %cli_path.display(), "spawning claude subprocess for clamping");
 
         let (mut cmd, config_files) = build_command(&cli_path, &config)?;
-        let mut child = cmd.spawn()?;
+        let mut child = crate::child::NativeChild::spawn(&mut cmd)?;
+        let process = child.child();
 
-        let stdin = child
+        let stdin = process
             .stdin
             .take()
             .ok_or_else(|| ClampError::Protocol("no stdin on child".to_string()))?;
-        let stdout = child
+        let stdout = process
             .stdout
             .take()
             .ok_or_else(|| ClampError::Protocol("no stdout on child".to_string()))?;
@@ -401,7 +408,7 @@ impl ClampTransport {
 
         // Drain stderr in the background. Keep only a small bounded tail for
         // failure classification; never expose the captured text directly.
-        if let Some(stderr) = child.stderr.take() {
+        if let Some(stderr) = process.stderr.take() {
             let stderr_tail = Arc::clone(&stderr_tail);
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
@@ -621,21 +628,29 @@ impl ClampTransport {
 
         // Wait for graceful exit
         let result =
-            tokio::time::timeout(std::time::Duration::from_secs(5), self.child.wait()).await;
+            tokio::time::timeout(std::time::Duration::from_secs(5), self.child.child().wait())
+                .await;
 
         match result {
             Ok(Ok(status)) => {
                 info!(?status, "claude subprocess exited");
             }
             Ok(Err(e)) => {
-                warn!("error waiting for claude subprocess: {e}");
+                return Err(ClampError::SpawnFailed(e));
             }
             Err(_) => {
                 warn!("claude subprocess did not exit in time, killing");
-                let _ = self.child.kill().await;
             }
         }
 
+        self.child.terminate().await?;
+        Ok(())
+    }
+
+    /// Stop and reap the native child before acknowledging cancellation.
+    /// Keep ownership on failure so containment can be retried.
+    pub async fn terminate(&mut self) -> Result<(), ClampError> {
+        self.child.terminate().await?;
         Ok(())
     }
 

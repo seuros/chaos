@@ -305,6 +305,7 @@ impl ReflexKind {
 /// Clamp transport selection handed to the model client.
 #[derive(Debug, Clone, Default)]
 pub struct ClampSettings {
+    pub env_remove: Vec<String>,
     pub backend: ClampBackend,
     /// Local checkpoints for Claude Code native resume; absent for ephemeral sessions.
     pub claude_resume_dir: Option<PathBuf>,
@@ -463,6 +464,8 @@ pub struct Config {
     /// Start sessions using a first-party CLI subprocess transport.
     /// Interactive sessions also support `/clamp` and `--clamp`.
     pub clamp: bool,
+    /// Runtime-owned exclusions, not configurable by prompts or request bodies.
+    pub clamp_env_remove: Vec<String>,
 
     /// First-party CLI transport selected when clamp mode is enabled.
     pub clamp_backend: ClampBackend,

@@ -13,6 +13,7 @@
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
 pub(crate) mod auth_breaker;
+mod clamp_worker;
 mod invocation;
 mod native_resume;
 pub(crate) mod state;
@@ -98,6 +99,8 @@ pub(super) struct ModelClientState {
     pub(super) responses_websocket: Option<Arc<chaos_parrot::openai::ResponsesWebSocket>>,
     /// When true, route turns through the selected first-party CLI.
     pub(super) clamped: AtomicBool,
+    clamp_worker: tokio::sync::Mutex<Option<clamp_worker::ClampWorker>>,
+    clamp_pending: AtomicBool,
     /// First-party CLI transport selected for clamped turns, plus its settings.
     pub(super) clamp_settings: StdMutex<ClampSettings>,
     /// Persistent Claude Code subprocess for clamped mode.

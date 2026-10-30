@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn native_command_removes_daemon_credentials_after_environment_overrides() {
+    let names = [
+        "CHAOS_BEARER_TOKEN",
+        "CHAOS_RECOVERY_TOKEN",
+        "CUSTOM_WEBHOOK_SIGNING_KEY",
+    ];
+    let config = ClampConfig {
+        env_remove: names.iter().map(|name| (*name).into()).collect(),
+        ..Default::default()
+    };
+    let (command, _files) = build_command(&PathBuf::from("claude"), &config).unwrap();
+    for name in names {
+        assert!(
+            command
+                .as_std()
+                .get_envs()
+                .any(|(key, value)| key == name && value.is_none())
+        );
+    }
+}
+
+#[test]
 fn build_command_resumes_only_the_explicit_native_session() {
     let config = ClampConfig {
         resume_session_id: Some("2eb242f5-85ad-4407-b9d3-459c32d06d91".into()),

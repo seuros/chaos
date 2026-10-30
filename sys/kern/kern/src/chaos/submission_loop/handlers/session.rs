@@ -125,6 +125,10 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
     sess.services.internal_task_store.observer_cancel.cancel();
     sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
     sess.services.exec_manager.terminate_all_processes().await;
+    if let Err(error) = sess.services.model_client.stop_clamp_worker().await {
+        warn!(%error, "native inference containment is unconfirmed during shutdown");
+        return false;
+    }
     if let Err(error) = sess.services.mcp_refresh.shutdown().await {
         warn!(%error, "failed to stop MCP refresh actor during session shutdown");
     }

@@ -9,6 +9,7 @@
 
 mod antigravity;
 mod antigravity_sandbox;
+mod child;
 mod egress;
 mod protocol;
 mod proxy;

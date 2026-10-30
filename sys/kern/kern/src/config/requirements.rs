@@ -137,6 +137,7 @@ impl Config {
     /// environment overrides already applied.
     pub fn clamp_settings(&self) -> crate::config::ClampSettings {
         crate::config::ClampSettings {
+            env_remove: self.clamp_env_remove.clone(),
             backend: self.clamp_backend,
             claude_resume_dir: (!self.ephemeral).then(|| self.chaos_home.join("clamp/claude")),
             claude_cwd: Some(self.cwd.clone()),
@@ -712,6 +713,7 @@ impl Config {
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             clamp: cfg.clamp.unwrap_or(false),
+            clamp_env_remove: Vec::new(),
             clamp_backend: cfg.clamp_backend.unwrap_or_default(),
             antigravity: cfg.antigravity.clone().unwrap_or_default(),
             reflex: cfg.reflex.clone().unwrap_or_default(),

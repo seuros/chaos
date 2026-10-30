@@ -58,6 +58,8 @@ pub struct AntigravityBridgeConfig {
 pub struct AntigravityConfig {
     /// Path to `agy`. When omitted, the binary is resolved from `PATH`.
     pub cli_path: Option<PathBuf>,
+    /// Daemon-only environment names that must never reach the native CLI.
+    pub env_remove: Vec<String>,
     /// Isolated home directory containing state owned by `agy`.
     pub home: Option<PathBuf>,
     /// Working directory presented to `agy`.
@@ -107,6 +109,7 @@ impl Default for AntigravityConfig {
     fn default() -> Self {
         Self {
             cli_path: None,
+            env_remove: Vec::new(),
             home: None,
             cwd: None,
             model: "gemini-3.1-pro-low".to_string(),
@@ -242,6 +245,7 @@ pub struct AntigravityTransport {
     config: AntigravityConfig,
     conversation_id: Option<String>,
     managed_home_prepared: bool,
+    child: Option<crate::child::NativeChild>,
 }
 
 impl AntigravityTransport {
@@ -251,6 +255,7 @@ impl AntigravityTransport {
             config,
             conversation_id: None,
             managed_home_prepared: false,
+            child: None,
         })
     }
 
@@ -268,6 +273,7 @@ impl AntigravityTransport {
             config,
             conversation_id: Some(conversation_id),
             managed_home_prepared: false,
+            child: None,
         })
     }
 
@@ -277,6 +283,15 @@ impl AntigravityTransport {
 
     pub fn model(&self) -> &str {
         &self.config.model
+    }
+
+    /// Reap an invocation even when its driving future was cancelled.
+    pub async fn terminate(&mut self) -> Result<(), AntigravityError> {
+        if let Some(child) = self.child.as_mut() {
+            child.terminate().await?;
+            self.child = None;
+        }
+        Ok(())
     }
 
     /// Run one prompt through `agy`, resuming the provider conversation when
@@ -292,6 +307,7 @@ impl AntigravityTransport {
         prompt: &str,
         sink: Option<&mpsc::Sender<AntigravityEvent>>,
     ) -> Result<AntigravityTurn, AntigravityError> {
+        self.terminate().await?;
         let cli_path = find_agy_cli(&self.config)?;
         if !self.managed_home_prepared {
             prepare_managed_home(&self.config)?;
@@ -306,7 +322,10 @@ impl AntigravityTransport {
         // Logs that exist before this child starts cannot be its own; the
         // snapshot is how a failed run's diagnostic is attributed to it.
         let logs_before = self.config.home.as_deref().map(agy_log_files);
-        let mut child = command.spawn().map_err(AntigravityError::Spawn)?;
+        let child = self
+            .child
+            .insert(crate::child::NativeChild::spawn(&mut command)?)
+            .child();
         let mut stdin = child.stdin.take().ok_or_else(|| {
             AntigravityError::Protocol("Antigravity stdin was not captured".to_string())
         })?;
@@ -330,7 +349,7 @@ impl AntigravityTransport {
                 result
             };
             let (input_result, invocation_result) =
-                tokio::join!(write_input, drive_invocation(&mut child, sink));
+                tokio::join!(write_input, drive_invocation(child, sink));
             let invocation = invocation_result?;
             if invocation.status.success() {
                 input_result.map_err(AntigravityError::Spawn)?;
@@ -341,11 +360,12 @@ impl AntigravityTransport {
         {
             Ok(invocation) => invocation?,
             Err(_) => {
-                let _ = child.start_kill();
-                let _ = child.wait().await;
+                self.terminate().await?;
                 return Err(AntigravityError::Timeout);
             }
         };
+        // A reaped parent is not proof that its descendants stopped.
+        self.terminate().await?;
 
         if !invocation.status.success() {
             // Classification is driven by this child's own stderr only.
@@ -547,6 +567,9 @@ fn build_command(
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
+    for name in &config.env_remove {
+        command.env_remove(name);
+    }
     command
 }
 

@@ -1680,6 +1680,7 @@ dependencies = [
  "chaos-test-fixtures",
  "chaos_journald",
  "hmac 0.13.0",
+ "jiff",
  "mcp-host",
  "rama",
  "serde",

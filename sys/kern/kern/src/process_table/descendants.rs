@@ -192,6 +192,12 @@ impl ProcessTable {
                     .services
                     .model_client
                     .has_pending_submissions()
+                && !process
+                    .chaos
+                    .session
+                    .services
+                    .model_client
+                    .clamp_is_pending()
         });
         Ok(idle
             && !self.tree_has_pending_admissions(root, &tree)?

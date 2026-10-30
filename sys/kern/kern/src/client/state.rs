@@ -85,6 +85,8 @@ impl ModelClient {
                 resolved_wire: std::sync::OnceLock::new(),
                 responses_websocket,
                 clamped: std::sync::atomic::AtomicBool::new(initial_clamped),
+                clamp_worker: tokio::sync::Mutex::new(None),
+                clamp_pending: std::sync::atomic::AtomicBool::new(false),
                 clamp_settings: std::sync::Mutex::new(clamp_settings),
                 clamp_transport: tokio::sync::Mutex::new(None),
                 claude_resume,

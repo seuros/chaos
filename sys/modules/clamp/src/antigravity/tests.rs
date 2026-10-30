@@ -1,5 +1,69 @@
 use super::*;
 
+#[test]
+fn native_command_removes_daemon_credentials_after_environment_overrides() {
+    let names = [
+        "CHAOS_BEARER_TOKEN",
+        "CHAOS_RECOVERY_TOKEN",
+        "CUSTOM_WEBHOOK_SIGNING_KEY",
+    ];
+    let config = AntigravityConfig {
+        env_remove: names.iter().map(|name| (*name).into()).collect(),
+        ..Default::default()
+    };
+    let command = build_command(Path::new("agy"), &config, None);
+    for name in names {
+        assert!(
+            command
+                .as_std()
+                .get_envs()
+                .any(|(key, value)| key == name && value.is_none())
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cancelled_turn_keeps_the_native_child_owned_until_explicit_termination() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("agy");
+    std::fs::write(
+        &path,
+        r#"#!/bin/sh
+IFS= read -r input
+printf '{"event":"init","conversation_id":"cancelled-native","init":{"model":"gemini-test"}}\n'
+exec sleep 600
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut transport = AntigravityTransport::new(AntigravityConfig {
+        cli_path: Some(path),
+        home: Some(directory.path().join("home")),
+        bridge: Some(test_bridge(directory.path())),
+        ..Default::default()
+    })
+    .unwrap();
+    let (events, mut observed) = mpsc::channel(1);
+    {
+        let turn = transport.run_turn_streamed("hello", Some(&events));
+        tokio::pin!(turn);
+        tokio::select! {
+            event = observed.recv() => std::assert_matches!(event, Some(AntigravityEvent::Init { .. })),
+            result = &mut turn => panic!("native turn exited before cancellation: {result:?}"),
+            _ = tokio::time::sleep(Duration::from_secs(5)) => panic!("native peer did not become ready"),
+        }
+    }
+    assert!(
+        transport.child.is_some(),
+        "dropping inference must not detach its child"
+    );
+    transport.terminate().await.unwrap();
+    assert!(transport.child.is_none());
+    transport.terminate().await.unwrap();
+}
+
 fn test_bridge(dir: &Path) -> AntigravityBridgeConfig {
     AntigravityBridgeConfig {
         socket_path: dir.join("bridge.sock"),

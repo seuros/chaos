@@ -1022,6 +1022,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         clamp: false,
+        clamp_env_remove: Vec::new(),
         clamp_backend: Default::default(),
         antigravity: Default::default(),
         reflex: Default::default(),

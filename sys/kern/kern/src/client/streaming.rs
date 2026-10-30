@@ -1061,7 +1061,7 @@ impl ModelClientSession {
             }
         };
         self.client
-            .spawn_clamp_worker(output, events, worker)
+            .spawn_clamp_worker(output, events, Box::pin(worker))
             .await?;
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);
@@ -1435,7 +1435,7 @@ impl ModelClientSession {
             }
         };
         self.client
-            .spawn_clamp_worker(output, events, worker)
+            .spawn_clamp_worker(output, events, Box::pin(worker))
             .await?;
 
         let stream = tokio_stream::wrappers::ReceiverStream::new(rx_event);

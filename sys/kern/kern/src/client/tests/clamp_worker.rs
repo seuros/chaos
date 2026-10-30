@@ -10,18 +10,22 @@ async fn terminal_event_waits_for_worker_exit_and_overlap_is_rejected() {
     let (ready, reached) = oneshot::channel();
     let (release, finish) = oneshot::channel();
     client
-        .spawn_clamp_worker(output, input, async move {
-            events.send(Ok(ResponseEvent::Created)).await.unwrap();
-            events
-                .send(Ok(ResponseEvent::Completed {
-                    response_id: "native".into(),
-                    token_usage: None,
-                }))
-                .await
-                .unwrap();
-            ready.send(()).unwrap();
-            finish.await.unwrap();
-        })
+        .spawn_clamp_worker(
+            output,
+            input,
+            Box::pin(async move {
+                events.send(Ok(ResponseEvent::Created)).await.unwrap();
+                events
+                    .send(Ok(ResponseEvent::Completed {
+                        response_id: "native".into(),
+                        token_usage: None,
+                    }))
+                    .await
+                    .unwrap();
+                ready.send(()).unwrap();
+                finish.await.unwrap();
+            }),
+        )
         .await
         .unwrap();
     reached.await.unwrap();
@@ -35,7 +39,7 @@ async fn terminal_event_waits_for_worker_exit_and_overlap_is_rejected() {
     let (_events, input) = mpsc::channel(1);
     assert!(
         client
-            .spawn_clamp_worker(output, input, async {})
+            .spawn_clamp_worker(output, input, Box::pin(async {}))
             .await
             .is_err()
     );
@@ -62,12 +66,16 @@ async fn cancellation_drops_the_driving_future_before_clearing_pending() {
     let (ready, reached) = oneshot::channel();
     let (dropped, observed) = oneshot::channel();
     client
-        .spawn_clamp_worker(output, input, async move {
-            let _guard = Dropped(Some(dropped));
-            let _events = events;
-            ready.send(()).unwrap();
-            std::future::pending::<()>().await;
-        })
+        .spawn_clamp_worker(
+            output,
+            input,
+            Box::pin(async move {
+                let _guard = Dropped(Some(dropped));
+                let _events = events;
+                ready.send(()).unwrap();
+                std::future::pending::<()>().await;
+            }),
+        )
         .await
         .unwrap();
     reached.await.unwrap();
@@ -86,10 +94,14 @@ async fn panic_and_missing_result_are_non_retryable_native_failures() {
         let (output, mut response) = mpsc::channel(1);
         let (events, input) = mpsc::channel(1);
         client
-            .spawn_clamp_worker(output, input, async move {
-                drop(events);
-                assert!(!panic, "synthetic native worker panic");
-            })
+            .spawn_clamp_worker(
+                output,
+                input,
+                Box::pin(async move {
+                    drop(events);
+                    assert!(!panic, "synthetic native worker panic");
+                }),
+            )
             .await
             .unwrap();
         std::assert_matches!(

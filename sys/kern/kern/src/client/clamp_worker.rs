@@ -1,8 +1,8 @@
 //! Native inference stays owned until its subprocess has been reaped.
-use std::future::Future;
 use std::sync::atomic::Ordering;
 
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -40,7 +40,7 @@ impl ModelClient {
         &self,
         output: mpsc::Sender<Event>,
         mut events: mpsc::Receiver<Event>,
-        worker: impl Future<Output = ()> + Send + 'static,
+        worker: BoxFuture<'static, ()>,
     ) -> Result<()> {
         let mut slot = self.state.clamp_worker.lock().await;
         if let Some(previous) = slot.as_mut() {

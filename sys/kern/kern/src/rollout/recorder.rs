@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -778,6 +779,14 @@ impl RolloutRecorder {
 
 const JOURNALD_SOCKET_ENV: &str = "CHAOS_JOURNALD_SOCKET";
 const JOURNALD_BIN_ENV: &str = "CHAOS_JOURNALD_BIN";
+
+static IN_PROCESS_SQLITE_JOURNAL: AtomicBool = AtomicBool::new(false);
+
+/// Serve SQLite journals from the mounted pool instead of a journald sidecar.
+/// Only sound while this process is the database's sole writer, as in tests.
+pub(crate) fn use_in_process_sqlite_journal() {
+    IN_PROCESS_SQLITE_JOURNAL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
 const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 const JOURNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1536,6 +1545,10 @@ pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, Strin
             ));
         }
         return Ok(JournalClient::rpc(client));
+    }
+
+    if IN_PROCESS_SQLITE_JOURNAL.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(JournalClient::sqlite_pool(pool));
     }
 
     let binary_path = std::env::var_os(JOURNALD_BIN_ENV)

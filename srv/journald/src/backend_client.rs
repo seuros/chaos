@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use chaos_ipc::ProcessId;
 use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::AppendBatchInput;
 use crate::AppendBatchResult;
@@ -16,16 +17,19 @@ use crate::Lease;
 use crate::LoadedJournal;
 use crate::PostgresJournalStore;
 use crate::ProcessRecord;
+use crate::SqliteJournalStore;
 use crate::rama_http::error_payload_for;
 
 /// Backend-neutral journal access used by the kernel.
 ///
 /// SQLite keeps the journald Unix-socket sidecar. PostgreSQL uses the mounted
-/// pool directly and never starts or contacts journald.
+/// pool directly and never starts or contacts journald; so does SQLite when a
+/// single process owns the database (tests).
 #[derive(Debug, Clone)]
 pub enum JournalClient {
     Rpc(JournalRpcClient),
     Postgres(PostgresJournalStore),
+    Sqlite(SqliteJournalStore),
 }
 
 impl JournalClient {
@@ -39,6 +43,10 @@ impl JournalClient {
                 .archive_idle_process(request)
                 .await
                 .map_err(store_error),
+            Self::Sqlite(store) => store
+                .archive_idle_process(request)
+                .await
+                .map_err(store_error),
         }
     }
 
@@ -49,6 +57,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.execution(request).await,
             Self::Postgres(store) => store.execution(request).await.map_err(store_error),
+            Self::Sqlite(store) => store.execution(request).await.map_err(store_error),
         }
     }
 
@@ -64,6 +73,10 @@ impl JournalClient {
         Self::postgres(PostgresJournalStore::new(pool))
     }
 
+    pub fn sqlite_pool(pool: SqlitePool) -> Self {
+        Self::Sqlite(SqliteJournalStore::from_pool(pool))
+    }
+
     pub async fn create_process(
         &self,
         input: CreateProcessInput,
@@ -71,6 +84,13 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.create_process(input).await,
             Self::Postgres(store) => {
+                let process = store.create_process(input).await.map_err(store_error)?;
+                Ok(CreateProcessResponse {
+                    process_id: process.process_id,
+                    next_seq: 0,
+                })
+            }
+            Self::Sqlite(store) => {
                 let process = store.create_process(input).await.map_err(store_error)?;
                 Ok(CreateProcessResponse {
                     process_id: process.process_id,
@@ -87,6 +107,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.initialize_process(input).await,
             Self::Postgres(store) => store.initialize_process(input).await.map_err(store_error),
+            Self::Sqlite(store) => store.initialize_process(input).await.map_err(store_error),
         }
     }
 
@@ -97,6 +118,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.get_process(process_id).await,
             Self::Postgres(store) => store.get_process(&process_id).await.map_err(store_error),
+            Self::Sqlite(store) => store.get_process(&process_id).await.map_err(store_error),
         }
     }
 
@@ -107,6 +129,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.list_processes(archived).await,
             Self::Postgres(store) => store.list_processes(archived).await.map_err(store_error),
+            Self::Sqlite(store) => store.list_processes(archived).await.map_err(store_error),
         }
     }
 
@@ -119,6 +142,10 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.acquire_lease(process_id, owner_id, ttl_ms).await,
             Self::Postgres(store) => store
+                .acquire_lease(&process_id, &owner_id, Duration::from_millis(ttl_ms))
+                .await
+                .map_err(store_error),
+            Self::Sqlite(store) => store
                 .acquire_lease(&process_id, &owner_id, Duration::from_millis(ttl_ms))
                 .await
                 .map_err(store_error),
@@ -147,6 +174,15 @@ impl JournalClient {
                 )
                 .await
                 .map_err(store_error),
+            Self::Sqlite(store) => store
+                .heartbeat_lease(
+                    &process_id,
+                    &owner_id,
+                    &lease_token,
+                    Duration::from_millis(ttl_ms),
+                )
+                .await
+                .map_err(store_error),
         }
     }
 
@@ -166,6 +202,10 @@ impl JournalClient {
                 .release_lease(&process_id, &owner_id, &lease_token)
                 .await
                 .map_err(store_error),
+            Self::Sqlite(store) => store
+                .release_lease(&process_id, &owner_id, &lease_token)
+                .await
+                .map_err(store_error),
         }
     }
 
@@ -176,6 +216,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.append_batch(input).await,
             Self::Postgres(store) => store.append_batch(input).await.map_err(store_error),
+            Self::Sqlite(store) => store.append_batch(input).await.map_err(store_error),
         }
     }
 
@@ -186,6 +227,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.load_journal(process_id).await,
             Self::Postgres(store) => store.load_journal(&process_id).await.map_err(store_error),
+            Self::Sqlite(store) => store.load_journal(&process_id).await.map_err(store_error),
         }
     }
 
@@ -193,6 +235,7 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.get_default_process().await,
             Self::Postgres(store) => store.get_default_process().await.map_err(store_error),
+            Self::Sqlite(store) => store.get_default_process().await.map_err(store_error),
         }
     }
 
@@ -203,6 +246,10 @@ impl JournalClient {
         match self {
             Self::Rpc(client) => client.set_default_process(process_id).await,
             Self::Postgres(store) => store
+                .set_default_process(&process_id)
+                .await
+                .map_err(store_error),
+            Self::Sqlite(store) => store
                 .set_default_process(&process_id)
                 .await
                 .map_err(store_error),

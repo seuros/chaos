@@ -272,6 +272,7 @@ async fn exec_emits_exec_command_begin_event() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -345,6 +346,7 @@ async fn exec_resolves_relative_workdir() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -424,6 +426,7 @@ async fn exec_respects_workdir_override() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -504,6 +507,7 @@ async fn exec_emits_exec_command_end_event() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -592,6 +596,7 @@ async fn exec_emits_output_delta_for_exec_command() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -665,6 +670,7 @@ async fn exec_full_lifecycle_with_background_end_event() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -773,6 +779,7 @@ async fn exec_emits_terminal_interaction_for_write_stdin() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -886,6 +893,7 @@ async fn exec_terminal_interaction_captures_delayed_output() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1078,6 +1086,7 @@ async fn exec_emits_one_begin_and_one_end_event() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1196,6 +1205,7 @@ async fn exec_command_reports_chunk_and_exit_metadata() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1305,6 +1315,7 @@ async fn exec_defaults_to_pipe() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1385,6 +1396,7 @@ async fn exec_can_enable_tty() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1467,6 +1479,7 @@ async fn exec_respects_early_exit_notifications() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1561,6 +1574,7 @@ async fn write_stdin_returns_exit_metadata_and_clears_session() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1725,6 +1739,7 @@ async fn exec_emits_end_event_when_session_dies_via_stdin() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1832,6 +1847,7 @@ async fn exec_keeps_long_running_session_after_turn_end() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -1925,6 +1941,7 @@ async fn exec_interrupt_preserves_long_running_session() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2006,6 +2023,7 @@ async fn exec_reuses_session_via_stdin() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2120,6 +2138,7 @@ async fn exec_streams_after_lagged_output() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2251,6 +2270,7 @@ async fn exec_formats_large_output_summary() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2350,6 +2370,7 @@ async fn exec_runs_under_sandbox() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2423,6 +2444,7 @@ async fn exec_repl_prompt_under_seatbelt() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2539,6 +2561,7 @@ async fn exec_runs_on_all_platforms() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -2613,6 +2636,7 @@ async fn exec_prunes_exited_sessions_first() -> Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 

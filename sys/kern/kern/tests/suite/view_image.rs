@@ -79,6 +79,7 @@ async fn user_turn_with_local_image_attaches_image() -> anyhow::Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 
@@ -173,6 +174,7 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 
@@ -302,6 +304,7 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -382,6 +385,7 @@ async fn view_image_tool_treats_null_detail_as_omitted() -> anyhow::Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -474,6 +478,7 @@ async fn view_image_tool_resizes_when_model_lacks_original_detail_support() -> a
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -575,6 +580,7 @@ async fn view_image_tool_does_not_force_original_resolution_with_capability_feat
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -672,6 +678,7 @@ async fn view_image_tool_errors_when_path_is_directory() -> anyhow::Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 
@@ -746,6 +753,7 @@ async fn view_image_tool_placeholder_for_non_image_files() -> anyhow::Result<()>
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 
@@ -830,6 +838,7 @@ async fn view_image_tool_errors_when_file_missing() -> anyhow::Result<()> {
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 
@@ -954,6 +963,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
     let TestChaos {
         process: chaos,
         cwd,
+        home: _home,
         ..
     } = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
@@ -1052,6 +1062,7 @@ async fn replaces_invalid_local_image_after_bad_request() -> anyhow::Result<()> 
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = test_chaos().build(&server).await?;
 

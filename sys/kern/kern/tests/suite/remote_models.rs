@@ -150,6 +150,7 @@ async fn remote_models_long_model_slug_is_sent_with_high_reasoning() -> Result<(
         process: chaos,
         cwd,
         config,
+        home: _home,
         ..
     } = test_chaos()
         .with_auth(ChaosAuth::create_dummy_chatgpt_auth_for_testing())
@@ -231,6 +232,7 @@ async fn remote_models_remote_model_uses_exec() -> Result<()> {
         cwd,
         config,
         process_table,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 
@@ -454,6 +456,7 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         cwd,
         config,
         process_table,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 

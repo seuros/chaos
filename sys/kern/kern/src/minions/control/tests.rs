@@ -18,6 +18,7 @@ use chaos_ipc::protocol::TurnAbortReason;
 use chaos_ipc::protocol::TurnAbortedEvent;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::protocol::TurnStartedEvent;
+use core_test_support::responses::sse_completed;
 use pretty_assertions::assert_eq;
 use std::assert_matches;
 use tempfile::TempDir;
@@ -25,6 +26,8 @@ use tokio::time::Duration;
 use tokio::time::sleep;
 use tokio::time::timeout;
 use toml::Value as TomlValue;
+use wiremock::matchers::method;
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
@@ -38,8 +41,8 @@ async fn test_config_with_cli_overrides(
         .build()
         .await
         .expect("load default test config");
-    // Operations are captured, not sent to a model. A speculative connection
-    // would still contact the real provider with dummy credentials at startup.
+    // A speculative connection would contact the real provider with dummy
+    // credentials at startup.
     config.model_provider.supports_websockets = false;
     for provider in config.model_providers.values_mut() {
         provider.supports_websockets = false;
@@ -60,6 +63,7 @@ fn text_input(text: &str) -> Vec<UserInput> {
 
 struct AgentControlHarness {
     _home: TempDir,
+    _model: MockServer,
     config: Config,
     manager: ProcessTable,
     control: AgentControl,
@@ -67,7 +71,22 @@ struct AgentControlHarness {
 
 impl AgentControlHarness {
     async fn new() -> Self {
-        let (home, config) = test_config().await;
+        let (home, mut config) = test_config().await;
+        // Submitted ops still start real turns; answer them locally instead of
+        // dialing the provider over TLS with dummy credentials.
+        let model = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(sse_completed("mock-response")),
+            )
+            .mount(&model)
+            .await;
+        config.model_provider.base_url = Some(model.uri());
+        for provider in config.model_providers.values_mut() {
+            provider.base_url = Some(model.uri());
+        }
         let manager = ProcessTable::with_models_provider_and_home_for_tests(
             ChaosAuth::from_api_key("dummy"),
             config.model_provider.clone(),
@@ -76,6 +95,7 @@ impl AgentControlHarness {
         let control = manager.agent_control();
         Self {
             _home: home,
+            _model: model,
             config,
             manager,
             control,
@@ -546,26 +566,8 @@ async fn spawn_agent_options_attach_the_final_output_schema_to_initial_input() {
     );
 }
 
-#[test]
-fn spawn_agent_can_fork_parent_thread_history() {
-    // Match Linux libtest's stack even on macOS, whose larger default hid the
-    // speculative WebSocket connection's debug-build stack overflow.
-    std::thread::Builder::new()
-        .name("fork-history-ci-stack".to_string())
-        .stack_size(2 * 1024 * 1024)
-        .spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("build runtime")
-                .block_on(Box::pin(fork_parent_thread_history()));
-        })
-        .expect("spawn bounded-stack thread")
-        .join()
-        .expect("fork-history test panicked");
-}
-
-async fn fork_parent_thread_history() {
+#[tokio::test]
+async fn spawn_agent_can_fork_parent_thread_history() {
     let harness = AgentControlHarness::new().await;
     let (parent_process_id, parent_thread) = harness.start_process().await;
     let db = parent_thread.runtime_db().expect("parent database");

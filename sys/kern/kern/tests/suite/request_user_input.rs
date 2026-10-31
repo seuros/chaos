@@ -61,6 +61,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
         process: chaos,
         cwd,
         session_configured,
+        home: _home,
         ..
     } = builder.build(&server).await?;
 

@@ -764,14 +764,10 @@ fn configured_mcp_tool_approval_mode(
     invocation: &McpInvocation,
     metadata: Option<&McpToolApprovalMetadata>,
 ) -> AppToolApproval {
-    let Some(user_config) = turn_context
-        .config
-        .config_layer_stack
-        .get_user_layer()
-        .map(|layer| &layer.config)
-    else {
+    let Some(user_config) = turn_context.config.config_layer_stack.database_settings() else {
         return AppToolApproval::Auto;
     };
+    let user_config = &user_config;
     let connector = metadata
         .and_then(|metadata| metadata.connector_id.as_deref())
         .and_then(|connector_id| configured_connector(user_config, connector_id));

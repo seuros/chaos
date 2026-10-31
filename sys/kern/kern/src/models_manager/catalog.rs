@@ -202,6 +202,21 @@ impl ModelsManager {
         catalog
     }
 
+    /// A saved choice that no longer resolves must not stop a session from
+    /// starting: drop it so the active account's default applies, and hand
+    /// back the notice to show.
+    pub async fn resolve_model_selection_or_fallback(&self, config: &mut Config) -> Option<String> {
+        let err = self.resolve_model_selection(config).await.err()?;
+        let requested = config.model.take().unwrap_or_default();
+        config.model_reasoning_effort = None;
+        Some(format!(
+            "Default model `{}` is unavailable ({err}); \
+             falling back to the first available model on `{}`.",
+            ModelSelection::wire_model(&requested),
+            config.model_provider_id
+        ))
+    }
+
     /// Validate an explicit picker choice before changing configuration.
     /// Bare slugs retain their meaning: a model on the current account.
     pub async fn resolve_model_selection(&self, config: &mut Config) -> Result<()> {

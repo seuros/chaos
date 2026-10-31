@@ -1,3 +1,4 @@
+use crate::persistence::SettingsScope;
 use crate::types::Notice;
 use chaos_ipc::config_types::Personality;
 use chaos_ipc::config_types::ServiceTier;
@@ -317,6 +318,7 @@ impl ConfigDocument {
 /// Persist edits using a revision-checked database transaction. No TOML fallback.
 pub async fn apply(
     chaos_home: &Path,
+    scope: SettingsScope,
     profile: Option<&str>,
     edits: Vec<ConfigEdit>,
 ) -> anyhow::Result<()> {
@@ -324,13 +326,12 @@ pub async fn apply(
         return Ok(());
     }
     let backend = crate::persistence::backend()?;
-    let snapshot = backend.snapshot(chaos_home).await?;
+    let snapshot = backend.snapshot(chaos_home, scope).await?;
     let doc = toml::to_string(&snapshot.settings)?.parse::<DocumentMut>()?;
-    let profile = profile.map(ToOwned::to_owned).or_else(|| {
-        doc.get("profile")
-            .and_then(TomlItem::as_str)
-            .map(ToOwned::to_owned)
-    });
+    let profile = match profile {
+        Some(profile) => Some(profile.to_owned()),
+        None => active_profile(backend, chaos_home, scope, &snapshot.settings).await?,
+    };
     let mut document = ConfigDocument::new(doc, profile);
     let mut mutated = false;
     for edit in &edits {
@@ -341,13 +342,46 @@ pub async fn apply(
     }
     let settings = toml::from_str(&document.doc.to_string())?;
     backend
-        .commit(chaos_home, snapshot.revision, settings)
+        .commit(chaos_home, scope, snapshot.revision, settings)
         .await
+}
+
+/// The active profile is read from the effective document: a profile chosen in
+/// the shared settings still applies to edits that land in the installation's.
+async fn active_profile(
+    backend: &dyn crate::persistence::SettingsPersistence,
+    chaos_home: &Path,
+    scope: SettingsScope,
+    scoped: &toml::Value,
+) -> anyhow::Result<Option<String>> {
+    let mut effective = match scope {
+        SettingsScope::Global => {
+            let mut merged = scoped.clone();
+            let installation = backend
+                .snapshot(chaos_home, SettingsScope::Installation)
+                .await?;
+            crate::merge_toml_values(&mut merged, &installation.settings);
+            merged
+        }
+        SettingsScope::Installation => {
+            let mut merged = backend
+                .snapshot(chaos_home, SettingsScope::Global)
+                .await?
+                .settings;
+            crate::merge_toml_values(&mut merged, scoped);
+            merged
+        }
+    };
+    Ok(effective
+        .as_table_mut()
+        .and_then(|table| table.remove("profile"))
+        .and_then(|value| value.as_str().map(ToOwned::to_owned)))
 }
 
 /// Synchronous callers use a separate thread so they never nest a Tokio runtime.
 pub fn apply_blocking(
     chaos_home: &Path,
+    scope: SettingsScope,
     profile: Option<&str>,
     edits: &[ConfigEdit],
 ) -> anyhow::Result<()> {
@@ -358,7 +392,7 @@ pub fn apply_blocking(
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
-            .block_on(apply(&home, profile.as_deref(), edits))
+            .block_on(apply(&home, scope, profile.as_deref(), edits))
     })
     .join()
     .map_err(|_| anyhow::anyhow!("settings persistence thread panicked"))?
@@ -368,6 +402,7 @@ pub fn apply_blocking(
 #[derive(Default)]
 pub struct ConfigEditsBuilder {
     chaos_home: PathBuf,
+    scope: SettingsScope,
     profile: Option<String>,
     edits: Vec<ConfigEdit>,
 }
@@ -376,9 +411,15 @@ impl ConfigEditsBuilder {
     pub fn new(chaos_home: &Path) -> Self {
         Self {
             chaos_home: chaos_home.to_path_buf(),
+            scope: SettingsScope::default(),
             profile: None,
             edits: Vec::new(),
         }
+    }
+
+    pub fn with_scope(mut self, scope: SettingsScope) -> Self {
+        self.scope = scope;
+        self
     }
 
     pub fn with_profile(mut self, profile: Option<&str>) -> Self {
@@ -463,12 +504,23 @@ impl ConfigEditsBuilder {
 
     /// Apply edits on a blocking thread.
     pub fn apply_blocking(self) -> anyhow::Result<()> {
-        apply_blocking(&self.chaos_home, self.profile.as_deref(), &self.edits)
+        apply_blocking(
+            &self.chaos_home,
+            self.scope,
+            self.profile.as_deref(),
+            &self.edits,
+        )
     }
 
     /// Apply edits asynchronously via a blocking offload.
     pub async fn apply(self) -> anyhow::Result<()> {
-        apply(&self.chaos_home, self.profile.as_deref(), self.edits).await
+        apply(
+            &self.chaos_home,
+            self.scope,
+            self.profile.as_deref(),
+            self.edits,
+        )
+        .await
     }
 }
 

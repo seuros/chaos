@@ -20,6 +20,7 @@ fn config_keeps_json_import() {
     assert_matches!(
         cli.subcommand,
         Some(Subcommand::Config(config_cmd::ConfigCommand {
+            global: false,
             action: config_cmd::ConfigAction::Import { file }
         })) if file == std::path::Path::new("settings.json")
     );

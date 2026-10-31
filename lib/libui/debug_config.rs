@@ -180,7 +180,9 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
 fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
     match &layer.name {
         ConfigLayerSource::SessionFlags => render_session_flag_details(&layer.config),
-        ConfigLayerSource::UserDatabase { .. } | ConfigLayerSource::ProjectMcp { .. } => Vec::new(),
+        ConfigLayerSource::UserDatabase { .. }
+        | ConfigLayerSource::InstallationDatabase { .. }
+        | ConfigLayerSource::ProjectMcp { .. } => Vec::new(),
     }
 }
 
@@ -264,6 +266,9 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
     match source {
         ConfigLayerSource::UserDatabase { revision } => {
             format!("user database (revision {revision})")
+        }
+        ConfigLayerSource::InstallationDatabase { revision } => {
+            format!("installation settings (revision {revision})")
         }
         ConfigLayerSource::ProjectMcp { file } => {
             format!("project ({})", file.as_path().display())

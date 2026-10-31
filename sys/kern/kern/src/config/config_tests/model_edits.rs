@@ -11,9 +11,8 @@ async fn set_model_updates_defaults() -> anyhow::Result<()> {
         .apply()
         .await?;
 
-    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+    let parsed: ConfigToml = crate::user_settings::effective_settings(chaos_home.path())
         .await?
-        .settings
         .try_into()?;
 
     assert_eq!(parsed.model.as_deref(), Some("serpent"));
@@ -42,9 +41,8 @@ model = "gordon"
         .apply()
         .await?;
 
-    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+    let parsed: ConfigToml = crate::user_settings::effective_settings(chaos_home.path())
         .await?
-        .settings
         .try_into()?;
 
     assert_eq!(parsed.model.as_deref(), Some("o4-mini"));
@@ -72,9 +70,8 @@ async fn set_model_updates_profile() -> anyhow::Result<()> {
         .apply()
         .await?;
 
-    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+    let parsed: ConfigToml = crate::user_settings::effective_settings(chaos_home.path())
         .await?
-        .settings
         .try_into()?;
     let profile = parsed
         .profiles
@@ -112,9 +109,8 @@ model = "sherlock"
         .apply()
         .await?;
 
-    let parsed: ConfigToml = crate::user_settings::snapshot(chaos_home.path())
+    let parsed: ConfigToml = crate::user_settings::effective_settings(chaos_home.path())
         .await?
-        .settings
         .try_into()?;
 
     let dev_profile = parsed

@@ -11,7 +11,10 @@ async fn test_set_default_oss_provider() -> anyhow::Result<()> {
     // Test setting a provider on empty config
     set_default_oss_provider(chaos_home, "ollama")?;
     assert_eq!(
-        crate::user_settings::snapshot(chaos_home).await?.settings["oss_provider"].as_str(),
+        crate::user_settings::installation_snapshot(chaos_home)
+            .await?
+            .settings["oss_provider"]
+            .as_str(),
         Some("ollama")
     );
 
@@ -21,14 +24,19 @@ async fn test_set_default_oss_provider() -> anyhow::Result<()> {
         .apply()
         .await?;
     set_default_oss_provider(chaos_home, "lmstudio")?;
-    let settings = crate::user_settings::snapshot(chaos_home).await?.settings;
+    let settings = crate::user_settings::installation_snapshot(chaos_home)
+        .await?
+        .settings;
     assert_eq!(settings["oss_provider"].as_str(), Some("lmstudio"));
     assert_eq!(settings["model"].as_str(), Some(TEST_MODEL));
 
     // Test overwriting existing oss_provider
     set_default_oss_provider(chaos_home, "ollama")?;
     assert_eq!(
-        crate::user_settings::snapshot(chaos_home).await?.settings["oss_provider"].as_str(),
+        crate::user_settings::installation_snapshot(chaos_home)
+            .await?
+            .settings["oss_provider"]
+            .as_str(),
         Some("ollama")
     );
 

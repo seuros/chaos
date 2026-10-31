@@ -45,3 +45,48 @@ async fn settings_cas_and_installation_scoped_revocation() -> anyhow::Result<()>
     std::fs::remove_dir_all(home)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn installation_settings_are_scoped_and_revision_checked() -> anyhow::Result<()> {
+    let home = std::env::temp_dir().join(format!("chaos-inst-settings-{}", Uuid::now_v7()));
+    let runtime = RuntimeDbHandle::Sqlite(StateRuntime::init(home.clone(), "test".into()).await?);
+    let empty = runtime.installation_settings_snapshot("one").await?;
+    assert_eq!(empty.revision, 0);
+    assert_eq!(empty.settings, serde_json::json!({}));
+    assert_eq!(
+        runtime
+            .commit_installation_settings("one", 0, &serde_json::json!({"model":"a"}))
+            .await?,
+        1
+    );
+    assert!(
+        runtime
+            .commit_installation_settings("one", 0, &serde_json::json!({"model":"b"}))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        runtime
+            .commit_installation_settings("one", 1, &serde_json::json!({"model":"b"}))
+            .await?,
+        2
+    );
+    assert_eq!(
+        runtime
+            .installation_settings_snapshot("one")
+            .await?
+            .settings["model"],
+        "b"
+    );
+    assert_eq!(
+        runtime
+            .installation_settings_snapshot("two")
+            .await?
+            .revision,
+        0
+    );
+    assert_eq!(runtime.settings_snapshot().await?.revision, 0);
+    drop(runtime);
+    std::fs::remove_dir_all(home)?;
+    Ok(())
+}

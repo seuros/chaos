@@ -1,25 +1,29 @@
 //! Recovery commands intentionally bypass ConfigBuilder and runtime startup.
 use anyhow::Context;
 use chaos_kern::user_settings;
+use chaos_sysctl::persistence::SettingsScope;
 use std::path::PathBuf;
 
 #[derive(Debug, usage::Args)]
 pub struct ConfigCommand {
+    /// Target the settings shared by every installation instead of this one.
+    #[usage(short = 'g', long = "global", global)]
+    pub global: bool,
     #[usage(subcommand)]
     pub action: ConfigAction,
 }
 
 #[derive(Debug, usage::Subcommands)]
 pub enum ConfigAction {
-    /// Inspect database settings (optional dotted key).
+    /// Inspect effective settings (optional dotted key); -g shows the shared document only.
     Get { key: Option<String> },
-    /// Set a user setting using a JSON value.
+    /// Set a setting for this installation using a JSON value; -g sets it for all.
     Set { key: String, value: String },
-    /// Remove a user setting.
+    /// Remove a setting from this installation; -g removes it from the shared document.
     Unset { key: String },
-    /// Export user settings as JSON; grants and secret values are excluded.
+    /// Export settings as JSON; grants and secret values are excluded.
     Export,
-    /// Replace user settings from a JSON file using a revision-checked write.
+    /// Replace settings from a JSON file using a revision-checked write.
     Import { file: PathBuf },
     /// Diagnose bootstrap/storage without starting providers or MCP servers.
     Doctor,
@@ -57,6 +61,11 @@ pub enum ApprovalsAction {
 pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
     let home = chaos_pwd::find_chaos_home()?;
     user_settings::install_persistence();
+    let scope = if command.global {
+        SettingsScope::Global
+    } else {
+        SettingsScope::Installation
+    };
     match command.action {
         ConfigAction::Bootstrap(command) => match command.action {
             BootstrapAction::Show => {
@@ -73,10 +82,16 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
             println!("Bootstrap: valid");
             let snapshot = user_settings::snapshot(&home).await?;
             println!("Database settings: revision {}", snapshot.revision);
+            let installation = user_settings::installation_snapshot(&home).await?;
+            println!("Installation settings: revision {}", installation.revision);
         }
         ConfigAction::Get { key } => {
-            let snapshot = user_settings::snapshot(&home).await?;
-            let mut value = &snapshot.settings;
+            let settings = if command.global {
+                user_settings::snapshot(&home).await?.settings
+            } else {
+                user_settings::effective_settings(&home).await?
+            };
+            let mut value = &settings;
             if let Some(key) = key {
                 for segment in key.split('.') {
                     value = value.get(segment).context("setting not found")?;
@@ -85,7 +100,7 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(value)?);
         }
         ConfigAction::Export => {
-            let settings = user_settings::snapshot(&home).await?.settings;
+            let settings = user_settings::scoped_snapshot(&home, scope).await?.settings;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::to_value(settings)?)?
@@ -96,11 +111,9 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
                 .context("settings file must be JSON")?;
             let settings: toml::Value =
                 serde_json::from_value(json).context("settings must be a JSON object")?;
-            let snapshot = user_settings::snapshot(&home).await?;
-            chaos_sysctl::persistence::backend()?
-                .commit(&home, snapshot.revision, settings)
-                .await?;
-            println!("User settings imported; approvals were not imported.");
+            let snapshot = user_settings::scoped_snapshot(&home, scope).await?;
+            user_settings::commit(&home, scope, snapshot.revision, settings).await?;
+            println!("Settings imported; approvals were not imported.");
         }
         ConfigAction::Set { key, value } => {
             let value: serde_json::Value =
@@ -109,6 +122,7 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
             let doc = toml::to_string(&std::collections::BTreeMap::from([("value", value)]))?
                 .parse::<toml_edit::DocumentMut>()?;
             chaos_sysctl::edit::ConfigEditsBuilder::new(&home)
+                .with_scope(scope)
                 .with_edits([chaos_sysctl::edit::ConfigEdit::SetPath {
                     segments: key.split('.').map(str::to_owned).collect(),
                     value: doc["value"].clone(),
@@ -118,6 +132,7 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
         }
         ConfigAction::Unset { key } => {
             chaos_sysctl::edit::ConfigEditsBuilder::new(&home)
+                .with_scope(scope)
                 .with_edits([chaos_sysctl::edit::ConfigEdit::ClearPath {
                     segments: key.split('.').map(str::to_owned).collect(),
                 }])

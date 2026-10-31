@@ -342,7 +342,12 @@ async fn appearance_config_builder_preserves_partial_cli_overrides() {
     .unwrap();
     chaos_sysctl::persistence::backend()
         .unwrap()
-        .commit(home.path(), snapshot.revision, settings)
+        .commit(
+            home.path(),
+            chaos_ipc::api::SettingsScope::Global,
+            snapshot.revision,
+            settings,
+        )
         .await
         .unwrap();
     let config = ConfigBuilder::default()

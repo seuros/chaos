@@ -18,6 +18,7 @@ use chaos_ipc::api::ConfigWriteErrorCode;
 use chaos_ipc::api::ConfigWriteResponse;
 use chaos_ipc::api::MergeStrategy;
 use chaos_ipc::api::OverriddenMetadata;
+use chaos_ipc::api::SettingsScope;
 use chaos_ipc::api::WriteStatus;
 use chaos_realpath::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
@@ -197,7 +198,8 @@ impl ConfigService {
         params: ConfigValueWriteParams,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
         let edits = vec![(params.key_path, params.value, params.merge_strategy)];
-        self.apply_edits(params.expected_version, edits).await
+        self.apply_edits(params.scope, params.expected_version, edits)
+            .await
     }
 
     pub async fn batch_write(
@@ -210,7 +212,8 @@ impl ConfigService {
             .map(|edit| (edit.key_path, edit.value, edit.merge_strategy))
             .collect();
 
-        self.apply_edits(params.expected_version, edits).await
+        self.apply_edits(params.scope, params.expected_version, edits)
+            .await
     }
 
     pub async fn load_user_saved_config(
@@ -230,6 +233,7 @@ impl ConfigService {
 
     async fn apply_edits(
         &self,
+        scope: SettingsScope,
         expected_version: Option<String>,
         edits: Vec<(String, JsonValue, MergeStrategy)>,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
@@ -237,7 +241,7 @@ impl ConfigService {
             .load_process_agnostic_config()
             .await
             .map_err(|err| ConfigServiceError::io("failed to load configuration", err))?;
-        let user_layer = layers.get_user_layer().ok_or_else(|| {
+        let user_layer = layers.get_database_layer(scope).ok_or_else(|| {
             ConfigServiceError::write(
                 ConfigWriteErrorCode::UserLayerNotFound,
                 "user settings layer not found; runtime storage is unavailable",
@@ -314,7 +318,8 @@ impl ConfigService {
         )?;
 
         let revision = match user_layer.name {
-            ConfigLayerSource::UserDatabase { revision } => revision,
+            ConfigLayerSource::UserDatabase { revision }
+            | ConfigLayerSource::InstallationDatabase { revision } => revision,
             ConfigLayerSource::ProjectMcp { .. } | ConfigLayerSource::SessionFlags => {
                 return Err(ConfigServiceError::write(
                     ConfigWriteErrorCode::UserLayerNotFound,
@@ -323,7 +328,8 @@ impl ConfigService {
             }
         };
         let next_revision = revision + i64::from(!config_edits.is_empty());
-        let updated_layers = layers.with_database_settings(next_revision, user_config.clone());
+        let updated_layers =
+            layers.with_database_settings(scope, next_revision, user_config.clone());
         let effective = updated_layers.effective_config();
         validate_config(&effective).map_err(|err| {
             ConfigServiceError::write(
@@ -335,14 +341,15 @@ impl ConfigService {
         if !config_edits.is_empty() {
             chaos_sysctl::persistence::backend()
                 .map_err(|err| ConfigServiceError::anyhow("settings backend unavailable", err))?
-                .commit(&self.chaos_home, revision, user_config)
+                .commit(&self.chaos_home, scope, revision, user_config)
                 .await
                 .map_err(|err| {
                     ConfigServiceError::anyhow("failed to persist database settings", err)
                 })?;
         }
 
-        let overridden = first_overridden_edit(&updated_layers, &effective, &parsed_segments);
+        let overridden =
+            first_overridden_edit(&updated_layers, scope, &effective, &parsed_segments);
         let status = overridden
             .as_ref()
             .map(|_| WriteStatus::OkOverridden)
@@ -351,7 +358,7 @@ impl ConfigService {
         Ok(ConfigWriteResponse {
             status,
             version: updated_layers
-                .get_user_layer()
+                .get_database_layer(scope)
                 .ok_or_else(|| {
                     ConfigServiceError::write(
                         ConfigWriteErrorCode::UserLayerNotFound,
@@ -360,9 +367,7 @@ impl ConfigService {
                 })?
                 .version
                 .clone(),
-            source: ConfigLayerSource::UserDatabase {
-                revision: next_revision,
-            },
+            source: scope.layer_source(next_revision),
             overridden_metadata: overridden,
         })
     }
@@ -559,15 +564,19 @@ fn override_message(layer: &ConfigLayerSource) -> String {
         ConfigLayerSource::UserDatabase { revision } => {
             format!("Overridden by user database (revision {revision})")
         }
+        ConfigLayerSource::InstallationDatabase { revision } => {
+            format!("Overridden by installation settings (revision {revision})")
+        }
     }
 }
 
 fn compute_override_metadata(
     layers: &ConfigLayerStack,
+    scope: SettingsScope,
     effective: &TomlValue,
     segments: &[String],
 ) -> Option<OverriddenMetadata> {
-    let user_value = value_at_path(&layers.get_user_layer()?.config, segments);
+    let user_value = value_at_path(&layers.get_database_layer(scope)?.config, segments);
     let effective_value = value_at_path(effective, segments);
 
     if user_value.is_some() && user_value == effective_value {
@@ -592,11 +601,12 @@ fn compute_override_metadata(
 
 fn first_overridden_edit(
     layers: &ConfigLayerStack,
+    scope: SettingsScope,
     effective: &TomlValue,
     edits: &[Vec<String>],
 ) -> Option<OverriddenMetadata> {
     for segments in edits {
-        if let Some(meta) = compute_override_metadata(layers, effective, segments) {
+        if let Some(meta) = compute_override_metadata(layers, scope, effective, segments) {
             return Some(meta);
         }
     }

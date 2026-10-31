@@ -134,6 +134,7 @@ restart.
 chaos config get
 chaos config get model
 chaos config set model '"your-model-id"'
+chaos config set -g model '"your-model-id"'
 chaos config unset model
 chaos config export > settings.json
 chaos config import settings.json
@@ -142,7 +143,15 @@ chaos approvals revoke <grant-id>
 chaos approvals revoke all
 ```
 
-`set` accepts JSON. Import replaces the user settings document with a validated
+Settings live in two documents on the same storage: one shared by every
+installation, and one per installation that overrides it. Edits made in the
+console and `chaos config set` target the installation document; `-g` targets the
+shared one. `get` shows the effective merge, or the shared document with `-g`.
+A saved model that the current installation cannot reach (its provider has no
+credentials here, for example) is reported at startup and the active provider's
+default model is used instead.
+
+`set` accepts JSON. Import replaces the chosen document with a validated
 JSON document using optimistic revision checking. Neither import nor ordinary
 edits can create positive approval grants. Export excludes live grants and
 secret values; it does not include the separately managed MCP registry or
@@ -157,8 +166,9 @@ chaos config doctor
 ```
 
 Inspection redacts bootstrap connection values and preserves opaque credential
-references. API user layers use `userDatabase` with a revision; writes return an
-explicit source. Stale revisions are rejected.
+references. API user layers use `userDatabase` and `installationDatabase` with a
+revision; writes take a `scope` and return an explicit source. Stale revisions
+are rejected.
 
 ## Approval boundaries and current limits
 

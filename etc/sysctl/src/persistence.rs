@@ -1,4 +1,5 @@
 //! Kernel-provided settings persistence.
+pub use chaos_ipc::api::SettingsScope;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -13,10 +14,15 @@ pub struct SettingsSnapshot {
 }
 
 pub trait SettingsPersistence: Send + Sync {
-    fn snapshot<'a>(&'a self, home: &'a Path) -> PersistenceFuture<'a, SettingsSnapshot>;
+    fn snapshot<'a>(
+        &'a self,
+        home: &'a Path,
+        scope: SettingsScope,
+    ) -> PersistenceFuture<'a, SettingsSnapshot>;
     fn commit<'a>(
         &'a self,
         home: &'a Path,
+        scope: SettingsScope,
         revision: i64,
         settings: toml::Value,
     ) -> PersistenceFuture<'a, ()>;

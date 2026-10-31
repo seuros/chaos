@@ -7,6 +7,13 @@ use toml::Value as TomlValue;
 /// document in production; this only simulates revision-checked storage.
 const SETTINGS_FILE: &str = "settings.toml";
 
+fn settings_file(scope: crate::persistence::SettingsScope) -> &'static str {
+    match scope {
+        crate::persistence::SettingsScope::Installation => SETTINGS_FILE,
+        crate::persistence::SettingsScope::Global => "global-settings.toml",
+    }
+}
+
 /// File-backed test adapter for revision-checked edits.
 struct TestPersistence;
 
@@ -17,12 +24,16 @@ impl crate::persistence::SettingsPersistence for TestPersistence {
     fn snapshot<'a>(
         &'a self,
         home: &'a Path,
+        scope: crate::persistence::SettingsScope,
     ) -> crate::persistence::PersistenceFuture<'a, crate::persistence::SettingsSnapshot> {
         Box::pin(async move {
-            let settings = toml::from_str(
-                &std::fs::read_to_string(home.join(SETTINGS_FILE)).unwrap_or_default(),
-            )?;
-            let revision = *REVISIONS.lock().expect("revisions").get(home).unwrap_or(&0);
+            let file = home.join(settings_file(scope));
+            let settings = toml::from_str(&std::fs::read_to_string(&file).unwrap_or_default())?;
+            let revision = *REVISIONS
+                .lock()
+                .expect("revisions")
+                .get(&file)
+                .unwrap_or(&0);
             Ok(crate::persistence::SettingsSnapshot { settings, revision })
         })
     }
@@ -30,14 +41,16 @@ impl crate::persistence::SettingsPersistence for TestPersistence {
     fn commit<'a>(
         &'a self,
         home: &'a Path,
+        scope: crate::persistence::SettingsScope,
         revision: i64,
         settings: toml::Value,
     ) -> crate::persistence::PersistenceFuture<'a, ()> {
         Box::pin(async move {
+            let file = home.join(settings_file(scope));
             let mut revisions = REVISIONS.lock().expect("revisions");
-            let current = revisions.entry(home.to_path_buf()).or_default();
+            let current = revisions.entry(file.clone()).or_default();
             anyhow::ensure!(*current == revision, "revision conflict");
-            std::fs::write(home.join(SETTINGS_FILE), toml::to_string(&settings)?)?;
+            std::fs::write(file, toml::to_string(&settings)?)?;
             *current += 1;
             Ok(())
         })
@@ -73,6 +86,7 @@ fn blocking_set_model_top_level() {
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetModel {
             model: Some("serpent".to_string()),
@@ -136,6 +150,7 @@ profiles = { fast = { model = "gordon", sandbox_mode = "strict" } }
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetModel {
             model: Some("o4-mini".to_string()),
@@ -177,6 +192,7 @@ network_access = false
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[
             ConfigEdit::SetPath {
@@ -228,6 +244,7 @@ profiles = { fast = { model = "gordon", sandbox_mode = "strict" } }
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetModel {
             model: None,
@@ -264,6 +281,7 @@ model_reasoning_effort = "low"
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetModel {
             model: Some("o5-preview".to_string()),
@@ -297,6 +315,7 @@ model = "serpent"
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         Some("team a"),
         &[ConfigEdit::SetModel {
             model: Some("o4-mini".to_string()),
@@ -326,6 +345,7 @@ existing = "value"
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetNoticeHideFullAccessWarning(true)],
     )
@@ -352,6 +372,7 @@ existing = "value"
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetNoticeHideRateLimitModelNudge(true)],
     )
@@ -372,6 +393,7 @@ fn blocking_clear_path_noop_when_missing() {
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::ClearPath {
             segments: vec!["missing".to_string()],
@@ -392,6 +414,7 @@ fn blocking_set_path_updates_notifications() {
 
     apply_blocking(
         chaos_home,
+        crate::persistence::SettingsScope::Installation,
         None,
         &[ConfigEdit::SetPath {
             segments: vec!["tui".to_string(), "notifications".to_string()],

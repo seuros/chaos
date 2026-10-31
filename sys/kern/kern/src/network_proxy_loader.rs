@@ -83,7 +83,9 @@ fn collect_layer_mtimes(stack: &ConfigLayerStack) -> Vec<LayerMtime> {
             .iter()
             .filter_map(|layer| match &layer.name {
                 ConfigLayerSource::ProjectMcp { file } => Some(file.as_path().to_path_buf()),
-                ConfigLayerSource::UserDatabase { .. } | ConfigLayerSource::SessionFlags => None,
+                ConfigLayerSource::UserDatabase { .. }
+                | ConfigLayerSource::InstallationDatabase { .. }
+                | ConfigLayerSource::SessionFlags => None,
             }),
     );
     paths.into_iter().map(LayerMtime::new).collect()

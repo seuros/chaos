@@ -351,7 +351,9 @@ pub fn assistant_msg(text: &str) -> ResponseItem {
 
 /// Point a test home at a SQLite database inside it, unless storage is already
 /// configured. Storage is never chosen silently, so every test home needs this.
+/// Journals are served in-process, so tests never launch journald.
 pub fn bootstrap_sqlite(home: &Path) -> anyhow::Result<()> {
+    crate::rollout::recorder::use_in_process_sqlite_journal();
     if crate::user_settings::BootstrapConfig::read(home)?.has_storage_url() {
         return Ok(());
     }

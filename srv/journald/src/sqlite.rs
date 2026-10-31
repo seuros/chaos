@@ -35,11 +35,16 @@ mod codec;
 mod processes;
 mod transactions;
 
+#[derive(Debug, Clone)]
 pub struct SqliteJournalStore {
     pool: SqlitePool,
 }
 
 impl SqliteJournalStore {
+    pub fn from_pool(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
     pub async fn open(path: &Path) -> Result<Self, JournalError> {
         let pool = open_runtime_db_at_path(path)
             .await

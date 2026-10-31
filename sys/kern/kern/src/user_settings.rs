@@ -1,7 +1,9 @@
 //! Settings storage without runtime-service initialization.
 use anyhow::{Context, bail, ensure};
 use chaos_proc::RuntimeDbHandle;
-use chaos_sysctl::persistence::{PersistenceFuture, SettingsPersistence, SettingsSnapshot};
+use chaos_sysctl::persistence::{
+    PersistenceFuture, SettingsPersistence, SettingsScope, SettingsSnapshot,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use toml::Value;
@@ -92,36 +94,86 @@ pub fn install_persistence() {
 struct KernelSettingsPersistence;
 
 impl SettingsPersistence for KernelSettingsPersistence {
-    fn snapshot<'a>(&'a self, home: &'a Path) -> PersistenceFuture<'a, SettingsSnapshot> {
-        Box::pin(snapshot(home))
+    fn snapshot<'a>(
+        &'a self,
+        home: &'a Path,
+        scope: SettingsScope,
+    ) -> PersistenceFuture<'a, SettingsSnapshot> {
+        Box::pin(scoped_snapshot(home, scope))
     }
 
     fn commit<'a>(
         &'a self,
         home: &'a Path,
+        scope: SettingsScope,
         revision: i64,
         settings: Value,
     ) -> PersistenceFuture<'a, ()> {
-        Box::pin(async move {
-            validate(&settings, home)?;
-            let runtime = open(home).await?;
-            runtime
-                .commit_settings(revision, &serde_json::to_value(settings)?, None)
-                .await?;
-            Ok(())
-        })
+        Box::pin(commit(home, scope, revision, settings))
     }
 }
 
+pub async fn commit(
+    home: &Path,
+    scope: SettingsScope,
+    revision: i64,
+    settings: Value,
+) -> anyhow::Result<()> {
+    validate(&settings, home)?;
+    let runtime = open(home).await?;
+    let settings = serde_json::to_value(settings)?;
+    match scope {
+        SettingsScope::Global => {
+            runtime.commit_settings(revision, &settings, None).await?;
+        }
+        SettingsScope::Installation => {
+            let installation = installation_id(home)?;
+            runtime
+                .commit_installation_settings(&installation, revision, &settings)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// The shared user document, before any installation overrides.
 pub async fn snapshot(home: &Path) -> anyhow::Result<SettingsSnapshot> {
+    scoped_snapshot(home, SettingsScope::Global).await
+}
+
+/// This installation's own overrides.
+pub async fn installation_snapshot(home: &Path) -> anyhow::Result<SettingsSnapshot> {
+    scoped_snapshot(home, SettingsScope::Installation).await
+}
+
+pub async fn scoped_snapshot(
+    home: &Path,
+    scope: SettingsScope,
+) -> anyhow::Result<SettingsSnapshot> {
     install_persistence();
-    let snapshot = open(home).await?.settings_snapshot().await?;
+    let runtime = open(home).await?;
+    let snapshot = match scope {
+        SettingsScope::Global => runtime.settings_snapshot().await?,
+        SettingsScope::Installation => {
+            let installation = installation_id(home)?;
+            runtime
+                .installation_settings_snapshot(&installation)
+                .await?
+        }
+    };
     let settings = serde_json::from_value::<Value>(snapshot.settings)?;
     validate(&settings, home)?;
     Ok(SettingsSnapshot {
         revision: snapshot.revision,
         settings,
     })
+}
+
+/// The user document overlaid by this installation's overrides.
+pub async fn effective_settings(home: &Path) -> anyhow::Result<Value> {
+    let mut merged = snapshot(home).await?.settings;
+    chaos_sysctl::merge_toml_values(&mut merged, &installation_snapshot(home).await?.settings);
+    Ok(merged)
 }
 
 /// Reject grants in generic settings; restrictions remain valid.

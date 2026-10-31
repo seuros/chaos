@@ -164,6 +164,10 @@ pub enum ConfigLayerSource {
     #[serde(rename_all = "camelCase")]
     UserDatabase { revision: i64 },
 
+    /// Settings owned by one installation; they override the shared user database.
+    #[serde(rename_all = "camelCase")]
+    InstallationDatabase { revision: i64 },
+
     /// Project-scoped MCP configuration sourced from `<project-root>/.mcp.json`.
     #[serde(rename_all = "camelCase")]
     ProjectMcp { file: AbsolutePathBuf },
@@ -178,8 +182,29 @@ impl ConfigLayerSource {
     pub fn precedence(&self) -> i16 {
         match self {
             ConfigLayerSource::UserDatabase { .. } => 20,
+            ConfigLayerSource::InstallationDatabase { .. } => 22,
             ConfigLayerSource::ProjectMcp { .. } => 24,
             ConfigLayerSource::SessionFlags => 30,
+        }
+    }
+}
+
+/// Which database settings document a write targets.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum SettingsScope {
+    /// This installation only; the default for every write.
+    #[default]
+    Installation,
+    /// Shared by every installation on the same storage.
+    Global,
+}
+
+impl SettingsScope {
+    pub fn layer_source(self, revision: i64) -> ConfigLayerSource {
+        match self {
+            Self::Installation => ConfigLayerSource::InstallationDatabase { revision },
+            Self::Global => ConfigLayerSource::UserDatabase { revision },
         }
     }
 }
@@ -439,6 +464,8 @@ pub struct ConfigValueWriteParams {
     pub value: JsonValue,
     pub merge_strategy: MergeStrategy,
     pub expected_version: Option<String>,
+    #[serde(default)]
+    pub scope: SettingsScope,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
@@ -449,6 +476,8 @@ pub struct ConfigBatchWriteParams {
     /// When true, hot-reload the updated user config into all loaded threads after writing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reload_user_config: bool,
+    #[serde(default)]
+    pub scope: SettingsScope,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]

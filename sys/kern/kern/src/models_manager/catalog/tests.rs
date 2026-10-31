@@ -251,11 +251,29 @@ async fn model_catalog_spans_accounts_but_resolution_keeps_metadata_and_bindings
     config.model_providers.remove("second");
     config.model_provider_id = "first".into();
     config.model_provider = config.model_providers["first"].clone();
-    config.model = Some(selected);
+    config.model = Some(selected.clone());
     assert!(manager.resolve_model_selection(&mut config).await.is_err());
     assert_eq!(
         config.model_provider_id, "first",
         "rejected choices do not mutate the binding"
+    );
+    config.model_reasoning_effort = Some(chaos_ipc::openai_models::ReasoningEffort::High);
+    let notice = manager
+        .resolve_model_selection_or_fallback(&mut config)
+        .await
+        .expect("a stale choice produces a notice instead of an error");
+    assert!(notice.contains("`shared-model`"), "{notice}");
+    assert!(notice.contains("`first`"), "{notice}");
+    assert_eq!(config.model, None, "the stale choice is dropped");
+    assert_eq!(config.model_reasoning_effort, None);
+    assert_eq!(config.model_provider_id, "first");
+    config.model = Some(selected);
+    assert_eq!(
+        manager
+            .get_default_model(&None, super::super::RefreshStrategy::Offline)
+            .await,
+        "shared-model",
+        "the active account still offers a model to fall back to"
     );
     Ok(())
 }

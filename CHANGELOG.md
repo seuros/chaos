@@ -9,16 +9,12 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
-### Changed
-- A compaction deferral (`compaction_control` `defer_once`) now extends at most
-  one reflex reserve past the configured compaction limit instead of running to
-  the window-derived safety ceiling, so a limit set well below the window (a
-  400k limit on a 1M model: ceiling 500k, not 900k) keeps its meaning. The
-  ChatGPT preset and catalog defaults keep their existing ceilings, and so
-  does the `body-after-prefix` scope, whose limit is relative to a baseline
-  that is not persisted across processes.
+## [47.14.7] - 2026-10-31
 
 ### Added
+- Settings are stored per installation on top of the shared document. The
+  console and `chaos config set` write to this installation; `-g` writes to
+  the shared document. `chaos config get` shows the effective merge.
 - `protected_context_files` (capped by `protected_context_max_bytes`, default
   128 KiB across all files) names files that are read once at session start,
   stored in the session meta record, and restored word for word in every
@@ -30,15 +26,18 @@ should. There is no patch level; the build timestamp is the patch.
   slug, so the compaction reflex, auto-compaction and `compaction_control`
   work under clamp without a hardcoded model table. Explicit
   `model_context_window` and `model_auto_compact_token_limit` still win.
-
-## [47.14.7] - 2026-10-28
-
-### Added
 - MCP resource reads and subscriptions accept an optional `parameters` map
   with a URI template, using `mcp-host` 0.15 to percent-encode raw string values
   such as `github-actions[bot]` before sending the request.
 
 ### Changed
+- A compaction deferral (`compaction_control` `defer_once`) now extends at most
+  one reflex reserve past the configured compaction limit instead of running to
+  the window-derived safety ceiling, so a limit set well below the window (a
+  400k limit on a 1M model: ceiling 500k, not 900k) keeps its meaning. The
+  ChatGPT preset and catalog defaults keep their existing ceilings, and so
+  does the `body-after-prefix` scope, whose limit is relative to a baseline
+  that is not persisted across processes.
 - Prefer major-only requirements for stable dependencies (including ACP,
   schemars, Tokio, and UUID), with exact resolved versions in `Cargo.lock`.
 - Refresh workspace dependencies, including ACP 3.6, Tokio 1.54, ICU4X 2.4,
@@ -53,6 +52,10 @@ should. There is no patch level; the build timestamp is the patch.
   and exact version requirements.
 
 ### Fixed
+- A saved model the current installation cannot use no longer aborts startup;
+  the session starts on the active provider's default model with a warning.
+- Concurrent first starts on one home could read a half-written installation
+  id.
 - `/mcp` omits resource and resource-template sections for servers that do not
   advertise the MCP `resources` capability, rather than showing `(none)`.
 

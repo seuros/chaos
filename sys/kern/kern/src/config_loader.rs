@@ -137,6 +137,15 @@ pub(crate) async fn load_config_layers_state_with_bootstrap(
         },
         snapshot.settings,
     ));
+    let installation = crate::user_settings::installation_snapshot(chaos_home)
+        .await
+        .map_err(io::Error::other)?;
+    layers.push(ConfigLayerEntry::new(
+        ConfigLayerSource::InstallationDatabase {
+            revision: installation.revision,
+        },
+        installation.settings,
+    ));
 
     let mut asset_folders = vec![AssetFolder::new(
         AssetScope::Admin,

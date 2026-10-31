@@ -250,7 +250,11 @@ async fn returns_empty_user_layer_when_nothing_is_configured() {
         !table.contains_key("storage_url") && !table.contains_key("egress_url"),
         "bootstrap values never enter the settings document"
     );
-    assert_eq!(layers.layers_high_to_low().len(), 1);
+    assert_eq!(layers.layers_high_to_low().len(), 2);
+    assert_eq!(
+        layers.get_installation_layer().map(|layer| &layer.name),
+        Some(&super::ConfigLayerSource::InstallationDatabase { revision: 0 })
+    );
 }
 
 #[tokio::test]

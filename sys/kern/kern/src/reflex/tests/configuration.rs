@@ -53,7 +53,9 @@ async fn toggling_checks_persists_without_changing_backends_or_inflight_turns() 
         .unwrap();
     for enabled in [false, false, true] {
         set_enabled(&context.config, enabled).await.unwrap();
-        let snapshot = crate::user_settings::snapshot(home.path()).await.unwrap();
+        let snapshot = crate::user_settings::installation_snapshot(home.path())
+            .await
+            .unwrap();
         assert_eq!(snapshot.settings["reflex_enabled"].as_bool(), Some(enabled));
         let saved: ReflexBackendSettings = snapshot.settings["reflex"][name]
             .clone()
@@ -180,7 +182,7 @@ async fn setup_stores_only_a_reference_and_resolves_without_environment() {
     )
     .await
     .unwrap();
-    let snapshot = crate::user_settings::snapshot(&config.chaos_home)
+    let snapshot = crate::user_settings::installation_snapshot(&config.chaos_home)
         .await
         .unwrap();
     let encoded = toml::to_string(&snapshot.settings).unwrap();
@@ -248,7 +250,7 @@ async fn a_failed_settings_write_does_not_replace_existing_credentials() {
     let saved = save_backend(config, &auth, "typesafe", settings, Some("original-key"))
         .await
         .unwrap();
-    let before = crate::user_settings::snapshot(&config.chaos_home)
+    let before = crate::user_settings::installation_snapshot(&config.chaos_home)
         .await
         .unwrap();
     // A bootstrap file carrying settings makes every storage open fail closed.
@@ -270,7 +272,7 @@ async fn a_failed_settings_write_does_not_replace_existing_credentials() {
         Some("original-key")
     );
     std::fs::write(&file, bootstrap).unwrap();
-    let after = crate::user_settings::snapshot(&config.chaos_home)
+    let after = crate::user_settings::installation_snapshot(&config.chaos_home)
         .await
         .unwrap();
     assert_eq!(before.revision, after.revision);
@@ -350,7 +352,7 @@ async fn invalid_setup_is_rejected_without_persistence() {
     assert!(!config.chaos_home.join("auth.json").exists());
     // The bootstrap file names storage only; settings never land in it.
     crate::user_settings::BootstrapConfig::read(&config.chaos_home).unwrap();
-    let snapshot = crate::user_settings::snapshot(&config.chaos_home)
+    let snapshot = crate::user_settings::installation_snapshot(&config.chaos_home)
         .await
         .unwrap();
     assert!(snapshot.settings.get("reflex").is_none());

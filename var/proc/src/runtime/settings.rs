@@ -79,6 +79,82 @@ macro_rules! settings_backend {
                 self.commit_settings_import(expected_revision, settings, migration_digest, &[], None).await
             }
 
+            async fn installation_settings_snapshot(
+                &self,
+                installation_id: &str,
+            ) -> anyhow::Result<SettingsSnapshot> {
+                let row = sqlx::query(
+                    "SELECT revision, settings_json FROM installation_settings \
+                     WHERE installation_id = $1",
+                )
+                .bind(installation_id)
+                .fetch_optional(self.pool())
+                .await?;
+                let Some(row) = row else {
+                    return Ok(SettingsSnapshot {
+                        revision: 0,
+                        settings: Value::Object(Default::default()),
+                        migration_digest: None,
+                    });
+                };
+                Ok(SettingsSnapshot {
+                    revision: row.try_get("revision")?,
+                    settings: serde_json::from_str(&row.try_get::<String, _>("settings_json")?)?,
+                    migration_digest: None,
+                })
+            }
+
+            async fn commit_installation_settings(
+                &self,
+                installation_id: &str,
+                expected_revision: i64,
+                settings: &Value,
+            ) -> anyhow::Result<i64> {
+                anyhow::ensure!(settings.is_object(), "settings must be an object");
+                let mut tx = self.pool().begin().await?;
+                let result = if expected_revision == 0 {
+                    sqlx::query(
+                        "INSERT INTO installation_settings \
+                         (installation_id, revision, settings_json) \
+                         VALUES ($1, 1, $2) \
+                         ON CONFLICT (installation_id) DO UPDATE \
+                         SET settings_json = excluded.settings_json, revision = 1 \
+                         WHERE installation_settings.revision = 0",
+                    )
+                    .bind(installation_id)
+                    .bind(serde_json::to_string(settings)?)
+                    .execute(&mut *tx)
+                    .await?
+                } else {
+                    sqlx::query(
+                        "UPDATE installation_settings \
+                         SET settings_json = $1, revision = revision + 1 \
+                         WHERE installation_id = $2 AND revision = $3",
+                    )
+                    .bind(serde_json::to_string(settings)?)
+                    .bind(installation_id)
+                    .bind(expected_revision)
+                    .execute(&mut *tx)
+                    .await?
+                };
+                anyhow::ensure!(
+                    result.rows_affected() == 1,
+                    "settings revision conflict; reload and retry"
+                );
+                sqlx::query(
+                    "INSERT INTO configuration_events (id, event, subject, created_at) \
+                     VALUES ($1, $2, $3, $4)",
+                )
+                    .bind(Uuid::now_v7().to_string())
+                    .bind("installation_settings_updated")
+                    .bind(installation_id)
+                    .bind(now()?)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+                Ok(expected_revision + 1)
+            }
+
             async fn commit_settings_import(
                 &self,
                 expected_revision: i64,
@@ -205,6 +281,16 @@ impl RuntimeDbHandle {
         pub async fn settings_snapshot(&self) -> anyhow::Result<SettingsSnapshot>;
         pub async fn commit_settings(&self, expected_revision: i64, settings: &Value, migration_digest: Option<&str>) -> anyhow::Result<i64>;
         pub async fn commit_settings_import(&self, expected_revision: i64, settings: &Value, migration_digest: Option<&str>, pending_grants: &[RememberedApproval], policy_sources: Option<&Value>) -> anyhow::Result<i64>;
+        pub async fn installation_settings_snapshot(
+            &self,
+            installation_id: &str,
+        ) -> anyhow::Result<SettingsSnapshot>;
+        pub async fn commit_installation_settings(
+            &self,
+            installation_id: &str,
+            expected_revision: i64,
+            settings: &Value,
+        ) -> anyhow::Result<i64>;
         pub async fn user_policy_sources(&self) -> anyhow::Result<Value>;
         pub async fn approval_revision(&self) -> anyhow::Result<i64>;
         pub async fn list_approvals(&self, installation_id: &str) -> anyhow::Result<Vec<RememberedApproval>>;

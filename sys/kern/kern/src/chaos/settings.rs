@@ -2,6 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use chaos_ipc::api::SettingsScope;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_realpath::AbsolutePathBuf;
@@ -167,12 +168,24 @@ impl Session {
                 return;
             }
         };
+        let installation = match crate::user_settings::installation_snapshot(&chaos_home).await {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                warn!("failed to reload installation settings: {err}");
+                return;
+            }
+        };
 
         let mut state = self.state.lock().await;
         let mut config = (*state.session_configuration.original_config_do_not_use).clone();
         config.config_layer_stack = config
             .config_layer_stack
-            .with_database_settings(snapshot.revision, snapshot.settings);
+            .with_database_settings(SettingsScope::Global, snapshot.revision, snapshot.settings)
+            .with_database_settings(
+                SettingsScope::Installation,
+                installation.revision,
+                installation.settings,
+            );
         let reflex = config
             .config_layer_stack
             .effective_config()

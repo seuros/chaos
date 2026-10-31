@@ -105,6 +105,7 @@ hide_full_access_warning = true
             value: serde_json::json!(true),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("write succeeds");
@@ -138,6 +139,7 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
             }),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("write apps succeeds");
@@ -148,6 +150,7 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
             value: serde_json::json!("prompt"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("write apps.app1.default_tools_approval_mode succeeds");
@@ -202,9 +205,13 @@ async fn read_includes_origins_and_layers() {
         ConfigLayerSource::UserDatabase { revision: 1 },
     );
     let layers = response.layers.expect("layers present");
-    assert_eq!(layers.len(), 1, "only the database layer without a cwd");
+    assert_eq!(layers.len(), 2, "only the database layers without a cwd");
     assert_eq!(
         layers.first().unwrap().name,
+        ConfigLayerSource::InstallationDatabase { revision: 0 }
+    );
+    assert_eq!(
+        layers.get(1).unwrap().name,
         ConfigLayerSource::UserDatabase { revision: 1 }
     );
 }
@@ -220,6 +227,7 @@ async fn version_conflict_rejected() {
             value: serde_json::json!("serpent"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: Some("sha256:bogus".to_string()),
+            scope: SettingsScope::Global,
         })
         .await
         .expect_err("should fail");
@@ -242,6 +250,7 @@ async fn write_value_defaults_to_database() {
             value: serde_json::json!("gordon"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("write succeeds");
@@ -274,6 +283,7 @@ async fn invalid_user_value_rejected() {
             value: serde_json::json!("bogus"),
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect_err("should fail validation");
@@ -328,8 +338,68 @@ async fn read_reports_session_flags_override_user() {
     );
     assert_eq!(
         layers.get(1).unwrap().name,
+        ConfigLayerSource::InstallationDatabase { revision: 0 }
+    );
+    assert_eq!(
+        layers.get(2).unwrap().name,
         ConfigLayerSource::UserDatabase { revision: 1 }
     );
+}
+
+#[tokio::test]
+async fn writes_default_to_the_installation_and_global_can_be_overridden() -> Result<()> {
+    let tmp = seeded_home("model = \"shared\"").await;
+    let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
+
+    let response = service
+        .write_value(ConfigValueWriteParams {
+            key_path: "model".to_string(),
+            value: serde_json::json!("local"),
+            merge_strategy: MergeStrategy::Replace,
+            expected_version: None,
+            scope: SettingsScope::Installation,
+        })
+        .await?;
+    assert_eq!(response.status, WriteStatus::Ok);
+    assert_eq!(
+        response.source,
+        ConfigLayerSource::InstallationDatabase { revision: 1 }
+    );
+    assert_eq!(
+        crate::user_settings::snapshot(tmp.path()).await?.settings["model"].as_str(),
+        Some("shared"),
+        "installation writes leave the shared document alone"
+    );
+    let effective = service.load_user_saved_config().await?;
+    assert_eq!(effective.model.as_deref(), Some("local"));
+
+    let response = service
+        .write_value(ConfigValueWriteParams {
+            key_path: "model".to_string(),
+            value: serde_json::json!("everyone"),
+            merge_strategy: MergeStrategy::Replace,
+            expected_version: None,
+            scope: SettingsScope::Global,
+        })
+        .await?;
+    assert_eq!(response.status, WriteStatus::OkOverridden);
+    assert_eq!(
+        response.source,
+        ConfigLayerSource::UserDatabase { revision: 2 }
+    );
+    let overridden = response.overridden_metadata.expect("installation wins");
+    assert_eq!(
+        overridden.overriding_layer.name,
+        ConfigLayerSource::InstallationDatabase { revision: 1 }
+    );
+    assert_eq!(
+        crate::user_settings::installation_snapshot(tmp.path())
+            .await?
+            .settings["model"]
+            .as_str(),
+        Some("local")
+    );
+    Ok(())
 }
 
 #[tokio::test]
@@ -365,6 +435,7 @@ alpha = "a"
             value: overlay.clone(),
             merge_strategy: MergeStrategy::Upsert,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("upsert succeeds");
@@ -402,6 +473,7 @@ beta = "b"
             value: overlay,
             merge_strategy: MergeStrategy::Replace,
             expected_version: None,
+            scope: SettingsScope::Global,
         })
         .await
         .expect("replace succeeds");

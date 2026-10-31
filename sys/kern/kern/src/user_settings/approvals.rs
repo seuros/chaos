@@ -18,6 +18,8 @@ pub fn installation_id(home: &Path) -> anyhow::Result<String> {
             .context("invalid installation identity; do not adopt database grants")?;
         return Ok(id.trim().to_owned());
     }
+    let id = Uuid::new_v4().to_string();
+    let staged = home.join(format!(".installation-id.{id}"));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -25,13 +27,16 @@ pub fn installation_id(home: &Path) -> anyhow::Result<String> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    match options.open(&path) {
-        Ok(mut file) => {
-            let id = Uuid::new_v4().to_string();
-            writeln!(file, "{id}")?;
-            file.sync_all()?;
-            Ok(id)
-        }
+    let mut file = options.open(&staged)?;
+    writeln!(file, "{id}")?;
+    file.sync_all()?;
+    drop(file);
+    // Linking publishes a complete file or nothing: a concurrent creator can
+    // never observe a half-written identity.
+    let published = std::fs::hard_link(&staged, &path);
+    let _ = std::fs::remove_file(&staged);
+    match published {
+        Ok(()) => Ok(id),
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
             let id = std::fs::read_to_string(path)?;
             Uuid::parse_str(id.trim()).context("installation identity is not ready; retry")?;

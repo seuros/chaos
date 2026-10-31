@@ -9,6 +9,7 @@ use super::merge::merge_toml_values;
 use chaos_ipc::api::ConfigLayer;
 use chaos_ipc::api::ConfigLayerMetadata;
 use chaos_ipc::api::ConfigLayerSource;
+use chaos_ipc::api::SettingsScope;
 use std::collections::HashMap;
 use toml::Value as TomlValue;
 
@@ -29,6 +30,9 @@ impl ConfigLayerEntry {
         let version = match &name {
             ConfigLayerSource::UserDatabase { revision } => {
                 format!("db:{revision}:{}", version_for_toml(&config))
+            }
+            ConfigLayerSource::InstallationDatabase { revision } => {
+                format!("inst:{revision}:{}", version_for_toml(&config))
             }
             _ => version_for_toml(&config),
         };
@@ -90,6 +94,9 @@ pub struct ConfigLayerStack {
     /// Index into [layers] of the user config layer, if any.
     user_layer_index: Option<usize>,
 
+    /// Index into [layers] of the installation config layer, if any.
+    installation_layer_index: Option<usize>,
+
     /// Folders that anchor file-based assets (rules, agents), lowest
     /// precedence first.
     asset_folders: Vec<AssetFolder>,
@@ -110,10 +117,11 @@ impl ConfigLayerStack {
         requirements: ConfigRequirements,
         requirements_toml: ConfigRequirementsToml,
     ) -> std::io::Result<Self> {
-        let user_layer_index = verify_layer_ordering(&layers)?;
+        let (user_layer_index, installation_layer_index) = verify_layer_ordering(&layers)?;
         Ok(Self {
             layers,
             user_layer_index,
+            installation_layer_index,
             asset_folders: Vec::new(),
             requirements,
             requirements_toml,
@@ -138,6 +146,30 @@ impl ConfigLayerStack {
             .and_then(|index| self.layers.get(index))
     }
 
+    /// Returns the installation config layer, if any.
+    pub fn get_installation_layer(&self) -> Option<&ConfigLayerEntry> {
+        self.installation_layer_index
+            .and_then(|index| self.layers.get(index))
+    }
+
+    pub fn get_database_layer(&self, scope: SettingsScope) -> Option<&ConfigLayerEntry> {
+        match scope {
+            SettingsScope::Global => self.get_user_layer(),
+            SettingsScope::Installation => self.get_installation_layer(),
+        }
+    }
+
+    /// Owner-controlled settings only: the user database overlaid by the
+    /// installation database, without session flags or project files.
+    pub fn database_settings(&self) -> Option<TomlValue> {
+        let user = self.get_user_layer()?;
+        let mut merged = user.config.clone();
+        if let Some(installation) = self.get_installation_layer() {
+            merge_toml_values(&mut merged, &installation.config);
+        }
+        Some(merged)
+    }
+
     pub fn requirements(&self) -> &ConfigRequirements {
         &self.requirements
     }
@@ -146,23 +178,32 @@ impl ConfigLayerStack {
         &self.requirements_toml
     }
 
-    pub fn with_database_settings(&self, revision: i64, settings: TomlValue) -> Self {
+    pub fn with_database_settings(
+        &self,
+        scope: SettingsScope,
+        revision: i64,
+        settings: TomlValue,
+    ) -> Self {
         let mut layers = self.layers.clone();
-        let layer = ConfigLayerEntry::new(ConfigLayerSource::UserDatabase { revision }, settings);
-        let user_layer_index = if let Some(index) = self.user_layer_index {
+        let layer = ConfigLayerEntry::new(scope.layer_source(revision), settings);
+        let existing = match scope {
+            SettingsScope::Global => self.user_layer_index,
+            SettingsScope::Installation => self.installation_layer_index,
+        };
+        if let Some(index) = existing {
             layers[index] = layer;
-            index
         } else {
             let index = layers
                 .iter()
                 .position(|entry| entry.name.precedence() > layer.name.precedence())
                 .unwrap_or(layers.len());
             layers.insert(index, layer);
-            index
-        };
+        }
+        let (user_layer_index, installation_layer_index) = database_layer_indexes(&layers);
         Self {
             layers,
-            user_layer_index: Some(user_layer_index),
+            user_layer_index,
+            installation_layer_index,
             asset_folders: self.asset_folders.clone(),
             requirements: self.requirements.clone(),
             requirements_toml: self.requirements_toml.clone(),
@@ -191,12 +232,11 @@ impl ConfigLayerStack {
             verify_layer_ordering(&layers).is_ok(),
             "project MCP layer replacement must preserve layer ordering"
         );
-        let user_layer_index = layers
-            .iter()
-            .position(|entry| matches!(entry.name, ConfigLayerSource::UserDatabase { .. }));
+        let (user_layer_index, installation_layer_index) = database_layer_indexes(&layers);
         Self {
             layers,
             user_layer_index,
+            installation_layer_index,
             asset_folders: self.asset_folders.clone(),
             requirements: self.requirements.clone(),
             requirements_toml: self.requirements_toml.clone(),
@@ -256,9 +296,21 @@ impl ConfigLayerStack {
     }
 }
 
-/// Ensures precedence ordering of config layers is correct. Returns the index
-/// of the user config layer, if any (at most one should exist).
-fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<usize>> {
+fn database_layer_indexes(layers: &[ConfigLayerEntry]) -> (Option<usize>, Option<usize>) {
+    let user = layers
+        .iter()
+        .position(|entry| matches!(entry.name, ConfigLayerSource::UserDatabase { .. }));
+    let installation = layers
+        .iter()
+        .position(|entry| matches!(entry.name, ConfigLayerSource::InstallationDatabase { .. }));
+    (user, installation)
+}
+
+/// Ensures precedence ordering of config layers is correct. Returns the indexes
+/// of the user and installation config layers, if any (at most one of each).
+fn verify_layer_ordering(
+    layers: &[ConfigLayerEntry],
+) -> std::io::Result<(Option<usize>, Option<usize>)> {
     if !layers.iter().map(|layer| &layer.name).is_sorted() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -266,18 +318,23 @@ fn verify_layer_ordering(layers: &[ConfigLayerEntry]) -> std::io::Result<Option<
         ));
     }
 
-    let mut user_layer_index: Option<usize> = None;
-    for (index, layer) in layers.iter().enumerate() {
-        if matches!(layer.name, ConfigLayerSource::UserDatabase { .. }) {
-            if user_layer_index.is_some() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "multiple user config layers found",
-                ));
-            }
-            user_layer_index = Some(index);
+    for (label, matcher) in [
+        (
+            "user",
+            (|name: &ConfigLayerSource| matches!(name, ConfigLayerSource::UserDatabase { .. }))
+                as fn(&ConfigLayerSource) -> bool,
+        ),
+        ("installation", |name| {
+            matches!(name, ConfigLayerSource::InstallationDatabase { .. })
+        }),
+    ] {
+        if layers.iter().filter(|layer| matcher(&layer.name)).count() > 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("multiple {label} config layers found"),
+            ));
         }
     }
 
-    Ok(user_layer_index)
+    Ok(database_layer_indexes(layers))
 }

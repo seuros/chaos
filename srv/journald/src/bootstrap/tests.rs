@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use super::BootstrapPaths;
+use super::ensure_sqlite_journald_running;
 use super::hello_is_compatible;
 use super::installed_journald_executable;
 use super::resolve_journald_executable;
@@ -88,4 +90,45 @@ fn missing_sibling_uses_path_without_guessing_cargo_layout() {
         installed_journald_executable(&deps.join("test-executable")),
         Path::new("chaos_journald"),
     );
+}
+
+#[test]
+fn bootstrap_paths_follow_the_database_not_chaos_home() {
+    let paths = BootstrapPaths::for_sqlite_db(Path::new("/srv/state/chaos.sqlite"));
+    assert_eq!(paths.sqlite_db_path, Path::new("/srv/state/chaos.sqlite"));
+    assert_eq!(paths.socket_path, Path::new("/srv/state/run/journald.sock"));
+    assert_eq!(paths.lock_path(), Path::new("/srv/state/run/journald.lock"));
+}
+
+#[tokio::test]
+async fn unresponsive_spawn_is_reaped_instead_of_leaked() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = tempfile::tempdir().expect("temporary directory");
+    let pid_file = home.path().join("journald.pid");
+    let binary = home.path().join("silent-journald");
+    std::fs::write(
+        &binary,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec sleep 30\n",
+            pid_file.display()
+        ),
+    )
+    .expect("write fake journald");
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755))
+        .expect("make fake journald executable");
+
+    let db = home.path().join("chaos.sqlite");
+    assert!(
+        ensure_sqlite_journald_running(&db, Some(&binary))
+            .await
+            .is_err()
+    );
+    let pid: libc::pid_t = std::fs::read_to_string(&pid_file)
+        .expect("fake journald started")
+        .trim()
+        .parse()
+        .expect("fake journald pid");
+    // SAFETY: signal 0 only probes whether `pid` still exists.
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
 }

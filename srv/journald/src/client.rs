@@ -110,10 +110,11 @@ impl JournalRpcClient {
         Ok(Self::new(crate::default_socket_path()?))
     }
 
-    pub async fn default_or_bootstrap(
+    pub async fn bootstrap_for_sqlite_db(
+        sqlite_db_path: &Path,
         binary_path: Option<&Path>,
     ) -> Result<(Self, BootstrapPaths), JournalClientError> {
-        let paths = ensure_sqlite_journald_running(binary_path).await?;
+        let paths = ensure_sqlite_journald_running(sqlite_db_path, binary_path).await?;
         Ok((Self::new(paths.socket_path.clone()), paths))
     }
 

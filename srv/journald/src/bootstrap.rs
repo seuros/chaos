@@ -3,6 +3,7 @@ use std::fs::OpenOptions;
 use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Child;
 use std::process::Stdio;
 use std::time::Duration;
 use std::time::Instant;
@@ -24,14 +25,16 @@ pub struct BootstrapPaths {
 }
 
 impl BootstrapPaths {
-    pub fn discover() -> std::io::Result<Self> {
-        let chaos_home = chaos_pwd::find_chaos_home()?;
-        let config = crate::JournalServerConfig::from_chaos_home(chaos_home.as_path());
-        Ok(Self {
-            runtime_dir: crate::default_socket_runtime_dir(chaos_home.as_path()),
+    /// The journald serving `sqlite_db_path` lives beside it, so every database
+    /// gets its own socket and startup lock regardless of `CHAOS_HOME`.
+    pub fn for_sqlite_db(sqlite_db_path: &Path) -> Self {
+        let home = sqlite_db_path.parent().unwrap_or_else(|| Path::new("."));
+        let config = crate::JournalServerConfig::from_chaos_home(home);
+        Self {
+            runtime_dir: crate::default_socket_runtime_dir(home),
             socket_path: config.socket_path,
-            sqlite_db_path: config.sqlite_db_path,
-        })
+            sqlite_db_path: sqlite_db_path.to_path_buf(),
+        }
     }
 
     pub fn lock_path(&self) -> PathBuf {
@@ -44,14 +47,18 @@ pub fn runtime_socket_dir() -> std::io::Result<PathBuf> {
     Ok(crate::default_socket_runtime_dir(chaos_home.as_path()))
 }
 
-/// Start the installed journald when no compatible SQLite server is running.
+/// Start the installed journald for `sqlite_db_path` when no compatible server
+/// is running there.
 ///
 /// An explicit `binary_path` takes precedence over the installed sibling and
 /// `PATH`. Integration tests needing bootstrap should pass Cargo's compile-time
 /// `env!("CARGO_BIN_EXE_chaos_journald")` path here; production does not consult
 /// Cargo environment variables or guess build-directory layouts.
-pub async fn ensure_sqlite_journald_running(binary_path: Option<&Path>) -> Result<BootstrapPaths> {
-    let paths = BootstrapPaths::discover()?;
+pub async fn ensure_sqlite_journald_running(
+    sqlite_db_path: &Path,
+    binary_path: Option<&Path>,
+) -> Result<BootstrapPaths> {
+    let paths = BootstrapPaths::for_sqlite_db(sqlite_db_path);
     tokio::fs::create_dir_all(&paths.runtime_dir)
         .await
         .with_context(|| format!("create journal runtime dir {}", paths.runtime_dir.display()))?;
@@ -78,11 +85,27 @@ pub async fn ensure_sqlite_journald_running(binary_path: Option<&Path>) -> Resul
                 )
             })?;
     }
-    spawn_detached_journald(executable.as_path(), &paths)
+    let child = spawn_detached_journald(executable.as_path(), &paths)
         .with_context(|| format!("spawn detached journald {}", executable.display()))?;
-    wait_for_compatible_server(paths.socket_path.as_path(), DEFAULT_BOOTSTRAP_TIMEOUT).await?;
+    if let Err(error) =
+        wait_for_compatible_server(paths.socket_path.as_path(), DEFAULT_BOOTSTRAP_TIMEOUT).await
+    {
+        let error = match stop_spawned_journald(child) {
+            Ok(()) => error,
+            Err(stop) => error.context(format!("stop unresponsive journald: {stop}")),
+        };
+        return Err(error.context(format!("journald {}", executable.display())));
+    }
     drop(lock_file);
     Ok(paths)
+}
+
+fn stop_spawned_journald(mut child: Child) -> std::io::Result<()> {
+    if child.try_wait()?.is_none() {
+        child.kill()?;
+        child.wait()?;
+    }
+    Ok(())
 }
 
 async fn acquire_startup_lock(lock_path: &Path) -> Result<File> {
@@ -123,7 +146,7 @@ fn installed_journald_executable(current_exe: &Path) -> PathBuf {
     PathBuf::from("chaos_journald")
 }
 
-fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result<()> {
+fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result<Child> {
     let mut command = std::process::Command::new(binary_path);
     command
         .arg("--socket")
@@ -146,8 +169,7 @@ fn spawn_detached_journald(binary_path: &Path, paths: &BootstrapPaths) -> Result
         }
     }
 
-    command.spawn().context("spawn journald child")?;
-    Ok(())
+    command.spawn().context("spawn journald child")
 }
 
 async fn wait_for_compatible_server(socket_path: &Path, timeout: Duration) -> Result<()> {

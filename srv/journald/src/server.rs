@@ -1,9 +1,12 @@
 use chaos_snitch::tracing;
 use std::io::ErrorKind;
+use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use anyhow::Result;
@@ -11,13 +14,18 @@ use chaos_proc::runtime_db_path;
 use rama::graceful;
 use rama::http::server::HttpServer;
 use rama::rt::Executor;
+use rama::unix::server::UnixListener;
 use tracing::error;
 use tracing::info;
+use tracing::warn;
 
 use crate::JournalRpcServer;
 use crate::SqliteJournalStore;
 
 const DEFAULT_SOCKET_FILENAME: &str = "journald.sock";
+const SOCKET_WATCH_INTERVAL: Duration = Duration::from_secs(2);
+
+type SocketIdentity = (u64, u64);
 
 #[derive(Debug, Clone)]
 pub struct JournalServerConfig {
@@ -44,11 +52,8 @@ pub fn default_socket_path() -> std::io::Result<PathBuf> {
     Ok(default_socket_path_in(chaos_home.as_path()))
 }
 
-/// Per-`chaos_home` runtime directory holding the journald socket and
-/// startup lock. Isolating by chaos_home means tests (which point
-/// `CHAOS_HOME` at a tempdir) never share a socket with the user's
-/// real daemon, so a test that leaks its daemon can't hijack the
-/// user's `~/.chaos` socket.
+/// Runtime directory beside a SQLite database, holding its journald socket
+/// and startup lock, so each database is served by its own daemon.
 pub fn default_socket_runtime_dir(chaos_home: &Path) -> PathBuf {
     chaos_home.join("run")
 }
@@ -77,7 +82,6 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
         .await
         .with_context(|| format!("create journal db dir {}", db_parent.display()))?;
 
-    let socket_guard = SocketPathGuard::new(config.socket_path.clone());
     let store = Arc::new(
         SqliteJournalStore::open(&config.sqlite_db_path)
             .await
@@ -86,49 +90,53 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
             })?,
     );
 
+    // Bind without rama's path cleanup: a displaced server must not unlink the
+    // socket of the journald that replaced it.
+    let listener = std::os::unix::net::UnixListener::bind(&config.socket_path)
+        .with_context(|| format!("bind journal socket {}", config.socket_path.display()))?;
+    let identity = socket_identity(&config.socket_path)
+        .await?
+        .context("journal socket vanished after bind")?;
+    let socket_guard = SocketPathGuard {
+        path: config.socket_path.clone(),
+        identity,
+    };
+
+    let watched = config.socket_path.clone();
     let graceful = graceful::Shutdown::new(async move {
-        let mut signal = Box::pin(graceful::default_signal());
-        signal.as_mut().await;
+        tokio::select! {
+            () = graceful::default_signal() => {}
+            () = socket_released(watched, identity) => {}
+        }
     });
     let exec = Executor::graceful(graceful.guard());
-    let service = JournalRpcServer::new(store, "sqlite").http_service();
-    let socket_path = config.socket_path.clone();
+    let service = HttpServer::new_http1(exec.clone())
+        .service(JournalRpcServer::new(store, "sqlite").http_service());
+    let listener =
+        UnixListener::try_from_std_unix_listener(listener, exec).context("serve journal socket")?;
 
-    let mut serve_task = tokio::spawn(async move {
-        info!(
-            socket_path = %socket_path.display(),
-            db_path = %config.sqlite_db_path.display(),
-            rpc_path = crate::JOURNAL_RPC_PATH,
-            "chaos_journald listening"
-        );
-
-        HttpServer::new_http1(exec)
-            .listen_unix(&socket_path, service)
-            .await
-    });
+    info!(
+        socket_path = %config.socket_path.display(),
+        db_path = %config.sqlite_db_path.display(),
+        rpc_path = crate::JOURNAL_RPC_PATH,
+        "chaos_journald listening"
+    );
+    let mut serve_task = tokio::spawn(listener.serve(service));
 
     tokio::select! {
         result = &mut serve_task => {
-            return match result {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(err)) => Err(anyhow::anyhow!("serve unix journal RPC: {err}")),
-                Err(err) => Err(err).context("join journal server task"),
-            };
+            return result.context("join journal server task");
         }
         shutdown_delay = graceful.shutdown() => {
             info!(
-                socket_path = %socket_guard.path().display(),
+                socket_path = %socket_guard.path.display(),
                 shutdown_delay_ms = shutdown_delay.as_millis(),
                 "chaos_journald shutting down"
             );
         }
     }
 
-    match serve_task.await {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(err)) => Err(anyhow::anyhow!("serve unix journal RPC: {err}")),
-        Err(err) => Err(err).context("join journal server task"),
-    }
+    serve_task.await.context("join journal server task")
 }
 
 fn default_socket_path_in(chaos_home: &Path) -> PathBuf {
@@ -154,24 +162,46 @@ pub(crate) async fn ensure_runtime_dir_permissions(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Resolves once `path` stops naming the socket this server bound: a newer
+/// journald replaced it or its home was deleted, so no client can reach us.
+async fn socket_released(path: PathBuf, identity: SocketIdentity) {
+    loop {
+        tokio::time::sleep(SOCKET_WATCH_INTERVAL).await;
+        match socket_identity(&path).await {
+            Ok(current) if current == Some(identity) => {}
+            Ok(_) => {
+                info!(
+                    socket_path = %path.display(),
+                    "journal socket was removed or replaced"
+                );
+                return;
+            }
+            Err(err) => warn!("failed checking journal socket {}: {err}", path.display()),
+        }
+    }
+}
+
+async fn socket_identity(path: &Path) -> std::io::Result<Option<SocketIdentity>> {
+    match tokio::fs::symlink_metadata(path).await {
+        Ok(meta) if meta.file_type().is_socket() => Ok(Some((meta.dev(), meta.ino()))),
+        Ok(_) => Ok(None),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 #[derive(Debug)]
 struct SocketPathGuard {
     path: PathBuf,
-}
-
-impl SocketPathGuard {
-    fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    fn path(&self) -> &Path {
-        self.path.as_path()
-    }
+    identity: SocketIdentity,
 }
 
 impl Drop for SocketPathGuard {
     fn drop(&mut self) {
-        if let Err(err) = std::fs::remove_file(&self.path)
+        let owned = std::fs::symlink_metadata(&self.path)
+            .is_ok_and(|meta| (meta.dev(), meta.ino()) == self.identity);
+        if owned
+            && let Err(err) = std::fs::remove_file(&self.path)
             && err.kind() != ErrorKind::NotFound
         {
             error!(
@@ -181,3 +211,6 @@ impl Drop for SocketPathGuard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1509,9 +1509,10 @@ pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, Strin
              refusing to bootstrap SQLite without an explicit SQLite mount"
         )
     })?;
-    if let Some(client) = direct_journal_client_for_vfs(vfs) {
-        return Ok(client);
-    }
+    let pool = match vfs {
+        chaos_vfs::Vfs::Postgres(pool) => return Ok(JournalClient::postgres_pool(pool)),
+        chaos_vfs::Vfs::Sqlite(pool) => pool,
+    };
 
     if let Some(socket_path) = std::env::var_os(JOURNALD_SOCKET_ENV)
         && !socket_path.is_empty()
@@ -1540,17 +1541,27 @@ pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, Strin
     let binary_path = std::env::var_os(JOURNALD_BIN_ENV)
         .filter(|path| !path.is_empty())
         .map(PathBuf::from);
-    let (client, _paths) = JournalRpcClient::default_or_bootstrap(binary_path.as_deref())
-        .await
-        .map_err(|err| err.to_string())?;
+    let sqlite_db_path = mounted_sqlite_db_path(&pool)?;
+    let (client, _paths) =
+        JournalRpcClient::bootstrap_for_sqlite_db(&sqlite_db_path, binary_path.as_deref())
+            .await
+            .map_err(|err| err.to_string())?;
     Ok(JournalClient::rpc(client))
 }
 
-fn direct_journal_client_for_vfs(vfs: chaos_vfs::Vfs) -> Option<JournalClient> {
-    match vfs {
-        chaos_vfs::Vfs::Postgres(pool) => Some(JournalClient::postgres_pool(pool)),
-        chaos_vfs::Vfs::Sqlite(_) => None,
+/// journald must serve the database this process mounted, not the one
+/// `CHAOS_HOME` would name.
+fn mounted_sqlite_db_path(pool: &sqlx::SqlitePool) -> Result<PathBuf, String> {
+    let options = pool.connect_options();
+    let path = options.get_filename();
+    let name = path.to_string_lossy();
+    if name == ":memory:" || name.starts_with("file:") {
+        return Err(format!(
+            "journal backend needs an on-disk SQLite database; {name} is not one"
+        ));
     }
+    std::fs::canonicalize(path)
+        .map_err(|err| format!("resolve SQLite database {}: {err}", path.display()))
 }
 
 fn journal_record_matches_filters(

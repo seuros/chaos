@@ -1,10 +1,9 @@
-use super::direct_journal_client_for_vfs;
+use super::mounted_sqlite_db_path;
 use super::processes_page_from_db;
 use super::*;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
-use chaos_journald::JournalClient;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::sqlite::SqlitePoolOptions;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -112,13 +111,22 @@ async fn background_fenced_writer_cannot_reacquire_a_lease() {
 }
 
 #[tokio::test]
-async fn postgres_vfs_selects_direct_journal_client() {
-    let pool = PgPoolOptions::new()
-        .connect_lazy("postgres://localhost/chaos")
-        .expect("create lazy PostgreSQL pool");
-    let client = direct_journal_client_for_vfs(chaos_vfs::Vfs::Postgres(pool))
-        .expect("PostgreSQL should have a direct journal client");
-    std::assert_matches!(client, JournalClient::Postgres(_));
+async fn journald_serves_the_mounted_sqlite_file_not_chaos_home() {
+    let home = tempfile::tempdir().expect("temporary directory");
+    let db = home.path().join("elsewhere.sqlite");
+    std::fs::write(&db, []).expect("create database file");
+    let pool = SqlitePoolOptions::new()
+        .connect_lazy(&format!("sqlite://{}", db.display()))
+        .expect("create lazy SQLite pool");
+    assert_eq!(
+        mounted_sqlite_db_path(&pool),
+        Ok(std::fs::canonicalize(&db).expect("canonical database path"))
+    );
+
+    let memory = SqlitePoolOptions::new()
+        .connect_lazy("sqlite::memory:")
+        .expect("create lazy in-memory pool");
+    assert!(mounted_sqlite_db_path(&memory).is_err());
 }
 
 #[test]

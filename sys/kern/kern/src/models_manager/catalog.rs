@@ -210,11 +210,27 @@ impl ModelsManager {
         let requested = config.model.take().unwrap_or_default();
         config.model_reasoning_effort = None;
         Some(format!(
-            "Default model `{}` is unavailable ({err}); \
-             falling back to the first available model on `{}`.",
+            "Saved model `{}` is unavailable: {err}. Using `{}`'s default model instead.",
             ModelSelection::wire_model(&requested),
             config.model_provider_id
         ))
+    }
+
+    /// Name the one thing missing: the account, its credentials, or the model.
+    fn selection_unavailable_reason(&self, config: &Config, selection: &ModelSelection) -> String {
+        let account = &selection.provider_id;
+        let Some(provider) = self.provider_for_selection(config, selection) else {
+            return format!("account `{account}` is not configured on this installation");
+        };
+        if !self.provider_is_usable(account, &provider) {
+            let hint = provider
+                .env_key
+                .as_deref()
+                .map(|key| format!("; set {key}"))
+                .unwrap_or_default();
+            return format!("account `{account}` has no credentials on this installation{hint}");
+        }
+        format!("account `{account}` does not offer `{}`", selection.model)
     }
 
     /// Validate an explicit picker choice before changing configuration.
@@ -237,7 +253,7 @@ impl ModelsManager {
             )
             .await;
         let selected = catalog.find(id, &config.model_provider_id).ok_or_else(|| {
-            ChaosErr::InvalidRequest("model/account choice is unavailable".into())
+            ChaosErr::InvalidRequest(self.selection_unavailable_reason(config, &selection))
         })?;
         let provider = self
             .provider_for_selection(config, &selection)

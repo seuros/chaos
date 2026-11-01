@@ -346,19 +346,27 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_mcp_startup_complete(&mut self, ev: McpStartupCompleteEvent) {
-        let mut parts = Vec::new();
-        if !ev.failed.is_empty() {
-            let failed_servers: Vec<_> = ev.failed.iter().map(|f| f.server.clone()).collect();
-            parts.push(format!("failed: {}", failed_servers.join(", ")));
+        // Failures already announced by a startup update are not repeated.
+        let already_reported = |server: &str| {
+            self.mcp_startup_status
+                .as_ref()
+                .and_then(|status| status.get(server))
+                .is_some_and(|status| matches!(status, McpStartupStatus::Failed { .. }))
+        };
+        let unreported: Vec<String> = ev
+            .failed
+            .iter()
+            .filter(|failure| !already_reported(&failure.server))
+            .map(|failure| failure.error.clone())
+            .collect();
+        for error in unreported {
+            self.on_warning(error);
         }
         if !ev.cancelled.is_empty() {
             self.on_warning(format!(
-                "MCP startup interrupted. The following servers were not initialized: {}",
+                "MCP startup interrupted; not initialized: {}",
                 ev.cancelled.join(", ")
             ));
-        }
-        if !parts.is_empty() {
-            self.on_warning(format!("MCP startup incomplete ({})", parts.join("; ")));
         }
 
         self.mcp_startup_status = None;

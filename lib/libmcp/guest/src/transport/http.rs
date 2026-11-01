@@ -511,7 +511,7 @@ impl HttpTransportInner {
         let mut stream = response.into_body().into_string_data_event_stream();
 
         while let Some(event) = stream.next().await {
-            let event = event.map_err(http_error)?;
+            let event = event.map_err(|error| GuestError::Http(describe_error(&*error)))?;
             {
                 match self.current_lifecycle(generation) {
                     Ok(mut lifecycle) => {
@@ -885,8 +885,43 @@ fn is_initialized_notification(message: &JsonRpcMessage) -> bool {
     )
 }
 
-fn http_error(error: impl std::fmt::Display) -> GuestError {
-    GuestError::Http(error.to_string())
+fn http_error(error: impl std::error::Error + 'static) -> GuestError {
+    GuestError::Http(describe_error(&error))
+}
+
+/// A transport failure is reported by its root cause, not by every layer
+/// that forwarded it: `connection refused`, not a connector's call stack.
+fn describe_error(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut current = Some(error);
+    while let Some(err) = current {
+        if let Some(io) = err.downcast_ref::<std::io::Error>() {
+            return describe_io_error(io);
+        }
+        current = err.source();
+    }
+    let text = error.to_string();
+    text.split(" | ")
+        .next()
+        .unwrap_or(&text)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn describe_io_error(error: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::ConnectionRefused => "connection refused".to_string(),
+        ErrorKind::ConnectionReset => "connection reset by the server".to_string(),
+        ErrorKind::ConnectionAborted => "connection aborted".to_string(),
+        ErrorKind::TimedOut => "connection timed out".to_string(),
+        ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable => {
+            "host unreachable".to_string()
+        }
+        _ => error.to_string(),
+    }
 }
 
 fn header_value(headers: &rama::http::HeaderMap, name: impl AsRef<str>) -> Option<&str> {

@@ -729,7 +729,10 @@ fn mcp_init_error_display_prompts_for_github_pat() {
     let display = mcp_init_error_display(server_name, Some(&entry), &err);
 
     let expected = format!(
-        "GitHub MCP does not support OAuth. Set a personal access token (https://github.com/settings/personal-access-tokens) in your environment and update the `{server_name}` MCP server to use `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
+        "GitHub MCP does not support OAuth. Set a personal access token \
+         (https://github.com/settings/personal-access-tokens) in your environment and \
+         update the `{server_name}` MCP server to use \
+         `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
     );
 
     assert_eq!(expected, display);
@@ -779,9 +782,33 @@ fn mcp_init_error_display_reports_generic_errors() {
 
     let display = mcp_init_error_display(server_name, Some(&entry), &err);
 
-    let expected = format!("MCP client for `{server_name}` failed to start: {err:#}");
+    assert_eq!("MCP server `custom` failed to start: boom.", display);
 
-    assert_eq!(expected, display);
+    let refused: StartupOutcomeError = anyhow::anyhow!(
+        "http error: Connection refused (os error 61) | \"tcp connector failed to connect\""
+    )
+    .into();
+    assert_eq!(
+        "MCP server `custom` failed to start: nothing is listening at https://example.com.",
+        mcp_init_error_display(server_name, Some(&entry), &refused)
+    );
+
+    let unauthorized: StartupOutcomeError = anyhow::anyhow!(
+        "http error: http POST https://example.com/mcp returned 401 Unauthorized: \
+         {{\"error\":\"Unauthorized\"}}"
+    )
+    .into();
+    assert_eq!(
+        "MCP server `custom` failed to start: https://example.com answered 401 Unauthorized.",
+        mcp_init_error_display(server_name, Some(&entry), &unauthorized)
+    );
+
+    let disconnected: StartupOutcomeError = anyhow::anyhow!("disconnected").into();
+    assert_eq!(
+        "MCP server `custom` failed to start: \
+         the server closed the connection before the handshake finished.",
+        mcp_init_error_display(server_name, None, &disconnected)
+    );
 }
 
 #[test]
@@ -792,7 +819,8 @@ fn mcp_init_error_display_includes_startup_timeout_hint() {
     let display = mcp_init_error_display(server_name, None, &err);
 
     assert_eq!(
-        "MCP client for `slow` timed out after 10 seconds. Increase that server's `startup_timeout_sec` in the MCP registry.",
+        "MCP client for `slow` timed out after 10 seconds. \
+         Increase that server's `startup_timeout_sec` in the MCP registry.",
         display
     );
 }

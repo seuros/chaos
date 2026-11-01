@@ -14,6 +14,10 @@ should. There is no patch level; the build timestamp is the patch.
   login shell. The new `shell` setting selects another shell by name or
   absolute path.
 
+### Fixed
+- `chaos-console.log` and `chaos-accounts.log` no longer grow without bound;
+  each keeps at most 10 MiB plus one `.1` backup.
+
 ## [47.14.7] - 2026-10-31
 
 ### Added
@@ -36,6 +40,11 @@ should. There is no patch level; the build timestamp is the patch.
   such as `github-actions[bot]` before sending the request.
 
 ### Changed
+- Startup warnings name the cause: an unusable saved model says which account
+  lacks credentials or the model, and an MCP server that fails to start reports
+  `nothing is listening at <origin>` or `<origin> answered 401 Unauthorized`
+  instead of the transport's error chain. The duplicate "MCP startup
+  incomplete" line is gone.
 - A compaction deferral (`compaction_control` `defer_once`) now extends at most
   one reflex reserve past the configured compaction limit instead of running to
   the window-derived safety ceiling, so a limit set well below the window (a

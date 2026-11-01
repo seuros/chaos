@@ -91,12 +91,14 @@ pub async fn spawn_process_with_inherited_fds(
         anyhow::bail!("missing program for PTY spawn");
     }
 
-    if !inherited_fds.is_empty() {
+    // portable-pty resolves argv[0] as the executable, so an arg0 override
+    // would replace `program` instead of renaming it.
+    if !inherited_fds.is_empty() || arg0.is_some() {
         return spawn_process_preserving_fds(program, args, cwd, env, arg0, size, inherited_fds)
             .await;
     }
 
-    spawn_process_portable(program, args, cwd, env, arg0, size).await
+    spawn_process_portable(program, args, cwd, env, size).await
 }
 
 async fn spawn_process_portable(
@@ -104,13 +106,12 @@ async fn spawn_process_portable(
     args: &[String],
     cwd: &Path,
     env: &HashMap<String, String>,
-    arg0: &Option<String>,
     size: TerminalSize,
 ) -> Result<SpawnedProcess> {
     let pty_system = platform_native_pty_system();
     let pair = pty_system.openpty(size.into())?;
 
-    let mut command_builder = CommandBuilder::new(arg0.as_ref().unwrap_or(&program.to_string()));
+    let mut command_builder = CommandBuilder::new(program);
     command_builder.cwd(cwd);
     command_builder.env_clear();
     for arg in args {

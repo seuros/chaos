@@ -425,6 +425,12 @@ async fn build_test_config(chaos_home: &Path) -> Config {
     crate::test_support::bootstrap_sqlite(chaos_home).expect("bootstrap test storage");
     ConfigBuilder::default()
         .chaos_home(chaos_home.to_path_buf())
+        .harness_overrides(crate::config::ConfigOverrides {
+            alcatraz_exe: Some(
+                chaos_which::cargo_bin("alcatraz").expect("should find alcatraz binary"),
+            ),
+            ..Default::default()
+        })
         .build()
         .await
         .expect("load default test config")

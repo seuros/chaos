@@ -530,6 +530,31 @@ async fn pty_terminate_kills_background_children_in_same_process_group() -> anyh
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pty_arg0_renames_the_program_instead_of_replacing_it() -> anyhow::Result<()> {
+    let env_map: HashMap<String, String> = std::env::vars().collect();
+    let (program, args) = shell_command("printf __arg0_ok__");
+    let spawned = spawn_pty_process(
+        &program,
+        &args,
+        Path::new("."),
+        &env_map,
+        &Some("chaos-arg0-not-on-path".to_string()),
+        TerminalSize::default(),
+    )
+    .await?;
+    let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
+    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 5_000).await?;
+
+    assert_eq!(code, 0);
+    assert!(
+        String::from_utf8_lossy(&output).contains("__arg0_ok__"),
+        "{}",
+        String::from_utf8_lossy(&output)
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
     use std::io::Read;
     use std::os::fd::AsRawFd;

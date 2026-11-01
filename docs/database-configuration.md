@@ -55,6 +55,12 @@ Headless installs skip the screen with
 `chaos config bootstrap set storage_url <url|env:VAR>` or `CHAOS_STORAGE_URL`.
 See [Getting started](./getting-started.md).
 
+ChaOS records the SQLite file it last opened in `runtime-db-location` in the
+ChaOS home. If that file later disappears, startup stops instead of creating an
+empty database in its place. Point `storage_url` at the new location, or remove
+`runtime-db-location` to start over. Choosing storage again, through setup or
+`chaos config bootstrap set storage_url`, also starts over.
+
 ## Ownership
 
 - Preferences, profiles, providers, notices, trust decisions, MCP registrations,

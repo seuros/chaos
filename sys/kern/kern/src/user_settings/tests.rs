@@ -29,6 +29,30 @@ async fn changing_storage_destination_requires_restart() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn unreachable_storage_names_the_database_and_how_to_repoint_it() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    set_bootstrap(
+        home.path(),
+        "storage_url",
+        "postgres://127.0.0.1:1/chaos?connect_timeout=1",
+    )?;
+    let error = format!("{:#}", open(home.path()).await.unwrap_err());
+    assert!(
+        error.contains("cannot reach runtime db at postgres://127.0.0.1:1/chaos"),
+        "{error}"
+    );
+    assert!(
+        error.contains(&BootstrapConfig::path(home.path()).display().to_string()),
+        "{error}"
+    );
+    assert!(
+        error.contains("chaos config bootstrap set storage_url"),
+        "{error}"
+    );
+    Ok(())
+}
+
 #[test]
 fn canonical_identity_is_order_independent_but_sensitive_to_changes() -> anyhow::Result<()> {
     let a: serde_json::Value =

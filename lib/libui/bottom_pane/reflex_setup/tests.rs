@@ -100,9 +100,6 @@ async fn submit_persists_local_settings_and_emits_only_saved_configuration() {
     let settings = chaos_kern::user_settings::effective_settings(&form.config.chaos_home)
         .await
         .unwrap();
-    let loaded: ReflexBackendSettings = settings["reflex"][name]
-        .clone()
-        .try_into()
-        .unwrap();
+    let loaded: ReflexBackendSettings = settings["reflex"][name].clone().try_into().unwrap();
     assert_eq!(loaded, saved);
 }

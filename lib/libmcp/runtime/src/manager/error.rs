@@ -64,7 +64,10 @@ pub(super) fn mcp_init_error_display(
         && http_headers.as_ref().map(HashMap::is_empty).unwrap_or(true)
     {
         format!(
-            "GitHub MCP does not support OAuth. Set a personal access token (https://github.com/settings/personal-access-tokens) in your environment and update the `{server_name}` MCP server to use `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
+            "GitHub MCP does not support OAuth. Set a personal access token \
+             (https://github.com/settings/personal-access-tokens) in your environment and \
+             update the `{server_name}` MCP server to use \
+             `bearer_token_env_var = CHAOS_GITHUB_PERSONAL_ACCESS_TOKEN`."
         )
     } else if is_mcp_client_auth_required_error(err) {
         format!(
@@ -80,11 +83,65 @@ pub(super) fn mcp_init_error_display(
         }
         .as_secs();
         format!(
-            "MCP client for `{server_name}` timed out after {startup_timeout_secs} seconds. Increase that server's `startup_timeout_sec` in the MCP registry."
+            "MCP client for `{server_name}` timed out after {startup_timeout_secs} seconds. \
+             Increase that server's `startup_timeout_sec` in the MCP registry."
         )
     } else {
-        format!("MCP client for `{server_name}` failed to start: {err:#}")
+        let origin = entry.and_then(|entry| transport_origin(&entry.config.transport));
+        let reason = startup_failure_reason(&err.to_string(), origin.as_deref());
+        format!("MCP server `{server_name}` failed to start: {reason}.")
     }
+}
+
+/// Reduce a startup error to the one fact the operator can act on.
+fn startup_failure_reason(error: &str, origin: Option<&str>) -> String {
+    let detail = error
+        .trim_start_matches("MCP startup failed: ")
+        .trim_start_matches("http error: ")
+        .trim_start_matches("transport error: ");
+    let endpoint = origin.filter(|origin| *origin != "stdio");
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("connection refused") {
+        return match endpoint {
+            Some(origin) => format!("nothing is listening at {origin}"),
+            None => "connection refused".to_string(),
+        };
+    }
+    if let Some(status) = detail
+        .split_once(" returned ")
+        .map(|(_, rest)| rest.split([':', '\n']).next().unwrap_or(rest).trim())
+        .filter(|status| !status.is_empty())
+    {
+        return match endpoint {
+            Some(origin) => format!("{origin} answered {status}"),
+            None => format!("the server answered {status}"),
+        };
+    }
+    if lower == "disconnected" {
+        return "the server closed the connection before the handshake finished".to_string();
+    }
+    if lower.contains("no route to host") {
+        return match endpoint {
+            Some(origin) => format!("no route to {origin}"),
+            None => "no route to host".to_string(),
+        };
+    }
+    if lower.contains("failed to lookup address") || lower.contains("dns error") {
+        return match endpoint {
+            Some(origin) => format!("DNS lookup failed for {origin}"),
+            None => "DNS lookup failed".to_string(),
+        };
+    }
+    detail
+        .split(" | ")
+        .next()
+        .unwrap_or(detail)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches('.')
+        .to_string()
 }
 
 pub(super) fn transport_origin(transport: &McpServerTransportConfig) -> Option<String> {

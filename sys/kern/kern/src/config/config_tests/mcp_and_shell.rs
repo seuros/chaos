@@ -63,6 +63,27 @@ allow_login_shell = false
     Ok(())
 }
 
+#[tokio::test]
+async fn shell_setting_round_trips_through_database() -> anyhow::Result<()> {
+    let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
+    crate::user_settings::install_persistence();
+    crate::test_support::seed_user_settings_toml(chaos_home.path(), r#"shell = "zsh""#).await?;
+
+    let cfg: ConfigToml = crate::user_settings::effective_settings(chaos_home.path())
+        .await?
+        .try_into()?;
+    assert_eq!(cfg.shell.as_deref(), Some("zsh"));
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        chaos_home.path().to_path_buf(),
+    )?;
+    assert_eq!(config.shell.as_deref(), Some("zsh"));
+    Ok(())
+}
+
 #[test]
 fn config_loads_mcp_oauth_callback_url_from_toml() -> std::io::Result<()> {
     let chaos_home = TempDir::new()?;

@@ -7,6 +7,7 @@ fn test_shell(shell_type: ShellType, shell_path: &str) -> Shell {
     Shell {
         shell_type,
         shell_path: PathBuf::from(shell_path),
+        version: None,
         shell_environment: crate::shell::empty_shell_environment_receiver(),
     }
 }

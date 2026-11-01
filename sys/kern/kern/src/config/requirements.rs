@@ -712,6 +712,7 @@ impl Config {
             alcatraz_exe: alcatraz_exe.unwrap_or(std::env::current_exe()?),
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
+            shell: cfg.shell.clone(),
             clamp: cfg.clamp.unwrap_or(false),
             clamp_env_remove: Vec::new(),
             clamp_backend: cfg.clamp_backend.unwrap_or_default(),

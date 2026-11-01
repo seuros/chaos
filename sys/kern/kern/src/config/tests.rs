@@ -1062,6 +1062,7 @@ fn expected_precedence_fixture_config_baseline(fixture: &PrecedenceTestFixture) 
         file_opener: UriBasedFileOpener::VsCode,
         alcatraz_exe: PathBuf::from("/alcatraz"),
         hide_agent_reasoning: false,
+        shell: None,
         model_reasoning_effort: None,
         dynamic_parent_effort: false,
         plan_mode_reasoning_effort: None,

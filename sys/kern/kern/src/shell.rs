@@ -3,8 +3,13 @@ use chaos_sh::KnownShell;
 use chaos_sh::detect_shell_type;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
+use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::LazyLock;
+use std::sync::Mutex;
 use tokio::sync::watch;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -18,6 +23,8 @@ pub enum ShellType {
 pub struct Shell {
     pub(crate) shell_type: ShellType,
     pub(crate) shell_path: PathBuf,
+    #[serde(default)]
+    pub(crate) version: Option<String>,
     #[serde(
         skip_serializing,
         skip_deserializing,
@@ -177,9 +184,43 @@ fn get_shell_by_type(
 ) -> Option<Shell> {
     get_shell_path(shell_type.clone(), path, binary, fallbacks.to_vec()).map(|shell_path| Shell {
         shell_type,
+        version: shell_version(&shell_path),
         shell_path,
         shell_environment: empty_shell_environment_receiver(),
     })
+}
+
+fn shell_version(shell_path: &PathBuf) -> Option<String> {
+    static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<String>>>> = LazyLock::new(Mutex::default);
+    let mut cache = CACHE.lock().ok()?;
+    cache
+        .entry(shell_path.clone())
+        .or_insert_with(|| probe_shell_version(shell_path))
+        .clone()
+}
+
+fn probe_shell_version(shell_path: &PathBuf) -> Option<String> {
+    let output = Command::new(shell_path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    parse_shell_version(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_shell_version(output: &str) -> Option<String> {
+    let token = output
+        .lines()
+        .next()?
+        .split_whitespace()
+        .find(|token| token.starts_with(|c: char| c.is_ascii_digit()))?;
+    let version: String = token
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let version = version.trim_end_matches('.');
+    (!version.is_empty()).then(|| version.to_string())
 }
 
 fn get_zsh_shell(path: Option<&PathBuf>) -> Option<Shell> {
@@ -198,6 +239,7 @@ fn ultimate_fallback_shell() -> Shell {
     Shell {
         shell_type: ShellType::Sh,
         shell_path: PathBuf::from("/bin/sh"),
+        version: None,
         shell_environment: empty_shell_environment_receiver(),
     }
 }
@@ -221,14 +263,37 @@ pub fn default_user_shell() -> Shell {
     default_user_shell_from_path(get_user_shell_path())
 }
 
+pub fn resolve_user_shell(configured: Option<&str>) -> Shell {
+    resolve_user_shell_from_path(configured, get_user_shell_path())
+}
+
+fn resolve_user_shell_from_path(
+    configured: Option<&str>,
+    user_shell_path: Option<PathBuf>,
+) -> Shell {
+    if let Some(value) = configured {
+        match configured_shell(value) {
+            Some(shell) => return shell,
+            None => tracing::warn!(shell = value, "configured shell is unavailable"),
+        }
+    }
+    default_user_shell_from_path(user_shell_path)
+}
+
+fn configured_shell(value: &str) -> Option<Shell> {
+    let path = PathBuf::from(value);
+    let shell_type = detect_shell_type(&path).map(ShellType::from)?;
+    get_shell(shell_type, path.is_absolute().then_some(&path))
+}
+
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
-    let user_default_shell = user_shell_path
+    let passwd_shell = user_shell_path
         .and_then(|shell| detect_shell_type(&shell))
         .map(ShellType::from)
         .and_then(|shell_type| get_shell(shell_type, None));
 
-    user_default_shell
-        .or_else(|| get_shell(ShellType::Bash, None))
+    get_shell(ShellType::Bash, None)
+        .or(passwd_shell)
         .or_else(|| get_shell(ShellType::Zsh, None))
         .unwrap_or(ultimate_fallback_shell())
 }

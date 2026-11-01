@@ -461,6 +461,9 @@ pub struct Config {
     /// users are only interested in the final agent responses.
     pub hide_agent_reasoning: bool,
 
+    /// Configured shell name or absolute path; `None` selects bash when available.
+    pub shell: Option<String>,
+
     /// Start sessions using a first-party CLI subprocess transport.
     /// Interactive sessions also support `/clamp` and `--clamp`.
     pub clamp: bool,
@@ -944,6 +947,10 @@ pub struct ConfigToml {
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.
     pub hide_agent_reasoning: Option<bool>,
+
+    /// Shell used to run commands: a name (`"zsh"`) or an absolute path.
+    /// Defaults to bash when available.
+    pub shell: Option<String>,
 
     /// Start interactive and `chaos exec` sessions using a first-party CLI transport.
     /// Defaults to `false`.

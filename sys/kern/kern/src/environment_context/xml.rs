@@ -24,9 +24,13 @@ impl EnvironmentContext {
                 if let Some(platform) = &self.platform {
                     platform.write_xml(writer)?;
                 }
-                writer
+                let mut shell = writer
                     .create_element("shell")
-                    .with_attribute(("name", self.shell.name()))
+                    .with_attribute(("name", self.shell.name()));
+                if let Some(version) = &self.shell.version {
+                    shell = shell.with_attribute(("version", version.as_str()));
+                }
+                shell
                     .with_attribute(("path", self.shell.shell_path.to_string_lossy().as_ref()))
                     .write_empty()?;
                 if let Some(cwd) = &self.cwd {

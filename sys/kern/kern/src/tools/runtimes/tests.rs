@@ -16,6 +16,7 @@ fn shell_with_environment(vars: HashMap<String, String>, environment_cwd: PathBu
     Shell {
         shell_type: ShellType::Zsh,
         shell_path: PathBuf::from("/bin/zsh"),
+        version: None,
         shell_environment,
     }
 }

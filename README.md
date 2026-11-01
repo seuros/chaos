@@ -239,7 +239,7 @@ Model-facing git and forge tools are not built into `chaos`. They come from
 at `drivers/skipper`. Without it the model has no `git_*` tools and no CI or
 pull request visibility.
 
-Install the `skipper-mcp` binary with the prebuilt installer:
+Install the `skipper` binary with the prebuilt installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/seuros/skipper/master/scripts/install.sh | bash
@@ -248,13 +248,13 @@ curl -fsSL https://raw.githubusercontent.com/seuros/skipper/master/scripts/insta
 Or from this checkout:
 
 ```bash
-just install-skipper
+just install-drivers
 ```
 
 Then register it once as a global stdio server:
 
 ```bash
-chaos mcp add skipper -- skipper-mcp
+chaos mcp add skipper -- skipper
 ```
 
 Local git tools need nothing else. Forge tools appear only for repositories

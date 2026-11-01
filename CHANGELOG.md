@@ -13,6 +13,8 @@ should. There is no patch level; the build timestamp is the patch.
 - Commands run through bash when it is installed instead of the account's
   login shell. The new `shell` setting selects another shell by name or
   absolute path.
+- The skipper driver installs as `skipper`. Re-register it with
+  `chaos mcp add skipper -- skipper`.
 
 ### Fixed
 - `chaos-console.log` and `chaos-accounts.log` no longer grow without bound;

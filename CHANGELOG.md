@@ -9,6 +9,11 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Changed
+- Commands run through bash when it is installed instead of the account's
+  login shell. The new `shell` setting selects another shell by name or
+  absolute path.
+
 ## [47.14.7] - 2026-10-31
 
 ### Added

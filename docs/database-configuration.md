@@ -59,6 +59,9 @@ See [Getting started](./getting-started.md).
 
 - Preferences, profiles, providers, notices, trust decisions, MCP registrations,
   and remembered approvals are database-backed.
+- Commands run through bash when it is installed. Set `shell` to a name
+  (`chaos config set shell '"zsh"'`) or an absolute path to use another shell;
+  an unavailable value falls back to bash.
 - Global and project lifecycle hooks are database-backed, managed with
   `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default).
   `hooks.json` files are never loaded at runtime. Project hooks also require

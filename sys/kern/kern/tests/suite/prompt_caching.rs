@@ -101,7 +101,7 @@ fn assert_env_context(text: &str, cwd: &str, shell: &Shell) {
         "expected cwd in environment context: {text}"
     );
     assert!(
-        text.contains(&format!("<shell name=\"{shell_name}\" path=\"")),
+        text.contains(&format!("<shell name=\"{shell_name}\"")),
         "expected shell in environment context: {text}"
     );
     assert!(

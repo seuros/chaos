@@ -19,6 +19,7 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
     let bash_shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        version: None,
         shell_environment: crate::shell::empty_shell_environment_receiver(),
     };
     assert_safe(&bash_shell, "ls -la");
@@ -26,6 +27,7 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
     let zsh_shell = Shell {
         shell_type: ShellType::Zsh,
         shell_path: PathBuf::from("/bin/zsh"),
+        version: None,
         shell_environment: crate::shell::empty_shell_environment_receiver(),
     };
     assert_safe(&zsh_shell, "ls -la");
@@ -94,6 +96,7 @@ fn shell_command_handler_respects_explicit_login_flag() {
     let shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        version: None,
         shell_environment: crate::shell::empty_shell_environment_receiver(),
     };
 

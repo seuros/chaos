@@ -427,7 +427,7 @@ impl Session {
             config.active_profile.clone(),
         );
 
-        let mut default_shell = shell::default_user_shell();
+        let mut default_shell = shell::resolve_user_shell(config.shell.as_deref());
         let shell_environment_startup =
             match session_configuration.inherited_shell_environment.clone() {
                 Some(environment) => ShellEnvironmentStartup::Inherited(environment),

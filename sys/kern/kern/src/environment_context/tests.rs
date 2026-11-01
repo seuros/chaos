@@ -8,6 +8,7 @@ fn fake_shell() -> Shell {
     Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        version: None,
         shell_environment: crate::shell::empty_shell_environment_receiver(),
     }
 }
@@ -200,6 +201,7 @@ fn equals_except_shell_ignores_shell() {
         Shell {
             shell_type: ShellType::Bash,
             shell_path: "/bin/bash".into(),
+            version: None,
             shell_environment: crate::shell::empty_shell_environment_receiver(),
         },
         None,
@@ -212,6 +214,7 @@ fn equals_except_shell_ignores_shell() {
         Shell {
             shell_type: ShellType::Zsh,
             shell_path: "/bin/zsh".into(),
+            version: None,
             shell_environment: crate::shell::empty_shell_environment_receiver(),
         },
         None,
@@ -298,4 +301,18 @@ fn serialize_freebsd_current_platform_and_escape_environment_values() {
     assert!(xml.contains(r#"<distribution name="ubuntu" version="24.04"/>"#));
     assert!(!xml.contains("<os_version>"));
     assert!(!xml.contains("<kernel_release>"));
+}
+
+#[test]
+fn serialize_shell_version() {
+    let mut shell = fake_shell();
+    shell.version = Some("5.2.37".to_string());
+    let context = EnvironmentContext::new(None, shell, None, None, None, None);
+
+    assert_eq!(
+        context.serialize_to_xml(),
+        r#"<environment_context>
+  <shell name="bash" version="5.2.37" path="/bin/bash"/>
+</environment_context>"#
+    );
 }

@@ -11,6 +11,7 @@ name = "chaos_vfs"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow = { workspace = true }
 chaos-dispatch = { workspace = true }
 chaos-proc = { workspace = true }
 sqlx = { workspace = true }

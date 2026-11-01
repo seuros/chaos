@@ -2478,6 +2478,7 @@ dependencies = [
 name = "chaos-vfs"
 version = "47.14.7"
 dependencies = [
+ "anyhow",
  "chaos-dispatch",
  "chaos-proc",
  "sqlx",

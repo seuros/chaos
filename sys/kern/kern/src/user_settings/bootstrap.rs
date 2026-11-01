@@ -134,6 +134,27 @@ impl BootstrapConfig {
         Ok(None)
     }
 
+    pub fn storage_url_fix(&self, home: &Path) -> String {
+        let path = Self::path(home);
+        let set = "`chaos config bootstrap set storage_url <url>`";
+        match self.storage_url.as_deref().map(str::trim) {
+            Some(value) if !value.is_empty() => match value.strip_prefix("env:") {
+                Some(name) => format!(
+                    "storage_url in {} reads ${name}; if the database moved, update ${name}",
+                    path.display()
+                ),
+                None => format!(
+                    "storage_url in {} points there; if the database moved, run {set}",
+                    path.display()
+                ),
+            },
+            _ if std::env::var(STORAGE_URL_ENV).is_ok_and(|v| !v.trim().is_empty()) => format!(
+                "{STORAGE_URL_ENV} points there; if the database moved, update it or run {set}"
+            ),
+            _ => format!("if the database moved, run {set}"),
+        }
+    }
+
     pub fn resolve(&self, home: &Path) -> anyhow::Result<ResolvedBootstrap> {
         let Some(storage_url) = self.resolved_storage_url(home)? else {
             bail!(
@@ -219,6 +240,9 @@ pub fn set_bootstrap(home: &Path, key: &str, value: &str) -> anyhow::Result<()> 
         }
     }
     let _lock = lock_bootstrap(home)?;
+    if key == STORAGE_URL_KEY {
+        crate::runtime_db::forget_runtime_db_location(home)?;
+    }
     let value = value.to_owned();
     write_bootstrap(home, |bootstrap| {
         if key == STORAGE_URL_KEY {

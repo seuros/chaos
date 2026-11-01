@@ -48,9 +48,70 @@ async fn from_config_reports_connection_errors_for_postgres_url() {
     .expect_err("postgres backend should attempt to connect");
 
     assert!(
-        err.to_string().contains("failed to open runtime db"),
+        matches!(err, super::VfsError::Unreachable { .. }),
         "unexpected error: {err}"
     );
+    let message = err.to_string();
+    assert!(
+        message.contains("cannot reach runtime db at postgres://127.0.0.1:1/postgres"),
+        "unexpected error: {message}"
+    );
+    assert!(!message.contains("ubuntu"), "credentials leaked: {message}");
+}
+
+#[tokio::test]
+async fn sqlite_below_a_missing_directory_is_unreachable() {
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let missing = temp_dir.path().join("unmounted");
+    let url = format!("sqlite://{}", missing.join("chaos.sqlite").display());
+
+    let err = ChaosVfs::from_config(MountConfig::sqlite_url(&url))
+        .await
+        .expect_err("sqlite cannot create a file below a missing directory");
+
+    assert!(
+        matches!(err, super::VfsError::Unreachable { .. }),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string()
+            .contains(&format!("directory {} does not exist", missing.display())),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn sqlite_file_is_only_an_absolute_on_disk_path() {
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let db_path = temp_dir.path().join("chaos.sqlite");
+    let url = format!("sqlite://{}", db_path.display());
+
+    assert_eq!(
+        MountConfig::sqlite_url(&url).sqlite_file(),
+        Some(db_path.clone())
+    );
+    assert_eq!(
+        MountConfig::sqlite_home(temp_dir.path()).sqlite_file(),
+        Some(db_path)
+    );
+    for url in [
+        "sqlite::memory:",
+        "sqlite:chaos.sqlite",
+        "sqlite:///tmp/chaos.sqlite?mode=memory",
+    ] {
+        assert_eq!(MountConfig::sqlite_url(url).sqlite_file(), None, "{url}");
+    }
+    assert_eq!(
+        MountConfig::postgres_url("postgres://db.lan/chaos").sqlite_file(),
+        None
+    );
+}
+
+#[test]
+fn postgres_target_strips_credentials_and_options() {
+    let config =
+        MountConfig::postgres_url("postgres://chaos:secret@db.lan:6543/runtime?sslmode=require");
+    assert_eq!(config.target(), "postgres://db.lan:6543/runtime");
 }
 
 async fn postgres_from_config_opens_postgres_runtime_schema_when_configured() {

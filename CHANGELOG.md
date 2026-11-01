@@ -17,6 +17,10 @@ should. There is no patch level; the build timestamp is the patch.
 ### Fixed
 - `chaos-console.log` and `chaos-accounts.log` no longer grow without bound;
   each keeps at most 10 MiB plus one `.1` backup.
+- An unreachable runtime database is reported by host or path, with the
+  setting that names it and how to repoint it.
+- A SQLite database that was moved or deleted stops startup instead of being
+  replaced by an empty one.
 
 ## [47.14.7] - 2026-10-31
 

@@ -77,6 +77,9 @@ pub async fn configure(home: &Path, choice: StorageChoice) -> anyhow::Result<()>
             (url.as_str().replacen("file:", "sqlite:", 1), None)
         }
     };
+    crate::runtime_db::forget_runtime_db_location(home).map_err(|_| {
+        anyhow!("Cannot reset storage state. Check permissions on ChaOS home and retry.")
+    })?;
     tokio::time::timeout(
         Duration::from_secs(30),
         crate::runtime_db::open_or_create_runtime_db(&url, home, "settings"),

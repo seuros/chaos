@@ -60,7 +60,7 @@ async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker(
         .await
         .expect_err("opening SQLite below a missing parent should fail");
     assert!(
-        first.to_string().contains("failed to open runtime db"),
+        first.to_string().contains("cannot reach runtime db"),
         "first mount should expose the storage error: {first}"
     );
 
@@ -68,13 +68,78 @@ async fn failed_mount_does_not_hide_the_next_mount_error_behind_runtime_breaker(
         .await
         .expect_err("a repeated mount should still report the storage failure");
     assert!(
-        second.to_string().contains("failed to open runtime db"),
+        second.to_string().contains("cannot reach runtime db"),
         "repeated mount should not be replaced by a circuit-open error: {second}"
     );
     assert!(
         !second.to_string().contains("circuit"),
         "mount errors must remain actionable: {second}"
     );
+}
+
+#[tokio::test]
+async fn a_vanished_sqlite_db_is_reported_instead_of_recreated_empty() -> anyhow::Result<()> {
+    let chaos_home = tempfile::tempdir()?;
+    let data = chaos_home.path().join("data");
+    std::fs::create_dir_all(&data)?;
+    let db_path = data.join("runtime.sqlite");
+    let record = chaos_home.path().join(RUNTIME_DB_LOCATION_FILE);
+    let config = mount_config_for(
+        &format!("sqlite://{}", db_path.display()),
+        chaos_home.path(),
+    )?;
+
+    let vfs = open_vfs(config.clone(), chaos_home.path()).await?;
+    if let Some(pool) = vfs.sqlite_pool() {
+        pool.close().await;
+    }
+    assert_eq!(
+        std::fs::read_to_string(&record)?,
+        db_path.display().to_string()
+    );
+
+    std::fs::remove_dir_all(&data)?;
+    std::fs::create_dir_all(&data)?;
+    let err = open_vfs(config.clone(), chaos_home.path())
+        .await
+        .expect_err("a database this home opened before must not come back empty");
+    let message = explain_storage_failure(chaos_home.path(), err).to_string();
+    assert!(
+        message.contains(&format!("runtime db {} is gone", db_path.display())),
+        "{message}"
+    );
+    assert!(message.contains("if the database moved"), "{message}");
+    assert!(
+        message.contains(&format!("remove {}", record.display())),
+        "{message}"
+    );
+    assert!(!db_path.exists());
+
+    forget_runtime_db_location(chaos_home.path())?;
+    open_vfs(config, chaos_home.path()).await?;
+    assert!(db_path.exists());
+    Ok(())
+}
+
+#[test]
+fn choosing_storage_forgets_the_recorded_sqlite_location() -> anyhow::Result<()> {
+    let chaos_home = tempfile::tempdir()?;
+    let record = chaos_home.path().join(RUNTIME_DB_LOCATION_FILE);
+    std::fs::write(&record, "/gone/chaos.sqlite")?;
+
+    crate::user_settings::set_bootstrap(
+        chaos_home.path(),
+        "egress_url",
+        "https://gateway.example",
+    )?;
+    assert!(record.exists());
+    crate::user_settings::set_bootstrap(
+        chaos_home.path(),
+        "storage_url",
+        "sqlite:///gone/chaos.sqlite",
+    )?;
+    assert!(!record.exists());
+    Ok(())
 }
 
 #[test]

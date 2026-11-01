@@ -5,8 +5,11 @@ pub use chaos_dispatch::backend_dispatch;
 
 use sqlx::PgPool;
 use sqlx::SqlitePool;
+use sqlx::postgres::PgConnectOptions;
+use sqlx::sqlite::SqliteConnectOptions;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
@@ -23,8 +26,10 @@ pub enum VfsError {
     NotMounted,
     #[error("{CHAOS_STORAGE_URL_ENV}: {0}")]
     Config(String),
-    #[error("failed to open runtime db: {0}")]
-    Open(String),
+    #[error("failed to open runtime db at {target}: {reason}")]
+    Open { target: String, reason: String },
+    #[error("cannot reach runtime db at {target}: {reason}")]
+    Unreachable { target: String, reason: String },
 }
 
 /// Which backend is mounted.
@@ -107,6 +112,35 @@ impl MountConfig {
             Self::PostgresUrl(_) => VfsKind::Postgres,
         }
     }
+
+    pub fn sqlite_file(&self) -> Option<PathBuf> {
+        let file = match self {
+            Self::SqliteHome(home) => chaos_proc::runtime_db_path(home),
+            Self::SqliteUrl(url) if !url.contains('?') => SqliteConnectOptions::from_str(url)
+                .ok()?
+                .get_filename()
+                .to_path_buf(),
+            Self::SqliteUrl(_) | Self::PostgresUrl(_) => return None,
+        };
+        file.is_absolute().then_some(file)
+    }
+
+    /// Where this mount points, without credentials.
+    pub fn target(&self) -> String {
+        match self {
+            Self::SqliteHome(home) => chaos_proc::runtime_db_path(home).display().to_string(),
+            Self::SqliteUrl(url) => url.clone(),
+            Self::PostgresUrl(url) => match PgConnectOptions::from_str(url) {
+                Ok(options) => format!(
+                    "postgres://{}:{}/{}",
+                    options.get_host(),
+                    options.get_port(),
+                    options.get_database().unwrap_or_default()
+                ),
+                Err(_) => "<invalid postgres URL>".to_string(),
+            },
+        }
+    }
 }
 
 /// A backend that is open and migrated, ready to serve queries.
@@ -130,19 +164,20 @@ impl ChaosVfs {
 
     /// Open the backend described by `config`, running its migrations.
     pub async fn from_config(config: MountConfig) -> Result<Self, VfsError> {
-        match config {
-            MountConfig::SqliteHome(storage_home) => chaos_proc::open_runtime_db(&storage_home)
+        let target = config.target();
+        match &config {
+            MountConfig::SqliteHome(storage_home) => chaos_proc::open_runtime_db(storage_home)
                 .await
                 .map(Self::from_sqlite_pool)
-                .map_err(|err| VfsError::Open(err.to_string())),
-            MountConfig::SqliteUrl(url) => chaos_proc::open_runtime_db_url(&url)
+                .map_err(|err| sqlite_open_error(&config, target, &err)),
+            MountConfig::SqliteUrl(url) => chaos_proc::open_runtime_db_url(url)
                 .await
                 .map(Self::from_sqlite_pool)
-                .map_err(|err| VfsError::Open(err.to_string())),
-            MountConfig::PostgresUrl(url) => chaos_proc::open_runtime_db_postgres_url(&url)
+                .map_err(|err| sqlite_open_error(&config, target, &err)),
+            MountConfig::PostgresUrl(url) => chaos_proc::open_runtime_db_postgres_url(url)
                 .await
                 .map(Self::from_postgres_pool)
-                .map_err(|err| VfsError::Open(err.to_string())),
+                .map_err(|err| postgres_open_error(target, &err)),
         }
     }
 
@@ -166,6 +201,36 @@ impl ChaosVfs {
             Vfs::Postgres(pool) => Some(pool.clone()),
             Vfs::Sqlite(_) => None,
         }
+    }
+}
+
+fn sqlite_open_error(config: &MountConfig, target: String, err: &anyhow::Error) -> VfsError {
+    match config.sqlite_file().as_deref().and_then(Path::parent) {
+        Some(dir) if !dir.exists() => VfsError::Unreachable {
+            target,
+            reason: format!("directory {} does not exist", dir.display()),
+        },
+        _ => VfsError::Open {
+            target,
+            reason: err.to_string(),
+        },
+    }
+}
+
+fn postgres_open_error(target: String, err: &anyhow::Error) -> VfsError {
+    match err.downcast_ref::<sqlx::Error>() {
+        Some(sqlx::Error::Io(io)) => VfsError::Unreachable {
+            target,
+            reason: io.to_string(),
+        },
+        Some(sqlx::Error::PoolTimedOut) => VfsError::Unreachable {
+            target,
+            reason: "connection refused or timed out".to_string(),
+        },
+        _ => VfsError::Open {
+            target,
+            reason: err.to_string(),
+        },
     }
 }
 

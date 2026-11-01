@@ -33,6 +33,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 const RUNTIME_STORAGE_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const RUNTIME_DB_LOCATION_FILE: &str = "runtime-db-location";
 
 static RUNTIME_STORAGE_BREAKERS: LazyLock<Mutex<HashMap<PathBuf, Arc<AsyncCircuitBreaker>>>> =
     LazyLock::new(Mutex::default);
@@ -201,8 +202,75 @@ pub async fn mount_vfs_for(
         return Ok(vfs);
     }
 
-    let vfs = ChaosVfs::from_config(config.clone()).await?;
+    let vfs = open_vfs(config.clone(), storage_home)
+        .await
+        .map_err(|err| explain_storage_failure(storage_home, err))?;
     Ok(chaos_vfs::mount(config, vfs))
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "runtime db {} is gone, though this ChaOS home opened it before",
+    .path.display()
+)]
+struct MissingRuntimeDb {
+    path: PathBuf,
+    record: PathBuf,
+}
+
+/// SQLite creates a missing file on open, so a database that moved would come
+/// back empty. The home records the file it last opened to tell the two apart.
+async fn open_vfs(config: chaos_vfs::MountConfig, storage_home: &Path) -> anyhow::Result<ChaosVfs> {
+    let sqlite_file = config.sqlite_file();
+    let record = storage_home.join(RUNTIME_DB_LOCATION_FILE);
+    let recorded = std::fs::read_to_string(&record).ok();
+    if let Some(path) = &sqlite_file
+        && !path.exists()
+        && recorded.as_deref() == Some(path.display().to_string().as_str())
+    {
+        return Err(MissingRuntimeDb {
+            path: path.clone(),
+            record,
+        }
+        .into());
+    }
+
+    let vfs = ChaosVfs::from_config(config).await?;
+    if let Some(path) = sqlite_file.map(|path| path.display().to_string())
+        && recorded.as_deref() != Some(path.as_str())
+        && let Err(err) = std::fs::write(&record, &path)
+    {
+        warn!(
+            "cannot record runtime db location in {}: {err}",
+            record.display()
+        );
+    }
+    Ok(vfs)
+}
+
+fn explain_storage_failure(storage_home: &Path, err: anyhow::Error) -> anyhow::Error {
+    let reset = match (
+        err.downcast_ref::<MissingRuntimeDb>(),
+        err.downcast_ref::<chaos_vfs::VfsError>(),
+    ) {
+        (Some(missing), _) => format!(
+            "; to start over with an empty database, remove {}",
+            missing.record.display()
+        ),
+        (None, Some(chaos_vfs::VfsError::Unreachable { .. })) => String::new(),
+        _ => return err,
+    };
+    let fix = crate::user_settings::BootstrapConfig::read(storage_home)
+        .unwrap_or_default()
+        .storage_url_fix(storage_home);
+    anyhow::anyhow!("{err}. {fix}{reset}")
+}
+
+pub(crate) fn forget_runtime_db_location(storage_home: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(storage_home.join(RUNTIME_DB_LOCATION_FILE)) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
 }
 
 /// A SQLite URL that names exactly `<storage_home>/chaos.sqlite` mounts under the

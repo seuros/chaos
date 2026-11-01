@@ -21,6 +21,8 @@ should. There is no patch level; the build timestamp is the patch.
   setting that names it and how to repoint it.
 - A SQLite database that was moved or deleted stops startup instead of being
   replaced by an empty one.
+- Sandboxed interactive commands no longer fail when no `alcatraz` binary is
+  installed on PATH.
 
 ## [47.14.7] - 2026-10-31
 

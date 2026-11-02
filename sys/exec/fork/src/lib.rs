@@ -189,6 +189,17 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
     }
 }
 
+/// `chaos exec` has no human on the other end of `request_user_input`: its
+/// event processors drop the event and nothing ever sends the answer, so a
+/// model that calls the tool waits for the whole outer timeout. Like the
+/// other unattended front ends (httpd, taskd, acpd), exec does not offer the
+/// tool in Default mode.
+fn exec_collaboration_modes_config() -> CollaborationModesConfig {
+    CollaborationModesConfig {
+        default_mode_request_user_input: false,
+    }
+}
+
 fn exec_root_span() -> tracing::Span {
     info_span!(
         "chaos.exec",
@@ -417,9 +428,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         &config,
         auth_manager.clone(),
         SessionSource::Exec,
-        CollaborationModesConfig {
-            default_mode_request_user_input: true,
-        },
+        exec_collaboration_modes_config(),
     ));
 
     run_exec_session(ExecRunArgs {

@@ -299,3 +299,15 @@ fn decode_prompt_bytes_rejects_unsupported_and_malformed_encodings() {
         );
     }
 }
+
+#[test]
+fn exec_does_not_offer_request_user_input_in_default_mode() {
+    // Nothing in exec answers RequestUserInput, so offering the tool can only
+    // hang the turn until the caller's timeout.
+    assert_eq!(
+        exec_collaboration_modes_config(),
+        CollaborationModesConfig {
+            default_mode_request_user_input: false,
+        }
+    );
+}

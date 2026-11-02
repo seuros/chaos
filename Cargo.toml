@@ -253,7 +253,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.15", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.18", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3", default-features = false }
@@ -356,10 +356,10 @@ semver = "1"
 serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
-state-machines = { version = "0.32.1", features = ["dynamic", "async", "runtime-send"] }
-breaker-machines = { version = "0.20", features = ["async"] }
-chrono-machines = { version = "0.9", features = ["std"] }
-throttle-machines = { version = "0.3.1" }
+state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
+breaker-machines = { version = "0.22", features = ["async"] }
+chrono-machines = { version = "0.10", features = ["std"] }
+throttle-machines = { version = "0.4" }
 serial_test = "4"
 sha1 = "0.11"
 sha2 = "0.11"

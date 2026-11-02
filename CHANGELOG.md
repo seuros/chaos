@@ -15,6 +15,10 @@ should. There is no patch level; the build timestamp is the patch.
   absolute path.
 - The skipper driver installs as `skipper`. Re-register it with
   `chaos mcp add skipper -- skipper`.
+- Update `mcp-host` to 0.18.0, `breaker-machines` to 0.22, `chrono-machines`
+  to 0.10, `throttle-machines` to 0.4, `state-machines` to 0.34, and
+  `behavior-machines` to 0.3.0; release `mcp-guest` 0.12.2 against the
+  refreshed set.
 
 ### Fixed
 - `chaos-console.log` and `chaos-accounts.log` no longer grow without bound;

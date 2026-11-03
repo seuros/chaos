@@ -359,7 +359,8 @@ serde_path_to_error = "0.1.20"
 state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
 breaker-machines = { version = "0.22", features = ["async"] }
 chrono-machines = { version = "0.10", features = ["std"] }
-throttle-machines = { version = "0.4" }
+deadline-machines = { version = "0.3", features = ["tokio"] }
+throttle-machines = { version = "0.5" }
 serial_test = "4"
 sha1 = "0.11"
 sha2 = "0.11"

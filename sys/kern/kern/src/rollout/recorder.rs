@@ -21,6 +21,7 @@ use chaos_journald::JournalClient;
 use chaos_journald::JournalClientError;
 use chaos_journald::JournalEntry;
 use chaos_journald::JournalRpcClient;
+use chrono_machines::Policy;
 use jiff::Timestamp;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
@@ -793,6 +794,7 @@ const JOURNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
+const JOURNAL_APPEND_RETRY_MAX_DELAY: Duration = Duration::from_millis(800);
 const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1474,8 +1476,13 @@ impl ActiveJournalWriter {
 }
 
 fn retry_delay(attempt: usize) -> Duration {
-    let multiplier = 1u32 << attempt.saturating_sub(1).min(5);
-    JOURNAL_APPEND_RETRY_BASE_DELAY * multiplier
+    let policy = Policy {
+        max_attempts: u8::MAX,
+        base_delay_ms: JOURNAL_APPEND_RETRY_BASE_DELAY.as_millis() as u64,
+        multiplier: 2.0,
+        max_delay_ms: JOURNAL_APPEND_RETRY_MAX_DELAY.as_millis() as u64,
+    };
+    Duration::from_millis(policy.calculate_delay(attempt.min(u8::MAX as usize) as u8, 0.0))
 }
 
 fn batch_matches_journal(loaded: &LoadedJournal, first_seq: i64, batch: &[RolloutItem]) -> bool {

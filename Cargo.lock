@@ -1342,6 +1342,7 @@ dependencies = [
  "chaos-which",
  "chrono-machines",
  "cookie_store",
+ "deadline-machines 0.3.0",
  "pretty_assertions",
  "rama",
  "rustls",
@@ -1813,7 +1814,7 @@ dependencies = [
  "test-case",
  "test-log",
  "thiserror 2.0.21",
- "throttle-machines",
+ "throttle-machines 0.5.0",
  "time",
  "tokio",
  "tokio-stream",
@@ -3278,6 +3279,15 @@ name = "deadline-machines"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88d306f3482f64bc5a0f1383fd14878a75ff9e0868c199483cdc15c679dc5477"
+
+[[package]]
+name = "deadline-machines"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8139b53f0b8f52bc61f95c0018524d31449dd5471c406d6d97a0afea17eef63f"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "deadpool"
@@ -6833,7 +6843,7 @@ dependencies = [
  "behavior-machines",
  "breaker-machines",
  "dashmap",
- "deadline-machines",
+ "deadline-machines 0.2.0",
  "fluent-uri",
  "ignore",
  "jiff",
@@ -6850,7 +6860,7 @@ dependencies = [
  "subtle",
  "supervisor-machines",
  "thiserror 2.0.21",
- "throttle-machines",
+ "throttle-machines 0.4.0",
  "tokio",
  "uuid",
 ]
@@ -11230,6 +11240,12 @@ name = "throttle-machines"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c50e07b444af786a95ac5585d03e3dc1b0e6919aa8bc7ee7564fe18529c7fdc7"
+
+[[package]]
+name = "throttle-machines"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e262493966d34b2b0ff84078a8efb3a22ee0a40284ee12ca89540f119f1558f0"
 
 [[package]]
 name = "tiff"

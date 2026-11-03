@@ -14,12 +14,15 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::Instant;
 
 use crate::TransportError;
 use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::request::Response;
 use crate::telemetry::inject_trace_headers;
+use deadline_machines::Deadline;
+use deadline_machines::tokio_support::{
+    TimeoutError as DeadlineTimeoutError, TokioClock, deadline_after, timeout as timeout_at,
+};
 
 /// HTTP client wrapper backed by rama. Provides convenience methods
 /// (.get, .post, .send) with OpenTelemetry trace header injection.
@@ -153,9 +156,11 @@ impl ChaosRequestBuilder {
     }
 
     pub async fn send(self) -> Result<ChaosResponse, ChaosClientError> {
+        let deadline_clock = TokioClock::new();
         let deadline = self
             .timeout
-            .and_then(|timeout| Instant::now().checked_add(timeout));
+            .map(|timeout| deadline_after(&deadline_clock, timeout))
+            .unwrap_or_else(Deadline::never);
         let mut headers = self.default_headers;
         for (key, value) in &self.headers {
             headers.insert(key, value.clone());
@@ -180,7 +185,7 @@ impl ChaosRequestBuilder {
             .body(rama_body)
             .map_err(|e| ChaosClientError::Build(e.to_string()))?;
 
-        let response = within_deadline(deadline, async {
+        let response = within_deadline(&deadline_clock, deadline, async {
             self.client
                 .lock()
                 .await
@@ -200,6 +205,7 @@ impl ChaosRequestBuilder {
         Ok(ChaosResponse {
             inner: response,
             deadline,
+            deadline_clock,
         })
     }
 
@@ -222,7 +228,8 @@ impl ChaosRequestBuilder {
 /// Response wrapper providing convenience methods over rama's Response.
 pub struct ChaosResponse {
     inner: rama::http::Response,
-    deadline: Option<Instant>,
+    deadline: Deadline,
+    deadline_clock: TokioClock,
 }
 
 impl ChaosResponse {
@@ -235,8 +242,13 @@ impl ChaosResponse {
     }
 
     pub async fn bytes(self) -> Result<Bytes, ChaosClientError> {
-        within_deadline(self.deadline, async {
-            self.inner
+        let Self {
+            inner,
+            deadline,
+            deadline_clock,
+        } = self;
+        within_deadline(&deadline_clock, deadline, async move {
+            inner
                 .into_body()
                 .collect()
                 .await
@@ -286,15 +298,18 @@ impl From<ChaosClientError> for TransportError {
 }
 
 async fn within_deadline<T>(
-    deadline: Option<Instant>,
+    clock: &TokioClock,
+    deadline: Deadline,
     future: impl Future<Output = Result<T, ChaosClientError>>,
 ) -> Result<T, ChaosClientError> {
-    match deadline {
-        Some(deadline) => tokio::time::timeout_at(deadline, future)
-            .await
-            .map_err(|_| ChaosClientError::Timeout)?,
-        None => future.await,
-    }
+    timeout_at(clock, deadline, future)
+        .await
+        .map_err(|error| match error {
+            DeadlineTimeoutError::Elapsed => ChaosClientError::Timeout,
+            DeadlineTimeoutError::OutOfRange => {
+                ChaosClientError::Build("request timeout exceeds Tokio's supported range".into())
+            }
+        })?
 }
 
 #[cfg(test)]

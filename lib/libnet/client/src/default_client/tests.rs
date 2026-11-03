@@ -14,6 +14,7 @@ use rama::telemetry::tracing as tracing_opentelemetry;
 use rama::telemetry::tracing::OpenTelemetrySpanExt;
 use rama::telemetry::tracing::subscriber as tracing_subscriber;
 use rama::telemetry::tracing::trace_span;
+use tokio::time::Instant;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 

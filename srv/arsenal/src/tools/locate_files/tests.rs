@@ -135,6 +135,31 @@ fn locate_search_hidden_file_option_preserves_visible_matches() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn locate_search_skips_broken_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let dir = temp.path();
+    std::fs::write(dir.join("visible.md"), "").expect("write visible");
+    symlink(dir.join("missing-target"), dir.join("broken-link"))
+        .expect("create broken symlink");
+
+    let matches = run_locate_search(
+        "visible",
+        dir.to_path_buf(),
+        NonZero::new(10).expect("non-zero limit"),
+        true,
+    )
+    .expect("broken symlink must not fail the search");
+
+    assert!(
+        matches.matches.iter().any(|path| path.ends_with("visible.md")),
+        "matches: {matches:?}"
+    );
+}
+
 #[tokio::test]
 async fn execute_params_reports_truncated_matches() {
     let temp = tempfile::tempdir().expect("create temp dir");

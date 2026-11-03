@@ -176,7 +176,9 @@ pub fn run_locate_search(
         .require_git(true);
 
     for entry in walk_builder.build() {
-        let entry = entry.map_err(|err| format!("file locate failed: {err}"))?;
+        let Ok(entry) = entry else {
+            continue;
+        };
         if !entry
             .file_type()
             .is_some_and(|file_type| file_type.is_file())

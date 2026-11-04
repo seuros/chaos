@@ -28,6 +28,7 @@ use chaos_ipc::protocol::TurnAbortedEvent;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_ipc::protocol::TurnStartedEvent;
 use chaos_ipc::protocol::UserMessageEvent;
+use chaos_ipc::protocol::VfsPolicy;
 use chaos_ipc::user_input::TextElement;
 use chaos_ipc::user_input::UserInput;
 use chaos_kern::ChaosAuth;
@@ -54,6 +55,7 @@ mod activity;
 pub(crate) async fn app_tests_suite() {
     super::agent_navigation::tests::agent_navigation_state_preserves_order_wraps_and_formats_labels(
     );
+    super::agent_navigation::tests::closed_agent_tabs_use_tombstones_and_expire();
     super::pending_interactive_replay::tests::pending_interactive_replay_suite();
 
     normalize_harness_overrides_resolves_relative_add_dirs()
@@ -116,9 +118,9 @@ pub(crate) async fn app_tests_suite() {
     refresh_in_memory_config_from_disk_loads_latest_apps_state()
         .await
         .expect("refresh_in_memory_config_from_disk_loads_latest_apps_state");
-    refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error()
+    refresh_in_memory_config_keeps_config_on_error()
         .await
-        .expect("refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error");
+        .expect("refresh_in_memory_config_keeps_config_on_error");
     refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd()
         .await
         .expect("refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd");
@@ -1614,19 +1616,25 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
         mouth of the bay as if listening for a signal that never came. When an old brass key fell \
         out of a cracked parcel in her workshop, tagged only with the words 'for the lamp room,' \
         she decided to climb the hill and see what the town had forgotten.";
-    let story_part_two = "Inside the lighthouse she found gears wrapped in oilcloth, logbooks filled \
-        with weather notes, and a lens shrouded beneath salt-stiff canvas. The mechanism was not \
+    let story_part_two = "Inside the lighthouse she found gears wrapped in oilcloth, logbooks \
+        filled with weather notes, and a lens shrouded beneath salt-stiff canvas. The mechanism \
+        was not \
         broken, only unfinished. Someone had removed the governor spring and hidden it in a false \
         drawer, along with a letter from the last keeper admitting he had darkened the light on \
-        purpose after smugglers threatened his family. Mara spent the night rebuilding the clockwork \
-        from spare watch parts, her fingers blackened with soot and grease, while a storm gathered \
+        purpose after smugglers threatened his family. Mara spent the night \
+        rebuilding the clockwork from spare watch parts, her fingers blackened with soot \
+        and grease, \
+        while a storm gathered \
         over the water and the harbor bells began to ring.";
-    let story_part_three = "At midnight the first squall hit, and the fishing boats returned early, \
-        blind in sheets of rain. Mara wound the mechanism, set the teeth by hand, and watched the \
+    let story_part_three = "At midnight the first squall hit, and the fishing boats returned \
+        early, blind in sheets of rain. Mara wound the mechanism, set the teeth by hand, \
+        and watched \
+        the \
         great lens begin to turn in slow, certain arcs. The beam swept across the bay, caught the \
         whitecaps, and reached the boats just as they were drifting toward the rocks below the \
         eastern cliffs. In the morning the town square was crowded with wet sailors, angry elders, \
-        and wide-eyed children, but when the oldest captain placed the keeper's log on the fountain \
+        and wide-eyed children, but when the oldest captain placed the keeper's log \
+        on the fountain \
         and thanked Mara for relighting the coast, nobody argued. By sunset, Bracken Ferry had a \
         lighthouse again, and Mara had more clocks to mend than ever because everyone wanted \
         something in town to keep better time.";
@@ -1655,7 +1663,7 @@ async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
             socket_policy: chaos_ipc::protocol::SocketPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
             ),
@@ -1799,7 +1807,7 @@ fn session_configured_event(process_id: ProcessId) -> Event {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
             socket_policy: chaos_ipc::protocol::SocketPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
             ),
@@ -1975,8 +1983,7 @@ async fn refresh_in_memory_config_from_disk_loads_latest_apps_state() -> Result<
     Ok(())
 }
 
-async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error() -> Result<()>
-{
+async fn refresh_in_memory_config_keeps_config_on_error() -> Result<()> {
     let mut app = make_test_app().await;
     let chaos_home = tempdir()?;
     app.config.chaos_home = chaos_home.path().to_path_buf();
@@ -2007,9 +2014,7 @@ async fn refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd() -> Res
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(
-                &SandboxPolicy::new_read_only_policy(),
-            ),
+            vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
             socket_policy: chaos_ipc::protocol::SocketPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
             ),
@@ -2110,7 +2115,7 @@ async fn backtrack_selection_with_duplicate_history_targets_unique_turn() {
             service_tier: None,
             approval_policy: ApprovalPolicy::Headless,
             approvals_reviewer: ApprovalsReviewer::User,
-            vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+            vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
             socket_policy: chaos_ipc::protocol::SocketPolicy::from(
                 &SandboxPolicy::new_read_only_policy(),
             ),
@@ -2612,7 +2617,7 @@ async fn new_session_requests_shutdown_for_previous_conversation() {
         service_tier: None,
         approval_policy: ApprovalPolicy::Headless,
         approvals_reviewer: ApprovalsReviewer::User,
-        vfs_policy: chaos_ipc::protocol::VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
+        vfs_policy: VfsPolicy::from(&SandboxPolicy::new_read_only_policy()),
         socket_policy: chaos_ipc::protocol::SocketPolicy::from(
             &SandboxPolicy::new_read_only_policy(),
         ),

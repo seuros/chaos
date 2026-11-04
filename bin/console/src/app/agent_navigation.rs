@@ -25,8 +25,12 @@ use crate::multi_agents::previous_agent_shortcut;
 use chaos_ipc::ProcessId;
 use ratatui::text::Span;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 mod tabs;
+
+const CLOSED_TAB_RETENTION: Duration = Duration::from_secs(180);
+const MAX_CLOSED_TABS: usize = 5;
 
 /// Small state container for multi-agent picker ordering and labeling.
 ///
@@ -43,6 +47,8 @@ pub(crate) struct AgentNavigationState {
     processes: HashMap<ProcessId, AgentPickerProcessEntry>,
     /// Stable first-seen traversal order for picker rows and keyboard cycling.
     order: Vec<ProcessId>,
+    /// When each process was first marked closed, for bounded tab-strip history.
+    closed_at: HashMap<ProcessId, Instant>,
     tab_hits: Vec<(ProcessId, ratatui::layout::Rect)>,
     tab_area: ratatui::layout::Rect,
 }
@@ -91,8 +97,19 @@ impl AgentNavigationState {
         agent_role: Option<String>,
         is_closed: bool,
     ) {
+        let was_closed = self
+            .processes
+            .get(&process_id)
+            .is_some_and(|entry| entry.is_closed);
         if !self.processes.contains_key(&process_id) {
             self.order.push(process_id);
+        }
+        if is_closed {
+            if !was_closed {
+                self.closed_at.insert(process_id, Instant::now());
+            }
+        } else {
+            self.closed_at.remove(&process_id);
         }
         self.processes.insert(
             process_id,
@@ -112,6 +129,9 @@ impl AgentNavigationState {
     /// mid-session.
     pub(crate) fn mark_closed(&mut self, process_id: ProcessId) {
         if let Some(entry) = self.processes.get_mut(&process_id) {
+            if !entry.is_closed {
+                self.closed_at.insert(process_id, Instant::now());
+            }
             entry.is_closed = true;
         } else {
             self.upsert(
@@ -128,6 +148,7 @@ impl AgentNavigationState {
     pub(crate) fn clear(&mut self) {
         self.processes.clear();
         self.order.clear();
+        self.closed_at.clear();
         self.tab_hits.clear();
         self.tab_area = ratatui::layout::Rect::ZERO;
     }

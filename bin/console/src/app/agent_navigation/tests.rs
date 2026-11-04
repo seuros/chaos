@@ -1,5 +1,6 @@
 use super::*;
 use pretty_assertions::assert_eq;
+use std::time::{Duration, Instant};
 
 fn populated_state() -> (AgentNavigationState, ProcessId, ProcessId, ProcessId) {
     let mut state = AgentNavigationState::default();
@@ -25,6 +26,18 @@ fn populated_state() -> (AgentNavigationState, ProcessId, ProcessId, ProcessId) 
     );
 
     (state, main_process_id, first_agent_id, second_agent_id)
+}
+
+fn render_tabs(
+    state: &mut AgentNavigationState,
+    area: ratatui::layout::Rect,
+    active: ProcessId,
+) -> (String, Vec<ProcessId>) {
+    let mut buf = ratatui::buffer::Buffer::empty(area);
+    state.render_tabs(area, &mut buf, Some(active), Some(active));
+    let rendered = buf.content.iter().map(|cell| cell.symbol()).collect();
+    let visible_ids = state.tab_hits.iter().map(|(id, _)| *id).collect();
+    (rendered, visible_ids)
 }
 
 pub(crate) fn agent_navigation_state_preserves_order_wraps_and_formats_labels() {
@@ -94,4 +107,34 @@ pub(crate) fn agent_navigation_state_preserves_order_wraps_and_formats_labels() 
     state.clear();
     assert!(!state.has_tabs());
     assert!(!state.tabs_contain((3, 2).into()));
+}
+
+pub(crate) fn closed_agent_tabs_use_tombstones_and_expire() {
+    let (mut state, main_process_id, first_agent_id, _) = populated_state();
+    state.mark_closed(first_agent_id);
+
+    let area = ratatui::layout::Rect::new(0, 0, 250, 1);
+    let (rendered, visible_ids) = render_tabs(&mut state, area, main_process_id);
+    assert!(rendered.contains("🪦"), "{rendered:?}");
+    assert!(visible_ids.contains(&first_agent_id));
+
+    state
+        .closed_at
+        .insert(first_agent_id, Instant::now() - Duration::from_secs(181));
+    let (_, visible_ids) = render_tabs(&mut state, area, main_process_id);
+    assert!(!visible_ids.contains(&first_agent_id));
+
+    for id in 104..=109 {
+        let raw_process_id = format!("00000000-0000-0000-0000-{id:012}");
+        let process_id = ProcessId::from_string(&raw_process_id).expect("valid process id");
+        state.upsert(process_id, Some(format!("Agent {id}")), None, true);
+    }
+    let (_, visible_ids) = render_tabs(&mut state, area, main_process_id);
+    assert_eq!(
+        visible_ids
+            .iter()
+            .filter(|id| state.is_closed(**id))
+            .count(),
+        MAX_CLOSED_TABS
+    );
 }

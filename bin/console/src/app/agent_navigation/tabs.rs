@@ -1,3 +1,9 @@
+use super::CLOSED_TAB_RETENTION;
+use super::MAX_CLOSED_TABS;
+use std::cmp::Reverse;
+use std::collections::HashSet;
+use std::time::Instant;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Position, Rect};
 use ratatui::text::Line;
@@ -35,16 +41,40 @@ impl AgentNavigationState {
         }
         self.tab_area = area;
         let width = usize::from(area.width);
-        let entries: Vec<_> = self
-            .ordered_processes()
+        let now = Instant::now();
+        let ordered = self.ordered_processes();
+        let mut recent_closed: Vec<_> = ordered
+            .iter()
+            .filter_map(|&(id, entry)| {
+                entry.is_closed.then(|| {
+                    self.closed_at
+                        .get(&id)
+                        .filter(|closed_at| now.duration_since(**closed_at) <= CLOSED_TAB_RETENTION)
+                        .map(|closed_at| (id, *closed_at))
+                })?
+            })
+            .collect();
+        recent_closed.sort_by_key(|(_, closed_at)| Reverse(*closed_at));
+        let mut visible_closed: HashSet<_> = recent_closed
             .into_iter()
+            .take(MAX_CLOSED_TABS)
+            .map(|(id, _)| id)
+            .collect();
+        if let Some(active) = active
+            && self.is_closed(active)
+        {
+            visible_closed.insert(active);
+        }
+        let entries: Vec<_> = ordered
+            .into_iter()
+            .filter(|(id, entry)| !entry.is_closed || visible_closed.contains(id))
             .enumerate()
             .map(|(index, (id, entry))| {
                 let label = self
                     .active_agent_label(Some(id), primary)
                     .unwrap_or_default();
                 let label: String = label.chars().filter(|c| !c.is_control()).collect();
-                let closed = if entry.is_closed { " ×" } else { "" };
+                let closed = if entry.is_closed { " 🪦" } else { "" };
                 let title = libui::line_truncation::truncate_line_with_ellipsis_if_overflow(
                     Line::from(format!("{} {label}{closed}", index + 1)),
                     width.min(28),

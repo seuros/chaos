@@ -6,12 +6,13 @@ use tokio::time::Instant;
 #[test]
 fn exec_env_injects_defaults() {
     let env = apply_exec_env(HashMap::new());
+    let locale = chaos_sysinfo::locale::preferred_utf8_locale();
     let expected = HashMap::from([
         ("NO_COLOR".to_string(), "1".to_string()),
         ("TERM".to_string(), "dumb".to_string()),
-        ("LANG".to_string(), "C.UTF-8".to_string()),
-        ("LC_CTYPE".to_string(), "C.UTF-8".to_string()),
-        ("LC_ALL".to_string(), "C.UTF-8".to_string()),
+        ("LANG".to_string(), locale.to_string()),
+        ("LC_CTYPE".to_string(), locale.to_string()),
+        ("LC_ALL".to_string(), locale.to_string()),
         ("COLORTERM".to_string(), String::new()),
         ("PAGER".to_string(), "cat".to_string()),
         ("GIT_PAGER".to_string(), "cat".to_string()),
@@ -20,6 +21,20 @@ fn exec_env_injects_defaults() {
     ]);
 
     assert_eq!(env, expected);
+}
+
+#[test]
+fn exec_env_injects_a_locale_the_host_resolves() {
+    let env = apply_exec_env(HashMap::new());
+    for key in ["LANG", "LC_CTYPE", "LC_ALL"] {
+        let Some(value) = env.get(key) else {
+            panic!("{key} was not injected");
+        };
+        assert!(
+            chaos_sysinfo::locale::resolves(value),
+            "{key}={value} does not resolve on this host"
+        );
+    }
 }
 
 #[test]

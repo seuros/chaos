@@ -414,6 +414,7 @@ fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
+    chaos_sysinfo::locale::sanitize_process_environment();
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         // Sandbox helpers dispatch above and never reach this point, so any
         // init that spawns background threads (keyring D-Bus, TLS providers)

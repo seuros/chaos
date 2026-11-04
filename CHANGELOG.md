@@ -21,6 +21,10 @@ should. There is no patch level; the build timestamp is the patch.
   refreshed set.
 
 ### Fixed
+- Spawned commands no longer print `setlocale: LC_ALL: cannot change locale
+  (C.UTF-8)`. The locale handed to child processes is probed against the host
+  libc instead of being hardcoded to the glibc-only `C.UTF-8`, and an unusable
+  inherited locale is corrected at startup.
 - `chaos-console.log` and `chaos-accounts.log` no longer grow without bound;
   each keeps at most 10 MiB plus one `.1` backup.
 - An unreachable runtime database is reported by host or path, with the

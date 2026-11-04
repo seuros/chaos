@@ -149,7 +149,10 @@ impl PtyConsole {
             ("SHELL".into(), "/bin/sh".into()),
             ("PATH".into(), "/usr/bin:/bin".into()),
             ("TERM".into(), "xterm-256color".into()),
-            ("LANG".into(), "C.UTF-8".into()),
+            (
+                "LANG".into(),
+                chaos_sysinfo::locale::preferred_utf8_locale().into(),
+            ),
         ]);
         let socket = home.join("run/journald.sock");
         let mut journal = Command::new(chaos_which::cargo_bin("chaos_journald")?)

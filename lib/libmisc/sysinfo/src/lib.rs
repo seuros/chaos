@@ -26,6 +26,7 @@ mod platform;
 mod sysctl;
 
 pub mod env;
+pub mod locale;
 pub mod terminal;
 
 // ── Public API ───────────────────────────────────────────────────────

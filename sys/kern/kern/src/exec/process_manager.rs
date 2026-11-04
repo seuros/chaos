@@ -53,12 +53,9 @@ use crate::tools::runtimes::exec::ExecRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use crate::truncate::approx_token_count;
 
-const EXEC_ENV: [(&str, &str); 10] = [
+const EXEC_ENV: [(&str, &str); 7] = [
     ("NO_COLOR", "1"),
     ("TERM", "dumb"),
-    ("LANG", "C.UTF-8"),
-    ("LC_CTYPE", "C.UTF-8"),
-    ("LC_ALL", "C.UTF-8"),
     ("COLORTERM", ""),
     ("PAGER", "cat"),
     ("GIT_PAGER", "cat"),
@@ -87,6 +84,11 @@ fn should_use_deterministic_process_ids() -> bool {
 fn apply_exec_env(mut env: HashMap<String, String>) -> HashMap<String, String> {
     for (key, value) in EXEC_ENV {
         env.insert(key.to_string(), value.to_string());
+    }
+    // Child libcs resolve these names; a hardcoded C.UTF-8 warns on macOS.
+    let locale = chaos_sysinfo::locale::preferred_utf8_locale();
+    for key in ["LANG", "LC_CTYPE", "LC_ALL"] {
+        env.insert(key.to_string(), locale.to_string());
     }
     env
 }

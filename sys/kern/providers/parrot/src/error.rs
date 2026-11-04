@@ -37,12 +37,33 @@ pub enum ApiError {
 
 impl From<TransportError> for ApiError {
     fn from(err: TransportError) -> Self {
-        if is_chatgpt_backend_outage(&err) {
+        if let Some(message) = invalid_encrypted_content_message(&err) {
+            Self::InvalidEncryptedContent { message }
+        } else if is_chatgpt_backend_outage(&err) {
             Self::ServiceUnavailable
         } else {
             Self::Transport(err)
         }
     }
+}
+
+fn invalid_encrypted_content_message(err: &TransportError) -> Option<String> {
+    let TransportError::Http {
+        body: Some(body), ..
+    } = err
+    else {
+        return None;
+    };
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    if value["error"]["code"].as_str() != Some("invalid_encrypted_content") {
+        return None;
+    }
+    Some(
+        value["error"]["message"]
+            .as_str()
+            .unwrap_or("provider rejected encrypted reasoning content")
+            .to_owned(),
+    )
 }
 
 fn is_chatgpt_backend_outage(err: &TransportError) -> bool {

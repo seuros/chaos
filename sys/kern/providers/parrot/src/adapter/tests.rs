@@ -442,6 +442,33 @@ fn api_error_semantics_are_preserved_in_abi_error() {
             crate::error::ApiError::Transport(_)
         );
     }
+
+    let invalid_encrypted_content: crate::error::ApiError = crate::TransportError::Http {
+        status: rama::http::StatusCode::BAD_REQUEST,
+        url: Some("https://api.openai.com/v1/responses".to_string()),
+        headers: None,
+        body: Some(
+            json!({
+                "error": {
+                    "message": "encrypted reasoning was rejected",
+                    "code": "invalid_encrypted_content"
+                }
+            })
+            .to_string(),
+        ),
+    }
+    .into();
+    std::assert_matches!(
+        &invalid_encrypted_content,
+        crate::error::ApiError::InvalidEncryptedContent { message }
+            if message == "encrypted reasoning was rejected"
+    );
+    let abi: AbiError = invalid_encrypted_content.into();
+    std::assert_matches!(
+        abi,
+        AbiError::InvalidEncryptedContent { message }
+            if message == "encrypted reasoning was rejected"
+    );
 }
 
 #[test]

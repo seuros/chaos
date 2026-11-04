@@ -10,6 +10,10 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Changed
+- Power and disk warnings no longer wait the five-minute thermal recovery
+  window before an opted-in wake. They recover after the new
+  `machine_warnings.recovery_instant_seconds` (default 5); thermal keeps
+  `recovery_stable_seconds` because cooling takes real time.
 - Bump the driver submodules: `dictator` 0.28.0, `helmsman` 0.5.1, and
   `skipper` 0.10.0. All three now return structured MCP tool results, and the
   latter two build against `mcp-host` 0.19. Reinstall with

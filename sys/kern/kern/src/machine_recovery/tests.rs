@@ -259,16 +259,30 @@ fn power_recovers_on_external_power_or_observed_battery_headroom() {
     assert_eq!(recovery.phase(), Phase::Warning);
     status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(100);
     status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
-    for seconds in (30..330).step_by(30) {
-        sample(&mut recovery, &config, status.clone(), start, seconds);
-        assert_eq!(recovery.phase(), Phase::Stabilizing);
-    }
-    sample(&mut recovery, &config, status.clone(), start, 330);
+    // Power flips almost instantly once the battery headroom is real.
+    sample(&mut recovery, &config, status.clone(), start, 30);
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    let recovered_after = 30 + config.recovery_instant_seconds;
+    sample(
+        &mut recovery,
+        &config,
+        status.clone(),
+        start,
+        recovered_after - 1,
+    );
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    sample(
+        &mut recovery,
+        &config,
+        status.clone(),
+        start,
+        recovered_after,
+    );
     assert_eq!(recovery.phase(), Phase::Recovered);
     assert!(!recovery.unresolved());
     status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(5);
     status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
-    sample(&mut recovery, &config, status, start, 360);
+    sample(&mut recovery, &config, status, start, recovered_after + 30);
     assert_eq!(recovery.phase(), Phase::Warning);
     assert_eq!(recovery.generation, 2);
 }
@@ -405,4 +419,65 @@ fn operator_input_during_a_model_sample_prevents_a_late_wait_registration() {
     assert!(recovery.request_wait("old response").is_err());
     recovery.begin_sample();
     assert!(recovery.request_wait("new response").is_ok());
+}
+
+#[test]
+fn thermal_keeps_the_long_window_while_power_and_disk_recover_quickly() {
+    let config = MachineWarningsConfig::default();
+    let start = Instant::now();
+
+    let mut power = Recovery::default();
+    sample(
+        &mut power,
+        &config,
+        snapshot(&config, 70.0, 1 << 30),
+        start,
+        0,
+    );
+    assert_eq!(power.phase(), Phase::Warning);
+    sample(
+        &mut power,
+        &config,
+        snapshot(&config, 70.0, 7 << 30),
+        start,
+        10,
+    );
+    assert_eq!(
+        power.phase(),
+        Phase::Stabilizing,
+        "window starts at first headroom"
+    );
+    sample(
+        &mut power,
+        &config,
+        snapshot(&config, 70.0, 7 << 30),
+        start,
+        10 + config.recovery_instant_seconds,
+    );
+    assert_eq!(
+        power.required_seconds(&config),
+        config.recovery_instant_seconds
+    );
+    assert_eq!(power.phase(), Phase::Recovered);
+
+    let mut thermal = Recovery::default();
+    sample(
+        &mut thermal,
+        &config,
+        snapshot(&config, 95.0, 20 << 30),
+        start,
+        0,
+    );
+    sample(
+        &mut thermal,
+        &config,
+        snapshot(&config, 70.0, 20 << 30),
+        start,
+        10,
+    );
+    assert_eq!(
+        thermal.required_seconds(&config),
+        config.recovery_stable_seconds
+    );
+    assert_eq!(thermal.phase(), Phase::Stabilizing);
 }

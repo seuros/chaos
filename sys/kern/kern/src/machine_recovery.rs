@@ -210,15 +210,30 @@ impl Recovery {
             }
             Ok(true) => {
                 let since = self.observation.healthy_since().unwrap_or(now);
-                self.observation.observe(
-                    if now.duration_since(since).as_secs() >= config.recovery_stable_seconds {
+                let required = self.required_seconds(config);
+                self.observation
+                    .observe(if now.duration_since(since).as_secs() >= required {
                         RecoveryObservationEvent::Stable(since)
                     } else {
                         RecoveryObservationEvent::Headroom(since)
-                    },
-                );
+                    });
                 self.observation.data_mut().recovered_episode |= self.phase() == Phase::Recovered;
             }
+        }
+    }
+
+    /// Thermal recovery needs a long window; power and disk flip instantly.
+    pub(super) fn required_seconds(&self, config: &MachineWarningsConfig) -> u64 {
+        if self
+            .observation
+            .data()
+            .outstanding
+            .iter()
+            .any(|warning| cause(warning) == "thermal")
+        {
+            config.recovery_stable_seconds
+        } else {
+            config.recovery_instant_seconds
         }
     }
 
@@ -247,7 +262,7 @@ impl Recovery {
                 .map_or(0, |(since, (sample, _))| {
                     sample.duration_since(since).as_secs()
                 }),
-            required_seconds: config.recovery_stable_seconds,
+            required_seconds: self.required_seconds(config),
             wait_id: self.wait_id().map(str::to_owned),
             outstanding: self.observation.data().outstanding.clone(),
             interruptions_last_hour,

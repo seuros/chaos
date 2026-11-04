@@ -35,18 +35,19 @@ fn large_disk_recovery_requires_capped_headroom_and_the_full_stable_window() {
         sample(&mut recovery, &config, reading, start, seconds);
         assert_eq!(recovery.phase(), Phase::Warning, "headroom still missing");
     }
-    for seconds in (60..360).step_by(30) {
+    // Disk headroom is instantaneous; only the short window applies.
+    for seconds in (60..65).step_by(5) {
         sample(&mut recovery, &config, status(21 << 30), start, seconds);
         assert_eq!(recovery.phase(), Phase::Stabilizing);
     }
-    sample(&mut recovery, &config, status(21 << 30), start, 360);
+    sample(&mut recovery, &config, status(21 << 30), start, 65);
     assert_eq!(recovery.phase(), Phase::Recovered);
     assert_eq!(
         recovery
-            .status(&config, start + Duration::from_secs(360))
+            .status(&config, start + Duration::from_secs(65))
             .stable_seconds,
-        300
+        config.recovery_instant_seconds
     );
-    sample(&mut recovery, &config, status(20 << 30), start, 390);
+    sample(&mut recovery, &config, status(20 << 30), start, 95);
     assert_eq!(recovery.phase(), Phase::Warning);
 }

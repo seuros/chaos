@@ -221,7 +221,8 @@ Restart to apply changes. Project configuration cannot override this host policy
 | `machine_warnings.disk_free_bytes_cap` | `21474836480` | Cap the warning reserve at 20 GiB; positive integer bytes |
 | `machine_warnings.thermal` | `true` | Warn on OS thermal warning/critical state or a CPU channel reaching its own critical limit |
 | `machine_warnings.cpu_temperature_celsius` | unset | Additional physical CPU temperature threshold; finite −100–250°C, inclusive |
-| `machine_warnings.recovery_stable_seconds` | `300` | Continuous observed recovery before an opted-in wake; integer 30–86400 seconds |
+| `machine_warnings.recovery_stable_seconds` | `300` | Continuous observed recovery after a thermal warning before an opted-in wake; integer 30–86400 seconds |
+| `machine_warnings.recovery_instant_seconds` | `5` | Same, after a power or disk warning, whose readings flip immediately; integer 1–86400 seconds |
 | `machine_warnings.recovery_temperature_margin_celsius` | `5.0` | Headroom below a triggering sensor's threshold; finite 0.1–100 degrees on that channel's scale |
 | `machine_warnings.recovery_disk_margin_percent` | `2` | Additional free percentage points for recovery, subject to the byte cap; integer 0–100 |
 | `machine_warnings.recovery_disk_margin_bytes` | `1073741824` | Additional free bytes above the capped warning reserve; also required for recovery |
@@ -244,9 +245,11 @@ After checkpointing and stopping heavy background work, call
 `wait_for_machine_recovery` **alone** to request one recovery wake. It does not
 stop processes, suspend the host, or restart commands.
 
-Recovery normally requires five continuously observed stable minutes: external
-power for battery warnings, normal thermal state, and the configured temperature
-and disk margins. Missing measurements and gaps over 60 seconds reset the window;
+Thermal recovery requires five continuously observed stable minutes: normal
+thermal state and the configured temperature margin. Power and disk warnings
+recover after `recovery_instant_seconds` instead, because external power,
+battery charge, and free space are read directly rather than dissipating.
+Missing measurements and gaps over 60 seconds reset the window;
 suspend time does not count. On waking, reassess rather than blindly retrying.
 
 Input, interruption, workspace/policy changes, closure, and restart cancel waits.

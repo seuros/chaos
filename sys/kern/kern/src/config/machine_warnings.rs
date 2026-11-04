@@ -29,10 +29,14 @@ pub struct MachineWarningsConfig {
     #[serde(deserialize_with = "temperature")]
     #[schemars(range(min = -100, max = 250))]
     pub cpu_temperature_celsius: Option<f64>,
-    /// Continuous observed recovery required before a requested wake (seconds).
+    /// Continuous observed thermal recovery required before a requested wake (seconds).
     #[serde(deserialize_with = "recovery_seconds")]
     #[schemars(range(min = 30, max = 86400))]
     pub recovery_stable_seconds: u64,
+    /// Same, for power and disk warnings, whose state is instantaneous on recovery.
+    #[serde(deserialize_with = "recovery_seconds_short")]
+    #[schemars(range(min = 1, max = 86400))]
+    pub recovery_instant_seconds: u64,
     /// Additional charge percentage points above the battery warning threshold.
     #[serde(deserialize_with = "percentage")]
     #[schemars(range(min = 0, max = 100))]
@@ -60,6 +64,7 @@ impl Default for MachineWarningsConfig {
             thermal: true,
             cpu_temperature_celsius: None,
             recovery_stable_seconds: 300,
+            recovery_instant_seconds: 5,
             recovery_battery_margin_percent: 5,
             recovery_temperature_margin_celsius: 5.0,
             recovery_disk_margin_percent: 2,
@@ -81,6 +86,16 @@ fn recovery_seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D
     if !(30..=86_400).contains(&value) {
         return Err(serde::de::Error::custom(
             "recovery duration must be in 30..=86400 seconds",
+        ));
+    }
+    Ok(value)
+}
+
+fn recovery_seconds_short<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    let value = u64::deserialize(deserializer)?;
+    if !(1..=86_400).contains(&value) {
+        return Err(serde::de::Error::custom(
+            "recovery duration must be in 1..=86400 seconds",
         ));
     }
     Ok(value)

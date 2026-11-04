@@ -56,6 +56,8 @@ fn machine_warnings_reject_invalid_thresholds_and_typos() {
         "probe_timeout_ms = 60001",
         "recovery_stable_seconds = 0",
         "recovery_stable_seconds = 86401",
+        "recovery_instant_seconds = 0",
+        "recovery_instant_seconds = 86401",
         "recovery_battery_margin_percent = 101",
         "recovery_battery_margin_percent = -1",
         "recovery_temperature_margin_celsius = nan",

@@ -23,6 +23,7 @@ should. There is no patch level; the build timestamp is the patch.
   to 0.10, `throttle-machines` to 0.4, `state-machines` to 0.34, and
   `behavior-machines` to 0.3.0; release `mcp-guest` 0.12.2 against the
   refreshed set.
+- Update `mcp-host` to 0.19.0, matching the driver releases above.
 
 ### Fixed
 - Spawned commands no longer print `setlocale: LC_ALL: cannot change locale

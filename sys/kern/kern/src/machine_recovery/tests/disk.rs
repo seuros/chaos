@@ -1,4 +1,5 @@
-use super::*;
+use super::super::*;
+use super::fixtures::*;
 
 #[test]
 fn disk_requires_both_margins_and_reports_impossible_targets() {

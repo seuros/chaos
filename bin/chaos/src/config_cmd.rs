@@ -19,6 +19,9 @@ pub enum ConfigAction {
     Get { key: Option<String> },
     /// Set a setting for this installation using a JSON value; -g sets it for all.
     Set { key: String, value: String },
+    /// Set a setting from JSON on stdin, securely storing credential fields in the vault.
+    #[usage(name = "set-stdin")]
+    SetStdin { key: String },
     /// Remove a setting from this installation; -g removes it from the shared document.
     Unset { key: String },
     /// Export settings as JSON; grants and secret values are excluded.
@@ -118,17 +121,26 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
         ConfigAction::Set { key, value } => {
             let value: serde_json::Value =
                 serde_json::from_str(&value).context("value must be JSON")?;
-            let value: toml::Value = serde_json::from_value(value)?;
-            let doc = toml::to_string(&std::collections::BTreeMap::from([("value", value)]))?
-                .parse::<toml_edit::DocumentMut>()?;
-            chaos_sysctl::edit::ConfigEditsBuilder::new(&home)
-                .with_scope(scope)
-                .with_edits([chaos_sysctl::edit::ConfigEdit::SetPath {
-                    segments: key.split('.').map(str::to_owned).collect(),
-                    value: doc["value"].clone(),
-                }])
-                .apply()
-                .await?;
+            set_value(&home, scope, &key, value).await?;
+        }
+        ConfigAction::SetStdin { key } => {
+            use std::io::IsTerminal;
+            use std::io::Read;
+            use zeroize::Zeroize;
+
+            let mut stdin = std::io::stdin();
+            anyhow::ensure!(
+                !stdin.is_terminal(),
+                "config set-stdin expects a JSON value on stdin"
+            );
+            let mut input = Vec::new();
+            stdin.read_to_end(&mut input)?;
+            let parsed = serde_json::from_slice(&input).context("stdin must contain a JSON value");
+            input.zeroize();
+            let mut value: serde_json::Value = parsed?;
+            chaos_sysctl::secrets::transform(&home, &mut value, true)
+                .context("failed to store configuration credentials")?;
+            set_value(&home, scope, &key, value).await?;
         }
         ConfigAction::Unset { key } => {
             chaos_sysctl::edit::ConfigEditsBuilder::new(&home)
@@ -140,6 +152,26 @@ pub async fn run(command: ConfigCommand) -> anyhow::Result<()> {
                 .await?;
         }
     }
+    Ok(())
+}
+
+async fn set_value(
+    home: &std::path::Path,
+    scope: SettingsScope,
+    key: &str,
+    value: serde_json::Value,
+) -> anyhow::Result<()> {
+    let value: toml::Value = serde_json::from_value(value)?;
+    let doc = toml::to_string(&std::collections::BTreeMap::from([("value", value)]))?
+        .parse::<toml_edit::DocumentMut>()?;
+    chaos_sysctl::edit::ConfigEditsBuilder::new(home)
+        .with_scope(scope)
+        .with_edits([chaos_sysctl::edit::ConfigEdit::SetPath {
+            segments: key.split('.').map(str::to_owned).collect(),
+            value: doc["value"].clone(),
+        }])
+        .apply()
+        .await?;
     Ok(())
 }
 

@@ -185,6 +185,81 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
 }
 
 #[tokio::test]
+async fn write_otlp_exporters_store_auth_headers_as_credentials() -> Result<()> {
+    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    let tmp = seeded_home("").await;
+    let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
+    let endpoint = "http://collector.example/ingest";
+    let auth_header = "Bearer test-project-key";
+    let exporter = serde_json::json!({
+        "otlp-http": {
+            "endpoint": endpoint,
+            "headers": { "Authorization": auth_header },
+            "protocol": "json",
+        }
+    });
+
+    service
+        .write_value(ConfigValueWriteParams {
+            key_path: "otel".to_string(),
+            value: serde_json::json!({
+                "trace_exporter": exporter,
+                "metrics_exporter": exporter,
+            }),
+            merge_strategy: MergeStrategy::Replace,
+            expected_version: None,
+            scope: SettingsScope::Installation,
+        })
+        .await
+        .expect("write succeeds");
+
+    let settings = crate::user_settings::installation_snapshot(tmp.path())
+        .await?
+        .settings;
+    for signal in ["trace_exporter", "metrics_exporter"] {
+        assert_eq!(
+            settings["otel"][signal]["otlp-http"]["endpoint"].as_str(),
+            Some(endpoint)
+        );
+        let stored_header = settings["otel"][signal]["otlp-http"]["headers"]["Authorization"]
+            .as_str()
+            .expect("stored header reference");
+        assert!(
+            stored_header.starts_with("keyring:chaos-settings/"),
+            "header should be stored as a vault reference"
+        );
+        assert_ne!(stored_header, auth_header);
+
+        assert_eq!(
+            chaos_sysctl::secrets::resolve(tmp.path(), stored_header)?,
+            auth_header
+        );
+    }
+    let config = crate::config::ConfigBuilder::default()
+        .chaos_home(tmp.path().to_path_buf())
+        .fallback_cwd(Some(tmp.path().to_path_buf()))
+        .build()
+        .await?;
+    for exporter in [&config.otel.trace_exporter, &config.otel.metrics_exporter] {
+        let crate::config::types::OtelExporterKind::OtlpHttp { headers, .. } = exporter else {
+            panic!("expected HTTP exporter");
+        };
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some(auth_header)
+        );
+    }
+    let inspected = config.config_layer_stack.effective_config();
+    assert!(
+        inspected["otel"]["trace_exporter"]["otlp-http"]["headers"]["Authorization"]
+            .as_str()
+            .expect("inspection preserves reference")
+            .starts_with("keyring:chaos-settings/")
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn read_includes_origins_and_layers() {
     let tmp = seeded_home("model = \"user\"").await;
 

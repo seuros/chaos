@@ -20,6 +20,21 @@ macro_rules! log_event {
 
 macro_rules! trace_event {
     ($self:expr, $($fields:tt)*) => {{
+        let current_span = $crate::tracing::Span::current();
+        let _telemetry_span = if current_span.is_disabled() {
+            // OpenTelemetry exports events as span events, not as standalone
+            // trace records. Give otherwise-orphaned safe telemetry events a
+            // short root span so they still reach trace-only collectors.
+            Some(
+                $crate::tracing::info_span!(
+                    target: $crate::targets::OTEL_TRACE_SAFE_TARGET,
+                    "chaos.telemetry_event",
+                )
+                .entered(),
+            )
+        } else {
+            None
+        };
         $crate::tracing::event!(
             target: $crate::targets::OTEL_TRACE_SAFE_TARGET,
             $crate::tracing::Level::INFO,

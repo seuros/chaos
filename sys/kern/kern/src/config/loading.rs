@@ -79,8 +79,11 @@ impl ConfigBuilder {
         .await?;
         let mut merged_toml = config_layer_stack.effective_config();
         // Resolve credentials at runtime, not during inspection.
-        if let Some(providers) = merged_toml.get_mut("model_providers") {
-            let mut json = serde_json::to_value(&*providers).map_err(std::io::Error::other)?;
+        for section in ["model_providers", "otel"] {
+            let Some(settings) = merged_toml.get_mut(section) else {
+                continue;
+            };
+            let mut json = serde_json::to_value(&*settings).map_err(std::io::Error::other)?;
             let home = chaos_home.clone();
             // Resolving a credential may wait on the OS unlock UI. Keep that
             // synchronous work off the runtime, with no timeout or fallback.
@@ -91,7 +94,7 @@ impl ConfigBuilder {
             })
             .await
             .map_err(std::io::Error::other)??;
-            *providers = serde_json::from_value(json).map_err(std::io::Error::other)?;
+            *settings = serde_json::from_value(json).map_err(std::io::Error::other)?;
         }
         strip_toml_global_mcp_servers(&mut merged_toml);
 

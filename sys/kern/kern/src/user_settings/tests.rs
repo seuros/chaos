@@ -77,6 +77,11 @@ fn settings_reject_unknown_bootstrap_and_positive_grants() {
         "[profiles.test]\nstorage_url = 'sqlite::memory:'",
         "[mcp_tool_approvals.test.tools]\nexecute = 'approve'",
         "[model_providers.custom]\nname='custom'\nexperimental_bearer_token='plaintext'",
+        "[otel.trace_exporter.otlp-http]\n\
+         endpoint='http://collector.example/ingest'\n\
+         protocol='json'\n\
+         [otel.trace_exporter.otlp-http.headers]\n\
+         Authorization='Bearer plaintext'",
     ] {
         assert!(
             validate(&toml::from_str(text).expect("TOML"), home.path()).is_err(),

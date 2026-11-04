@@ -302,6 +302,14 @@ impl ConfigService {
             parsed_segments.push(segments);
         }
 
+        let mut settings_json = serde_json::to_value(&user_config)
+            .map_err(|err| ConfigServiceError::json("failed to serialize configuration", err))?;
+        chaos_sysctl::secrets::transform(&self.chaos_home, &mut settings_json, true).map_err(
+            |err| ConfigServiceError::anyhow("failed to store configuration credentials", err),
+        )?;
+        user_config = serde_json::from_value(settings_json)
+            .map_err(|err| ConfigServiceError::json("failed to deserialize configuration", err))?;
+
         validate_config(&user_config).map_err(|err| {
             ConfigServiceError::write(
                 ConfigWriteErrorCode::ConfigValidationError,

@@ -1332,6 +1332,7 @@ dependencies = [
  "toml_edit",
  "usage-rs",
  "vt100",
+ "zeroize",
 ]
 
 [[package]]

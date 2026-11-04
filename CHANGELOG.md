@@ -10,6 +10,10 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Changed
+- Bump the driver submodules: `dictator` 0.28.0, `helmsman` 0.5.1, and
+  `skipper` 0.10.0. All three now return structured MCP tool results, and the
+  latter two build against `mcp-host` 0.19. Reinstall with
+  `just install-drivers`.
 - Commands run through bash when it is installed instead of the account's
   login shell. The new `shell` setting selects another shell by name or
   absolute path.

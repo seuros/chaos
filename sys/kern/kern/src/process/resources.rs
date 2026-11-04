@@ -4,6 +4,25 @@ use super::Process;
 use chaos_mcp_runtime::{PaginatedRequestParams, ReadResourceRequestParams};
 
 impl Process {
+    /// The installed MCP generation's server configuration, including each
+    /// server's enabled flag and transport. Unlike the config the process was
+    /// built from, this reflects a project `.mcp.json` reload.
+    pub async fn mcp_resource_configs(
+        &self,
+    ) -> (
+        u64,
+        std::collections::HashMap<String, chaos_sysctl::types::McpServerConfig>,
+        std::collections::HashMap<String, chaos_ipc::protocol::McpStartupStatus>,
+    ) {
+        let registry = &self.chaos.session.services.mcp_registry;
+        let statuses = registry.current_manager().server_startup_statuses().await;
+        (
+            registry.revision(),
+            registry.configs_snapshot().as_ref().clone(),
+            statuses,
+        )
+    }
+
     /// The installed MCP generation and its enabled servers, not the startup config.
     /// Attached clients can invalidate cached resources after a mount or reset,
     /// including resets that keep the same server names.

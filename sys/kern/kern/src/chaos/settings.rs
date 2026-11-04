@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use chaos_ipc::api::SettingsScope;
+use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
 use chaos_realpath::AbsolutePathBuf;
@@ -291,11 +292,19 @@ impl Session {
             (mcp_servers, store_mode)
         };
 
-        if let Err(err) = self
+        match self
             .refresh_mcp_servers_inner(turn_context, mcp_servers, store_mode)
             .await
         {
-            warn!("failed to refresh MCP servers from project configuration: {err:#}");
+            Ok(event) => {
+                // Clients watching `chaos://mcp` need to know the set of
+                // servers changed, not just the model.
+                self.send_event(turn_context, EventMsg::McpServersRefreshed(event))
+                    .await;
+            }
+            Err(err) => {
+                warn!("failed to refresh MCP servers from project configuration: {err:#}");
+            }
         }
     }
 }

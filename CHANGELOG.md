@@ -26,6 +26,10 @@ should. There is no patch level; the build timestamp is the patch.
 - Update `mcp-host` to 0.19.0, matching the driver releases above.
 
 ### Fixed
+- `chaos://mcp` now reflects a project `.mcp.json` reload instead of the
+  configuration the MCP server started with, and subscribers receive
+  `notifications/resources/updated` when a management tool changes it.
+  `resources/subscribe` was previously always rejected for built-in resources.
 - Spawned commands no longer print `setlocale: LC_ALL: cannot change locale
   (C.UTF-8)`. The locale handed to child processes is probed against the host
   libc instead of being hardcoded to the glibc-only `C.UTF-8`, and an unusable

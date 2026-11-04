@@ -383,6 +383,14 @@ async fn run_event_loop(
                             process_names.lock().await.insert(process_id, name);
                         }
                     }
+                    // The server set changed, so `chaos://mcp` no longer
+                    // describes it. Tell subscribers instead of making them
+                    // guess whether their snapshot is stale.
+                    EventMsg::McpServersRefreshed(_) => {
+                        outgoing.notify_resource_updated(
+                            chaos_kern::builtin_mcp_resources::CHAOS_MCP_URI,
+                        );
+                    }
                     // Events forwarded as notifications — no special handling.
                     EventMsg::PlanDelta(_)
                     | EventMsg::Warning(_)
@@ -390,7 +398,6 @@ async fn run_event_loop(
                     | EventMsg::McpStartupUpdate(_)
                     | EventMsg::McpStartupComplete(_)
                     | EventMsg::PermissionsUpdated(_)
-                    | EventMsg::McpServersRefreshed(_)
                     | EventMsg::AgentMessage(AgentMessageEvent { .. })
                     | EventMsg::AgentReasoningRawContent(_)
                     | EventMsg::TurnStarted(_)

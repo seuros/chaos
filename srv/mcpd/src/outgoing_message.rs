@@ -206,6 +206,17 @@ impl OutgoingMessageSender {
         }
     }
 
+    /// Tell this session's client that a built-in resource's content changed.
+    ///
+    /// Only reaches subscribers; a client that never subscribed still has to
+    /// read the resource again on its own.
+    pub(crate) fn notify_resource_updated(&self, uri: &str) {
+        let Some(server) = self.active_server() else {
+            return;
+        };
+        server.notify_resource_updated(uri);
+    }
+
     fn active_server(&self) -> Option<Arc<Server>> {
         if self
             .lifetime

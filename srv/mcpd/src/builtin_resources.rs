@@ -28,6 +28,23 @@ struct McpHostBuiltinResourceBackend<'a> {
     state: Arc<crate::session_state::McpSessionState>,
 }
 
+impl McpHostBuiltinResourceBackend<'_> {
+    /// Any process this MCP session owns; its MCP registry is the live view of
+    /// the installed servers, so one process is enough.
+    async fn session_process(&self) -> Option<Arc<chaos_kern::Process>> {
+        let candidates = {
+            let processes = self.state.session_processes.lock().await;
+            processes.values().copied().collect::<Vec<_>>()
+        };
+        for id in candidates {
+            if let Ok(process) = self.state.process_table.get_process(id).await {
+                return Some(process);
+            }
+        }
+        None
+    }
+}
+
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResourceBackend<'_> {
     async fn hooks_json(&self, id: Option<&str>) -> Result<String, String> {
         let config = &self.server.config;
@@ -127,8 +144,23 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 
     async fn mcp_json(&self) -> Result<String, String> {
+        // The installed MCP generation, not the config this server was built
+        // from, so a project `.mcp.json` reload is visible here.
         let config = &self.server.config;
-        builtin_mcp_resources::mcp_json_from_config(None, config, None, None).await
+        // Without a process there is no live generation to compare against, so
+        // leave per-session status out instead of reporting every server as a
+        // failed reload.
+        let Some(process) = self.session_process().await else {
+            return builtin_mcp_resources::mcp_json_from_config(None, config, None, None).await;
+        };
+        let (revision, servers, statuses) = process.mcp_resource_configs().await;
+        builtin_mcp_resources::mcp_json_from_config(
+            Some(revision),
+            config,
+            Some(&servers),
+            Some(&statuses),
+        )
+        .await
     }
 }
 
@@ -297,7 +329,9 @@ fn resource_info(spec: &builtin_mcp_resources::ChaosBuiltinResourceSpec) -> Reso
         annotations: None,
         size: None,
         meta: None,
-        subscribable: false,
+        // `chaos://mcp` is the one built-in whose content changes during a
+        // session; subscribers get `notifications/resources/updated` for it.
+        subscribable: spec.kind == builtin_mcp_resources::ChaosBuiltinResourceKind::Mcp,
     }
 }
 

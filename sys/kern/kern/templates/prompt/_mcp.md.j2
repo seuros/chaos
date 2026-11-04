@@ -2,8 +2,8 @@
 # MCP management
 
 {% if "mcp-management" in disabled_groups %}
-- Enable `mcp-management` with `enable_tools` before managing servers.
+- `mcp_add_server` and `mcp_server` live in the `mcp-management` group; call `enable_tools` for that group first.
+{% else %}
+- Use `mcp_add_server` and `mcp_server`; never edit `.mcp.json` by hand for changes they cover.
 {% endif %}
-- Use `mcp_add_server` and `mcp_server` for server configuration changes instead of editing `.mcp.json`.
-- Read `chaos://mcp` before changes and check it afterward for startup, authentication, and connection status.
-- For HTTP bearer authentication, use `bearer_token_env_var`.
+- A change rewrites `.mcp.json`, reconnects servers, and makes `chaos://mcp` stale. Read it again afterward for startup and auth status; if subscribed, `notifications/resources/updated` also fires.

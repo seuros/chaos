@@ -94,7 +94,9 @@ pub async fn build_server(
             .with_description(MCP_SERVER_DESCRIPTION)
             .with_website_url(CHAOS_WEBSITE_URL.parse().map_err(std::io::Error::other)?)
             .with_tools(true)
-            .with_resources(true, false)
+            // Subscribe must be advertised for `notifications/resources/updated`
+            // to reach a client watching `chaos://mcp` after a server change.
+            .with_resources(true, true)
             .with_resource_templates()
             .with_tasks(true, true)
             .with_mcp_apps()

@@ -3,13 +3,23 @@ use futures::future;
 
 #[test]
 fn terminal_client_does_not_advertise_an_apps_renderer() {
-    assert!(!client_capabilities().supports_mcp_apps());
-    assert!(client_capabilities().extensions.is_none());
+    assert!(!client_capabilities(true).supports_mcp_apps());
+    assert!(client_capabilities(true).extensions.is_none());
+}
+
+#[test]
+fn headless_client_does_not_advertise_elicitation() {
+    assert!(client_capabilities(false).elicitation.is_none());
+}
+
+#[test]
+fn interactive_client_advertises_elicitation() {
+    assert!(client_capabilities(true).elicitation.is_some());
 }
 
 #[test]
 fn initialize_advertises_chaos_fleet_experimental_capability() {
-    let capabilities = client_capabilities();
+    let capabilities = client_capabilities(true);
     let experimental = capabilities.experimental.expect("experimental");
     assert!(experimental.contains_key(chaos_mcp_protocol::FLEET_EXPERIMENTAL_CAPABILITY));
     assert_eq!(

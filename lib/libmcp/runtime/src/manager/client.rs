@@ -12,6 +12,7 @@ use std::time::Instant;
 use super::McpServerNotification;
 use super::ToolInfo;
 use super::elicitation::ElicitationRequestManager;
+use super::elicitation::elicitation_is_rejected_by_policy;
 use super::error::MakeClientParams;
 use super::filter::StartupOutcomeError;
 use super::filter::ToolFilter;
@@ -529,7 +530,9 @@ impl AsyncManagedClient {
     }
 }
 
-pub(super) fn client_capabilities() -> mcp_guest::protocol::ClientCapabilities {
+pub(super) fn client_capabilities(
+    supports_elicitation: bool,
+) -> mcp_guest::protocol::ClientCapabilities {
     mcp_guest::protocol::ClientCapabilities {
         experimental: Some(chaos_mcp_protocol::client_experimental_capabilities()),
         // Terminal clients can read views but do not implement an Apps renderer.
@@ -541,7 +544,10 @@ pub(super) fn client_capabilities() -> mcp_guest::protocol::ClientCapabilities {
             context: None,
             tools: None,
         }),
-        elicitation: Some(mcp_guest::protocol::ElicitationCapability {
+        // Do not advertise a capability that the active approval policy
+        // guarantees will be declined. MCP clients treat that as a user
+        // rejection, rather than as an unsupported prompt.
+        elicitation: supports_elicitation.then_some(mcp_guest::protocol::ElicitationCapability {
             form: Some(mcp_guest::protocol::FormElicitationCapability {}),
             url: Some(mcp_guest::protocol::UrlElicitationCapability {}),
         }),
@@ -586,6 +592,11 @@ pub(super) async fn make_managed_client(
     let session_holder: Arc<tokio::sync::RwLock<Option<mcp_guest::WeakMcpSession>>> =
         Arc::new(tokio::sync::RwLock::new(None));
     let cwd_arc = cwd;
+    let approval_policy = *elicitation_requests
+        .approval_policy
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let supports_elicitation = !elicitation_is_rejected_by_policy(approval_policy);
 
     static NEXT_CONNECTION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let goal_protocol = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -607,7 +618,7 @@ pub(super) async fn make_managed_client(
 
     let client_info = managed_client_info(&client_identity);
 
-    let capabilities = client_capabilities();
+    let capabilities = client_capabilities(supports_elicitation);
 
     // Build and connect session based on transport type
     let connect_fut = async {

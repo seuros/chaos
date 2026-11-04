@@ -7,7 +7,7 @@ Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR.TIMESTAMP`. A MAJOR
 entry means read this file before upgrading. A MINOR entry means you probably
 should. There is no patch level; the build timestamp is the patch.
 
-## [Unreleased]
+## [47.14.8] - 2026-11-04
 
 ### Changed
 - Power and disk warnings no longer wait the five-minute thermal recovery

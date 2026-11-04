@@ -1,6 +1,20 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+fn entry_values(entries: &[DirEntry]) -> Vec<serde_json::Value> {
+    entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "path": entry.name,
+                "name": entry.display_name,
+                "kind": entry.kind.as_str(),
+                "depth": entry.depth,
+            })
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn lists_directory_entries() {
     let temp = tempfile::tempdir().expect("create tempdir");
@@ -30,20 +44,31 @@ async fn lists_directory_entries() {
     let link_path = dir_path.join("link");
     symlink(dir_path.join("entry.txt"), &link_path).expect("create symlink");
 
-    let entries = list_dir_slice(dir_path, 1, 20, 3)
+    let (entries, truncated) = list_dir_slice(dir_path, 1, 20, 3)
         .await
         .expect("list directory");
 
     let expected = vec![
-        "entry.txt".to_string(),
-        "link@".to_string(),
-        "nested/".to_string(),
-        "  child.txt".to_string(),
-        "  deeper/".to_string(),
-        "    grandchild.txt".to_string(),
+        serde_json::json!({"path":"entry.txt","name":"entry.txt","kind":"file","depth":0}),
+        serde_json::json!({"path":"link","name":"link","kind":"symlink","depth":0}),
+        serde_json::json!({"path":"nested","name":"nested","kind":"directory","depth":0}),
+        serde_json::json!({"path":"nested/child.txt","name":"child.txt","kind":"file","depth":1}),
+        serde_json::json!({"path":"nested/deeper","name":"deeper","kind":"directory","depth":1}),
+        serde_json::json!({"path":"nested/deeper/grandchild.txt","name":"grandchild.txt","kind":"file","depth":2}),
     ];
 
-    assert_eq!(entries, expected);
+    assert_eq!(entry_values(&entries), expected);
+    assert!(!truncated);
+
+    let output = execute_structured(&serde_json::json!({
+        "dir_path": dir_path,
+        "limit": 20,
+        "depth": 3
+    }))
+    .await
+    .expect("structured directory listing");
+    assert_eq!(output["entries"], serde_json::json!(expected));
+    assert_eq!(output["truncated"], false);
 }
 
 #[tokio::test]
@@ -78,24 +103,27 @@ async fn respects_depth_parameter() {
         .await
         .expect("write deeper");
 
-    let entries_depth_one = list_dir_slice(dir_path, 1, 10, 1)
+    let (entries_depth_one, _) = list_dir_slice(dir_path, 1, 10, 1)
         .await
         .expect("list depth 1");
     assert_eq!(
-        entries_depth_one,
-        vec!["nested/".to_string(), "root.txt".to_string()]
+        entry_values(&entries_depth_one),
+        vec![
+            serde_json::json!({"path":"nested","name":"nested","kind":"directory","depth":0}),
+            serde_json::json!({"path":"root.txt","name":"root.txt","kind":"file","depth":0})
+        ]
     );
 
-    let entries_depth_two = list_dir_slice(dir_path, 1, 20, 2)
+    let (entries_depth_two, _) = list_dir_slice(dir_path, 1, 20, 2)
         .await
         .expect("list depth 2");
     assert_eq!(
-        entries_depth_two,
+        entry_values(&entries_depth_two),
         vec![
-            "nested/".to_string(),
-            "  child.txt".to_string(),
-            "  deeper/".to_string(),
-            "root.txt".to_string(),
+            serde_json::json!({"path":"nested","name":"nested","kind":"directory","depth":0}),
+            serde_json::json!({"path":"nested/child.txt","name":"child.txt","kind":"file","depth":1}),
+            serde_json::json!({"path":"nested/deeper","name":"deeper","kind":"directory","depth":1}),
+            serde_json::json!({"path":"root.txt","name":"root.txt","kind":"file","depth":0})
         ]
     );
 }
@@ -117,30 +145,34 @@ async fn paginates_in_sorted_order() {
         .await
         .expect("write b child");
 
-    let first_page = list_dir_slice(dir_path, 1, 2, 2)
+    let (first_page, first_truncated) = list_dir_slice(dir_path, 1, 2, 2)
         .await
         .expect("list page one");
     assert_eq!(
-        first_page,
+        entry_values(&first_page),
         vec![
-            "a/".to_string(),
-            "  a_child.txt".to_string(),
-            "More than 2 entries found".to_string()
+            serde_json::json!({"path":"a","name":"a","kind":"directory","depth":0}),
+            serde_json::json!({"path":"a/a_child.txt","name":"a_child.txt","kind":"file","depth":1}),
         ]
     );
+    assert!(first_truncated);
 
-    let second_page = list_dir_slice(dir_path, 3, 2, 2)
+    let (second_page, second_truncated) = list_dir_slice(dir_path, 3, 2, 2)
         .await
         .expect("list page two");
     assert_eq!(
-        second_page,
-        vec!["b/".to_string(), "  b_child.txt".to_string()]
+        entry_values(&second_page),
+        vec![
+            serde_json::json!({"path":"b","name":"b","kind":"directory","depth":0}),
+            serde_json::json!({"path":"b/b_child.txt","name":"b_child.txt","kind":"file","depth":1})
+        ]
     );
+    assert!(!second_truncated);
 }
 
 #[tokio::test]
 async fn rejects_unknown_arguments() {
-    let result = execute(&serde_json::json!({
+    let result = execute_structured(&serde_json::json!({
         "dir_path": "/tmp",
         "limitt": 10
     }))

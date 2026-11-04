@@ -86,13 +86,6 @@ impl CronServer {
     }
 }
 
-/// Standalone execution — callable from both MCP and kernel adapter.
-pub async fn execute(params: &SpoolSubmitParams, owner: &OwnerContext) -> Result<String, String> {
-    execute_structured(params, owner)
-        .await
-        .map(|value| value.to_string())
-}
-
 pub async fn execute_structured(
     params: &SpoolSubmitParams,
     owner: &OwnerContext,

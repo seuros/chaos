@@ -68,9 +68,11 @@ impl ToolHandler for CatalogModuleHandler {
                 session_id: Some(session.conversation_id.to_string()),
                 execution_policy: Some(policy),
             };
-            let output = chaos_cron::tools::create::execute(&params, &owner)
+            let output = chaos_cron::tools::create::execute_structured(&params, &owner)
                 .await
                 .map_err(FunctionCallError::RespondToModel)?;
+            let output = serde_json::to_string(&output)
+                .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
             return Ok(FunctionToolOutput::from_text(output, Some(true)));
         }
 
@@ -105,6 +107,9 @@ impl ToolHandler for CatalogModuleHandler {
             }
         }
 
-        Ok(FunctionToolOutput::from_text(result.output, result.success))
+        Ok(FunctionToolOutput::from_text(
+            result.output.into_text(),
+            result.success,
+        ))
     }
 }

@@ -54,7 +54,7 @@ impl CatalogToolDriver for CronToolDriver {
                             .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::create::execute_structured(&params, &owner)
                         .await
-                        .map(|value| value.to_string())
+                        .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string()))
                 }
                 "cron_toggle" => {
                     let params: tools::toggle::CronToggleParams =
@@ -62,7 +62,7 @@ impl CatalogToolDriver for CronToolDriver {
                             .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::toggle::execute_structured(&params, Some(&owner))
                         .await
-                        .map(|value| value.to_string())
+                        .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string()))
                 }
                 "spool_submit" => {
                     let params: tools::spool_submit::SpoolSubmitParams =
@@ -70,7 +70,7 @@ impl CatalogToolDriver for CronToolDriver {
                             .map_err(|e| format!("invalid arguments: {e}"))?;
                     tools::spool_submit::execute_structured(&params, &owner)
                         .await
-                        .map(|value| value.to_string())
+                        .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string()))
                 }
                 other => Err(format!("unknown cron tool: {other}")),
             }?;

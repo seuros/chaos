@@ -93,13 +93,22 @@ fn path_glob_search_matches_relative_paths() {
     );
 }
 
-#[test]
-fn format_path_for_line_escapes_control_characters() {
-    assert_eq!(format_path_for_line("/tmp/normal.md"), "/tmp/normal.md");
-    assert_eq!(
-        format_path_for_line("/tmp/line\nbreak.md"),
-        "\"/tmp/line\\nbreak.md\""
-    );
+#[tokio::test]
+async fn structured_results_preserve_paths_containing_newlines() {
+    let temp = tempfile::tempdir().expect("create temp dir");
+    let odd_name = "line\nbreak.md";
+    std::fs::write(temp.path().join(odd_name), "content").expect("write file");
+
+    let result = execute_structured(&serde_json::json!({
+        "pattern": "line",
+        "path": temp.path().to_string_lossy(),
+        "include_hidden": true
+    }))
+    .await
+    .expect("locate files");
+    let expected = temp.path().join(odd_name).to_string_lossy().into_owned();
+    assert_eq!(result["matches"], serde_json::json!([expected]));
+    assert_eq!(result["truncated"], false);
 }
 
 #[test]

@@ -81,7 +81,7 @@ pub enum CatalogToolEffect {
 
 #[derive(Debug, Clone)]
 pub struct CatalogToolResult {
-    pub output: String,
+    pub output: mcp_host::prelude::ToolOutput,
     pub success: Option<bool>,
     pub effects: Vec<CatalogToolEffect>,
 }

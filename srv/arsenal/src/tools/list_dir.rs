@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::ffi::OsStr;
-use std::fs::FileType;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -18,8 +17,6 @@ use crate::tools::deserialize_tool_params;
 use crate::tools::tool_json_result;
 
 const MAX_ENTRY_LENGTH: usize = 500;
-const INDENTATION_SPACES: usize = 2;
-
 fn default_offset() -> usize {
     1
 }
@@ -60,41 +57,11 @@ impl ChaosServer {
     }
 }
 
-/// Bridge for core's thin adapter — accepts raw JSON arguments.
-pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    let params: ListDirParams = deserialize_tool_params(arguments)?;
-    execute_params(params).await
-}
-
 pub async fn execute_structured(
     arguments: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let params: ListDirParams = deserialize_tool_params(arguments)?;
     execute_params_structured(params).await
-}
-
-async fn execute_params(params: ListDirParams) -> Result<String, String> {
-    let structured = execute_params_structured(params).await?;
-    let absolute_path = structured
-        .get("absolute_path")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default();
-    let mut output = vec![format!("Absolute path: {absolute_path}")];
-    output.extend(
-        structured
-            .get("entries")
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|entry| entry.as_str().map(ToString::to_string)),
-    );
-    if let Some(message) = structured
-        .get("truncation_message")
-        .and_then(serde_json::Value::as_str)
-    {
-        output.push(message.to_string());
-    }
-    Ok(output.join("\n"))
 }
 
 async fn execute_params_structured(params: ListDirParams) -> Result<serde_json::Value, String> {
@@ -120,36 +87,33 @@ async fn execute_params_structured(params: ListDirParams) -> Result<serde_json::
         return Err("dir_path must be an absolute path".to_string());
     }
 
-    let mut entries = list_dir_slice(&path, offset, limit, depth).await?;
-    let truncation_message = entries
-        .last()
-        .filter(|line| line.starts_with("More than "))
-        .cloned();
-    if truncation_message.is_some() {
-        entries.pop();
-    }
+    let (entries, truncated) = list_dir_slice(&path, offset, limit, depth).await?;
     Ok(serde_json::json!({
         "absolute_path": path.display().to_string(),
-        "entries": entries,
+        "entries": entries.into_iter().map(|entry| serde_json::json!({
+            "path": entry.name,
+            "name": entry.display_name,
+            "kind": entry.kind.as_str(),
+            "depth": entry.depth,
+        })).collect::<Vec<_>>(),
         "offset": offset,
         "limit": limit,
         "depth": depth,
-        "truncated": truncation_message.is_some(),
-        "truncation_message": truncation_message,
+        "truncated": truncated,
     }))
 }
 
-pub async fn list_dir_slice(
+async fn list_dir_slice(
     path: &Path,
     offset: usize,
     limit: usize,
     depth: usize,
-) -> Result<Vec<String>, String> {
+) -> Result<(Vec<DirEntry>, bool), String> {
     let mut entries = Vec::new();
     collect_entries(path, Path::new(""), depth, &mut entries).await?;
 
     if entries.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), false));
     }
 
     entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
@@ -163,17 +127,7 @@ pub async fn list_dir_slice(
     let capped_limit = limit.min(remaining_entries);
     let end_index = start_index + capped_limit;
     let selected_entries = &entries[start_index..end_index];
-    let mut formatted = Vec::with_capacity(selected_entries.len());
-
-    for entry in selected_entries {
-        formatted.push(format_entry_line(entry));
-    }
-
-    if end_index < entries.len() {
-        formatted.push(format!("More than {capped_limit} entries found"));
-    }
-
-    Ok(formatted)
+    Ok((selected_entries.to_vec(), end_index < entries.len()))
 }
 
 async fn collect_entries(
@@ -257,18 +211,6 @@ fn format_entry_component(name: &OsStr) -> String {
     }
 }
 
-fn format_entry_line(entry: &DirEntry) -> String {
-    let indent = " ".repeat(entry.depth * INDENTATION_SPACES);
-    let mut name = entry.display_name.clone();
-    match entry.kind {
-        DirEntryKind::Directory => name.push('/'),
-        DirEntryKind::Symlink => name.push('@'),
-        DirEntryKind::Other => name.push('?'),
-        DirEntryKind::File => {}
-    }
-    format!("{indent}{name}")
-}
-
 #[derive(Clone)]
 struct DirEntry {
     name: String,
@@ -285,16 +227,27 @@ enum DirEntryKind {
     Other,
 }
 
-impl From<&FileType> for DirEntryKind {
-    fn from(file_type: &FileType) -> Self {
+impl DirEntryKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Directory => "directory",
+            Self::File => "file",
+            Self::Symlink => "symlink",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl From<&std::fs::FileType> for DirEntryKind {
+    fn from(file_type: &std::fs::FileType) -> Self {
         if file_type.is_symlink() {
-            DirEntryKind::Symlink
+            Self::Symlink
         } else if file_type.is_dir() {
-            DirEntryKind::Directory
+            Self::Directory
         } else if file_type.is_file() {
-            DirEntryKind::File
+            Self::File
         } else {
-            DirEntryKind::Other
+            Self::Other
         }
     }
 }

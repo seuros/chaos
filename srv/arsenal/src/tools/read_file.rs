@@ -107,14 +107,6 @@ impl ChaosServer {
     }
 }
 
-/// Standalone execution entry point — callable from both MCP and core adapter.
-///
-/// Takes raw JSON arguments, returns the formatted file content or an error message.
-pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    let params: ReadFileParams = deserialize_tool_params(arguments)?;
-    execute_params(params).await
-}
-
 pub async fn execute_structured(
     arguments: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -136,16 +128,6 @@ pub async fn execute_editor_structured(
 ) -> Result<serde_json::Value, String> {
     let params: ReadFileParams = deserialize_tool_params(arguments)?;
     execute_params_source(params, Some(content)).await
-}
-
-/// Shared logic for both MCP handler and JSON adapter paths.
-async fn execute_params(params: ReadFileParams) -> Result<String, String> {
-    let structured = execute_params_structured(params).await?;
-    Ok(structured
-        .get("text")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_string())
 }
 
 async fn execute_params_structured(params: ReadFileParams) -> Result<serde_json::Value, String> {

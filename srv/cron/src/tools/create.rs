@@ -66,17 +66,6 @@ impl CronServer {
     }
 }
 
-/// Standalone execution — callable from both MCP and kernel adapter.
-///
-/// The job is persisted to the mounted filesystem. Missing DB access is
-/// treated as an execution error rather than a validation-only success,
-/// because cron jobs are always expected to persist.
-pub async fn execute(params: &CronCreateParams, owner: &OwnerContext) -> Result<String, String> {
-    execute_structured(params, owner)
-        .await
-        .map(|value| value.to_string())
-}
-
 pub async fn execute_structured(
     params: &CronCreateParams,
     owner: &OwnerContext,

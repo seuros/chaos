@@ -18,16 +18,16 @@ impl CatalogToolDriver for ArsenalToolDriver {
             let result = match request.tool_name.as_str() {
                 "read_file" => tools::read_file::execute_structured(&request.arguments)
                     .await
-                    .map(|value| value.to_string()),
+                    .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string())),
                 "grep_files" => tools::grep_files::execute_structured(&request.arguments)
                     .await
-                    .map(|value| value.to_string()),
+                    .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string())),
                 "locate_files" => tools::locate_files::execute_structured(&request.arguments)
                     .await
-                    .map(|value| value.to_string()),
+                    .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string())),
                 "list_dir" => tools::list_dir::execute_structured(&request.arguments)
                     .await
-                    .map(|value| value.to_string()),
+                    .and_then(|value| ToolOutput::structured(value).map_err(|e| e.to_string())),
                 other => Err(format!("unknown arsenal tool: {other}")),
             }?;
             Ok(CatalogToolResult {

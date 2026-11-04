@@ -21,7 +21,7 @@ use chaos_traits::catalog::CatalogToolRequest;
 use chaos_traits::catalog::CatalogToolResult;
 use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
-use mcp_host::prelude::ToolInfo;
+use mcp_host::prelude::{ToolInfo, ToolOutput};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -144,7 +144,9 @@ impl CatalogToolDriver for McpManageToolDriver {
             };
 
             Ok(CatalogToolResult {
-                output: output.to_string(),
+                output: ToolOutput::structured(output).map_err(|error| {
+                    format!("invalid structured MCP management output: {error}")
+                })?,
                 success: Some(true),
                 effects: vec![CatalogToolEffect::ReloadProjectMcp],
             })

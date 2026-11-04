@@ -86,13 +86,6 @@ impl ChaosServer {
     }
 }
 
-/// Bridge for core's thin adapter — accepts raw JSON arguments.
-pub async fn execute(arguments: &serde_json::Value) -> Result<String, String> {
-    execute_structured(arguments)
-        .await
-        .map(|value| value.to_string())
-}
-
 pub async fn execute_structured(
     arguments: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {

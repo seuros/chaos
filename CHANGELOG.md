@@ -26,6 +26,10 @@ should. There is no patch level; the build timestamp is the patch.
 - Update `mcp-host` to 0.19.0, matching the driver releases above.
 
 ### Fixed
+- A turn no longer ends after a preamble message. `completed_item_is_answer_boundary`
+  treated every assistant message as the final answer, so steered input was
+  deferred and the turn finished mid-task. Chat-completions providers now tag
+  text that arrives beside tool calls as commentary.
 - `chaos://mcp` now reflects a project `.mcp.json` reload instead of the
   configuration the MCP server started with, and subscribers receive
   `notifications/resources/updated` when a management tool changes it.

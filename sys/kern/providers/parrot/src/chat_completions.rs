@@ -12,6 +12,7 @@ use crate::provider::Provider;
 use chaos_abi::AbiError;
 use chaos_abi::AdapterFuture;
 use chaos_abi::ContentItem;
+use chaos_abi::MessagePhase;
 use chaos_abi::ModelAdapter;
 use chaos_abi::ResponseItem;
 use chaos_abi::TokenUsage;
@@ -645,11 +646,17 @@ fn parse_chunk(
         // Finish — close any in-flight tool call and/or text block.
         if finish_reason.is_some() {
             if let Some(acc) = text_acc.take() {
+                // No phase from the wire: text beside tool calls is preamble.
+                let phase = if tool_acc.is_empty() {
+                    Some(MessagePhase::FinalAnswer)
+                } else {
+                    Some(MessagePhase::Commentary)
+                };
                 events.push(TurnEvent::OutputItemDone(ResponseItem::Message {
                     id: None,
                     role: "assistant".to_string(),
                     content: vec![ContentItem::OutputText { text: acc.text }],
-                    phase: None,
+                    phase,
                     end_turn: None,
                 }));
             }

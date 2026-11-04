@@ -57,6 +57,7 @@ pub use turn_result::TurnResult;
 pub use chaos_ipc::config_types::ReasoningSummary;
 pub use chaos_ipc::config_types::Verbosity;
 pub use chaos_ipc::models::ContentItem;
+pub use chaos_ipc::models::MessagePhase;
 pub use chaos_ipc::models::ResponseItem;
 pub use chaos_ipc::openai_models::ReasoningEffort;
 pub use chaos_ipc::protocol::RateLimitSnapshot;

@@ -20,6 +20,7 @@ use crate::tools::router::ToolRouter;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::models::FunctionCallOutputBody;
 use chaos_ipc::models::FunctionCallOutputPayload;
+use chaos_ipc::models::MessagePhase;
 use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_lex::strip_proposed_plan_blocks;
@@ -277,10 +278,12 @@ pub(crate) async fn handle_output_item_done(
 /// Assistant messages and image generation calls are final answers.
 /// Tool calls, reasoning summaries, and commentary are not.
 fn completed_item_is_answer_boundary(item: &ResponseItem) -> bool {
-    matches!(
-        item,
-        ResponseItem::Message { .. } | ResponseItem::ImageGenerationCall { .. }
-    )
+    match item {
+        // Commentary is a preamble, not the answer; counting it ends the turn.
+        ResponseItem::Message { phase, .. } => !matches!(phase, Some(MessagePhase::Commentary)),
+        ResponseItem::ImageGenerationCall { .. } => true,
+        _ => false,
+    }
 }
 
 pub(crate) async fn handle_non_tool_response_item(

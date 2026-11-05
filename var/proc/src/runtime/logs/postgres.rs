@@ -3,10 +3,12 @@ use super::super::{
     PostgresRuntime, QueryBuilder, RuntimeDbHandle,
 };
 use super::prune::logs_prune_backend;
+use super::tail::logs_tail_backend;
 use crate::{LogTailBatch, LogTailCursor};
 use sqlx::{PgConnection, Postgres, Row};
 
 logs_prune_backend!(PostgresRuntime, Postgres, PgConnection);
+logs_tail_backend!(impl PostgresRuntime);
 
 impl RuntimeDbHandle {
     pub async fn insert_logs(&self, entries: &[LogEntry]) -> anyhow::Result<()> {
@@ -102,58 +104,6 @@ impl PostgresRuntime {
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
-    }
-
-    async fn tail_backfill(&self, query: &LogQuery, limit: usize) -> anyhow::Result<LogTailBatch> {
-        let rows = self.recent_logs(query, limit).await?;
-        let last_id = rows
-            .last()
-            .map(|row| row.id)
-            .unwrap_or(self.max_log_id(query).await?);
-        Ok(LogTailBatch {
-            rows,
-            cursor: LogTailCursor { last_id },
-        })
-    }
-
-    async fn query_logs_after(
-        &self,
-        query: &LogQuery,
-        after_id: i64,
-        limit: Option<usize>,
-    ) -> anyhow::Result<Vec<LogRow>> {
-        let mut next_query = query.clone();
-        next_query.after_id = Some(after_id);
-        next_query.limit = limit;
-        next_query.descending = false;
-        self.query_logs(&next_query).await
-    }
-
-    async fn tail_poll(
-        &self,
-        query: &LogQuery,
-        cursor: &LogTailCursor,
-        limit: Option<usize>,
-    ) -> anyhow::Result<LogTailBatch> {
-        let rows = self.query_logs_after(query, cursor.last_id, limit).await?;
-        let last_id = rows.last().map(|row| row.id).unwrap_or(cursor.last_id);
-        Ok(LogTailBatch {
-            rows,
-            cursor: LogTailCursor { last_id },
-        })
-    }
-
-    async fn recent_logs(&self, query: &LogQuery, limit: usize) -> anyhow::Result<Vec<LogRow>> {
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
-        let mut recent_query = query.clone();
-        recent_query.limit = Some(limit);
-        recent_query.after_id = None;
-        recent_query.descending = true;
-        let mut rows = self.query_logs(&recent_query).await?;
-        rows.reverse();
-        Ok(rows)
     }
 
     async fn query_logs(&self, query: &LogQuery) -> anyhow::Result<Vec<LogRow>> {

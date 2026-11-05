@@ -37,6 +37,42 @@ fn disk_byte_caps_are_positive_and_round_trip() {
 }
 
 #[test]
+fn bounded_durations_preserve_endpoints_and_errors() {
+    for (field, minimum, maximum, message) in [
+        (
+            "recovery_stable_seconds",
+            30,
+            86_400,
+            "recovery duration must be in 30..=86400 seconds",
+        ),
+        (
+            "recovery_instant_seconds",
+            1,
+            86_400,
+            "recovery duration must be in 1..=86400 seconds",
+        ),
+        (
+            "probe_timeout_ms",
+            1,
+            60_000,
+            "probe timeout must be in 1..=60000 ms",
+        ),
+    ] {
+        for value in [minimum, maximum] {
+            let config: MachineWarningsConfig =
+                serde_json::from_value(serde_json::json!({field: value})).unwrap();
+            assert_eq!(serde_json::to_value(config).unwrap()[field], value);
+        }
+        for value in [minimum - 1, maximum + 1] {
+            let error =
+                serde_json::from_value::<MachineWarningsConfig>(serde_json::json!({field: value}))
+                    .unwrap_err();
+            assert!(error.to_string().contains(message), "{error}");
+        }
+    }
+}
+
+#[test]
 fn machine_warnings_reject_invalid_thresholds_and_typos() {
     for setting in [
         "battery_percent = 101",

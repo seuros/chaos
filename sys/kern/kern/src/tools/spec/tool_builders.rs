@@ -1449,66 +1449,47 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_list_mcp_resources_tool() -> ToolSpec {
-    let properties = BTreeMap::from([
-        (
-            "server".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional MCP server name. When omitted, lists internal resources and resources from every configured server. Internal entries have no server field."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "cursor".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Opaque cursor returned by a previous list_mcp_resources call for the same server."
-                        .to_string(),
-                ),
-            },
-        ),
-    ]);
-
-    ToolSpec::Function(ResponsesApiTool {
-        name: "list_mcp_resources".to_string(),
-        description: "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.".to_string(),
-        strict: false,
-        defer_loading: None,
-        parameters: JsonSchema::Object {
-            properties,
-            required: None,
-            additional_properties: Some(false.into()),
-        },
-        output_schema: None,
-    })
+    create_list_mcp_tool(
+        "list_mcp_resources",
+        "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
+        "Optional MCP server name. When omitted, lists internal resources and resources from every configured server. Internal entries have no server field.",
+        "Opaque cursor returned by a previous list_mcp_resources call for the same server.",
+    )
 }
 
 pub(crate) fn create_list_mcp_resource_templates_tool() -> ToolSpec {
+    create_list_mcp_tool(
+        "list_mcp_resource_templates",
+        "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
+        "Optional MCP server name. When omitted, lists internal resource templates and templates from all configured servers. Internal entries have no server field.",
+        "Opaque cursor returned by a previous list_mcp_resource_templates call for the same server.",
+    )
+}
+
+fn create_list_mcp_tool(
+    name: &str,
+    description: &str,
+    server_description: &str,
+    cursor_description: &str,
+) -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "server".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "Optional MCP server name. When omitted, lists internal resource templates and templates from all configured servers. Internal entries have no server field."
-                        .to_string(),
-                ),
+                description: Some(server_description.to_string()),
             },
         ),
         (
             "cursor".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "Opaque cursor returned by a previous list_mcp_resource_templates call for the same server."
-                        .to_string(),
-                ),
+                description: Some(cursor_description.to_string()),
             },
         ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
-        name: "list_mcp_resource_templates".to_string(),
-        description: "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.".to_string(),
+        name: name.to_string(),
+        description: description.to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {

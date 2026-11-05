@@ -39,11 +39,7 @@ impl CronServer {
         params: Parameters<CronToggleParams>,
     ) -> ToolResult {
         let owner = owner_context_from_cron_ctx(ctx);
-        match execute_structured(&params.0, Some(&owner)).await {
-            Ok(value) => ToolOutput::structured(value)
-                .map_err(|e| ToolError::Execution(format!("non-object tool output: {e}"))),
-            Err(msg) => Err(ToolError::Execution(msg)),
-        }
+        super::structured_tool_result(execute_structured(&params.0, Some(&owner)).await)
     }
 }
 

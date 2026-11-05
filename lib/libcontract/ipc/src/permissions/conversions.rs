@@ -23,37 +23,17 @@ impl From<&SandboxPolicy> for VfsPolicy {
             SandboxPolicy::RootAccess => VfsPolicy::unrestricted(),
             SandboxPolicy::ExternalSandbox { .. } => VfsPolicy::external_sandbox(),
             SandboxPolicy::ReadOnly { access, .. } => {
-                let mut entries = Vec::new();
-                match access {
-                    ReadOnlyAccess::FullAccess => entries.push(VfsEntry {
-                        path: VfsPath::Special {
-                            value: VfsSpecialPath::Root,
-                        },
-                        access: VfsAccessMode::Read,
-                    }),
-                    ReadOnlyAccess::Restricted {
-                        include_platform_defaults,
-                        readable_roots,
-                    } => {
-                        entries.push(VfsEntry {
+                let mut entries = read_only_entries(access);
+                if matches!(access, ReadOnlyAccess::Restricted { .. }) {
+                    entries.insert(
+                        0,
+                        VfsEntry {
                             path: VfsPath::Special {
                                 value: VfsSpecialPath::CurrentWorkingDirectory,
                             },
                             access: VfsAccessMode::Read,
-                        });
-                        if *include_platform_defaults {
-                            entries.push(VfsEntry {
-                                path: VfsPath::Special {
-                                    value: VfsSpecialPath::Minimal,
-                                },
-                                access: VfsAccessMode::Read,
-                            });
-                        }
-                        entries.extend(readable_roots.iter().cloned().map(|path| VfsEntry {
-                            path: VfsPath::Path { path },
-                            access: VfsAccessMode::Read,
-                        }));
-                    }
+                        },
+                    );
                 }
                 VfsPolicy::restricted(entries)
             }
@@ -64,32 +44,7 @@ impl From<&SandboxPolicy> for VfsPolicy {
                 exclude_slash_tmp,
                 ..
             } => {
-                let mut entries = Vec::new();
-                match read_only_access {
-                    ReadOnlyAccess::FullAccess => entries.push(VfsEntry {
-                        path: VfsPath::Special {
-                            value: VfsSpecialPath::Root,
-                        },
-                        access: VfsAccessMode::Read,
-                    }),
-                    ReadOnlyAccess::Restricted {
-                        include_platform_defaults,
-                        readable_roots,
-                    } => {
-                        if *include_platform_defaults {
-                            entries.push(VfsEntry {
-                                path: VfsPath::Special {
-                                    value: VfsSpecialPath::Minimal,
-                                },
-                                access: VfsAccessMode::Read,
-                            });
-                        }
-                        entries.extend(readable_roots.iter().cloned().map(|path| VfsEntry {
-                            path: VfsPath::Path { path },
-                            access: VfsAccessMode::Read,
-                        }));
-                    }
-                }
+                let mut entries = read_only_entries(read_only_access);
 
                 entries.push(VfsEntry {
                     path: VfsPath::Special {
@@ -121,4 +76,34 @@ impl From<&SandboxPolicy> for VfsPolicy {
             }
         }
     }
+}
+
+fn read_only_entries(access: &ReadOnlyAccess) -> Vec<VfsEntry> {
+    let mut entries = Vec::new();
+    match access {
+        ReadOnlyAccess::FullAccess => entries.push(VfsEntry {
+            path: VfsPath::Special {
+                value: VfsSpecialPath::Root,
+            },
+            access: VfsAccessMode::Read,
+        }),
+        ReadOnlyAccess::Restricted {
+            include_platform_defaults,
+            readable_roots,
+        } => {
+            if *include_platform_defaults {
+                entries.push(VfsEntry {
+                    path: VfsPath::Special {
+                        value: VfsSpecialPath::Minimal,
+                    },
+                    access: VfsAccessMode::Read,
+                });
+            }
+            entries.extend(readable_roots.iter().cloned().map(|path| VfsEntry {
+                path: VfsPath::Path { path },
+                access: VfsAccessMode::Read,
+            }));
+        }
+    }
+    entries
 }

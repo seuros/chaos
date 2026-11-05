@@ -3,3 +3,4 @@ mod levels;
 mod postgres;
 mod prune;
 mod sinks;
+mod tail;

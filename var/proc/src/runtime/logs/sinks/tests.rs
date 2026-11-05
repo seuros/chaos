@@ -301,6 +301,13 @@ async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
     assert_eq!(backfill.rows.len(), 1);
     assert_eq!(backfill.rows[0].message.as_deref(), Some("two"));
 
+    let zero_backfill = runtime
+        .tail_backfill(&LogQuery::default(), 0)
+        .await
+        .expect("zero-limit tail backfill");
+    assert!(zero_backfill.rows.is_empty());
+    assert_eq!(zero_backfill.cursor, backfill.cursor);
+
     runtime
         .insert_log(&LogEntry {
             ts: 32,
@@ -324,6 +331,13 @@ async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
     assert_eq!(polled.rows.len(), 1);
     assert_eq!(polled.rows[0].message.as_deref(), Some("three"));
     assert!(polled.cursor.last_id > backfill.cursor.last_id);
+
+    let empty_poll = runtime
+        .tail_poll(&LogQuery::default(), &polled.cursor, None)
+        .await
+        .expect("tail poll without newer logs");
+    assert!(empty_poll.rows.is_empty());
+    assert_eq!(empty_poll.cursor, polled.cursor);
 
     let _ = tokio::fs::remove_dir_all(chaos_home).await;
 }

@@ -10,6 +10,63 @@ use crate::protocol::SandboxPolicy;
 
 const SYMLINKED_TMPDIR_TEST_ENV: &str = "CHAOS_PROTOCOL_TEST_SYMLINKED_TMPDIR";
 
+#[test]
+fn sandbox_conversion_preserves_read_entries_and_cwd_order() {
+    let special = |value, access| VfsEntry {
+        path: VfsPath::Special { value },
+        access,
+    };
+    let root = AbsolutePathBuf::from_absolute_path("/readable").expect("absolute path");
+    for defaults in [None, Some(false), Some(true)] {
+        let access = defaults.map_or(ReadOnlyAccess::FullAccess, |include_platform_defaults| {
+            ReadOnlyAccess::Restricted {
+                include_platform_defaults,
+                readable_roots: vec![root.clone()],
+            }
+        });
+        let mut expected = Vec::new();
+        if defaults.is_none() {
+            expected.push(special(VfsSpecialPath::Root, VfsAccessMode::Read));
+        } else {
+            if defaults == Some(true) {
+                expected.push(special(VfsSpecialPath::Minimal, VfsAccessMode::Read));
+            }
+            expected.push(VfsEntry {
+                path: VfsPath::Path { path: root.clone() },
+                access: VfsAccessMode::Read,
+            });
+        }
+        let workspace = SandboxPolicy::WorkspaceWrite {
+            writable_roots: Vec::new(),
+            read_only_access: access.clone(),
+            network_access: false,
+            exclude_tmpdir_env_var: true,
+            exclude_slash_tmp: true,
+        };
+        let mut workspace_expected = expected.clone();
+        workspace_expected.push(special(
+            VfsSpecialPath::CurrentWorkingDirectory,
+            VfsAccessMode::Write,
+        ));
+        assert_eq!(
+            VfsPolicy::from(&workspace),
+            VfsPolicy::restricted(workspace_expected)
+        );
+
+        if defaults.is_some() {
+            expected.insert(
+                0,
+                special(VfsSpecialPath::CurrentWorkingDirectory, VfsAccessMode::Read),
+            );
+        }
+        let read_only = SandboxPolicy::ReadOnly {
+            access,
+            network_access: false,
+        };
+        assert_eq!(VfsPolicy::from(&read_only), VfsPolicy::restricted(expected));
+    }
+}
+
 fn symlink_dir(original: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(original, link)
 }

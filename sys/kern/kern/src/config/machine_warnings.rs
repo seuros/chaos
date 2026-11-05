@@ -82,23 +82,19 @@ fn disk_bytes_cap<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::
 }
 
 fn recovery_seconds<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
-    let value = u64::deserialize(deserializer)?;
-    if !(30..=86_400).contains(&value) {
-        return Err(serde::de::Error::custom(
-            "recovery duration must be in 30..=86400 seconds",
-        ));
-    }
-    Ok(value)
+    bounded_u64(
+        deserializer,
+        30..=86_400,
+        "recovery duration must be in 30..=86400 seconds",
+    )
 }
 
 fn recovery_seconds_short<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
-    let value = u64::deserialize(deserializer)?;
-    if !(1..=86_400).contains(&value) {
-        return Err(serde::de::Error::custom(
-            "recovery duration must be in 1..=86400 seconds",
-        ));
-    }
-    Ok(value)
+    bounded_u64(
+        deserializer,
+        1..=86_400,
+        "recovery duration must be in 1..=86400 seconds",
+    )
 }
 
 fn recovery_temperature<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
@@ -120,11 +116,21 @@ fn percentage<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u8, D::Error
 }
 
 fn probe_timeout<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    bounded_u64(
+        deserializer,
+        1..=60_000,
+        "probe timeout must be in 1..=60000 ms",
+    )
+}
+
+fn bounded_u64<'de, D: Deserializer<'de>>(
+    deserializer: D,
+    range: std::ops::RangeInclusive<u64>,
+    message: &str,
+) -> Result<u64, D::Error> {
     let value = u64::deserialize(deserializer)?;
-    if !(1..=60_000).contains(&value) {
-        return Err(serde::de::Error::custom(
-            "probe timeout must be in 1..=60000 ms",
-        ));
+    if !range.contains(&value) {
+        return Err(serde::de::Error::custom(message));
     }
     Ok(value)
 }

@@ -19,7 +19,12 @@ fn tool_info() -> ToolInfo {
     tool_info_with_output(
         "refresh_models",
         None,
-        Some("Force a fresh model catalog fetch for a configured provider, updating its cache. Equivalent to chaos --provider <provider> models --refresh. Does not start or switch a session. Read chaos://models for cached catalogs.".to_string()),
+        Some(
+            "Force a fresh model catalog fetch for a configured provider, updating its cache. \
+             Equivalent to chaos --provider <provider> models --refresh. \
+             Does not start or switch a session. Read chaos://models for cached catalogs."
+                .to_string(),
+        ),
         json!({
             "type": "object",
             "properties": {
@@ -47,7 +52,7 @@ fn handler<'a>(
     ctx: ExecutionContext<'a>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send + 'a>>
 {
-    Box::pin(async move {
+    Box::pin(crate::telemetry::tool("refresh_models", async move {
         let state = server.session_state(ctx.session)?;
         let params: RefreshModelsParams = serde_json::from_value(ctx.params)
             .map_err(|err| ToolError::InvalidArguments(err.to_string()))?;
@@ -61,7 +66,7 @@ fn handler<'a>(
         let value: serde_json::Value = serde_json::from_str(&output)
             .map_err(|err| ToolError::Execution(format!("invalid model catalog JSON: {err}")))?;
         ToolOutput::structured(value).map_err(|err| ToolError::Execution(err.to_string()))
-    })
+    }))
 }
 
 pub(crate) fn tool_router() -> McpToolRouter<ChaosMcpServer> {

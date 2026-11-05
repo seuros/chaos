@@ -99,7 +99,7 @@ impl Tool for Endpoint {
     }
 
     fn execute<'a>(&'a self, ctx: ExecutionContext<'a>) -> ToolFuture<'a> {
-        Box::pin(async move {
+        Box::pin(crate::telemetry::tool(self.name(), async move {
             let state = self.service.session_state(ctx.session)?;
             match self.operation {
                 Operation::Status => state.workflow_owner.status(ctx).map(with_fallback),
@@ -222,7 +222,7 @@ impl Tool for Endpoint {
                     })?
                 }
             }
-        })
+        }))
     }
 }
 

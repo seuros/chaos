@@ -68,6 +68,15 @@ leave superseded MCP server generations running.
 Use `.shutdown_timeout(duration)` on the stdio connection builder to bound transport
 shutdown for a server with a known termination budget.
 
+### Telemetry
+
+Requests emit `mcp.guest.request` spans through the application's existing
+`tracing` subscriber. They include the RPC method and completion status, never
+parameters, response bodies, or error text. Request context follows queued
+transport sends; no subscriber or OTLP exporter is installed by this library.
+Cross-process trace-context propagation is not provided by these local spans.
+
+
 ## MCP Apps (`ui://`)
 
 `mcp-host` 0.6 MCP Apps views use `ui://` resource URIs and the MIME type

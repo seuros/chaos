@@ -30,6 +30,7 @@ use rama::futures::future::join_all;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 use tracing::warn;
 
 use crate::catalog::McpCatalogGate;
@@ -96,7 +97,8 @@ impl McpServerActor {
                             .await
                         {
                             warn!(
-                                "failed to apply queued MCP sandbox state for server {name}: {err:#}"
+                                "failed to apply queued MCP sandbox state \
+                                 for server {name}: {err:#}"
                             );
                         }
                     }
@@ -739,11 +741,15 @@ impl McpRegistryActor {
     {
         self.ensure_running()?;
         let (reply, response) = oneshot::channel();
+        let span = tracing::Span::current();
         let erased_job: ServerJob = Box::new(move |manager, server| {
-            Box::pin(async move {
-                let value = job(manager, server).await?;
-                Ok(Box::new(value) as Box<dyn Any + Send>)
-            })
+            Box::pin(
+                async move {
+                    let value = job(manager, server).await?;
+                    Ok(Box::new(value) as Box<dyn Any + Send>)
+                }
+                .instrument(span),
+            )
         });
         tokio::time::timeout(
             MCP_MAILBOX_TIMEOUT,
@@ -1085,7 +1091,8 @@ async fn restore_resource_subscriptions(
                         server,
                         uri,
                         %error,
-                        "failed to restore MCP resource subscription; keeping desired state for a later refresh"
+                        "failed to restore MCP resource subscription; \
+                         keeping desired state for a later refresh"
                     );
                 }
             }
@@ -1099,7 +1106,8 @@ async fn restore_resource_subscriptions(
                 server,
                 uri_count,
                 %error,
-                "timed out restoring MCP resource subscription; keeping desired state for a later refresh"
+                "timed out restoring MCP resource subscription; \
+                 keeping desired state for a later refresh"
             );
         }
     }

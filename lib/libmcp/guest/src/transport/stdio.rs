@@ -78,7 +78,7 @@ struct StdioReader {
 }
 
 struct StdioWriter {
-    writer: BufWriter<ChildStdin>,
+    writer: Option<BufWriter<ChildStdin>>,
     buffer: Vec<u8>,
 }
 
@@ -154,7 +154,7 @@ impl StdioTransport {
                 buffer: Vec::new(),
             }),
             writer: Mutex::new(StdioWriter {
-                writer: child.stdin,
+                writer: Some(child.stdin),
                 buffer: Vec::new(),
             }),
             child: Mutex::new(child.child),
@@ -174,6 +174,7 @@ impl StdioTransport {
         let result = timeout(self.write_timeout, async {
             let mut state = self.writer.lock().await;
             let StdioWriter { writer, buffer } = &mut *state;
+            let writer = writer.as_mut().ok_or(GuestError::Disconnected)?;
             let buffer = RecycledBuffer(buffer);
             buffer.0.clear();
             serde_json::to_writer(&mut *buffer.0, message)?;
@@ -266,16 +267,22 @@ impl StdioTransport {
 
         if graceful {
             match timeout(self.shutdown_timeout, async {
-                let mut writer = self.writer.lock().await;
-                writer.writer.flush().await?;
-                writer.writer.shutdown().await?;
+                // AsyncWrite::shutdown does not close a Unix child pipe.
+                // Take ownership so EOF is delivered on success, error, or cancellation.
+                if let Some(mut writer) = self.writer.lock().await.writer.take() {
+                    writer.flush().await?;
+                    writer.shutdown().await?;
+                }
                 Ok::<(), std::io::Error>(())
             })
             .await
             {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
-                    tracing::warn!(%error, "failed to close MCP stdio input; forcing child shutdown");
+                    tracing::warn!(
+                        %error,
+                        "failed to close MCP stdio input; forcing child shutdown"
+                    );
                 }
                 Err(_) => {
                     tracing::warn!(

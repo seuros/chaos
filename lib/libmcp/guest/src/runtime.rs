@@ -1,4 +1,5 @@
 use rama::telemetry::tracing;
+use rama::telemetry::tracing::Instrument;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -177,7 +178,8 @@ async fn run_runtime(
                         if let Err(error) = transport.force_shutdown().await {
                             tracing::error!(
                                 %error,
-                                "failed to force MCP transport shutdown after session handles were dropped"
+                                "failed to force MCP transport shutdown \
+                                 after session handles were dropped"
                             );
                         }
                         break;
@@ -216,10 +218,17 @@ async fn run_runtime(
                         let Some(request_id) = RequestId::from_value(&id_value) else {
                             let response = JsonRpcResponse::error(
                                 Some(id_value),
-                                JsonRpcError::invalid_request("request id must be string or number"),
+                                JsonRpcError::invalid_request(
+                                    "request id must be string or number",
+                                ),
                             );
-                            if let Err(error) = transport.send(JsonRpcMessage::Response(response)).await {
-                                tracing::warn!(error = %error, "failed to send invalid-request response");
+                            if let Err(error) =
+                                transport.send(JsonRpcMessage::Response(response)).await
+                            {
+                                tracing::warn!(
+                                    error = %error,
+                                    "failed to send invalid-request response"
+                                );
                             }
                             continue;
                         };
@@ -264,15 +273,19 @@ async fn handle_runtime_command(
             method,
             params,
             response_tx,
+            span,
         } => {
             pending_outgoing.insert(request_id.clone(), response_tx);
             let request = JsonRpcRequest::new(request_id.to_value(), method, params);
             let send_failure_tx = send_failure_tx.clone();
-            tokio::spawn(async move {
-                if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await {
-                    let _ = send_failure_tx.send((request_id, error));
+            tokio::spawn(
+                async move {
+                    if let Err(error) = transport.send(JsonRpcMessage::Request(request)).await {
+                        let _ = send_failure_tx.send((request_id, error));
+                    }
                 }
-            });
+                .instrument(span),
+            );
             false
         }
         RuntimeCommand::Notification {

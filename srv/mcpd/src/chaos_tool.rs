@@ -366,7 +366,8 @@ fn chaos_tool_info() -> ToolInfo {
         "chaos",
         None,
         Some(format!(
-            "Run a {OS_NAME} session. Auto-resumes the last process per session; pass process-id to target a specific one."
+            "Run a {OS_NAME} session. Auto-resumes the last process per session; \
+             pass process-id to target a specific one."
         )),
         chaos_input_schema(),
         chaos_output_schema(),
@@ -383,7 +384,7 @@ fn chaos_handler<'a>(
     ctx: ExecutionContext<'a>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ToolOutput, ToolError>> + Send + 'a>>
 {
-    Box::pin(server.handle_chaos(ctx))
+    Box::pin(crate::telemetry::tool("chaos", server.handle_chaos(ctx)))
 }
 
 pub(crate) fn tool_router() -> McpToolRouter<ChaosMcpServer> {

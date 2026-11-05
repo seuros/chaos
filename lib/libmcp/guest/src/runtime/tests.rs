@@ -81,12 +81,17 @@ async fn handshake_accepts_previous_version_and_replies_to_ping() {
 
     let sent = transport.sent.lock().await;
     assert_eq!(sent.len(), 3);
-    std::assert_matches!(&sent[0], JsonRpcMessage::Request(request) if request.method == "initialize");
     std::assert_matches!(
-        &sent[1], JsonRpcMessage::Response(response) if response.id == Some(serde_json::json!("ping-1"))
+        &sent[0], JsonRpcMessage::Request(request) if request.method == "initialize"
     );
     std::assert_matches!(
-        &sent[2], JsonRpcMessage::Notification(notification) if notification.method == "notifications/initialized"
+        &sent[1],
+        JsonRpcMessage::Response(response) if response.id == Some(serde_json::json!("ping-1"))
+    );
+    std::assert_matches!(
+        &sent[2],
+        JsonRpcMessage::Notification(notification)
+            if notification.method == "notifications/initialized"
     );
 }
 
@@ -141,6 +146,12 @@ impl MessageTransport for SlowSendTransport {
     fn send<'a>(&'a self, message: JsonRpcMessage) -> TransportFuture<'a, ()> {
         Box::pin(async move {
             if let JsonRpcMessage::Request(request) = &message {
+                tokio::task::yield_now().await;
+                assert_eq!(
+                    tracing::Span::current().metadata().map(|meta| meta.name()),
+                    Some(request.method.as_str()),
+                    "each spawned send must retain its own request span"
+                );
                 if request.method == "slow" {
                     std::future::pending::<()>().await;
                 }
@@ -171,6 +182,8 @@ impl MessageTransport for SlowSendTransport {
 
 #[tokio::test]
 async fn slow_request_send_does_not_block_other_requests() {
+    let dispatch = tracing::Dispatch::new(tracing::subscriber::Registry::default());
+    let _subscriber = tracing::dispatcher::set_default(&dispatch);
     let transport = SlowSendTransport::new();
     let shared = Arc::new(SharedState::new(
         ServerInfo {
@@ -196,6 +209,7 @@ async fn slow_request_send_does_not_block_other_requests() {
             method: "slow".to_string(),
             params: None,
             response_tx: slow_tx,
+            span: tracing::info_span!("slow"),
         })
         .await
         .unwrap();
@@ -207,6 +221,7 @@ async fn slow_request_send_does_not_block_other_requests() {
             method: "fast".to_string(),
             params: None,
             response_tx: fast_tx,
+            span: tracing::info_span!("fast"),
         })
         .await
         .unwrap();

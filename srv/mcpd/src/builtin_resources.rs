@@ -164,6 +164,11 @@ impl builtin_mcp_resources::ChaosBuiltinResourceBackend for McpHostBuiltinResour
     }
 }
 
+#[tracing::instrument(
+    name = "mcp.host.resource",
+    skip_all,
+    fields(rpc.system = "jsonrpc", rpc.method = "resources/read", otel.kind = "server")
+)]
 async fn read_builtin_resource(
     server: &ChaosMcpServer,
     session: &Session,

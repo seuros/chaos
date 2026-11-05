@@ -38,6 +38,7 @@ mod models_tool;
 mod outgoing_message;
 mod patch_approval;
 mod session_state;
+mod telemetry;
 mod workflow_app;
 mod workflows;
 

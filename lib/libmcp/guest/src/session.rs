@@ -1,4 +1,5 @@
 use rama::telemetry::tracing;
+use rama::telemetry::tracing::Instrument;
 use std::sync::Arc;
 use std::sync::Weak;
 use std::sync::atomic::AtomicU64;
@@ -52,6 +53,7 @@ pub(crate) enum RuntimeCommand {
         method: String,
         params: Option<Value>,
         response_tx: oneshot::Sender<Result<Value, GuestError>>,
+        span: tracing::Span,
     },
     Notification {
         method: String,
@@ -199,6 +201,31 @@ impl McpSession {
         params: Option<Value>,
         timeout_override: Option<Duration>,
     ) -> Result<Value, GuestError> {
+        let method = method.into();
+        let span = tracing::info_span!(
+            "mcp.guest.request",
+            rpc.system = "jsonrpc",
+            rpc.method = %method,
+            otel.kind = "client",
+            otel.status_code = tracing::field::Empty,
+        );
+        let result = self
+            .request_inner(method, params, timeout_override)
+            .instrument(span.clone())
+            .await;
+        span.record(
+            "otel.status_code",
+            if result.is_ok() { "OK" } else { "ERROR" },
+        );
+        result
+    }
+
+    async fn request_inner(
+        &self,
+        method: String,
+        params: Option<Value>,
+        timeout_override: Option<Duration>,
+    ) -> Result<Value, GuestError> {
         if !self.inner.lifecycle.accepting() {
             return Err(GuestError::Disconnected);
         }
@@ -212,9 +239,10 @@ impl McpSession {
             deadline,
             self.inner.command_tx.send(RuntimeCommand::Request {
                 request_id: request_id.clone(),
-                method: method.into(),
+                method,
                 params,
                 response_tx,
+                span: tracing::Span::current(),
             }),
         )
         .await

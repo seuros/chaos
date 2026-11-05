@@ -88,12 +88,12 @@ jobs:
       - name: Set up mbx
         uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
         with:
-          version: "1.8.3"
+          version: "1.29.2"
           backend: github
           github-cache-mode: target
           save-on-workflow-dispatch: "false"
           # The action additionally keys on OS, architecture, and rustc identity.
-          cache-generation: chaos-ci-test-mbx-1.8.3-${{ inputs.target }}-${{ hashFiles('.mbx.toml') }}
+          cache-generation: chaos-ci-test-mbx-1.29.2-${{ inputs.target }}-${{ hashFiles('.mbx.toml') }}
 
       - uses: taiki-e/install-action@v2
         with:

@@ -54,7 +54,12 @@ async fn lists_directory_entries() {
         serde_json::json!({"path":"nested","name":"nested","kind":"directory","depth":0}),
         serde_json::json!({"path":"nested/child.txt","name":"child.txt","kind":"file","depth":1}),
         serde_json::json!({"path":"nested/deeper","name":"deeper","kind":"directory","depth":1}),
-        serde_json::json!({"path":"nested/deeper/grandchild.txt","name":"grandchild.txt","kind":"file","depth":2}),
+        serde_json::json!({
+            "path": "nested/deeper/grandchild.txt",
+            "name": "grandchild.txt",
+            "kind": "file",
+            "depth": 2,
+        }),
     ];
 
     assert_eq!(entry_values(&entries), expected);
@@ -79,9 +84,9 @@ async fn errors_when_offset_exceeds_entries() {
         .await
         .expect("create sub dir");
 
-    let err = list_dir_slice(dir_path, 10, 1, 2)
-        .await
-        .expect_err("offset exceeds entries");
+    let Err(err) = list_dir_slice(dir_path, 10, 1, 2).await else {
+        panic!("offset exceeds entries");
+    };
     assert_eq!(err, "offset exceeds directory entry count");
 }
 
@@ -121,8 +126,18 @@ async fn respects_depth_parameter() {
         entry_values(&entries_depth_two),
         vec![
             serde_json::json!({"path":"nested","name":"nested","kind":"directory","depth":0}),
-            serde_json::json!({"path":"nested/child.txt","name":"child.txt","kind":"file","depth":1}),
-            serde_json::json!({"path":"nested/deeper","name":"deeper","kind":"directory","depth":1}),
+            serde_json::json!({
+                "path": "nested/child.txt",
+                "name": "child.txt",
+                "kind": "file",
+                "depth": 1,
+            }),
+            serde_json::json!({
+                "path": "nested/deeper",
+                "name": "deeper",
+                "kind": "directory",
+                "depth": 1,
+            }),
             serde_json::json!({"path":"root.txt","name":"root.txt","kind":"file","depth":0})
         ]
     );
@@ -152,7 +167,12 @@ async fn paginates_in_sorted_order() {
         entry_values(&first_page),
         vec![
             serde_json::json!({"path":"a","name":"a","kind":"directory","depth":0}),
-            serde_json::json!({"path":"a/a_child.txt","name":"a_child.txt","kind":"file","depth":1}),
+            serde_json::json!({
+                "path": "a/a_child.txt",
+                "name": "a_child.txt",
+                "kind": "file",
+                "depth": 1,
+            }),
         ]
     );
     assert!(first_truncated);

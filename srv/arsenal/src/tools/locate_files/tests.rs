@@ -176,7 +176,7 @@ async fn execute_params_reports_truncated_matches() {
     std::fs::write(dir.join("one.md"), "").expect("write one");
     std::fs::write(dir.join("two.md"), "").expect("write two");
 
-    let output = execute_params(LocateFilesParams {
+    let output = execute_params_structured(LocateFilesParams {
         pattern: "md".to_string(),
         path: Some(dir.to_string_lossy().into_owned()),
         limit: 1,
@@ -185,10 +185,9 @@ async fn execute_params_reports_truncated_matches() {
     .await
     .expect("execute");
 
-    assert!(
-        output.contains("more matches not shown"),
-        "output: {output}"
-    );
+    assert_eq!(output["truncated"], true, "output: {output}");
+    assert_eq!(output["shown_match_count"], 1);
+    assert_eq!(output["total_match_count"], 2);
 }
 
 #[tokio::test]

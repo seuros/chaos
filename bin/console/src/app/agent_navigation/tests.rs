@@ -35,7 +35,11 @@ fn render_tabs(
 ) -> (String, Vec<ProcessId>) {
     let mut buf = ratatui::buffer::Buffer::empty(area);
     state.render_tabs(area, &mut buf, Some(active), Some(active));
-    let rendered = buf.content.iter().map(|cell| cell.symbol()).collect();
+    let rendered = buf
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
     let visible_ids = state.tab_hits.iter().map(|(id, _)| *id).collect();
     (rendered, visible_ids)
 }

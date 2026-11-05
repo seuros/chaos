@@ -148,7 +148,9 @@ impl MessageTransport for SlowSendTransport {
             if let JsonRpcMessage::Request(request) = &message {
                 tokio::task::yield_now().await;
                 assert_eq!(
-                    tracing::Span::current().metadata().map(|meta| meta.name()),
+                    tracing::Span::current()
+                        .metadata()
+                        .map(tracing::Metadata::name),
                     Some(request.method.as_str()),
                     "each spawned send must retain its own request span"
                 );

@@ -11,8 +11,15 @@ fn assert_list_dir_output(
     depth: u64,
     offset: u64,
     limit: u64,
-    entries: &[&str],
+    entries: &[(&str, &str, u64)],
 ) -> anyhow::Result<()> {
+    let entries: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|&(path, kind, depth)| {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            json!({"path": path, "name": name, "kind": kind, "depth": depth})
+        })
+        .collect();
     let output: serde_json::Value = serde_json::from_str(output)?;
     assert_eq!(output["absolute_path"], json!(absolute_path));
     assert_eq!(output["depth"], json!(depth));
@@ -20,7 +27,6 @@ fn assert_list_dir_output(
     assert_eq!(output["limit"], json!(limit));
     assert_eq!(output["entries"], json!(entries));
     assert_eq!(output["truncated"], json!(false));
-    assert_eq!(output["truncation_message"], serde_json::Value::Null);
     Ok(())
 }
 
@@ -52,7 +58,14 @@ async fn list_dir_tool_returns_entries() -> anyhow::Result<()> {
         .function_call_output_content_and_success(call_id)
         .expect("function_call_output present");
     let output = content_opt.expect("output content present in tool output");
-    assert_list_dir_output(&output, &dir_path, 2, 1, 2, &["alpha.txt", "nested/"])?;
+    assert_list_dir_output(
+        &output,
+        &dir_path,
+        2,
+        1,
+        2,
+        &[("alpha.txt", "file", 0), ("nested", "directory", 0)],
+    )?;
 
     Ok(())
 }
@@ -88,7 +101,14 @@ async fn list_dir_tool_depth_one_omits_children() -> anyhow::Result<()> {
         .function_call_output_content_and_success(call_id)
         .expect("function_call_output present");
     let output = content_opt.expect("output content present in tool output");
-    assert_list_dir_output(&output, &dir_path, 1, 1, 10, &["alpha.txt", "nested/"])?;
+    assert_list_dir_output(
+        &output,
+        &dir_path,
+        1,
+        1,
+        10,
+        &[("alpha.txt", "file", 0), ("nested", "directory", 0)],
+    )?;
 
     Ok(())
 }
@@ -134,7 +154,12 @@ async fn list_dir_tool_depth_two_includes_children_only() -> anyhow::Result<()> 
         2,
         1,
         10,
-        &["alpha.txt", "nested/", "  beta.txt", "  grand/"],
+        &[
+            ("alpha.txt", "file", 0),
+            ("nested", "directory", 0),
+            ("nested/beta.txt", "file", 1),
+            ("nested/grand", "directory", 1),
+        ],
     )?;
 
     Ok(())
@@ -182,11 +207,11 @@ async fn list_dir_tool_depth_three_includes_grandchildren() -> anyhow::Result<()
         1,
         10,
         &[
-            "alpha.txt",
-            "nested/",
-            "  beta.txt",
-            "  grand/",
-            "    gamma.txt",
+            ("alpha.txt", "file", 0),
+            ("nested", "directory", 0),
+            ("nested/beta.txt", "file", 1),
+            ("nested/grand", "directory", 1),
+            ("nested/grand/gamma.txt", "file", 2),
         ],
     )?;
 

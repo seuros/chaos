@@ -1343,7 +1343,7 @@ dependencies = [
  "chaos-which",
  "chrono-machines",
  "cookie_store",
- "deadline-machines 0.3.0",
+ "deadline-machines",
  "pretty_assertions",
  "rama",
  "rustls",
@@ -1815,7 +1815,7 @@ dependencies = [
  "test-case",
  "test-log",
  "thiserror 2.0.21",
- "throttle-machines 0.5.0",
+ "throttle-machines",
  "time",
  "tokio",
  "tokio-stream",
@@ -3274,12 +3274,6 @@ dependencies = [
  "dbus-secret-service",
  "keyring-core",
 ]
-
-[[package]]
-name = "deadline-machines"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88d306f3482f64bc5a0f1383fd14878a75ff9e0868c199483cdc15c679dc5477"
 
 [[package]]
 name = "deadline-machines"
@@ -6817,7 +6811,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-guest"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "base64 0.23.1",
  "chrono-machines",
@@ -6835,16 +6829,16 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c0e3c8a3d615cd5b8f1834358c480248285ed19721df1ff058108dcba37ea75"
+checksum = "ed44d42416c644ecff7a2059bb82d9bf874a1f917e46eb43a3ae1ea80bc16054"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
  "behavior-machines",
  "breaker-machines",
  "dashmap",
- "deadline-machines 0.2.0",
+ "deadline-machines",
  "fluent-uri",
  "ignore",
  "jiff",
@@ -6861,7 +6855,7 @@ dependencies = [
  "subtle",
  "supervisor-machines",
  "thiserror 2.0.21",
- "throttle-machines 0.4.0",
+ "throttle-machines",
  "tokio",
  "uuid",
 ]
@@ -11235,12 +11229,6 @@ checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
 ]
-
-[[package]]
-name = "throttle-machines"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c50e07b444af786a95ac5585d03e3dc1b0e6919aa8bc7ee7564fe18529c7fdc7"
 
 [[package]]
 name = "throttle-machines"

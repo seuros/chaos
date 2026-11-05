@@ -15,6 +15,10 @@ should. There is no patch level; the build timestamp is the patch.
   must move to 0.19 together with it. Requests now emit `mcp.guest.request`
   spans through the application's `tracing` subscriber, and stdio shutdown
   closes the child's stdin so the server sees EOF.
+- Update `mcp-host` to 0.20.0 and release `mcp-guest` 0.14.0 against it.
+  `mcp-host` 0.20 follows `throttle-machines` 0.5 and `deadline-machines` 0.3,
+  which chaos already used, so the 0.4 and 0.2 copies drop out of the build.
+  The drivers still build against `mcp-host` 0.19.
 
 ## [47.14.8] - 2026-11-04
 

@@ -10,7 +10,7 @@ Requires Rust 1.98 or newer.
 
 ```toml
 [dependencies]
-mcp-guest = "0.13.0"
+mcp-guest = "0.14.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
@@ -29,7 +29,7 @@ compiling both providers. AWS-LC validation requires CMake; the default
 application QA path does not.
 
 ```toml
-mcp-guest = { version = "0.13.0", default-features = false, features = ["tls-aws-lc"] }
+mcp-guest = { version = "0.14.0", default-features = false, features = ["tls-aws-lc"] }
 ```
 
 ```rust,no_run

@@ -7,6 +7,15 @@ Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR.TIMESTAMP`. A MAJOR
 entry means read this file before upgrading. A MINOR entry means you probably
 should. There is no patch level; the build timestamp is the patch.
 
+## [Unreleased]
+
+### Changed
+- Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`
+  re-exports `mcp-host` types, so applications that also depend on `mcp-host`
+  must move to 0.19 together with it. Requests now emit `mcp.guest.request`
+  spans through the application's `tracing` subscriber, and stdio shutdown
+  closes the child's stdin so the server sees EOF.
+
 ## [47.14.8] - 2026-11-04
 
 ### Changed

@@ -136,7 +136,7 @@ async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version
             },
             "resources": {
                 "listChanged": true,
-                "subscribe": false
+                "subscribe": true
             },
             "tasks": {
                 "list": {},
@@ -797,33 +797,47 @@ async fn spool_resource_never_exposes_global_rows_without_a_trustworthy_owner() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resource_subscribe_is_rejected_when_capability_disabled() -> Result<()> {
+async fn resource_subscribe_accepts_only_chaos_mcp() -> Result<()> {
     let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
-    let request_id = mcp
-        .send_custom_request(
-            "resources/subscribe",
-            Some(json!({ "uri": "file:///tmp/test.txt" })),
+    let cases = [
+        (
+            "file:///tmp/test.txt",
+            Some((
+                ErrorCode::RESOURCE_NOT_FOUND,
+                "Resource not found: file:///tmp/test.txt",
+            )),
+        ),
+        (
+            "chaos://models",
+            Some((
+                ErrorCode::INVALID_PARAMS,
+                "Resource does not support subscriptions",
+            )),
+        ),
+        ("chaos://mcp", None),
+    ];
+    for (uri, expected_error) in cases {
+        let request_id = mcp
+            .send_custom_request("resources/subscribe", Some(json!({ "uri": uri })))
+            .await?;
+        let message = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_response_or_error_message(request_id.clone()),
         )
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
+        .await??;
 
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    let error = resp.error.as_ref().expect("expected error response");
-
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert_eq!(error.code, ErrorCode::INVALID_PARAMS);
-    assert_eq!(
-        error.message,
-        "Resource subscriptions are not enabled on this server"
-    );
+        let JsonRpcMessage::Response(resp) = message else {
+            anyhow::bail!("expected JSON-RPC response, got: {message:?}");
+        };
+        assert_eq!(resp.id, Some(request_id.to_value()));
+        let error = resp
+            .error
+            .as_ref()
+            .map(|error| (error.code, error.message.as_str()));
+        assert_eq!(error, expected_error, "{uri}");
+    }
 
     Ok(())
 }

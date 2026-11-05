@@ -199,7 +199,7 @@ impl McpProcess {
                     },
                     "resources": {
                         "listChanged": true,
-                        "subscribe": false
+                        "subscribe": true
                     },
                     "tasks": {
                         "list": {},

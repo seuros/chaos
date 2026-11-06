@@ -176,3 +176,24 @@ async fn url_request_scope_and_completion_dispatch_without_opening_a_browser() {
     );
     connection.disconnect().await.unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn accepted_url_ids_expire_after_the_ttl() {
+    use crate::services::{URL_ELICITATION_TTL, UrlLedger};
+
+    let mut ledger = UrlLedger::with_capacity(2);
+    let claim = ledger.reserve(ElicitationId::new("e")).unwrap();
+    assert!(ledger.retain(claim));
+    assert!(ledger.reserve(ElicitationId::new("e")).is_none());
+    assert!(ledger.reserve(ElicitationId::new("other")).is_some());
+    assert!(
+        ledger.reserve(ElicitationId::new("full")).is_none(),
+        "budget is exhausted"
+    );
+    tokio::time::advance(URL_ELICITATION_TTL - Duration::from_secs(1)).await;
+    assert!(ledger.reserve(ElicitationId::new("e")).is_none());
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert!(ledger.reserve(ElicitationId::new("e")).is_some());
+    assert!(!ledger.retain(claim), "the expired claim is stale");
+    assert!(!ledger.complete(&ElicitationId::new("other")));
+}

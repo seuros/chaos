@@ -466,3 +466,45 @@ async fn custom_notifications_use_the_bounded_host_queue_without_cross_session_f
     assert_eq!(envelope["id"], "event");
     Ok(())
 }
+
+#[test]
+fn relay_reservations_cap_each_session_without_starving_others() {
+    let urls = Arc::new(UrlElicitations::default());
+    let process = ProcessId::new();
+    for id in 0..128 {
+        let mut entry = urls.reservation("full".into(), process, "inner".into(), id.to_string());
+        assert!(entry.register(&id.to_string()));
+        entry.retain();
+    }
+    let mut refused = urls.reservation("full".into(), process, "inner".into(), "129".into());
+    assert!(!refused.register("129"));
+    let mut other = urls.reservation("other".into(), process, "inner".into(), "0".into());
+    assert!(other.register("0"));
+    other.retain();
+    assert_eq!(
+        urls.complete("other", process, "inner".into(), "0".into())
+            .as_deref(),
+        Some("0")
+    );
+}
+
+#[test]
+fn relay_lookup_only_sees_retained_reservations() {
+    let urls = Arc::new(UrlElicitations::default());
+    let process = ProcessId::new();
+    let mut pending = urls.reservation("s".into(), process, "inner".into(), "src".into());
+    assert!(pending.register("outer"));
+    assert!(
+        urls.complete("s", process, "inner".into(), "src".into())
+            .is_none()
+    );
+    drop(pending);
+    let mut again = urls.reservation("s".into(), process, "inner".into(), "src".into());
+    assert!(again.register("outer-2"));
+    again.retain();
+    assert_eq!(
+        urls.complete("s", process, "inner".into(), "src".into())
+            .as_deref(),
+        Some("outer-2")
+    );
+}

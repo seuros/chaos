@@ -46,7 +46,7 @@ impl State {
         // Own cleanup before any backend metadata await can fail or be dropped.
         let turn = Turn::new_operation(false);
         // The Opening state owns admission through metadata and history replay.
-        let slot = Slot::opening(native, turn.clone(), permit);
+        let slot = self.opening(native, turn.clone(), permit);
         let mut opening = Opening {
             state: self.clone(),
             slot: slot.clone(),

@@ -663,3 +663,69 @@ async fn host_notices_are_bound_to_the_turn_that_posted_them() {
     ));
     supervisor.task.await.unwrap();
 }
+
+#[tokio::test]
+async fn reused_turn_id_replays_same_payload_and_rejects_another() {
+    let (session, mut commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    let accepted = submit_turn(&session, "first", "hello", &capacity);
+    assert!(matches!(commands.try_recv().unwrap(), Command::Turn(_)));
+    assert_eq!(
+        session
+            .submit(
+                "first".into(),
+                request("something else"),
+                &capacity,
+                Duration::from_secs(60)
+            )
+            .unwrap_err()
+            .code,
+        StatusCode::CONFLICT
+    );
+    let replayed = submit_turn(&session, "first", "hello", &capacity);
+    assert_eq!(replayed.turn_id, accepted.turn_id);
+    assert_eq!(replayed.status, TurnStatus::Accepted);
+    session.observe(&complete("first"));
+    assert_eq!(
+        submit_turn(&session, "first", "hello", &capacity).status,
+        TurnStatus::Completed
+    );
+    assert_eq!(
+        session
+            .submit(
+                "first".into(),
+                request("something else"),
+                &capacity,
+                Duration::from_secs(60)
+            )
+            .unwrap_err()
+            .code,
+        StatusCode::CONFLICT
+    );
+    assert!(commands.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn refused_admission_releases_the_turn_id() {
+    let (session, mut commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    submit_turn(&session, "first", "hello", &capacity);
+    assert!(matches!(commands.try_recv().unwrap(), Command::Turn(_)));
+    assert_eq!(
+        session
+            .submit(
+                "second".into(),
+                request("hello"),
+                &capacity,
+                Duration::from_secs(60)
+            )
+            .unwrap_err()
+            .code,
+        StatusCode::CONFLICT
+    );
+    session.observe(&complete("first"));
+    assert_eq!(
+        submit_turn(&session, "second", "hello", &capacity).status,
+        TurnStatus::Accepted
+    );
+}

@@ -6,12 +6,14 @@ pub(crate) mod runtime;
 mod stream;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::{Event, EventMsg};
+use dedup_machines::{Claim, HashDedup};
 use rama::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,6 +24,7 @@ use uuid::Uuid;
 use crate::protocol::{TokenUsageEntry, TokenUsageResponse};
 
 const MAX_TURNS: usize = 256;
+const TURN_RETENTION: Duration = Duration::from_secs(u32::MAX as u64);
 const MAX_EVENTS: usize = 256;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_REPLAY_BYTES: usize = 1024 * 1024;
@@ -326,6 +329,7 @@ struct SessionData {
     status: SessionStatus,
     process_id: Option<String>,
     turns: BTreeMap<String, TurnRecord>,
+    claims: HashDedup<String, ()>,
     active: Option<ActiveTurn>,
     events: VecDeque<ReplayEvent>,
     replay_bytes: usize,
@@ -470,27 +474,42 @@ impl Session {
         let mut data = self.lock_data()?;
         // Test retry identity BEFORE admission: retries don't consume capacity,
         // even after the session has closed.
-        if let Some(previous) = data.turns.get(&id) {
-            if previous.fingerprint != fingerprint {
+        let claim = match data.claims.claim_with(
+            id.clone(),
+            claim_fingerprint(&fingerprint),
+            uptime(),
+            TURN_RETENTION,
+        ) {
+            Claim::Acquired(claim) => claim,
+            Claim::InProgress | Claim::Completed(()) => {
+                return data
+                    .turns
+                    .get(&id)
+                    .map(|turn| turn.snapshot.clone())
+                    .ok_or(ApiError::new(StatusCode::NOT_FOUND, "turn not found"));
+            }
+            Claim::Conflict => {
                 return Err(ApiError::conflict("turn id reused with different payload"));
             }
-            return Ok(previous.snapshot.clone());
-        }
-        if data.status != SessionStatus::Idle || data.active.is_some() {
-            return Err(ApiError::conflict("session is not idle"));
-        }
-        if data.turns.len() >= MAX_TURNS {
-            return Err(ApiError::capacity(
-                "turn limit reached; create a new session",
-            ));
-        }
-        let permit = semaphore
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ApiError::capacity("execution capacity exhausted"))?;
-        self.commands
-            .try_send(Command::Turn(id.clone()))
-            .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+            Claim::Full => {
+                return Err(ApiError::capacity(
+                    "turn limit reached; create a new session",
+                ));
+            }
+            _ => {
+                return Err(ApiError::new(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "turn ledger unavailable",
+                ));
+            }
+        };
+        let permit = match self.reserve_execution(&data, semaphore, &id) {
+            Ok(permit) => permit,
+            Err(error) => {
+                let _ = data.claims.abandon(claim);
+                return Err(error);
+            }
+        };
         let snapshot = TurnSnapshot {
             turn_id: id.clone(),
             status: TurnStatus::Accepted,
@@ -517,6 +536,25 @@ impl Session {
         drop(data);
         self.notify();
         Ok(snapshot)
+    }
+
+    fn reserve_execution(
+        &self,
+        data: &SessionData,
+        semaphore: &Arc<Semaphore>,
+        id: &str,
+    ) -> Result<OwnedSemaphorePermit, ApiError> {
+        if data.status != SessionStatus::Idle || data.active.is_some() {
+            return Err(ApiError::conflict("session is not idle"));
+        }
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ApiError::capacity("execution capacity exhausted"))?;
+        self.commands
+            .try_send(Command::Turn(id.to_owned()))
+            .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
+        Ok(permit)
     }
 
     async fn steer(&self, id: String, text: String) -> Result<(), ApiError> {
@@ -669,6 +707,7 @@ impl SessionData {
             status: SessionStatus::Starting,
             process_id: None,
             turns: BTreeMap::new(),
+            claims: HashDedup::with_capacity(MAX_TURNS),
             active: None,
             events: VecDeque::new(),
             replay_bytes: 0,
@@ -811,6 +850,17 @@ fn fingerprint(request: &TurnRequest) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+fn claim_fingerprint(fingerprint: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    fingerprint.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn uptime() -> Duration {
+    static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+    EPOCH.get_or_init(std::time::Instant::now).elapsed()
 }
 
 fn usage_entry(usage: &chaos_ipc::protocol::TokenUsage) -> TokenUsageEntry {

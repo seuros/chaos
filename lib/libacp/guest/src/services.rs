@@ -1,11 +1,53 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use crate::{ConnectionOptions, permissions::PendingPermissions, protocol};
+use dedup_machines::{Claim, ClaimId, HashDedup};
 use protocol::schema::v1::*;
 use protocol::{Agent, Client};
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
+
+/// Accepted URL elicitations are forgotten after this long without completion.
+pub(crate) const URL_ELICITATION_TTL: Duration = Duration::from_secs(15 * 60);
+
+pub(crate) struct UrlLedger {
+    origin: Instant,
+    ledger: HashDedup<ElicitationId>,
+}
+
+impl UrlLedger {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            origin: Instant::now(),
+            ledger: HashDedup::with_capacity(capacity),
+        }
+    }
+
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+
+    pub fn reserve(&mut self, id: ElicitationId) -> Option<ClaimId> {
+        match self.ledger.claim(id, self.now(), URL_ELICITATION_TTL) {
+            Claim::Acquired(claim) => Some(claim),
+            _ => None,
+        }
+    }
+
+    pub fn retain(&mut self, claim: ClaimId) -> bool {
+        self.ledger.complete(claim, self.now())
+    }
+
+    pub fn release(&mut self, claim: ClaimId) -> bool {
+        self.ledger.abandon(claim)
+    }
+
+    pub fn complete(&mut self, id: &ElicitationId) -> bool {
+        self.ledger.expire_where(|outstanding| outstanding == id) == 1
+    }
+}
 
 /// Editor read policy and implementation. Authorize session and canonical paths
 /// (including symlinks) before accessing data; honor line/limit semantics.
@@ -80,7 +122,7 @@ pub(crate) struct Services {
     pending: PendingPermissions,
     permits: Arc<Semaphore>,
     elicitation: Option<ElicitationCapabilities>,
-    urls: Arc<Mutex<HashMap<ElicitationId, Arc<()>>>>,
+    urls: Arc<Mutex<UrlLedger>>,
     state: crate::ConnectionState,
 }
 
@@ -133,7 +175,9 @@ impl Services {
                 .elicitation
                 .as_ref()
                 .map(|handler| handler.capabilities()),
-            urls: Arc::new(Mutex::new(HashMap::new())),
+            urls: Arc::new(Mutex::new(UrlLedger::with_capacity(
+                options.pending_services,
+            ))),
             state,
         }
     }
@@ -180,13 +224,15 @@ impl Services {
                     Err(_) => return responder.respond_with_error(unavailable()),
                 };
                 let url = if let ElicitationMode::Url(mode) = &request.mode {
-                    let mut urls = self.urls.lock().unwrap_or_else(PoisonError::into_inner);
-                    if urls.len() >= self.options.pending_services || urls.contains_key(&mode.elicitation_id) {
-                        return responder.respond_with_error(unavailable());
+                    let claim = self
+                        .urls
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .reserve(mode.elicitation_id.clone());
+                    match claim {
+                        Some(claim) => Some(claim),
+                        None => return responder.respond_with_error(unavailable()),
                     }
-                    let ticket = Arc::new(());
-                    urls.insert(mode.elicitation_id.clone(), ticket.clone());
-                    Some((mode.elicitation_id.clone(), ticket))
                 } else {
                     None
                 };
@@ -202,11 +248,8 @@ impl Services {
                 cx.spawn(async move {
                     let _permit = permit;
                     let clear = || {
-                        if let Some((id, ticket)) = &url {
-                            let mut urls = urls.lock().unwrap_or_else(PoisonError::into_inner);
-                            if urls.get(id).is_some_and(|pending| Arc::ptr_eq(pending, ticket)) {
-                                urls.remove(id);
-                            }
+                        if let Some(claim) = url {
+                            let _ = urls.lock().unwrap_or_else(PoisonError::into_inner).release(claim);
                         }
                     };
                     let cancel = || {
@@ -224,7 +267,11 @@ impl Services {
                             tokio::time::timeout(timeout, handler.create(request)).await.unwrap_or_else(|_| cancel())
                         } => result,
                     };
-                    if !matches!(&result, Ok(reply) if matches!(reply.action, ElicitationAction::Accept(_))) {
+                    if matches!(&result, Ok(reply) if matches!(reply.action, ElicitationAction::Accept(_))) {
+                        if let Some(claim) = url {
+                            let _ = urls.lock().unwrap_or_else(PoisonError::into_inner).retain(claim);
+                        }
+                    } else {
                         clear();
                     }
                     match pending {
@@ -237,7 +284,7 @@ impl Services {
         ).on_receive_notification(
                 async move |notification: CompleteElicitationNotification, cx| {
                     let Some(handler) = completions.clone() else { return Ok(()) };
-                    if !completed_urls.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&notification.elicitation_id) {
+                    if !completed_urls.lock().unwrap_or_else(PoisonError::into_inner).complete(&notification.elicitation_id) {
                         return Ok(());
                     }
                     let permit = match completion_permits.clone().try_acquire_owned() {
@@ -247,9 +294,6 @@ impl Services {
                             return Err(protocol::Error::internal_error().data("ACP completion service limit exceeded"));
                         }
                     };
-                    if completed_urls.lock().unwrap_or_else(PoisonError::into_inner).remove(&notification.elicitation_id).is_none() {
-                        return Ok(());
-                    }
                     cx.spawn(async move {
                         let _permit = permit;
                         tokio::time::timeout(completion_timeout, handler.complete(notification))

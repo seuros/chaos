@@ -35,11 +35,11 @@ impl AgentSession for Native {
 }
 
 fn fixture() -> (Arc<State>, Arc<Slot>, Arc<Native>) {
-    let state = State::new(ConnectionLimits::default());
+    let state = State::new(ConnectionLimits::default()).unwrap();
     state.initialize(ClientCapabilities::default()).unwrap();
     let native = Arc::new(Native::default());
     let setup = Turn::new_operation(false);
-    let slot = Slot::opening(
+    let slot = state.opening(
         native.clone(),
         setup.clone(),
         state.session_permits.clone().try_acquire_owned().unwrap(),
@@ -192,4 +192,90 @@ async fn first_connection_failure_survives_cleanup_and_later_failures() {
     state.close();
     assert_eq!(state.failure_reason(), Some("first"));
     assert!(state.initialize(ClientCapabilities::default()).is_err());
+}
+
+#[test]
+fn inbound_credit_over_release_fails_the_connection() {
+    let (state, _slot, _native) = fixture();
+    assert!(state.admit_inbound(None));
+    state.acknowledge_inbound();
+    assert!(state.ready().is_ok());
+    assert_eq!(state.failure_reason(), None);
+    state.acknowledge_inbound();
+    assert_eq!(
+        state.failure_reason(),
+        Some("ACP inbound credit released without admission")
+    );
+    assert!(state.ready().is_err());
+    assert!(state.stop.is_cancelled());
+}
+
+#[test]
+fn inbound_credits_are_bounded_by_pending_requests() {
+    let limits = ConnectionLimits {
+        pending_requests: 2,
+        ..Default::default()
+    };
+    let state = State::new(limits).unwrap();
+    assert!(state.admit_inbound(None));
+    assert!(state.admit_inbound(None));
+    assert!(!state.admit_inbound(None));
+    state.acknowledge_inbound();
+    assert!(state.admit_inbound(None));
+    assert_eq!(state.failure_reason(), None);
+}
+
+#[test]
+fn only_replies_seen_on_the_wire_release_a_reply_credit() {
+    let limits = ConnectionLimits {
+        pending_requests: 1,
+        ..Default::default()
+    };
+    let state = State::new(limits).unwrap();
+    let id = RequestId::Number(7);
+    state.acknowledge_reply(&id);
+    assert_eq!(state.failure_reason(), None);
+    assert!(state.admit_inbound(Some(id.clone())));
+    assert!(!state.admit_inbound(None));
+    state.acknowledge_reply(&RequestId::Number(8));
+    assert!(
+        !state.admit_inbound(None),
+        "a locally settled request keeps the wire credit"
+    );
+    state.acknowledge_reply(&id);
+    assert!(state.admit_inbound(None));
+    state.acknowledge_reply(&id);
+    assert_eq!(state.failure_reason(), None);
+}
+
+#[test]
+fn update_credit_over_release_fails_the_connection() {
+    let (state, slot, _native) = fixture();
+    assert!(slot.enqueue());
+    state.acknowledge_update(&slot);
+    assert_eq!(state.failure_reason(), None);
+    state.acknowledge_update(&slot);
+    assert_eq!(
+        state.failure_reason(),
+        Some("ACP update credit released without admission")
+    );
+    assert!(state.stop.is_cancelled());
+}
+
+#[test]
+fn credit_capacities_must_fit_a_window() {
+    for capacity in [0, usize::MAX] {
+        for limits in [
+            ConnectionLimits {
+                pending_requests: capacity,
+                ..Default::default()
+            },
+            ConnectionLimits {
+                update_capacity: capacity,
+                ..Default::default()
+            },
+        ] {
+            assert!(matches!(State::new(limits), Err(HostError::InvalidLimits)));
+        }
+    }
 }

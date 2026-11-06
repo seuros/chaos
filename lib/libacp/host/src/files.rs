@@ -109,15 +109,15 @@ impl ClientHandle {
             if self.turn.cancel.is_cancelled() {
                 return Err(error("editor request cancelled before dispatch"));
             }
-            self.connection
-                .prepare_request(request)
-                .on_receiving_result(async move |reply| {
-                    received.acknowledge_inbound();
-                    drop(permit);
-                    // The caller may have cancelled; reply accounting still completes.
-                    let _ = raw_tx.send(reply);
-                    Ok(())
-                })?;
+            let prepared = self.connection.prepare_request(request);
+            let id = prepared.id().clone();
+            prepared.on_receiving_result(async move |reply| {
+                received.acknowledge_reply(&id);
+                drop(permit);
+                // The caller may have cancelled; reply accounting still completes.
+                let _ = raw_tx.send(reply);
+                Ok(())
+            })?;
         }
         let mut unknown = UnconfirmedWrite(write.then_some(slot));
         let (tx, rx) = tokio::sync::oneshot::channel();

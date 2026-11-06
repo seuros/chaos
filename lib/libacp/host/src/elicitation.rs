@@ -1,18 +1,84 @@
 use crate::state::invalid;
 use crate::{ClientHandle, protocol};
+use dedup_machines::{Claim, ClaimId, HashDedup};
 use protocol::schema::v1::{
     CompleteElicitationNotification, CreateElicitationRequest, CreateElicitationResponse,
-    ElicitationAction, ElicitationId, ElicitationMode, ElicitationScope,
+    ElicitationAction, ElicitationId, ElicitationMode, ElicitationScope, SessionId,
 };
 use std::sync::{Arc, PoisonError, Weak};
+use std::time::Duration;
+use tokio::time::Instant;
+
+/// Outstanding URL elicitations are forgotten after this long without completion.
+pub(crate) const URL_ELICITATION_TTL: Duration = Duration::from_secs(15 * 60);
+
+pub(crate) struct UrlLedger {
+    origin: Instant,
+    ledger: HashDedup<(SessionId, ElicitationId)>,
+}
+
+impl UrlLedger {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            origin: Instant::now(),
+            ledger: HashDedup::with_capacity(capacity),
+        }
+    }
+
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
+    }
+
+    pub fn reserve(
+        &mut self,
+        session: SessionId,
+        id: ElicitationId,
+        mut dead: impl FnMut(&SessionId) -> bool,
+    ) -> Option<ClaimId> {
+        self.ledger.expire_where(|(owner, _)| dead(owner));
+        match self
+            .ledger
+            .claim((session, id), self.now(), URL_ELICITATION_TTL)
+        {
+            Claim::Acquired(claim) => Some(claim),
+            _ => None,
+        }
+    }
+
+    pub fn retain(&mut self, claim: ClaimId) -> bool {
+        self.ledger.complete(claim, self.now())
+    }
+
+    pub fn release(&mut self, claim: ClaimId) -> bool {
+        self.ledger.abandon(claim)
+    }
+
+    pub fn complete(&mut self, session: &SessionId, id: &ElicitationId) -> bool {
+        self.ledger
+            .expire_where(|(owner, outstanding)| owner == session && outstanding == id)
+            == 1
+    }
+}
 
 /// A reservation survives the request only after a valid URL acceptance.
 /// Dropping the request future must release admission too.
 struct UrlReservation {
     state: Weak<crate::state::State>,
-    id: ElicitationId,
-    ticket: Arc<()>,
+    claim: ClaimId,
     retained: bool,
+}
+
+impl UrlReservation {
+    fn retain(&mut self) {
+        self.retained = true;
+        if let Some(state) = self.state.upgrade() {
+            let _ = state
+                .url_elicitations
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .retain(self.claim);
+        }
+    }
 }
 
 impl Drop for UrlReservation {
@@ -21,16 +87,11 @@ impl Drop for UrlReservation {
             return;
         }
         if let Some(state) = self.state.upgrade() {
-            let mut ids = state
+            let _ = state
                 .url_elicitations
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if ids
-                .get(&self.id)
-                .is_some_and(|pending| Arc::ptr_eq(&pending.ticket, &self.ticket))
-            {
-                ids.remove(&self.id);
-            }
+                .unwrap_or_else(PoisonError::into_inner)
+                .release(self.claim);
         }
     }
 }
@@ -65,35 +126,26 @@ impl ClientHandle {
             return Ok(cancel());
         }
         let mut reservation = if let ElicitationMode::Url(mode) = &request.mode {
-            let (state, slot) = self.ready()?;
-            let mut ids = state
-                .url_elicitations
+            let (state, _) = self.ready()?;
+            let sessions = state
+                .sessions
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            ids.retain(|_, pending| {
-                pending
-                    .slot
-                    .upgrade()
-                    .is_some_and(|slot| !slot.is_invalid())
-            });
-            if ids.contains_key(&mode.elicitation_id) || ids.len() >= state.limits.pending_requests
-            {
-                return Err(invalid(
-                    "URL elicitation ID is outstanding or its budget is exhausted",
-                ));
-            }
-            let ticket = Arc::new(());
-            ids.insert(
-                mode.elicitation_id.clone(),
-                crate::state::UrlElicitation {
-                    slot: Arc::downgrade(&slot),
-                    ticket: ticket.clone(),
-                },
-            );
+            let claim = state
+                .url_elicitations
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .reserve(
+                    self.session_id.clone(),
+                    mode.elicitation_id.clone(),
+                    |session| sessions.get(session).is_none_or(|slot| slot.is_invalid()),
+                )
+                .ok_or_else(|| {
+                    invalid("URL elicitation ID is outstanding or its budget is exhausted")
+                })?;
             Some(UrlReservation {
                 state: Arc::downgrade(&state),
-                id: mode.elicitation_id.clone(),
-                ticket,
+                claim,
                 retained: false,
             })
         } else {
@@ -106,7 +158,7 @@ impl ClientHandle {
         match &response.action {
             ElicitationAction::Accept(accepted) if !url || accepted.content.is_none() => {
                 if let Some(reservation) = &mut reservation {
-                    reservation.retained = true;
+                    reservation.retain();
                 }
                 Ok(response)
             }
@@ -118,7 +170,7 @@ impl ClientHandle {
     /// Notify the UI that a previously issued URL elicitation completed.
     /// Unlike creating a request, completion belongs to the session, not its turn.
     pub fn complete_elicitation(&self, id: impl Into<ElicitationId>) -> protocol::Result<()> {
-        let (state, slot) = self.session_ready()?;
+        let (state, _) = self.session_ready()?;
         if !state
             .client_capabilities
             .get()
@@ -134,18 +186,15 @@ impl ClientHandle {
             .url_elicitations
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if !ids
-            .get(&id)
-            .and_then(|owner| owner.slot.upgrade())
-            .is_some_and(|owner| Arc::ptr_eq(&owner, &slot))
-        {
+        if !ids.complete(&self.session_id, &id) {
             return Err(invalid(
                 "URL elicitation is unknown, complete or owned by another session",
             ));
         }
         self.connection
-            .send_notification(CompleteElicitationNotification::new(id.clone()))?;
-        ids.remove(&id);
-        Ok(())
+            .send_notification(CompleteElicitationNotification::new(id))
     }
 }
+
+#[cfg(test)]
+mod tests;

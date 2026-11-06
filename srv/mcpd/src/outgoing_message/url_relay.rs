@@ -1,12 +1,15 @@
 //! Bounded, session/process/source-scoped URL id translation across tool calls.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
-use std::time::Instant;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::{Duration, Instant};
 
 use chaos_ipc::ProcessId;
+use dedup_machines::{Attempt, Claim, ClaimId, HashDedup};
+
+const RETENTION: Duration = Duration::from_secs(3600);
+const TOTAL_CAP: usize = 1024;
+const SESSION_CAP: usize = 128;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Key {
@@ -16,15 +19,36 @@ struct Key {
     source: String,
 }
 
-struct Entry {
-    id: String,
-    created: Instant,
+impl Key {
+    fn attempt(&self) -> Attempt<Self> {
+        let mut hasher = DefaultHasher::new();
+        self.session.hash(&mut hasher);
+        Attempt::new(self.clone()).partition(hasher.finish())
+    }
 }
 
-#[derive(Default)]
-pub(crate) struct UrlElicitations(Mutex<HashMap<Key, Entry>>);
+fn uptime() -> Duration {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed()
+}
+
+pub(crate) struct UrlElicitations(Mutex<HashDedup<Key, String>>);
+
+impl Default for UrlElicitations {
+    fn default() -> Self {
+        Self(Mutex::new(
+            HashDedup::with_capacity(TOTAL_CAP).with_partition_cap(SESSION_CAP),
+        ))
+    }
+}
 
 impl UrlElicitations {
+    fn ledger(&self) -> MutexGuard<'_, HashDedup<Key, String>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub(crate) fn reservation(
         self: &Arc<Self>,
         session: String,
@@ -40,11 +64,12 @@ impl UrlElicitations {
                 server,
                 source,
             },
+            claim: None,
             id: None,
-            retained: false,
         }
     }
 
+    /// Take the outer id a retained reservation stored for this key.
     pub(crate) fn complete(
         &self,
         session: &str,
@@ -58,71 +83,53 @@ impl UrlElicitations {
             server,
             source,
         };
-        let entry = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(&key)?;
-        (entry.created.elapsed() < Duration::from_secs(3600)).then_some(entry.id)
+        let mut ledger = self.ledger();
+        let id = match ledger.admit(key.attempt(), uptime(), RETENTION) {
+            Claim::Completed(id) => id.clone(),
+            Claim::Acquired(claim) => {
+                let _ = ledger.abandon(claim);
+                return None;
+            }
+            _ => return None,
+        };
+        ledger.expire_where(|candidate| *candidate == key);
+        Some(id)
     }
 }
 
 pub(crate) struct Reservation {
     urls: Arc<UrlElicitations>,
     key: Key,
+    claim: Option<ClaimId>,
     id: Option<String>,
-    retained: bool,
 }
 
 impl Reservation {
     /// A refused reservation returns an invalid URL to the host API, which
     /// rejects the request before any transport write.
     pub(crate) fn register(&mut self, id: &str) -> bool {
-        let mut entries = self
-            .urls
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        entries.retain(|_, value| value.created.elapsed() < Duration::from_secs(3600));
-        if entries.contains_key(&self.key)
-            || entries.len() >= 1024
-            || entries
-                .keys()
-                .filter(|key| key.session == self.key.session)
-                .count()
-                >= 128
-        {
-            return false;
+        let mut ledger = self.urls.ledger();
+        match ledger.admit(self.key.attempt(), uptime(), RETENTION) {
+            Claim::Acquired(claim) => {
+                self.claim = Some(claim);
+                self.id = Some(id.into());
+                true
+            }
+            _ => false,
         }
-        self.id = Some(id.into());
-        entries.insert(
-            self.key.clone(),
-            Entry {
-                id: id.into(),
-                created: Instant::now(),
-            },
-        );
-        true
     }
 
     pub(crate) fn retain(&mut self) {
-        self.retained = true;
+        if let (Some(claim), Some(id)) = (self.claim.take(), self.id.take()) {
+            let _ = self.urls.ledger().complete_with(claim, id, uptime());
+        }
     }
 }
 
 impl Drop for Reservation {
     fn drop(&mut self) {
-        if !self.retained
-            && let Some(id) = &self.id
-        {
-            let mut entries = self
-                .urls
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if entries.get(&self.key).is_some_and(|entry| &entry.id == id) {
-                entries.remove(&self.key);
-            }
+        if let Some(claim) = self.claim.take() {
+            let _ = self.urls.ledger().abandon(claim);
         }
     }
 }

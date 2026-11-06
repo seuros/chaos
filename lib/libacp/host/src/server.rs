@@ -54,7 +54,7 @@ impl AgentServer {
         if !self.limits.valid() {
             return Err(HostError::InvalidLimits);
         }
-        let state = State::new(self.limits.clone());
+        let state = State::new(self.limits.clone())?;
         let _guard = ServeGuard(state.clone());
         let init = state.clone();
         let opening = state.clone();

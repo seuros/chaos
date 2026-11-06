@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -180,13 +181,17 @@ impl ConnectionLimits {
     fn valid(&self) -> bool {
         self.max_message_bytes > 0
             && self.max_sessions > 0
-            && self.update_capacity > 0
-            && self.pending_requests > 0
+            && credits(self.update_capacity).is_some()
+            && credits(self.pending_requests).is_some()
             && !self.approval_timeout.is_zero()
             && !self.shutdown_timeout.is_zero()
             && self.max_sessions <= tokio::sync::Semaphore::MAX_PERMITS
             && self.pending_requests <= tokio::sync::Semaphore::MAX_PERMITS
     }
+}
+
+pub(crate) fn credits(capacity: usize) -> Option<NonZeroU32> {
+    u32::try_from(capacity).ok().and_then(NonZeroU32::new)
 }
 
 /// Transport failure does not establish the outcome of native work.

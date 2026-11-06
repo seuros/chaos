@@ -1,9 +1,12 @@
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::collections::{HashMap, HashSet};
+use std::num::NonZeroU32;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 
+use flow_machines::CreditWindow;
+
 use protocol::schema::v1::{
-    ClientCapabilities, ElicitationId, PermissionOption, PermissionOptionKind,
+    ClientCapabilities, PermissionOption, PermissionOptionKind, RequestId,
     RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse, SessionId,
     SessionNotification, SessionUpdate, ToolCallUpdate,
 };
@@ -11,8 +14,9 @@ use protocol::{Client, ConnectionTo};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_util::sync::CancellationToken;
 
+use crate::elicitation::UrlLedger;
 use crate::lifecycle::{Connection, Session};
-use crate::{AgentSession, ConnectionLimits, protocol};
+use crate::{AgentSession, ConnectionLimits, HostError, credits, protocol};
 
 mod connection;
 mod turn;
@@ -27,6 +31,19 @@ pub(crate) fn invalid(message: &'static str) -> protocol::Error {
     protocol::Error::invalid_params().data(message)
 }
 
+const ONE: NonZeroU32 = NonZeroU32::MIN;
+
+fn window(capacity: usize) -> Result<NonZeroU32, HostError> {
+    credits(capacity).ok_or(HostError::InvalidLimits)
+}
+
+/// Replies hold their credit until the SDK consumes them. Locally settled
+/// requests never had a wire reply, so only registered ids may release one.
+struct Inbound {
+    window: CreditWindow,
+    replies: HashSet<RequestId>,
+}
+
 pub(crate) struct State {
     pub client_capabilities: OnceLock<ClientCapabilities>,
     pub limits: ConnectionLimits,
@@ -35,27 +52,34 @@ pub(crate) struct State {
     pub sessions: Mutex<HashMap<SessionId, Arc<Slot>>>,
     pub session_permits: Arc<Semaphore>,
     pub requests: Arc<Semaphore>,
-    pub inbound: AtomicUsize,
-    pub url_elicitations: Mutex<HashMap<ElicitationId, UrlElicitation>>,
+    pub url_elicitations: Mutex<UrlLedger>,
+    inbound: Mutex<Inbound>,
+    updates: NonZeroU32,
     connection: Mutex<Connection>,
     cleanup_done: CancellationToken,
 }
 
 impl State {
-    pub fn new(limits: ConnectionLimits) -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(limits: ConnectionLimits) -> Result<Arc<Self>, HostError> {
+        let inbound = window(limits.pending_requests)?;
+        let updates = window(limits.update_capacity)?;
+        Ok(Arc::new(Self {
             client_capabilities: OnceLock::new(),
             session_permits: Arc::new(Semaphore::new(limits.max_sessions)),
             requests: Arc::new(Semaphore::new(limits.pending_requests)),
-            limits,
             stop: CancellationToken::new(),
             peer_disconnected: AtomicBool::new(false),
             sessions: Mutex::new(HashMap::new()),
-            inbound: AtomicUsize::new(0),
-            url_elicitations: Mutex::new(HashMap::new()),
+            inbound: Mutex::new(Inbound {
+                window: CreditWindow::new(inbound),
+                replies: HashSet::new(),
+            }),
+            updates,
+            url_elicitations: Mutex::new(UrlLedger::with_capacity(limits.pending_requests)),
             connection: Mutex::new(Connection::default()),
             cleanup_done: CancellationToken::new(),
-        })
+            limits,
+        }))
     }
 
     pub fn find(&self, id: &SessionId) -> protocol::Result<Arc<Slot>> {
@@ -68,45 +92,87 @@ impl State {
             .ok_or_else(|| invalid("unknown ACP session"))
     }
 
-    pub fn acknowledge_inbound(&self) {
-        let _ = self
-            .inbound
-            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                Some(n.saturating_sub(1))
-            });
+    pub fn admit_inbound(&self, reply: Option<RequestId>) -> bool {
+        let mut inbound = self.inbound.lock().unwrap_or_else(PoisonError::into_inner);
+        if !inbound.window.try_acquire(ONE) {
+            return false;
+        }
+        if let Some(id) = reply {
+            inbound.replies.insert(id);
+        }
+        true
     }
-}
 
-pub(crate) struct UrlElicitation {
-    pub slot: Weak<Slot>,
-    pub ticket: Arc<()>,
-}
+    pub fn acknowledge_inbound(&self) {
+        let released = self
+            .inbound
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .window
+            .release(ONE);
+        self.settle(released, "ACP inbound credit released without admission");
+    }
 
-pub(crate) struct Slot {
-    pub native: Arc<dyn AgentSession>,
-    pub queued: AtomicUsize,
-    pub queue_changed: tokio::sync::Notify,
-    pub released: tokio::sync::Notify,
-    pub shutdown: tokio::sync::Mutex<Option<bool>>,
-    pub _permit: OwnedSemaphorePermit,
-    lifecycle: Mutex<Session>,
-}
+    pub fn acknowledge_reply(&self, id: &RequestId) {
+        let mut inbound = self.inbound.lock().unwrap_or_else(PoisonError::into_inner);
+        if !inbound.replies.remove(id) {
+            return;
+        }
+        let released = inbound.window.release(ONE);
+        drop(inbound);
+        self.settle(released, "ACP inbound credit released without admission");
+    }
 
-impl Slot {
+    pub fn acknowledge_update(&self, slot: &Slot) {
+        let released = slot
+            .queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .release(ONE);
+        slot.queue_changed.notify_one();
+        self.settle(released, "ACP update credit released without admission");
+    }
+
+    fn settle(&self, released: bool, reason: &'static str) {
+        if !released {
+            self.fail(reason);
+        }
+    }
+
     pub fn opening(
+        &self,
         native: Arc<dyn AgentSession>,
         turn: Arc<Turn>,
         permit: OwnedSemaphorePermit,
-    ) -> Arc<Self> {
-        Arc::new(Self {
+    ) -> Arc<Slot> {
+        Arc::new(Slot {
             native,
             lifecycle: Mutex::new(Session::opening(turn)),
-            queued: AtomicUsize::new(0),
+            queued: Mutex::new(CreditWindow::new(self.updates)),
             queue_changed: tokio::sync::Notify::new(),
             released: tokio::sync::Notify::new(),
             shutdown: tokio::sync::Mutex::new(None),
             _permit: permit,
         })
+    }
+}
+
+pub(crate) struct Slot {
+    pub native: Arc<dyn AgentSession>,
+    pub queue_changed: tokio::sync::Notify,
+    pub released: tokio::sync::Notify,
+    pub shutdown: tokio::sync::Mutex<Option<bool>>,
+    pub _permit: OwnedSemaphorePermit,
+    queued: Mutex<CreditWindow>,
+    lifecycle: Mutex<Session>,
+}
+
+impl Slot {
+    pub fn enqueue(&self) -> bool {
+        self.queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .try_acquire(ONE)
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Session> {
@@ -193,8 +259,7 @@ impl ClientHandle {
             {
                 let active = slot.lock();
                 self.check_ready(&state, &active)?;
-                if slot.queued.load(Ordering::Acquire) < state.limits.update_capacity {
-                    slot.queued.fetch_add(1, Ordering::AcqRel);
+                if slot.enqueue() {
                     return self.connection.send_notification(SessionNotification::new(
                         self.session_id.clone(),
                         update,
@@ -252,7 +317,7 @@ impl ClientHandle {
         };
         let active = slot.lock();
         self.check_ready(&state, &active)?;
-        if slot.queued.fetch_add(1, Ordering::AcqRel) >= state.limits.update_capacity {
+        if !slot.enqueue() {
             state.fail("ACP update queue overflow");
             return Err(error("ACP update queue overflow"));
         }

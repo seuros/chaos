@@ -7,7 +7,7 @@ use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::codec::{FramedRead, FramedWrite, LinesCodec, LinesCodecError};
 
-use crate::protocol::schema::v1::SessionId;
+use crate::protocol::schema::v1::{RequestId, SessionId};
 use crate::state::State;
 
 pub(crate) fn incoming<R: AsyncRead + Unpin>(
@@ -39,7 +39,12 @@ pub(crate) fn incoming<R: AsyncRead + Unpin>(
                 }
                 // Requests and replies retain their credit until the SDK responds or
                 // consumes the matching reply. Unknown replies still fail boundedly.
-                if state.inbound.fetch_add(1, Ordering::AcqRel) >= state.limits.pending_requests {
+                let reply = frame
+                    .get("method")
+                    .is_none()
+                    .then(|| serde_json::from_value::<RequestId>(frame["id"].clone()).ok())
+                    .flatten();
+                if !state.admit_inbound(reply) {
                     state.fail("ACP inbound admission limit exceeded");
                     return Err(io::Error::other("ACP inbound admission limit exceeded"));
                 }
@@ -80,12 +85,7 @@ pub(crate) fn outgoing<W: AsyncWrite + Unpin>(
                     .unwrap_or_else(PoisonError::into_inner)
                     .get(&SessionId::new(id))
             {
-                let _ = slot
-                    .queued
-                    .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                        Some(n.saturating_sub(1))
-                    });
-                slot.queue_changed.notify_one();
+                state.acknowledge_update(slot);
             }
             Ok(line)
         }

@@ -630,21 +630,6 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         history.raw_items(),
         "parent seed context"
     ));
-    // Forking real history must not copy the parent's database attachment.
-    // Explicit attachment and effective tool configuration are covered at the
-    // production post-spawn seam above, without starting extra model turns.
-    assert_eq!(
-        db.planning_attachment(&child_process_id.to_string())
-            .await
-            .expect("child attachment"),
-        None,
-    );
-    assert_eq!(
-        db.planning_attachment(&parent_process_id.to_string())
-            .await
-            .expect("parent attachment"),
-        Some(plan.id),
-    );
 
     let expected = (
         child_process_id,
@@ -670,10 +655,27 @@ async fn spawn_agent_can_fork_parent_thread_history() {
         .shutdown_agent(child_process_id)
         .await
         .expect("child shutdown should submit");
-    let _ = parent_thread
-        .submit(Op::Shutdown {})
+    parent_thread
+        .shutdown_and_wait()
         .await
-        .expect("parent shutdown should submit");
+        .expect("parent shutdown should complete");
+
+    // Forking real history must not copy the parent's database attachment.
+    // Explicit attachment and effective tool configuration are covered at the
+    // production post-spawn seam above, without starting extra model turns.
+    // Both session loops have stopped, so no turn is writing while we read.
+    assert_eq!(
+        db.planning_attachment(&child_process_id.to_string())
+            .await
+            .expect("child attachment"),
+        None,
+    );
+    assert_eq!(
+        db.planning_attachment(&parent_process_id.to_string())
+            .await
+            .expect("parent attachment"),
+        Some(plan.id),
+    );
 }
 
 #[tokio::test]

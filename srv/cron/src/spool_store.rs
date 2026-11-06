@@ -10,6 +10,8 @@ use chaos_vfs::Vfs;
 use sqlx::PgPool;
 use sqlx::SqlitePool;
 
+mod saga;
+
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub(crate) struct SpoolRow {
     pub manifest_id: String,
@@ -25,6 +27,7 @@ pub(crate) struct SpoolRow {
     pub completed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    pub saga_json: Option<String>,
 }
 
 #[derive(Clone)]
@@ -41,7 +44,8 @@ impl SpoolStore {
     pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>> {
         let row = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
-                    result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
+                    result_json, raw_result, error, submitted_at, completed_at, \
+                    created_at, updated_at, saga_json \
              FROM spool_jobs WHERE manifest_id = ?",
         )
         .bind(manifest_id)
@@ -172,7 +176,8 @@ impl SpoolStore {
     pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>> {
         let rows = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
-                    result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
+                    result_json, raw_result, error, submitted_at, completed_at, \
+                    created_at, updated_at, saga_json \
              FROM spool_jobs ORDER BY created_at DESC, manifest_id DESC",
         )
         .fetch_all(&self.pool)
@@ -195,7 +200,8 @@ impl PostgresSpoolStore {
     pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>> {
         let row = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
-                    result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
+                    result_json, raw_result, error, submitted_at, completed_at, \
+                    created_at, updated_at, saga_json \
              FROM spool_jobs WHERE manifest_id = $1",
         )
         .bind(manifest_id)
@@ -326,7 +332,8 @@ impl PostgresSpoolStore {
     pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>> {
         let rows = sqlx::query_as::<_, SpoolRow>(
             "SELECT manifest_id, backend, batch_id, status, request_count, payload_json, \
-                    result_json, raw_result, error, submitted_at, completed_at, created_at, updated_at \
+                    result_json, raw_result, error, submitted_at, completed_at, \
+                    created_at, updated_at, saga_json \
              FROM spool_jobs ORDER BY created_at DESC, manifest_id DESC",
         )
         .fetch_all(&self.pool)
@@ -365,7 +372,11 @@ impl BackendSpoolStore {
             request_count: u32,
             payload_json: &str,
         ) -> anyhow::Result<()>;
-        pub async fn mark_submit_failed(&self, manifest_id: &str, error: &str) -> anyhow::Result<()>;
+        pub async fn mark_submit_failed(
+            &self,
+            manifest_id: &str,
+            error: &str,
+        ) -> anyhow::Result<()>;
         pub async fn insert_submitted(
             &self,
             manifest_id: &str,
@@ -374,6 +385,13 @@ impl BackendSpoolStore {
             request_count: u32,
             payload_json: &str,
         ) -> anyhow::Result<()>;
+        pub async fn save_saga(
+            &self,
+            manifest_id: &str,
+            saga_json: Option<&str>,
+            batch_id: Option<&str>,
+        ) -> anyhow::Result<()>;
+        pub async fn list_pending_sagas(&self) -> anyhow::Result<Vec<SpoolRow>>;
         pub async fn list(&self) -> anyhow::Result<Vec<SpoolRow>>;
     }
 }

@@ -23,6 +23,7 @@ pub use scheduler::Scheduler;
 pub use scheduler::dispatch_executor;
 pub use scheduler::spawn_global as spawn_scheduler;
 pub use spool_exec::spool_executor_from_provider;
+pub use spool_submit::resume_spool_submits;
 pub use spool_submit::submit_manifest_from_provider;
 pub use store::CronStore;
 pub use tools::create::OwnerContext;

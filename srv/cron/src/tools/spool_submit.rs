@@ -8,13 +8,11 @@ use serde_json::json;
 
 use crate::BackendCronStorage;
 use crate::CronCtx;
-use crate::CronScope;
 use crate::CronServer;
-use crate::CronStorage;
 use crate::OwnerContext;
-use crate::job::CreateJobParams;
 use crate::spool_store::BackendSpoolStore;
-use crate::spool_submit::submit_manifest_from_provider;
+use crate::spool_submit::PollWiring;
+use crate::spool_submit::submit_manifest;
 use crate::tools::cron_vfs;
 use crate::tools::owner_context_from_cron_ctx;
 use chaos_abi::ContentItem;
@@ -146,49 +144,40 @@ async fn execute_structured_on(
         .map(|item| (item.custom_id.clone(), item_to_turn_request(item)))
         .collect();
 
-    let batch_id = submit_manifest_from_provider(
-        &registry,
-        provider,
-        &params.manifest_id,
-        &params.backend,
-        turn_items,
-    )
-    .await?;
-
-    // Wire a cron row to drive the poll loop. Scope=Project because the
-    // spool row lives in the shared DB and must be pollable across sessions.
-    let storage = BackendCronStorage::from_provider(provider);
+    let store = BackendSpoolStore::from_provider(provider);
+    let cron = BackendCronStorage::from_provider(provider);
     let name = params
         .name
         .clone()
         .unwrap_or_else(|| format!("spool-poll-{}", params.manifest_id));
-    let cron_params = CreateJobParams::spool(
-        name,
-        poll_schedule_json,
-        params.manifest_id.clone(),
-        CronScope::Project,
-        Some(project_path),
-        None,
-    );
-    let job = storage
-        .create(&cron_params)
-        .await
-        .map_err(|e| format!("persist poll cron row: {e}"))?;
-    let replaced_poll_rows = storage
-        .delete_spool_jobs_for_manifest_except(&params.manifest_id, Some(&job.id))
-        .await
-        .map_err(|e| format!("cleanup replaced poll cron rows: {e}"))?;
+    let receipt = submit_manifest(
+        &registry,
+        &store,
+        &cron,
+        &params.manifest_id,
+        &params.backend,
+        turn_items,
+        Some(PollWiring {
+            name,
+            schedule_json: poll_schedule_json,
+            project_path,
+        }),
+    )
+    .await?;
+    let job = receipt
+        .poll_job
+        .ok_or_else(|| format!("submit {} completed without a poll cron row", params.manifest_id))?;
 
     Ok(json!({
         "status": "submitted",
         "manifest_id": params.manifest_id,
         "backend": params.backend,
-        "batch_id": batch_id,
+        "batch_id": receipt.batch_id,
         "item_count": params.items.len(),
         "poll_cron_id": job.id,
         "poll_schedule": job.schedule,
         "next_poll_at": job.next_run_at.map(|t| t.to_string()),
-        "replaced_poll_rows": replaced_poll_rows,
+        "replaced_poll_rows": receipt.replaced_poll_rows,
     }))
 }
 

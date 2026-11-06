@@ -12,11 +12,14 @@ use crate::tracing::span::Attributes;
 use crate::tracing::span::Id;
 use crate::tracing::span::Record;
 use crate::tracing::subscriber as tracing_subscriber;
+use batch_machines::Admission;
+use batch_machines::Batch;
 use chaos_proc::LogEntry;
 use chaos_proc::RuntimeDbHandle;
 #[cfg(test)]
 use chaos_proc::StateRuntime;
 use jiff::ToSpan;
+use std::num::NonZeroU32;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -28,7 +31,10 @@ use tracing_subscriber::registry::LookupSpan;
 use uuid::Uuid;
 
 const LOG_QUEUE_CAPACITY: usize = 512;
-const LOG_BATCH_SIZE: usize = 128;
+const LOG_BATCH_SIZE: NonZeroU32 = match NonZeroU32::new(128) {
+    Some(size) => size,
+    None => NonZeroU32::MIN,
+};
 const LOG_FLUSH_INTERVAL: Duration = Duration::from_secs(2);
 const LOG_RETENTION_DAYS: i64 = 10;
 
@@ -226,36 +232,66 @@ fn current_process_log_uuid() -> &'static str {
 }
 
 async fn run_inserter(state_db: RuntimeDbHandle, mut receiver: mpsc::Receiver<LogDbCommand>) {
-    let mut buffer = Vec::with_capacity(LOG_BATCH_SIZE);
-    let mut ticker = tokio::time::interval(LOG_FLUSH_INTERVAL);
+    let origin = tokio::time::Instant::now();
+    let Some(mut batch) = Batch::new(LOG_BATCH_SIZE, LOG_FLUSH_INTERVAL) else {
+        return;
+    };
+    let mut buffer = Vec::with_capacity(LOG_BATCH_SIZE.get() as usize);
     loop {
+        let wake = batch.deadline().map(|deadline| origin + deadline);
         tokio::select! {
             maybe_command = receiver.recv() => {
+                let now = origin.elapsed();
                 match maybe_command {
                     Some(LogDbCommand::Entry(entry)) => {
-                        buffer.push(entry);
-                        if buffer.len() >= LOG_BATCH_SIZE {
-                            flush(&state_db, &mut buffer).await;
+                        match batch.push(now) {
+                            Admission::Buffered => buffer.push(entry),
+                            Admission::Flush(_) => {
+                                buffer.push(entry);
+                                flush(&state_db, &mut batch, &mut buffer, now).await;
+                            }
+                            _ => {
+                                flush(&state_db, &mut batch, &mut buffer, now).await;
+                                if matches!(
+                                    batch.push(now),
+                                    Admission::Buffered | Admission::Flush(_)
+                                ) {
+                                    buffer.push(entry);
+                                }
+                            }
                         }
                     }
                     Some(LogDbCommand::Flush(reply)) => {
-                        flush(&state_db, &mut buffer).await;
+                        flush(&state_db, &mut batch, &mut buffer, now).await;
                         let _ = reply.send(());
                     }
                     None => {
-                        flush(&state_db, &mut buffer).await;
+                        flush(&state_db, &mut batch, &mut buffer, now).await;
                         break;
                     }
                 }
             }
-            _ = ticker.tick() => {
-                flush(&state_db, &mut buffer).await;
+            () = sleep_until_deadline(wake) => {
+                flush(&state_db, &mut batch, &mut buffer, origin.elapsed()).await;
             }
         }
     }
 }
 
-async fn flush(state_db: &RuntimeDbHandle, buffer: &mut Vec<LogEntry>) {
+async fn sleep_until_deadline(wake: Option<tokio::time::Instant>) {
+    match wake {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn flush(
+    state_db: &RuntimeDbHandle,
+    batch: &mut Batch,
+    buffer: &mut Vec<LogEntry>,
+    now: Duration,
+) {
+    batch.flush(now);
     if buffer.is_empty() {
         return;
     }

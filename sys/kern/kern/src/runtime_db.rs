@@ -93,7 +93,10 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
     Ok(Some(runtime))
 }
 
-async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron::JobExecutor {
+async fn scheduler_executor(
+    provider: &'static ChaosVfs,
+    config: &Config,
+) -> chaos_cron::JobExecutor {
     let shell = crate::scheduled_exec::executor(config);
     let registry = spool_registry_from_env(config).await;
     if registry.is_empty() {
@@ -107,6 +110,7 @@ async fn scheduler_executor(provider: &ChaosVfs, config: &Config) -> chaos_cron:
     // the second install being dropped.
     let _ = chaos_abi::set_shared_spool_registry(registry.clone());
 
+    tokio::spawn(chaos_cron::resume_spool_submits(registry.clone(), provider));
     let spool = chaos_cron::spool_executor_from_provider(registry, provider);
 
     chaos_cron::dispatch_executor(shell, spool)

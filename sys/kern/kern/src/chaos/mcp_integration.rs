@@ -2,14 +2,16 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
 use crate::SandboxState;
+use crate::async_breaker::tokio_clock_storage;
 use crate::config::types::McpServerConfig;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::protocol::McpServerRefreshConfig;
-use breaker_machines::CircuitBreaker;
+use breaker_machines::AsyncCircuitBreaker;
+use breaker_machines::CircuitError;
+use breaker_machines::PredicateClassifier;
 use chaos_ipc::api::McpServerElicitationRequest;
 use chaos_ipc::api::McpServerElicitationRequestParams;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -54,117 +56,69 @@ fn is_transient(error: &anyhow::Error) -> bool {
         .is_some_and(chaos_mcp_runtime::GuestError::is_retryable)
 }
 
-/// Breaker state bundled with open-timestamp for manual half-open transitions.
-///
-/// `breaker-machines` `call()` is sync-only so we can't use it for async
-/// operations. The manual `record_*` API doesn't drive Open→HalfOpen
-/// transitions, so we track `opened_at` ourselves and `reset()` after the
-/// configured timeout. This is coarser than true HalfOpen (it goes straight
-/// to Closed, allowing all traffic through) but prevents permanent latching.
-///
-/// TODO: add `try_half_open(&mut self)` to `breaker-machines` for proper
-/// Open→HalfOpen transitions without requiring `call()`.
-struct BreakerState {
-    breaker: CircuitBreaker,
-    opened_at: Option<Instant>,
-}
-
 /// Process-wide registry of per-server circuit breakers.
 ///
-/// Each entry is wrapped in `Arc<Mutex<>>` so callers can hold a reference
-/// while the registry lock is released during the actual call. Initialised
-/// lazily on first access; this is intentionally a singleton so all session
-/// instances share the same fault-detection state for a given MCP server.
+/// Initialised lazily on first access; this is intentionally a singleton so
+/// all session instances share the same fault-detection state for a given MCP
+/// server.
 static MCP_CIRCUIT_BREAKERS: std::sync::LazyLock<
-    std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<BreakerState>>>>,
+    std::sync::Mutex<HashMap<String, Arc<AsyncCircuitBreaker>>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
-/// Retrieve (or create) the circuit breaker state for `server_name`.
-fn mcp_circuit_breaker(server_name: &str) -> Arc<std::sync::Mutex<BreakerState>> {
+/// Retrieve (or create) the circuit breaker for `server_name`.
+fn mcp_circuit_breaker(server_name: &str) -> Arc<AsyncCircuitBreaker> {
     let mut map = MCP_CIRCUIT_BREAKERS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     map.entry(server_name.to_string())
-        .or_insert_with(|| {
-            Arc::new(std::sync::Mutex::new(BreakerState {
-                breaker: CircuitBreaker::builder(server_name)
-                    .failure_threshold(5)
-                    .failure_window_secs(60.0)
-                    .half_open_timeout_secs(30.0)
-                    .success_threshold(2)
-                    .build(),
-                opened_at: None,
-            }))
-        })
+        .or_insert_with(|| Arc::new(build_mcp_circuit_breaker(server_name)))
         .clone()
+}
+
+fn build_mcp_circuit_breaker(server_name: &str) -> AsyncCircuitBreaker {
+    AsyncCircuitBreaker::builder(server_name)
+        .failure_threshold(5)
+        .failure_window_secs(60.0)
+        .half_open_timeout_secs(HALF_OPEN_TIMEOUT.as_secs_f64())
+        .success_threshold(2)
+        .storage(tokio_clock_storage())
+        .failure_classifier(Arc::new(PredicateClassifier::new(|ctx| {
+            ctx.error
+                .downcast_ref::<anyhow::Error>()
+                .is_some_and(is_transient)
+        })))
+        .build_async()
 }
 
 /// Wraps an async MCP operation with the per-server circuit breaker.
 ///
-/// Fails fast when the breaker is open and the half-open timeout hasn't
-/// elapsed. Records success/failure to drive state transitions.
+/// Fails fast while the breaker is open; once the cooldown elapses a single
+/// probe is admitted and its outcome decides whether the circuit closes.
 async fn with_circuit_breaker<T, F, Fut>(server: &str, op: F) -> anyhow::Result<T>
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = anyhow::Result<T>>,
 {
-    let breaker = mcp_circuit_breaker(server);
+    guarded(&mcp_circuit_breaker(server), server, op).await
+}
 
-    {
-        let mut guard = breaker
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if guard.breaker.is_open() {
-            if let Some(opened_at) = guard.opened_at {
-                if opened_at.elapsed() >= HALF_OPEN_TIMEOUT {
-                    // Timeout elapsed — reset to allow a probe call through.
-                    // The manual record_* API has no Open->HalfOpen transition,
-                    // so this goes straight to Closed; see struct docs.
-                    guard.breaker.reset();
-                    guard.opened_at = None;
-                    warn!("MCP server '{server}' circuit reset after timeout — probing");
-                } else {
-                    anyhow::bail!(
-                        "MCP server '{server}' circuit open — too many recent failures, backing off"
-                    );
-                }
-            } else {
-                anyhow::bail!(
-                    "MCP server '{server}' circuit open — too many recent failures, backing off"
-                );
-            }
+async fn guarded<T, F, Fut>(breaker: &AsyncCircuitBreaker, server: &str, op: F) -> anyhow::Result<T>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = anyhow::Result<T>>,
+{
+    match breaker.call(op).await {
+        Ok(value) => Ok(value),
+        Err(CircuitError::Execution(error)) => Err(error),
+        Err(CircuitError::Open { .. } | CircuitError::HalfOpenLimitReached { .. }) => {
+            anyhow::bail!(
+                "MCP server '{server}' circuit open — too many recent failures, backing off"
+            )
         }
+        Err(rejected) => Err(anyhow::anyhow!(
+            "MCP server '{server}' call rejected: {rejected}"
+        )),
     }
-
-    let start = Instant::now();
-    let result = op().await;
-    let duration = start.elapsed().as_secs_f64();
-
-    {
-        let mut guard = breaker
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &result {
-            Ok(_) => {
-                guard.breaker.record_success_and_maybe_close(duration);
-                if !guard.breaker.is_open() {
-                    guard.opened_at = None;
-                }
-            }
-            Err(error) if is_transient(error) => {
-                let was_open = guard.breaker.is_open();
-                guard.breaker.record_failure_and_maybe_trip(duration);
-                if !was_open && guard.breaker.is_open() {
-                    guard.opened_at = Some(Instant::now());
-                }
-            }
-            // Deterministic application/server errors do not signal an
-            // unhealthy server; leave breaker state untouched.
-            Err(_) => {}
-        }
-    }
-
-    result
 }
 
 #[cfg(test)]

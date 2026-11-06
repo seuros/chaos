@@ -1,11 +1,14 @@
 use crate::provider::Provider;
 use chaos_abi::AbiError;
+use chaos_client::TransportError;
 use chaos_client::default_rama_http_client_with_egress;
+use chaos_client::run_with_retry;
 use chaos_libration::UsageSniffer;
 use rama::Service;
 use rama::bytes::Bytes;
 use rama::http::Body;
 use rama::http::HeaderMap;
+use rama::http::HttpResult;
 use rama::http::Request;
 use rama::http::Response;
 use rama::http::StatusCode;
@@ -31,87 +34,60 @@ pub(crate) async fn start_rama_post_sse_request(
 ) -> Result<Response<Body>, AbiError> {
     let body_bytes = encode_body(body)?;
 
-    let retry = &provider.retry;
-    let max_attempts = retry.max_attempts.max(1);
-    let base_delay = retry.base_delay;
-
-    for attempt in 0..max_attempts {
-        if attempt > 0 {
-            let delay = base_delay * 2u32.saturating_pow(attempt.saturating_sub(1) as u32);
-            tokio::time::sleep(delay).await;
-        }
-
-        let client = default_rama_http_client_with_egress(provider.egress.clone());
+    let make_request = || -> HttpResult<Request<Body>> {
         let mut builder = Request::builder().method("POST").uri(url);
         for (name, value) in headers.iter() {
             builder = builder.header(name, value);
         }
-        let request =
-            builder
-                .body(Body::from(body_bytes.clone()))
-                .map_err(|e| AbiError::InvalidRequest {
-                    message: e.to_string(),
-                })?;
+        builder.body(Body::from(body_bytes.clone()))
+    };
 
-        let response = match client.serve(request).await {
-            Ok(response) => response,
-            Err(err) => {
-                if retry.retry_transport && attempt + 1 < max_attempts {
-                    tracing::warn!(
-                        attempt,
-                        transport = transport_name,
-                        "SSE transport error, retrying: {err}"
-                    );
-                    continue;
-                }
-                return Err(AbiError::Transport {
-                    status: 0,
-                    message: err.to_string(),
-                });
-            }
-        };
+    run_with_retry(provider.retry.to_policy(), make_request, |request, attempt| async move {
+        let request = request.map_err(|e| TransportError::Build(e.to_string()))?;
+        let client = default_rama_http_client_with_egress(provider.egress.clone());
+        let response = client.serve(request).await.map_err(|err| {
+            tracing::warn!(attempt, transport = transport_name, "SSE transport error: {err}");
+            TransportError::Network(err.to_string())
+        })?;
 
         let status = response.status();
-
-        // Sniff rate-limit headers unconditionally — 429 and 5xx responses
-        // carry the most valuable reset hints (the bucket literally just
-        // rejected us for being empty), and the error path below consumes
-        // the response body, so we have to extract headers first.
         if let Some(sniffer) = sniffer {
             sniffer.sniff(response.headers());
         }
-
-        if status != StatusCode::OK {
-            let err_body = response
-                .into_body()
-                .collect()
-                .await
-                .map_err(|e| AbiError::Transport {
-                    status: status.as_u16(),
-                    message: e.to_string(),
-                })?
-                .to_bytes();
-            let body_text = String::from_utf8_lossy(&err_body);
-
-            let retryable = (status == StatusCode::TOO_MANY_REQUESTS && retry.retry_429)
-                || (status.is_server_error() && retry.retry_5xx);
-            if retryable && attempt + 1 < max_attempts {
-                tracing::warn!(attempt, transport = transport_name, status = %status, "SSE retryable error, retrying");
-                continue;
-            }
-
-            return Err(AbiError::Transport {
-                status: status.as_u16(),
-                message: body_text.to_string(),
-            });
+        if status == StatusCode::OK {
+            return Ok(response);
         }
 
-        return Ok(response);
-    }
-
-    Err(AbiError::Transport {
-        status: 0,
-        message: "all retry attempts exhausted".to_string(),
+        tracing::warn!(attempt, transport = transport_name, status = %status, "SSE request failed");
+        let err_body = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| TransportError::Http {
+                status,
+                url: None,
+                headers: None,
+                body: Some(e.to_string()),
+            })?
+            .to_bytes();
+        Err(TransportError::Http {
+            status,
+            url: None,
+            headers: None,
+            body: Some(String::from_utf8_lossy(&err_body).into_owned()),
+        })
+    })
+    .await
+    .map_err(|err| match err {
+        TransportError::Build(message) => AbiError::InvalidRequest { message },
+        TransportError::Http { status, body, .. } => AbiError::Transport {
+            status: status.as_u16(),
+            message: body.unwrap_or_default(),
+        },
+        other => AbiError::Transport {
+            status: 0,
+            message: other.to_string(),
+        },
     })
 }
 

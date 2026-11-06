@@ -44,6 +44,10 @@ async fn timeout_allows_a_probe_that_closes_the_breaker() {
     let first = breaker.call(|| async { Err::<(), _>("down") }).await;
     std::assert_matches!(first, Err(BreakerError::Operation("down")));
     assert_eq!(breaker.retry_after(), Some(Duration::from_millis(10)));
+    assert_eq!(
+        breaker.retry_after().map(|delay| delay.as_secs_f64()),
+        breaker.breaker.retry_after()
+    );
 
     tokio::time::advance(Duration::from_millis(9)).await;
     let rejected: Result<(), BreakerError<&str>> = breaker

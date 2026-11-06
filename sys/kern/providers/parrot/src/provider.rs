@@ -18,6 +18,7 @@ const DEFAULT_PROVIDER_STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
 /// transport-level retries for both unary and streaming calls.
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
+    /// Total attempts including the first; zero and one both send once.
     pub max_attempts: u64,
     pub base_delay: Duration,
     pub retry_429: bool,
@@ -28,7 +29,7 @@ pub struct RetryConfig {
 impl RetryConfig {
     pub fn to_policy(&self) -> RetryPolicy {
         RetryPolicy {
-            max_attempts: self.max_attempts,
+            max_attempts: self.max_attempts.saturating_sub(1),
             base_delay: self.base_delay,
             retry_on: RetryOn {
                 retry_429: self.retry_429,

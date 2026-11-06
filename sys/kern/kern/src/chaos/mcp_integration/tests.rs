@@ -46,12 +46,13 @@ async fn transport_failures_open_breaker() {
     assert!(!called.get(), "open breaker must reject the operation");
 }
 
-#[tokio::test]
-async fn late_success_preserves_open_timestamp_and_allows_reset() {
-    let server = "regression-late-success-preserves-open-timestamp";
+#[tokio::test(start_paused = true)]
+async fn half_open_admits_a_single_probe_after_cooldown() {
+    let server = "half-open-single-probe";
+    let breaker = build_mcp_circuit_breaker(server);
     let (started_tx, started_rx) = oneshot::channel();
     let (finish_tx, finish_rx) = oneshot::channel();
-    let late_success = with_circuit_breaker(server, || async {
+    let late_success = guarded(&breaker, server, || async {
         started_tx.send(()).unwrap();
         finish_rx.await.unwrap();
         Ok(())
@@ -60,36 +61,52 @@ async fn late_success_preserves_open_timestamp_and_allows_reset() {
         started_rx.await.unwrap();
         for _ in 0..5 {
             assert!(
-                with_circuit_breaker(server, || async {
+                guarded(&breaker, server, || async {
                     Err::<(), _>(GuestError::Timeout(Duration::from_secs(1)).into())
                 })
                 .await
                 .is_err()
             );
         }
-        let breaker = mcp_circuit_breaker(server);
-        let opened_at = {
-            let guard = breaker.lock().unwrap();
-            assert!(guard.breaker.is_open());
-            guard.opened_at.unwrap()
-        };
+        assert!(breaker.is_open());
         finish_tx.send(()).unwrap();
-        opened_at
     };
-    let (result, opened_at) = tokio::join!(late_success, failures);
+    let (result, ()) = tokio::join!(late_success, failures);
     result.unwrap();
+    assert!(
+        breaker.is_open(),
+        "a success admitted before the trip cannot close the circuit"
+    );
+    assert_eq!(breaker.retry_after(), Some(HALF_OPEN_TIMEOUT.as_secs_f64()));
 
-    let breaker = mcp_circuit_breaker(server);
-    {
-        let mut guard = breaker.lock().unwrap();
-        assert!(guard.breaker.is_open());
-        assert_eq!(guard.opened_at, Some(opened_at));
-        guard.opened_at = Some(Instant::now() - HALF_OPEN_TIMEOUT);
-    }
-    with_circuit_breaker(server, || async { Ok(()) })
+    tokio::time::advance(HALF_OPEN_TIMEOUT).await;
+    let (probe_started_tx, probe_started_rx) = oneshot::channel();
+    let (probe_finish_tx, probe_finish_rx) = oneshot::channel();
+    let probe = guarded(&breaker, server, || async {
+        probe_started_tx.send(()).unwrap();
+        probe_finish_rx.await.unwrap();
+        Ok(())
+    });
+    let competitor = async {
+        probe_started_rx.await.unwrap();
+        let called = std::cell::Cell::new(false);
+        let rejected = guarded(&breaker, server, || async {
+            called.set(true);
+            Ok(())
+        })
+        .await;
+        assert!(rejected.is_err(), "only one probe runs while half-open");
+        assert!(!called.get());
+        probe_finish_tx.send(()).unwrap();
+    };
+    let (result, ()) = tokio::join!(probe, competitor);
+    result.unwrap();
+    assert!(
+        !breaker.is_closed(),
+        "one success is short of the threshold"
+    );
+    guarded(&breaker, server, || async { Ok(()) })
         .await
         .unwrap();
-    let guard = breaker.lock().unwrap();
-    assert!(!guard.breaker.is_open());
-    assert!(guard.opened_at.is_none());
+    assert!(breaker.is_closed());
 }

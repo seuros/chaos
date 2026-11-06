@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::DeveloperInstructions;
@@ -6,6 +6,8 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::TokenCountEvent;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
+use throttle_machines::GcraParams;
+use throttle_machines::KeyedGcra;
 
 use crate::context_manager::TotalTokenUsageBreakdown;
 
@@ -382,38 +384,14 @@ impl Session {
         new_rate_limits: crate::protocol::RateLimitSnapshot,
     ) {
         if let Some(ref id) = new_rate_limits.limit_id {
-            use std::sync::LazyLock;
-            use std::sync::Mutex;
-            static RATE_TATS: LazyLock<Mutex<HashMap<String, f64>>> =
-                LazyLock::new(|| Mutex::new(HashMap::new()));
+            static RATE_SNAPSHOTS: LazyLock<KeyedGcra<String>> =
+                LazyLock::new(|| KeyedGcra::new(GcraParams::from_rate(1.0, 1)));
 
-            let now = jiff::Timestamp::now().as_second() as f64;
-            let emission_interval = 1.0_f64;
-            let tat = RATE_TATS
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(id)
-                .copied()
-                .unwrap_or(0.0);
-            let result = {
-                use throttle_machines::gate::Gate;
-                throttle_machines::gcra::Gcra::check(
-                    tat,
-                    now,
-                    throttle_machines::gcra::GcraParams {
-                        emission_interval,
-                        delay_tolerance: 0.0,
-                    },
-                )
-            };
-            RATE_TATS
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(id.clone(), result.state);
-            if !result.allowed {
+            let decision = RATE_SNAPSHOTS.check(id.as_str());
+            if !decision.allowed {
                 tracing::warn!(
                     limit_id = %id,
-                    retry_after = result.retry_after,
+                    retry_after = decision.retry_after,
                     "rate limit snapshot arriving faster than 1 Hz"
                 );
             }

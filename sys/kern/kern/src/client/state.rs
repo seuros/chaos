@@ -496,28 +496,19 @@ impl ModelClient {
     /// is built. When the breaker is open within its backoff window this
     /// rejects immediately without resolving auth; otherwise it probes the live
     /// credential state via [`current_client_setup`] (the authoritative check,
-    /// covering cached logins, env keys, and bearer tokens) and records the
-    /// outcome. A missing-credentials result surfaces `ProviderAuthMissing`,
-    /// which the client turns into a login prompt.
+    /// covering cached logins, env keys, and bearer tokens). A
+    /// missing-credentials result surfaces `ProviderAuthMissing`, which the
+    /// client turns into a login prompt; transient failures (e.g. a token
+    /// refresh hiccup) are not a signal about login state and leave the
+    /// breaker untouched.
     pub(super) async fn auth_preflight(&self) -> Result<()> {
-        if let auth_breaker::AuthGate::RejectFastFail = self.state.auth_breaker.check() {
-            return Err(crate::api_bridge::provider_auth_missing(
-                &self.state.provider,
-            ));
-        }
-        match self.current_client_setup().await {
-            Ok(_) => {
-                self.state.auth_breaker.record(/*authenticated*/ true);
-                Ok(())
-            }
-            Err(err @ ChaosErr::ProviderAuthMissing(_)) => {
-                self.state.auth_breaker.record(/*authenticated*/ false);
-                Err(err)
-            }
-            // Transient failures (e.g. a token refresh hiccup) aren't a signal
-            // about login state, so they must not trip the auth breaker.
-            Err(other) => Err(other),
-        }
+        self.state
+            .auth_breaker
+            .probe(
+                || async { self.current_client_setup().await.map(drop) },
+                || crate::api_bridge::provider_auth_missing(&self.state.provider),
+            )
+            .await
     }
 }
 

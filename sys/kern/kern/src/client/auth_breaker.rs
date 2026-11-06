@@ -14,107 +14,71 @@
 //! provider id alone would invite (e.g. a logged-out session opening the
 //! breaker for a different session that authenticates the same provider id with
 //! different credentials).
-//!
-//! Mirrors the manual `opened_at` bookkeeping used by the MCP breaker: the
-//! `record_*` API doesn't drive Open→HalfOpen on its own, so we track the open
-//! timestamp ourselves and `reset()` once the timeout passes.
 
-use std::sync::Mutex;
-use std::sync::PoisonError;
+use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 
-use breaker_machines::CircuitBreaker;
+use breaker_machines::AsyncCircuitBreaker;
+use breaker_machines::CircuitError;
+use breaker_machines::PredicateClassifier;
+
+use crate::async_breaker::tokio_clock_storage;
+use crate::error::ChaosErr;
 
 /// Backoff window before a probe is allowed through. Kept short so a fresh
 /// login unlocks the next turn rather than stalling behind a long timeout.
 const AUTH_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Outcome of consulting the breaker before resolving credentials.
-#[derive(Debug)]
-pub(crate) enum AuthGate {
-    /// Open and within backoff — reject without touching auth or the network.
-    RejectFastFail,
-    /// Resolve auth as normal, then report the result via [`AuthBreaker::record`].
-    Probe,
-}
-
-struct AuthBreakerState {
-    breaker: CircuitBreaker,
-    opened_at: Option<Instant>,
-}
-
 /// A single provider/credential realm's auth breaker.
 pub(crate) struct AuthBreaker {
-    state: Mutex<AuthBreakerState>,
+    breaker: AsyncCircuitBreaker,
 }
 
 impl std::fmt::Debug for AuthBreaker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let open = self
-            .state
-            .lock()
-            .map(|guard| guard.breaker.is_open())
-            .unwrap_or(false);
-        f.debug_struct("AuthBreaker").field("open", &open).finish()
+        f.debug_struct("AuthBreaker")
+            .field("open", &self.breaker.is_open())
+            .finish()
     }
 }
 
 impl AuthBreaker {
     pub(crate) fn new(provider_id: &str) -> Self {
-        let name = format!("auth:{provider_id}");
-        Self {
-            state: Mutex::new(AuthBreakerState {
-                // A single missing-credentials probe is enough to open: there
-                // is nothing to retry until the user acts.
-                breaker: CircuitBreaker::builder(name)
-                    .failure_threshold(1)
-                    .failure_window_secs(60.0)
-                    .half_open_timeout_secs(2.0)
-                    .success_threshold(1)
-                    .build(),
-                opened_at: None,
-            }),
-        }
+        // A single missing-credentials probe is enough to open: there is
+        // nothing to retry until the user acts.
+        let breaker = AsyncCircuitBreaker::builder(format!("auth:{provider_id}"))
+            .failure_threshold(1)
+            .failure_window_secs(60.0)
+            .half_open_timeout_secs(AUTH_HALF_OPEN_TIMEOUT.as_secs_f64())
+            .success_threshold(1)
+            .storage(tokio_clock_storage())
+            .failure_classifier(Arc::new(PredicateClassifier::new(|ctx| {
+                ctx.error
+                    .downcast_ref::<ChaosErr>()
+                    .is_some_and(|err| matches!(err, ChaosErr::ProviderAuthMissing(_)))
+            })))
+            .build_async();
+        Self { breaker }
     }
 
-    /// Decide whether to probe auth or fail fast.
-    pub(crate) fn check(&self) -> AuthGate {
-        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if guard.breaker.is_open() {
-            match guard.opened_at {
-                Some(opened_at) if opened_at.elapsed() < AUTH_HALF_OPEN_TIMEOUT => {
-                    return AuthGate::RejectFastFail;
-                }
-                _ => {
-                    // Backoff elapsed (or open without a timestamp) — let one
-                    // probe through to re-check whether the user has logged in.
-                    guard.breaker.reset();
-                    guard.opened_at = None;
-                }
-            }
-        }
-        AuthGate::Probe
-    }
-
-    /// Record whether credentials were present after a probe.
-    pub(crate) fn record(&self, authenticated: bool) {
-        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if authenticated {
-            if guard.breaker.is_open() {
-                // Proof of valid credentials — close immediately instead of
-                // making the user wait out the backoff window.
-                guard.breaker.reset();
-            } else {
-                guard.breaker.record_success_and_maybe_close(0.0);
-            }
-            guard.opened_at = None;
-        } else {
-            let was_open = guard.breaker.is_open();
-            guard.breaker.record_failure_and_maybe_trip(0.0);
-            if !was_open && guard.breaker.is_open() {
-                guard.opened_at = Some(Instant::now());
-            }
+    /// Run the auth probe unless the breaker is open within its backoff
+    /// window, in which case `rejected()` is returned without probing. Only a
+    /// `ProviderAuthMissing` outcome trips the breaker; any other error passes
+    /// through untouched.
+    pub(crate) async fn probe<T, F, Fut>(
+        &self,
+        op: F,
+        rejected: impl FnOnce() -> ChaosErr,
+    ) -> Result<T, ChaosErr>
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, ChaosErr>>,
+    {
+        match self.breaker.call(op).await {
+            Ok(value) => Ok(value),
+            Err(CircuitError::Execution(err)) => Err(err),
+            Err(_) => Err(rejected()),
         }
     }
 
@@ -122,9 +86,7 @@ impl AuthBreaker {
     /// user connects an account) so the next turn probes the fresh state
     /// instead of waiting out the backoff window.
     pub(crate) fn reset(&self) {
-        let mut guard = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        guard.breaker.reset();
-        guard.opened_at = None;
+        self.breaker.reset();
     }
 }
 

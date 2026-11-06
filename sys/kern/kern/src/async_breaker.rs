@@ -1,12 +1,11 @@
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::PoisonError;
 use std::time::Duration;
 
 use breaker_machines::CircuitError;
 use breaker_machines::MemoryStorage;
+use breaker_machines::StorageBackend;
 use tokio::time::Instant;
 
 /// Error returned by an async operation guarded by [`AsyncCircuitBreaker`].
@@ -34,9 +33,16 @@ impl breaker_machines::time::Clock for BreakerClock {
     }
 }
 
+/// In-memory breaker storage on the tokio clock, so paused-time tests drive
+/// the cooldown.
+pub(crate) fn tokio_clock_storage() -> Arc<dyn StorageBackend> {
+    Arc::new(MemoryStorage::with_clock(Box::new(BreakerClock(
+        Instant::now(),
+    ))))
+}
+
 pub(crate) struct AsyncCircuitBreaker {
     breaker: breaker_machines::AsyncCircuitBreaker,
-    retry_at: Arc<Mutex<Option<Instant>>>,
 }
 
 impl fmt::Debug for AsyncCircuitBreaker {
@@ -56,30 +62,14 @@ impl AsyncCircuitBreaker {
         half_open_timeout: Duration,
         success_threshold: usize,
     ) -> Self {
-        let retry_at = Arc::new(Mutex::new(None));
-        let opened = retry_at.clone();
-        let closed = retry_at.clone();
-        let probing = retry_at.clone();
         let breaker = breaker_machines::AsyncCircuitBreaker::builder(name)
             .failure_threshold(failure_threshold)
             .failure_window_secs(failure_window.as_secs_f64())
             .half_open_timeout_secs(half_open_timeout.as_secs_f64())
             .success_threshold(success_threshold)
-            .storage(Arc::new(MemoryStorage::with_clock(Box::new(BreakerClock(
-                Instant::now(),
-            )))))
-            .on_open(move |_| {
-                *opened.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some(Instant::now() + half_open_timeout);
-            })
-            .on_close(move |_| {
-                *closed.lock().unwrap_or_else(PoisonError::into_inner) = None;
-            })
-            .on_half_open(move |_| {
-                *probing.lock().unwrap_or_else(PoisonError::into_inner) = None;
-            })
+            .storage(tokio_clock_storage())
             .build_async();
-        Self { breaker, retry_at }
+        Self { breaker }
     }
 
     /// Return the delay before the next half-open probe may run.
@@ -87,10 +77,7 @@ impl AsyncCircuitBreaker {
     /// Callers that own a background actor can sleep for this duration and
     /// invoke [`Self::call`] when it elapses instead of waiting for new traffic.
     pub(crate) fn retry_after(&self) -> Option<Duration> {
-        self.retry_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+        self.breaker.retry_after().map(Duration::from_secs_f64)
     }
 
     pub(crate) async fn call<T, E, F, Fut>(&self, op: F) -> Result<T, BreakerError<E>>

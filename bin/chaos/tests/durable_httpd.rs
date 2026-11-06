@@ -63,7 +63,9 @@ impl Daemon {
         std::fs::write(
             &catalog,
             serde_json::to_vec(&json!({
-                "models": [chaos_kern::test_support::test_model_info(chaos_test_fixtures::TEST_MODEL)]
+                "models": [chaos_kern::test_support::test_model_info(
+                    chaos_test_fixtures::TEST_MODEL
+                )]
             }))?,
         )?;
         let env = HashMap::from([
@@ -115,7 +117,9 @@ impl Daemon {
             "model_provider=\"http-e2e\"".into(),
             format!("model={:?}", chaos_test_fixtures::TEST_MODEL),
             format!(
-                "model_providers.http-e2e={{name=\"HTTP E2E\",base_url=\"{}/v1\",wire_api=\"responses\",supports_websockets=false,request_max_retries=0,stream_max_retries=0}}",
+                "model_providers.http-e2e={{name=\"HTTP E2E\",base_url=\"{}/v1\",\
+                 wire_api=\"responses\",supports_websockets=false,\
+                 request_max_retries=0,stream_max_retries=0}}",
                 provider.uri()
             ),
             format!("model_catalog_json={:?}", catalog.to_string_lossy()),
@@ -270,8 +274,12 @@ impl Daemon {
         ))
         .await?;
         let remaining: i64 = sqlx::query_scalar(
-            "SELECT MAX(expires_at_ms) - CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) FROM execution_sessions"
-        ).fetch_one(&pool).await?;
+            "SELECT MAX(expires_at_ms) \
+             - CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) \
+             FROM execution_sessions",
+        )
+        .fetch_one(&pool)
+        .await?;
         pool.close().await;
         tokio::time::sleep(Duration::from_millis(remaining.max(0) as u64 + 100)).await;
         self.child = Self::spawn(
@@ -374,7 +382,12 @@ async fn webhook_receiver() -> Result<(
                     }
                 };
                 let _ = tx.send(parsed).await;
-                let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\
+                          Connection: close\r\n\r\n",
+                    )
+                    .await;
             });
         }
     });
@@ -387,18 +400,26 @@ async fn real_daemon_steering_receipts_webhook_and_sigkill_recovery() -> Result<
     let (release, gate) = oneshot::channel();
     let (_hold_crash_open, crash_gate) = oneshot::channel();
     let (provider, _) = start_streaming_sse_server(vec![
-        vec![chunk(vec![
-            ev_response_created("enable-shell"),
-            ev_function_call("enable-shell-call", "enable_tools", r#"{"groups":["shell"]}"#),
-            ev_completed_with_tokens("enable-shell", 3),
-        ], None)],
+        vec![chunk(
+            vec![
+                ev_response_created("enable-shell"),
+                ev_function_call(
+                    "enable-shell-call",
+                    "enable_tools",
+                    r#"{"groups":["shell"]}"#,
+                ),
+                ev_completed_with_tokens("enable-shell", 3),
+            ],
+            None,
+        )],
         vec![
             chunk(vec![ev_response_created("tool-request")], None),
             chunk(
                 vec![
                     ev_shell_command_call(
                         "safe-side-effect",
-                        "test -z \"${CHAOS_SESSION_WEBHOOK_SECRET+x}\" && printf 'once\\n' >> side-effect.txt",
+                        "test -z \"${CHAOS_SESSION_WEBHOOK_SECRET+x}\" \
+                         && printf 'once\\n' >> side-effect.txt",
                     ),
                     ev_completed_with_tokens("tool-request", 7),
                 ],
@@ -535,6 +556,7 @@ async fn real_daemon_steering_receipts_webhook_and_sigkill_recovery() -> Result<
     );
     let interrupt_path = format!("{session_path}/turns/00000000-0000-4000-8000-000000000002");
     let tool = ToolProcess(daemon.work.join("child.pid"));
+    daemon.wait_status(&session_path, "session", "idle").await?;
     daemon
         .api(
             "POST",
@@ -576,6 +598,7 @@ async fn real_daemon_steering_receipts_webhook_and_sigkill_recovery() -> Result<
     std::fs::remove_file(&tool.0)?;
     let crash_turn = "00000000-0000-4000-8000-000000000003";
     let crash_path = format!("{session_path}/turns/{crash_turn}");
+    daemon.wait_status(&session_path, "session", "idle").await?;
     daemon
         .api(
             "POST",
@@ -617,7 +640,8 @@ async fn real_daemon_steering_receipts_webhook_and_sigkill_recovery() -> Result<
         "expected_recovery_epoch": record["recovery_epoch"],
         "containment_confirmed": false,
         "actor": "isolated-real-daemon-test",
-        "reason": "SIGKILL reaped the daemon; the interrupted local tool was independently observed dead"
+        "reason": "SIGKILL reaped the daemon; the interrupted local tool \
+                   was independently observed dead"
     });
     ensure!(
         daemon

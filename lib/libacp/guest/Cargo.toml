@@ -12,6 +12,7 @@ include = ["src/**", "examples/**", "tests/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 agent-client-protocol = { workspace = true }
+dedup-machines.workspace = true
 futures = { workspace = true, features = ["std", "async-await"] }
 serde_json = { workspace = true, features = ["raw_value"] }
 thiserror = { workspace = true }
@@ -22,7 +23,7 @@ tokio-util = { workspace = true, features = ["codec"] }
 libc = { workspace = true }
 mcp-host = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["net", "process", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["net", "process", "rt-multi-thread", "test-util"] }
 
 [lints]
 workspace = true

@@ -27,8 +27,10 @@ chaos-snitch = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+dedup-machines = { workspace = true }
 hmac = { workspace = true }
 jiff = { workspace = true }
+lease-machines = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }

@@ -13,6 +13,7 @@ base64 = { workspace = true }
 chaos-client = { workspace = true }
 chaos-kern = { workspace = true }
 chaos-services = { workspace = true }
+deadline-machines = { workspace = true }
 chaos-ipc = { workspace = true }
 rama = { workspace = true }
 jiff = { workspace = true }

@@ -12,6 +12,8 @@ include = ["src/**", "examples/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 agent-client-protocol = { workspace = true }
+dedup-machines.workspace = true
+flow-machines.workspace = true
 futures = { workspace = true, features = ["std", "async-await"] }
 serde_json = { workspace = true }
 state-machines = { workspace = true }

@@ -12,6 +12,7 @@ chaos-proc = { workspace = true }
 chaos-ipc = { workspace = true }
 chaos-pwd = { workspace = true }
 jiff = { workspace = true }
+lease-machines = { workspace = true }
 libc = { workspace = true }
 rama = { workspace = true }
 chaos-snitch = { workspace = true }
@@ -19,6 +20,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
+supervisor-machines.workspace = true
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }
 usage = { workspace = true }

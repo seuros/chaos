@@ -37,6 +37,7 @@ tokio = { workspace = true, features = [
 ] }
 tracing = { workspace = true, features = ["log"] }
 chaos-snitch = { workspace = true }
+dedup-machines = { workspace = true }
 
 [dev-dependencies]
 chaos-proc = { workspace = true }

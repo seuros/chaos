@@ -25,6 +25,8 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process", "rt", "sync", "time"] }
 chaos-snitch = { workspace = true }
+saga-machines.workspace = true
+dedup-machines.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]

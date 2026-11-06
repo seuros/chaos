@@ -253,7 +253,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.20", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.21", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3", default-features = false }
@@ -357,10 +357,16 @@ serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
 state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
-breaker-machines = { version = "0.22", features = ["async"] }
+breaker-machines = { version = "0.23", features = ["async"] }
 chrono-machines = { version = "0.10", features = ["std"] }
-deadline-machines = { version = "0.3", features = ["tokio"] }
+deadline-machines = { version = "0.4", features = ["tokio", "tokio-util"] }
 throttle-machines = { version = "0.5" }
+lease-machines = "0.3"
+dedup-machines = { version = "0.3", features = ["std"] }
+batch-machines = "0.3"
+saga-machines = "0.3.1"
+supervisor-machines = { version = "0.4", features = ["std"] }
+flow-machines = "0.2"
 serial_test = "4"
 sha1 = "0.11"
 sha2 = "0.11"

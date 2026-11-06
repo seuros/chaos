@@ -7,6 +7,7 @@ name = "acp-guest"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "dedup-machines",
  "futures",
  "libc",
  "mcp-host",
@@ -23,6 +24,8 @@ version = "0.1.0"
 dependencies = [
  "acp-guest",
  "agent-client-protocol",
+ "dedup-machines",
+ "flow-machines",
  "futures",
  "serde_json",
  "state-machines",
@@ -441,7 +444,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -723,6 +726,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "batch-machines"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2025dad9b16fcebf62cde6b7ea2ebc928c12dd7eb67a9ed7be115878a213754"
+dependencies = [
+ "feedback-machines",
+ "flow-machines",
+]
+
+[[package]]
 name = "bech32"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,9 +919,9 @@ dependencies = [
 
 [[package]]
 name = "breaker-machines"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5bd70bc4a47f5cd89a1fd71365c78cc35fa2e7e71137819bc119b12f39c010fd"
+checksum = "dd0f2f384937ba112edf947f21972d10de1f3e992a3cec52443a05518cb4c2bf"
 dependencies = [
  "chrono-machines",
  "hashbrown 0.17.1",
@@ -1472,9 +1485,11 @@ dependencies = [
  "chaos-snitch",
  "chaos-traits",
  "chaos-vfs",
+ "dedup-machines",
  "inventory",
  "jiff",
  "mcp-host",
+ "saga-machines",
  "schemars 1.2.3",
  "serde",
  "serde_json",
@@ -1656,8 +1671,10 @@ dependencies = [
  "chaos-snitch",
  "chaos-test-fixtures",
  "chaos_journald",
+ "dedup-machines",
  "hmac 0.13.0",
  "jiff",
+ "lease-machines",
  "mcp-host",
  "rama",
  "serde",
@@ -1786,6 +1803,7 @@ dependencies = [
  "jiff",
  "keyring-core",
  "landlock",
+ "lease-machines",
  "libc",
  "mcp-host",
  "mime_guess",
@@ -1946,6 +1964,7 @@ dependencies = [
  "chaos-sh",
  "chaos-snitch",
  "core_test_support",
+ "dedup-machines",
  "mcp-host",
  "mcp_test_support",
  "os_info",
@@ -1992,6 +2011,7 @@ dependencies = [
  "chaos-kern",
  "chaos-services",
  "core_test_support",
+ "deadline-machines",
  "jiff",
  "pretty_assertions",
  "rama",
@@ -2273,6 +2293,7 @@ dependencies = [
 name = "chaos-snitch"
 version = "47.14.8"
 dependencies = [
+ "batch-machines",
  "chaos-ipc",
  "chaos-parrot",
  "chaos-proc",
@@ -2507,12 +2528,14 @@ dependencies = [
  "chaos-snitch",
  "chaos-test-fixtures",
  "jiff",
+ "lease-machines",
  "libc",
  "rama",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
+ "supervisor-machines",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -3277,11 +3300,12 @@ dependencies = [
 
 [[package]]
 name = "deadline-machines"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8139b53f0b8f52bc61f95c0018524d31449dd5471c406d6d97a0afea17eef63f"
+checksum = "805cba0e8981fd367f11a17886e0ad53b84365601f5d39d8b66819f9bd0ba463"
 dependencies = [
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -3301,6 +3325,15 @@ name = "deadpool-runtime"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
+
+[[package]]
+name = "dedup-machines"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "880dce165e3f6af6c76ee6916b0e127e90983a44219e2a9241804e960a7f01f1"
+dependencies = [
+ "hashbrown 0.17.1",
+]
 
 [[package]]
 name = "defmt"
@@ -3498,7 +3531,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3692,7 +3725,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3818,6 +3851,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "feedback-machines"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "383ce95dbec7125a31b0a26e0b5b7b6fb33d37e0689b50d5350d6fe3dbeaef60"
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3924,6 +3963,12 @@ checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
 dependencies = [
  "num-traits",
 ]
+
+[[package]]
+name = "flow-machines"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e4551eb1d0ea18d585036a0756f84d5dda9f594ee0900ca0f36bb2565cb90af"
 
 [[package]]
 name = "fluent"
@@ -4743,7 +4788,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7518b930f6aeb75e871d32ce873c2ae46e35cef19b5a0b039d4337f651d897cd"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
 ]
 
 [[package]]
@@ -6486,6 +6531,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
+name = "lease-machines"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f07f1f97747a36855fb9d72752082c62759e7b5d4354e9ca359b24e0d72814d9"
+
+[[package]]
 name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6829,9 +6880,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.20.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed44d42416c644ecff7a2059bb82d9bf874a1f917e46eb43a3ae1ea80bc16054"
+checksum = "6e6e45e5dadae3c6f809209ad5f596a52cf223a97bbf6f0c695b95d83bedf1e7"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
@@ -7299,7 +7350,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7849,7 +7900,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9861,7 +9912,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9942,6 +9993,15 @@ checksum = "cc0cdb7198d738a111f6df8fef42cb175412c311d0c4ac9126ff4e550ad1a0e8"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "saga-machines"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45790cf9abd36377c879af9696df1b07ff0ee1cdd4a2cc5e89740d8fe388cd71"
+dependencies = [
+ "dedup-machines",
 ]
 
 [[package]]
@@ -10842,9 +10902,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "supervisor-machines"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa09f4c832742b12448308467d596cbcb562d612c2565248637654c2083c260"
+checksum = "89f7646079e8a1b802737bb514b9c68e8e0743c046c9fb3c570b50e38ba03121"
 
 [[package]]
 name = "supports-color"
@@ -11000,7 +11060,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -12463,7 +12523,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

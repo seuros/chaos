@@ -29,7 +29,14 @@ jobs:
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: upkg install pkg-config libclang-dev
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v pkg-config >/dev/null || missing+=(pkg-config)
+          compgen -G '/usr/lib/llvm-*/lib/libclang.so' >/dev/null || missing+=(libclang-dev)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            upkg install "${missing[@]}"
+          fi
 
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
@@ -42,7 +49,7 @@ jobs:
 
       - name: Install AWS-LC build dependency
         if: matrix.backend == 'aws-lc'
-        run: upkg install cmake
+        run: command -v cmake >/dev/null || upkg install cmake
 
       - uses: jdx/mise-action@v4
         with:

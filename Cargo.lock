@@ -444,7 +444,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -743,9 +743,9 @@ checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
 name = "behavior-machines"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "710843b8516ad3c210b38b7b892befa1f559effc5daeff9df2a67c2af431a1c3"
+checksum = "6f599de624d4cbf3e9eb0e638595143605bc51bf7498563a8d0cb53ed0424222"
 dependencies = [
  "state-machines",
  "thiserror 2.0.21",
@@ -919,9 +919,9 @@ dependencies = [
 
 [[package]]
 name = "breaker-machines"
-version = "0.23.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd0f2f384937ba112edf947f21972d10de1f3e992a3cec52443a05518cb4c2bf"
+checksum = "bbf51708eca75faa21a79dbba811a5bc76632d3a6c2b82ed5b0a3ea0e39eb032"
 dependencies = [
  "chrono-machines",
  "hashbrown 0.17.1",
@@ -1972,6 +1972,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "serial_test",
  "shlex 2.0.1",
  "sqlx",
  "tempfile",
@@ -2568,9 +2569,9 @@ dependencies = [
 
 [[package]]
 name = "chrono-machines"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d996487faa81efb79ce6f1e83220d1f2abb07ec2aeb2c6ff0f0608ad75c9746"
+checksum = "85e44f9d0b5d1ae1387e0561b1f92824dcb2e139955756cf6b0c99cb3d36b734"
 dependencies = [
  "rand 0.10.3",
 ]
@@ -3328,9 +3329,9 @@ checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
 
 [[package]]
 name = "dedup-machines"
-version = "0.3.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "880dce165e3f6af6c76ee6916b0e127e90983a44219e2a9241804e960a7f01f1"
+checksum = "2829c171d1c8d15305b9e92a3c344e6eeb4c47544bb7e07e161b9e7edd4ef3da"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -3531,7 +3532,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3725,7 +3726,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3791,6 +3792,16 @@ dependencies = [
  "autocfg",
  "indenter",
  "once_cell",
+]
+
+[[package]]
+name = "fair-machines"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5794e6fed7497f711457d1b23003f54731593a092d692c6359444f0237fcc9aa"
+dependencies = [
+ "flow-machines",
+ "priority-machines",
 ]
 
 [[package]]
@@ -4788,7 +4799,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7518b930f6aeb75e871d32ce873c2ae46e35cef19b5a0b039d4337f651d897cd"
 dependencies = [
  "bstr",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5433,9 +5444,9 @@ dependencies = [
 
 [[package]]
 name = "harel-machines"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcebc289448746f774618df27ef10cd821a0b5f5c499aa9ef71309c5d04638fc"
+checksum = "264e263e4f9e295a4c9e086db6e781d0130b0f8aaa72aa18163391e697549ff5"
 
 [[package]]
 name = "harfrust"
@@ -6532,9 +6543,9 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lease-machines"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f07f1f97747a36855fb9d72752082c62759e7b5d4354e9ca359b24e0d72814d9"
+checksum = "791bd35500a8792e2f4dc13a2b368988fae7219992c4f706b16597937b728bc3"
 
 [[package]]
 name = "libc"
@@ -6862,7 +6873,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-guest"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "base64 0.23.1",
  "chrono-machines",
@@ -6880,9 +6891,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.21.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e6e45e5dadae3c6f809209ad5f596a52cf223a97bbf6f0c695b95d83bedf1e7"
+checksum = "bb3745337a0497149685911c4d243f551b519a836a454ed90857fbfc17721d62"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
@@ -6890,6 +6901,7 @@ dependencies = [
  "breaker-machines",
  "dashmap",
  "deadline-machines",
+ "fair-machines",
  "fluent-uri",
  "ignore",
  "jiff",
@@ -7350,7 +7362,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7900,7 +7912,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8404,6 +8416,12 @@ checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
 dependencies = [
  "elliptic-curve",
 ]
+
+[[package]]
+name = "priority-machines"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26a43afb6f314d5dee6c73d62da6fc2fb5c5b1fd700311aac5cd4dfcf87fe93f"
 
 [[package]]
 name = "proc-macro-crate"
@@ -9912,7 +9930,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10805,9 +10823,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines"
-version = "0.34.0"
+version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fa388b364efa05b312baf1580eddfb18f587e79bc27f16c248bd91d2b1741f9"
+checksum = "54acc135c42d21f490db540e3e12b168fe78d521de40648b39499d34e6d108d0"
 dependencies = [
  "state-machines-core",
  "state-machines-macro",
@@ -10825,9 +10843,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines-macro"
-version = "0.34.0"
+version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "957a5b23c5e008070ebd493d8c3a57a267ce9fa0959a170b262d4859b5d719cf"
+checksum = "5ff01e9712fb1a47e319dd8c3a04bb1580e3f1dd5439438ea6aadc1212fe4009"
 dependencies = [
  "harel-machines",
  "proc-macro2",
@@ -11060,7 +11078,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -12523,7 +12541,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

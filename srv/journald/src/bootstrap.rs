@@ -13,6 +13,8 @@ use anyhow::Result;
 
 use crate::HelloResponse;
 
+mod supervision;
+
 pub const DEFAULT_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(5);
 const LOCK_FILENAME: &str = "journald.lock";
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -39,6 +41,10 @@ impl BootstrapPaths {
 
     pub fn lock_path(&self) -> PathBuf {
         self.runtime_dir.join(LOCK_FILENAME)
+    }
+
+    pub fn restart_history_path(&self) -> PathBuf {
+        self.runtime_dir.join(supervision::HISTORY_FILENAME)
     }
 }
 
@@ -85,6 +91,10 @@ pub async fn ensure_sqlite_journald_running(
                 )
             })?;
     }
+    let delay = authorize_restart(&paths)?;
+    if !delay.is_zero() {
+        tokio::time::sleep(delay).await;
+    }
     let child = spawn_detached_journald(executable.as_path(), &paths)
         .with_context(|| format!("spawn detached journald {}", executable.display()))?;
     if let Err(error) =
@@ -98,6 +108,20 @@ pub async fn ensure_sqlite_journald_running(
     }
     drop(lock_file);
     Ok(paths)
+}
+
+fn authorize_restart(paths: &BootstrapPaths) -> Result<Duration> {
+    let history_path = paths.restart_history_path();
+    let history = supervision::read_history(history_path.as_path())?;
+    let decision = supervision::decide(history, supervision::now_ns());
+    supervision::write_history(history_path.as_path(), &decision.history)?;
+    match decision.verdict {
+        supervision::Verdict::Spawn { delay } => Ok(delay),
+        supervision::Verdict::Refuse { recent } => Err(supervision::refusal_error(
+            paths.socket_path.as_path(),
+            recent,
+        )),
+    }
 }
 
 fn stop_spawned_journald(mut child: Child) -> std::io::Result<()> {

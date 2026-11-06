@@ -836,7 +836,7 @@ mod sink_machine;
 use sink_machine::{JournalStorageEvent, JournalStorageState, PendingBatch};
 
 mod lease_machine;
-use lease_machine::{Lease, WriterLeaseEvent};
+use lease_machine::Lease;
 
 struct ActiveJournalWriter {
     client: JournalClient,
@@ -1116,10 +1116,10 @@ impl ActiveJournalWriter {
                 client,
                 process_id: config.process_id,
                 owner_id: config.owner_id,
+                lease: Lease::new(&result.lease.lease_token, Instant::now()),
                 lease_token: result.lease.lease_token,
                 next_seq: result.next_seq,
                 pending_items: Vec::new(),
-                lease: Lease::default(),
             }),
             Err(JournalClientError::Remote(payload))
                 if payload.code == JournalErrorCode::AlreadyExists =>
@@ -1204,10 +1204,10 @@ impl ActiveJournalWriter {
             client,
             process_id: config.process_id,
             owner_id: config.owner_id.clone(),
+            lease: Lease::new(&lease.lease_token, Instant::now()),
             lease_token: lease.lease_token,
             next_seq: 0,
             pending_items: Vec::new(),
-            lease: Lease::default(),
         };
         match writer.client.load_journal(config.process_id).await {
             Ok(loaded) => {
@@ -1293,7 +1293,7 @@ impl ActiveJournalWriter {
                         }
                         continue;
                     }
-                    self.lease.apply(WriterLeaseEvent::Fence);
+                    self.lease.fence();
                     return Err(
                         "journal sequence conflict does not match the pending batch; writer fenced"
                             .into(),
@@ -1302,13 +1302,13 @@ impl ActiveJournalWriter {
                 Err(JournalClientError::Remote(payload))
                     if payload.code == JournalErrorCode::LeaseExpired =>
                 {
-                    self.lease.apply(WriterLeaseEvent::Expire);
+                    self.lease.expire();
                     return Err("journal lease expired; retaining batch for recovery".into());
                 }
                 Err(JournalClientError::Remote(payload))
                     if payload.code == JournalErrorCode::InvalidLease =>
                 {
-                    self.lease.apply(WriterLeaseEvent::Fence);
+                    self.lease.fence();
                     return Err("journal ownership lost during append; writer fenced".into());
                 }
                 Err(JournalClientError::Remote(payload))
@@ -1361,12 +1361,12 @@ impl ActiveJournalWriter {
             return Ok(());
         }
 
-        self.lease.apply(WriterLeaseEvent::Refresh);
+        self.lease.refresh(Instant::now());
         let result = tokio::time::timeout(JOURNAL_REQUEST_TIMEOUT, self.refresh_lease())
             .await
             .unwrap_or_else(|_| Err("journal lease refresh timed out; will retry".into()));
         if result.is_ok() {
-            self.lease.apply(WriterLeaseEvent::Confirm(Instant::now()));
+            self.lease.confirm(&self.lease_token, Instant::now());
         }
         result
     }
@@ -1392,7 +1392,7 @@ impl ActiveJournalWriter {
             Err(JournalClientError::Remote(payload))
                 if payload.code == JournalErrorCode::LeaseExpired =>
             {
-                self.lease.apply(WriterLeaseEvent::Expire);
+                self.lease.expire();
                 self.reacquire_lease().await
             }
             Err(err) => {
@@ -1401,7 +1401,7 @@ impl ActiveJournalWriter {
                     payload.code,
                     JournalErrorCode::InvalidLease | JournalErrorCode::LeaseConflict
                 )) {
-                    self.lease.apply(WriterLeaseEvent::Fence);
+                    self.lease.fence();
                 }
                 Err(format!("heartbeat_lease failed: {err}"))
             }
@@ -1425,7 +1425,7 @@ impl ActiveJournalWriter {
                     payload.code,
                     JournalErrorCode::LeaseConflict | JournalErrorCode::InvalidLease
                 )) {
-                    self.lease.apply(WriterLeaseEvent::Fence);
+                    self.lease.fence();
                 }
                 return Err(format!("journal lease recovery failed: {error}"));
             }
@@ -1437,10 +1437,13 @@ impl ActiveJournalWriter {
             .await
             .map_err(|error| format!("journal lease recovery reconciliation failed: {error}"))?;
         if self.committed_pending_prefix(&loaded).is_none() {
-            self.lease.apply(WriterLeaseEvent::Fence);
+            self.lease.fence();
             return Err("journal changed during lease expiry; writer fenced".into());
         }
-        self.lease.apply(WriterLeaseEvent::Reacquire);
+        if !self.lease.reacquire(&self.lease_token, Instant::now()) {
+            self.lease.fence();
+            return Err("journal lease recovery returned a stale token; writer fenced".into());
+        }
         info!(process_id = %self.process_id, "journal writer lease recovered");
         Ok(())
     }

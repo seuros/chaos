@@ -129,7 +129,7 @@ async fn assert_lineage_and_fencing<S: JournalStore>(store: &S) {
         "unregistered descendant must not dispatch"
     );
     let mut fenced = turn.lease.clone();
-    fenced.token = Uuid::new_v4();
+    fenced.token = u64::MAX.to_string();
     assert!(
         store
             .execution(invocation(ExecutionInvocationRequest::RegisterDescendant {

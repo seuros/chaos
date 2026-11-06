@@ -1,17 +1,17 @@
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
-use uuid::Uuid;
 
 use super::SqliteJournalStore;
 use super::codec::{process_row_to_record, serialize_item, serialize_source};
 use crate::error::JournalError;
+use crate::lease_policy::{acquire_process, epoch_seconds, signed, wall_clock};
 use crate::model::{
     CreateProcessInput, InitializeProcessInput, InitializeProcessResult, Lease, ProcessRecord,
 };
 use crate::store::{
-    journal_item_type, new_process_record, process_insert_error, source_label, timestamp_after,
-    validate_sequences,
+    journal_item_type, new_process_record, process_insert_error, source_label,
+    timestamp_from_epoch_seconds, validate_sequences,
 };
 
 impl SqliteJournalStore {
@@ -92,9 +92,15 @@ impl SqliteJournalStore {
         let fork_at_seq = create.parent.as_ref().map(|parent| parent.fork_at_seq);
 
         let now = jiff::Timestamp::now();
-        let lease_ttl = Duration::from_millis(input.ttl_ms);
-        let lease_expires_at = timestamp_after(now, lease_ttl)?;
-        let lease_token = Uuid::now_v7().to_string();
+        let grant = acquire_process(
+            &create.process_id,
+            &input.owner_id,
+            None,
+            wall_clock(now)?,
+            Duration::from_millis(input.ttl_ms),
+        )?;
+        let lease_expires_at = epoch_seconds(grant.expires_at)?;
+        let resource = create.process_id.to_string();
 
         let last_seq = input.items.last().map(|entry| entry.seq).unwrap_or(-1);
         let next_seq = last_seq + 1;
@@ -165,13 +171,15 @@ impl SqliteJournalStore {
         }
 
         sqlx::query(
-            "INSERT INTO process_leases (process_id, owner_id, lease_token, expires_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO process_leases
+                 (process_id, owner_id, lease_token, last_issued, expires_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(create.process_id.to_string())
         .bind(&input.owner_id)
-        .bind(&lease_token)
-        .bind(lease_expires_at.as_second())
+        .bind(signed(&resource, "lease_token", grant.token)?)
+        .bind(signed(&resource, "last_issued", grant.last_issued)?)
+        .bind(lease_expires_at)
         .bind(now.as_second())
         .execute(&mut *tx)
         .await?;
@@ -182,8 +190,8 @@ impl SqliteJournalStore {
             lease: Lease {
                 process_id: create.process_id,
                 owner_id: input.owner_id,
-                lease_token,
-                expires_at: lease_expires_at,
+                lease_token: grant.token.to_string(),
+                expires_at: timestamp_from_epoch_seconds(lease_expires_at)?,
             },
             process: create,
             next_seq,

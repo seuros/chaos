@@ -75,7 +75,8 @@ pub struct ExecutionSession {
 pub struct ExecutionLease {
     pub session_id: Uuid,
     pub owner_id: String,
-    pub token: Uuid,
+    /// Decimal fencing token; strictly greater on every new grant.
+    pub token: String,
     /// Storage-clock deadline; never evidence of process termination.
     pub expires_at_ms: i64,
 }

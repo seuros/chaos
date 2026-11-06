@@ -50,15 +50,7 @@ fn sequence_validation_handles_initial_and_appended_batches() {
 }
 
 #[test]
-fn lease_timestamps_preserve_second_precision_and_reject_overflow() {
-    let base = jiff::Timestamp::from_second(42).expect("valid timestamp");
-    assert_eq!(
-        timestamp_after(base, Duration::from_millis(1999))
-            .expect("valid expiration")
-            .as_second(),
-        43
-    );
-    assert!(timestamp_after(base, Duration::from_secs(u64::MAX)).is_err());
+fn lease_timestamps_reject_overflow() {
     assert!(timestamp_from_epoch_seconds(i64::MAX).is_err());
 }
 

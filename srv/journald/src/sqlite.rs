@@ -6,10 +6,12 @@ use chaos_proc::open_runtime_db_at_path;
 use chaos_proc::runtime_db_path;
 use sqlx::Row;
 use sqlx::SqlitePool;
-use uuid::Uuid;
 
 use crate::error::JournalError;
-use crate::lease_policy::ensure_acquirable;
+use crate::lease_policy::{
+    acquire_process, epoch_seconds, release_process, renew_process, signed, verify_process,
+    wall_clock,
+};
 use crate::model::AppendBatchInput;
 use crate::model::AppendBatchResult;
 use crate::model::CreateProcessInput;
@@ -22,13 +24,11 @@ use crate::model::LoadedJournal;
 use crate::model::OwnerId;
 use crate::model::ProcessRecord;
 use crate::store::JournalStore;
-use crate::store::{
-    journal_item_type, timestamp_after, timestamp_from_epoch_seconds, validate_sequences,
-};
+use crate::store::{journal_item_type, timestamp_from_epoch_seconds, validate_sequences};
 
 use self::codec::{deserialize_item, process_row_to_record, serialize_item};
 use self::transactions::{
-    ensure_process_exists, ensure_process_exists_in_tx, load_valid_lease_in_tx, next_seq_in_tx,
+    ensure_process_exists, ensure_process_exists_in_tx, load_lease_row_in_tx, next_seq_in_tx,
 };
 
 mod codec;
@@ -162,40 +162,33 @@ impl JournalStore for SqliteJournalStore {
         ensure_process_exists(&self.pool, process_id).await?;
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         let now = jiff::Timestamp::now();
-        let expires_at = timestamp_after(now, ttl)?;
-        let lease_token = Uuid::now_v7().to_string();
-
-        let existing = sqlx::query(
-            "SELECT owner_id, lease_token, expires_at
-             FROM process_leases
-             WHERE process_id = ?",
-        )
-        .bind(process_id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
-
-        let existing = match existing {
-            Some(row) => Some((
-                row.get("owner_id"),
-                timestamp_from_epoch_seconds(row.get("expires_at"))?,
-            )),
-            None => None,
-        };
-        ensure_acquirable(process_id, owner_id, existing, now)?;
+        let existing = load_lease_row_in_tx(&mut tx, process_id).await?;
+        let grant = acquire_process(
+            process_id,
+            owner_id,
+            existing.as_ref(),
+            wall_clock(now)?,
+            ttl,
+        )?;
+        let expires_at = epoch_seconds(grant.expires_at)?;
+        let resource = process_id.to_string();
 
         sqlx::query(
-            "INSERT INTO process_leases (process_id, owner_id, lease_token, expires_at, updated_at)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO process_leases
+                 (process_id, owner_id, lease_token, last_issued, expires_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(process_id) DO UPDATE SET
                  owner_id = excluded.owner_id,
                  lease_token = excluded.lease_token,
+                 last_issued = excluded.last_issued,
                  expires_at = excluded.expires_at,
                  updated_at = excluded.updated_at",
         )
         .bind(process_id.to_string())
         .bind(owner_id)
-        .bind(&lease_token)
-        .bind(expires_at.as_second())
+        .bind(signed(&resource, "lease_token", grant.token)?)
+        .bind(signed(&resource, "last_issued", grant.last_issued)?)
+        .bind(expires_at)
         .bind(now.as_second())
         .execute(&mut *tx)
         .await?;
@@ -204,8 +197,8 @@ impl JournalStore for SqliteJournalStore {
         Ok(Lease {
             process_id: *process_id,
             owner_id: owner_id.clone(),
-            lease_token,
-            expires_at,
+            lease_token: grant.token.to_string(),
+            expires_at: timestamp_from_epoch_seconds(expires_at)?,
         })
     }
 
@@ -221,15 +214,23 @@ impl JournalStore for SqliteJournalStore {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         ensure_process_exists_in_tx(&mut tx, process_id).await?;
         let now = jiff::Timestamp::now();
-        let lease = load_valid_lease_in_tx(&mut tx, process_id, owner_id, lease_token, now).await?;
-        let expires_at = timestamp_after(now, ttl)?;
+        let existing = load_lease_row_in_tx(&mut tx, process_id).await?;
+        let grant = renew_process(
+            process_id,
+            owner_id,
+            lease_token,
+            existing.as_ref(),
+            wall_clock(now)?,
+            ttl,
+        )?;
+        let expires_at = epoch_seconds(grant.expires_at)?;
 
         sqlx::query(
             "UPDATE process_leases
              SET expires_at = ?, updated_at = ?
              WHERE process_id = ?",
         )
-        .bind(expires_at.as_second())
+        .bind(expires_at)
         .bind(now.as_second())
         .bind(process_id.to_string())
         .execute(&mut *tx)
@@ -237,8 +238,10 @@ impl JournalStore for SqliteJournalStore {
         tx.commit().await?;
 
         Ok(Lease {
-            expires_at,
-            ..lease
+            process_id: *process_id,
+            owner_id: owner_id.clone(),
+            lease_token: grant.token.to_string(),
+            expires_at: timestamp_from_epoch_seconds(expires_at)?,
         })
     }
 
@@ -250,18 +253,24 @@ impl JournalStore for SqliteJournalStore {
     ) -> Result<(), JournalError> {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         ensure_process_exists_in_tx(&mut tx, process_id).await?;
-        let _lease = load_valid_lease_in_tx(
-            &mut tx,
+        let now = jiff::Timestamp::now();
+        let existing = load_lease_row_in_tx(&mut tx, process_id).await?;
+        release_process(
             process_id,
             owner_id,
             lease_token,
-            jiff::Timestamp::now(),
+            existing.as_ref(),
+            wall_clock(now)?,
+        )?;
+        sqlx::query(
+            "UPDATE process_leases
+             SET lease_token = NULL, expires_at = 0, updated_at = ?
+             WHERE process_id = ?",
         )
+        .bind(now.as_second())
+        .bind(process_id.to_string())
+        .execute(&mut *tx)
         .await?;
-        sqlx::query("DELETE FROM process_leases WHERE process_id = ?")
-            .bind(process_id.to_string())
-            .execute(&mut *tx)
-            .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -277,14 +286,14 @@ impl JournalStore for SqliteJournalStore {
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         ensure_process_exists_in_tx(&mut tx, &input.process_id).await?;
         let now = jiff::Timestamp::now();
-        let _lease = load_valid_lease_in_tx(
-            &mut tx,
+        let existing = load_lease_row_in_tx(&mut tx, &input.process_id).await?;
+        verify_process(
             &input.process_id,
             &input.owner_id,
             &input.lease_token,
-            now,
-        )
-        .await?;
+            existing.as_ref(),
+            wall_clock(now)?,
+        )?;
 
         let actual_next_seq = next_seq_in_tx(&mut tx, &input.process_id).await?;
         if actual_next_seq != input.expected_next_seq {

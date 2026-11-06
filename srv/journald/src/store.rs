@@ -169,23 +169,6 @@ pub(crate) fn journal_item_type(item: &RolloutItem) -> &'static str {
     }
 }
 
-pub(crate) fn timestamp_after(
-    base: jiff::Timestamp,
-    ttl: Duration,
-) -> Result<jiff::Timestamp, JournalError> {
-    let ttl_seconds = i64::try_from(ttl.as_secs()).map_err(|_| JournalError::InvalidTimestamp {
-        value: ttl.as_secs().to_string(),
-        message: "ttl seconds overflow i64".to_string(),
-    })?;
-    let expires = base.as_second().checked_add(ttl_seconds).ok_or_else(|| {
-        JournalError::InvalidTimestamp {
-            value: ttl.as_secs().to_string(),
-            message: "timestamp overflow".to_string(),
-        }
-    })?;
-    timestamp_from_epoch_seconds(expires)
-}
-
 pub(crate) fn timestamp_from_epoch_seconds(seconds: i64) -> Result<jiff::Timestamp, JournalError> {
     jiff::Timestamp::from_second(seconds).map_err(|err| JournalError::InvalidTimestamp {
         value: seconds.to_string(),

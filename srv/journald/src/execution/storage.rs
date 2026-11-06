@@ -1,9 +1,14 @@
+use std::time::Duration;
+
+use lease_machines::{Decision, Rejection};
+
 use super::{
     ExecutionLease, ExecutionRequest, ExecutionResolutionRecord, ExecutionResponse,
     ExecutionSession, ExecutionSessionState, ExecutionTurn, ExecutionTurnState,
     MAX_EXECUTION_TURNS, conflict, decode, decode_state, invalid, parse_uuid,
 };
 use crate::JournalError;
+use crate::lease_policy::{LeaseRow, ResourceLease, column, epoch_millis, signed};
 
 pub(super) type SessionRow = (
     String,
@@ -12,7 +17,8 @@ pub(super) type SessionRow = (
     String,
     Option<String>,
     String,
-    String,
+    Option<i64>,
+    i64,
     i64,
     i64,
     i64,
@@ -25,13 +31,15 @@ macro_rules! session_select_sql {
             "SELECT session_id, scope, process_id, state, active_turn_id,
              owner_id, lease_token, expires_at_ms,
              (SELECT COUNT(*) FROM execution_turns t
-              WHERE t.session_id = execution_sessions.session_id), recovery_epoch
+              WHERE t.session_id = execution_sessions.session_id), recovery_epoch,
+             last_issued
              FROM execution_sessions ",
             $predicate,
             $lock
         )
     };
 }
+pub(super) use session_select_sql;
 
 const SELECT_TURN: &str = "SELECT turn_id, fingerprint, state, outcome_json FROM execution_turns
      WHERE session_id = $1 AND turn_id = $2";
@@ -76,12 +84,41 @@ fn next_epoch(row: &SessionRow) -> Result<i64, JournalError> {
 }
 
 fn lease(row: &SessionRow) -> Result<ExecutionLease, JournalError> {
+    let token = row.6.ok_or_else(|| JournalError::LeaseHistory {
+        resource: row.0.clone(),
+        message: "no lease is held".to_owned(),
+    })?;
     Ok(ExecutionLease {
         session_id: parse_uuid(row.0.clone())?,
         owner_id: row.5.clone(),
-        token: parse_uuid(row.6.clone())?,
+        token: token.to_string(),
         expires_at_ms: row.7,
     })
+}
+
+fn lease_row(row: &SessionRow) -> Result<LeaseRow, JournalError> {
+    Ok(LeaseRow {
+        owner_id: row.5.clone(),
+        token: row
+            .6
+            .map(|token| column(&row.0, "lease_token", token))
+            .transpose()?,
+        last_issued: column(&row.0, "last_issued", row.10)?,
+        expires_at: Duration::from_millis(column(&row.0, "expires_at_ms", row.7)?),
+    })
+}
+
+pub(crate) fn clock(now: i64) -> Result<Duration, JournalError> {
+    u64::try_from(now)
+        .map(Duration::from_millis)
+        .map_err(|_| JournalError::InvalidTimestamp {
+            value: now.to_string(),
+            message: "storage clock precedes the Unix epoch".to_owned(),
+        })
+}
+
+fn fenced() -> JournalError {
+    conflict("execution lease expired or writer was fenced")
 }
 
 fn turn(row: TurnRow) -> Result<ExecutionTurn, JournalError> {
@@ -98,15 +135,12 @@ pub(super) fn check_lease(
     expected: &ExecutionLease,
     now: i64,
 ) -> Result<(), JournalError> {
-    let actual = lease(row)?;
     // Caller-provided expires_at_ms is informational, never an authority.
-    if actual.owner_id != expected.owner_id
-        || actual.token != expected.token
-        || actual.expires_at_ms <= now
-    {
-        return Err(conflict("execution lease expired or writer was fenced"));
+    let authority = ResourceLease::restore(&row.0, Some(&lease_row(row)?))?;
+    match authority.verify(&expected.owner_id, &expected.token, clock(now)?) {
+        None => Ok(()),
+        Some(_) => Err(fenced()),
     }
-    Ok(())
 }
 
 fn not_found() -> JournalError {
@@ -253,13 +287,12 @@ macro_rules! impl_storage {
                     // Lease acquisition still happens only under the row lock.
                     sqlx::query(
                         "INSERT INTO execution_sessions
-                         (session_id, scope, state, owner_id, lease_token, expires_at_ms)
-                         VALUES ($1, $2, 'idle', '', $3, 0)
+                         (session_id, scope, state, owner_id, expires_at_ms)
+                         VALUES ($1, $2, 'idle', '', 0)
                          ON CONFLICT(session_id) DO NOTHING",
                     )
                     .bind(&id)
                     .bind(scope)
-                    .bind(uuid::Uuid::new_v4().to_string())
                     .execute(&mut *tx)
                     .await?;
                 }
@@ -279,60 +312,79 @@ macro_rules! impl_storage {
                         if current.scope != scope {
                             return Err(conflict("execution session belongs to another scope"));
                         }
-                        if row.7 > now {
-                            if row.5 != owner_id {
+                        let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
+                        let ttl = Duration::from_millis(ttl_ms);
+                        match authority.acquire(&owner_id, clock(now)?, ttl) {
+                            Decision::Rejected(Rejection::Occupied) if row.5 == owner_id => {
+                                ExecutionResponse::Claimed { session: current, lease: lease(&row)? }
+                            }
+                            Decision::Rejected(Rejection::Occupied) => {
                                 return Err(conflict("execution session already has a live owner"));
                             }
-                            ExecutionResponse::Claimed { session: current, lease: lease(&row)? }
-                        } else {
-                            let token = uuid::Uuid::new_v4();
-                            let expires = now + ttl_ms as i64;
-                            if let Some(turn_id) = current.active_turn_id {
-                                super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
+                            Decision::Granted(granted) => {
+                                let expires = epoch_millis(granted.expires_at())?;
+                                if let Some(turn_id) = current.active_turn_id {
+                                    super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
+                                    sqlx::query(
+                                        "UPDATE execution_turns SET state = 'unknown'
+                                         WHERE session_id = $1 AND turn_id = $2",
+                                    )
+                                    .bind(&id)
+                                    .bind(turn_id.to_string())
+                                    .execute(&mut *tx)
+                                    .await?;
+                                    row.3 = "unknown".into();
+                                }
+                                // An expired owner may have launched autonomous
+                                // work even without an HTTP turn. Only an orderly
+                                // release (deadline 0), or no bound process, makes
+                                // idle handoff safe without explicit containment.
+                                if row.7 != 0
+                                    && current.process_id.is_some()
+                                    && current.state == ExecutionSessionState::Idle
+                                {
+                                    row.3 = "unknown".into();
+                                }
+                                if row.3 == "unknown" {
+                                    row.9 = next_epoch(&row)?;
+                                }
+                                let token = signed(&id, "lease_token", granted.token().value())?;
                                 sqlx::query(
-                                    "UPDATE execution_turns SET state = 'unknown'
-                                     WHERE session_id = $1 AND turn_id = $2",
+                                    "UPDATE execution_sessions SET owner_id = $1, lease_token = $2,
+                                     last_issued = $2, expires_at_ms = $3, state = $4,
+                                     recovery_epoch = $5
+                                     WHERE session_id = $6",
                                 )
+                                .bind(&owner_id)
+                                .bind(token)
+                                .bind(expires)
+                                .bind(&row.3)
+                                .bind(row.9)
                                 .bind(&id)
-                                .bind(turn_id.to_string())
                                 .execute(&mut *tx)
                                 .await?;
-                                row.3 = "unknown".into();
+                                row.5 = owner_id;
+                                row.6 = Some(token);
+                                row.7 = expires;
+                                row.10 = token;
+                                ExecutionResponse::Claimed { session: session(&row)?, lease: lease(&row)? }
                             }
-                            // An expired owner may have launched autonomous
-                            // work even without an HTTP turn. Only an orderly
-                            // release (deadline 0), or no bound process, makes
-                            // idle handoff safe without explicit containment.
-                            if row.7 != 0
-                                && current.process_id.is_some()
-                                && current.state == ExecutionSessionState::Idle
-                            {
-                                row.3 = "unknown".into();
+                            other => {
+                                return Err(conflict(&format!("execution claim produced no grant: {other:?}")));
                             }
-                            if row.3 == "unknown" {
-                                row.9 = next_epoch(&row)?;
-                            }
-                            sqlx::query(
-                                "UPDATE execution_sessions SET owner_id = $1, lease_token = $2,
-                                 expires_at_ms = $3, state = $4, recovery_epoch = $5 WHERE session_id = $6",
-                            )
-                            .bind(&owner_id)
-                            .bind(token.to_string())
-                            .bind(expires)
-                            .bind(&row.3)
-                            .bind(row.9)
-                            .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
-                            row.5 = owner_id;
-                            row.6 = token.to_string();
-                            row.7 = expires;
-                            ExecutionResponse::Claimed { session: session(&row)?, lease: lease(&row)? }
                         }
                     }
                     ExecutionRequest::Heartbeat { lease: expected, ttl_ms } => {
-                        check_lease(&row, &expected, now)?;
-                        row.7 = now + ttl_ms as i64;
+                        let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
+                        let Decision::Renewed(renewed) = authority.renew(
+                            &expected.owner_id,
+                            &expected.token,
+                            clock(now)?,
+                            Duration::from_millis(ttl_ms),
+                        ) else {
+                            return Err(fenced());
+                        };
+                        row.7 = epoch_millis(renewed.expires_at())?;
                         sqlx::query("UPDATE execution_sessions SET expires_at_ms = $1 WHERE session_id = $2")
                             .bind(row.7)
                             .bind(&id)
@@ -569,11 +621,16 @@ macro_rules! impl_storage {
                         ExecutionResponse::Session(session(&row)?)
                     }
                     ExecutionRequest::Release { lease: expected } => {
-                        check_lease(&row, &expected, now)?;
+                        let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
+                        let released =
+                            authority.release(&expected.owner_id, &expected.token, clock(now)?);
+                        if released != Decision::Released {
+                            return Err(fenced());
+                        }
                         if current.active_turn_id.is_some() || current.state == ExecutionSessionState::Unknown {
                             return Err(conflict("unfinished execution cannot release ownership"));
                         }
-                        sqlx::query("UPDATE execution_sessions SET expires_at_ms = 0 WHERE session_id = $1")
+                        sqlx::query("UPDATE execution_sessions SET expires_at_ms = 0, lease_token = NULL WHERE session_id = $1")
                             .bind(&id)
                             .execute(&mut *tx)
                             .await?;

@@ -63,7 +63,7 @@ impl Session {
     pub(super) async fn restore_replay(&self) -> Result<(), ApiError> {
         let owner = self.ledger.get().ok_or_else(unavailable)?;
         let mut batch = owner.replay(0).await?;
-        if owner.lease.lock().unwrap().is_some() {
+        if !owner.fenced() {
             let event = serde_json::json!({
                 "id": "",
                 "msg": {

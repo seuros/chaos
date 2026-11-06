@@ -296,7 +296,8 @@ pub(crate) fn error_payload_for(error: JournalError) -> ErrorPayload {
         | JournalError::Serialize { .. }
         | JournalError::Deserialize { .. }
         | JournalError::InvalidProcessId { .. }
-        | JournalError::InvalidTimestamp { .. } => ErrorPayload {
+        | JournalError::InvalidTimestamp { .. }
+        | JournalError::LeaseHistory { .. } => ErrorPayload {
             code: ErrorCode::Internal,
             message: error.to_string(),
             retryable: false,

@@ -1,5 +1,10 @@
 //! Terminal facts, not kernel event replay. Delivery leases never authorize execution.
+use std::time::Duration;
+
+use lease_machines::Decision;
+
 use super::*;
+use crate::lease_policy::{LeaseRow, ResourceLease, column, epoch_millis, signed, token};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionEvent {
@@ -21,7 +26,8 @@ pub struct ExecutionEvent {
 pub struct ExecutionDeliveryLease {
     pub event_id: Uuid,
     pub owner_id: String,
-    pub token: Uuid,
+    /// Decimal fencing token; strictly greater on every new grant.
+    pub token: String,
     pub expires_at_ms: i64,
 }
 
@@ -130,14 +136,15 @@ type DeliveryRow = (
     Option<i64>,
     String,
     String,
-    Option<String>,
+    Option<i64>,
+    i64,
 );
 macro_rules! delivery_select {
     ($predicate:literal, $lock:literal) => {
         concat!(
             "SELECT event_id, session_id, turn_id, kind, created_at_ms,
          attempts, next_attempt_at_ms, expires_at_ms, delivered_at_ms, body_json,
-         owner_id, lease_token FROM execution_outbox ",
+         owner_id, lease_token, last_issued FROM execution_outbox ",
             $predicate,
             $lock
         )
@@ -155,6 +162,18 @@ fn status(row: &DeliveryRow) -> Result<ExecutionDeliveryStatus, JournalError> {
         next_attempt_at_ms: row.6,
         expires_at_ms: row.7,
         delivered_at_ms: row.8,
+    })
+}
+
+fn lease_row(row: &DeliveryRow) -> Result<LeaseRow, JournalError> {
+    Ok(LeaseRow {
+        owner_id: row.10.clone(),
+        token: row
+            .11
+            .map(|token| column(&row.0, "lease_token", token))
+            .transpose()?,
+        last_issued: column(&row.0, "last_issued", row.12)?,
+        expires_at: Duration::from_millis(column(&row.0, "expires_at_ms", row.7)?),
     })
 }
 
@@ -259,16 +278,30 @@ macro_rules! impl_outbox {
                              ORDER BY next_attempt_at_ms, event_id LIMIT 1", $lock
                         )).bind(scope).bind(now).fetch_optional(&mut *tx).await?;
                         if let Some(mut row) = row {
-                            let token = Uuid::new_v4();
+                            let mut authority =
+                                ResourceLease::restore(&row.0, Some(&lease_row(&row)?))?;
+                            let Decision::Granted(granted) = authority.acquire(
+                                owner_id,
+                                super::storage::clock(now)?,
+                                Duration::from_millis(*ttl_ms),
+                            ) else {
+                                return Err(conflict("delivery event is still leased"));
+                            };
+                            let token = signed(&row.0, "lease_token", granted.token().value())?;
                             row.5 = row.5.saturating_add(1);
-                            row.7 = now + *ttl_ms as i64;
+                            row.7 = epoch_millis(granted.expires_at())?;
+                            row.12 = token;
                             sqlx::query("UPDATE execution_outbox SET owner_id = $1, lease_token = $2,
-                                expires_at_ms = $3, attempts = $4 WHERE event_id = $5")
-                                .bind(owner_id).bind(token.to_string()).bind(row.7).bind(row.5)
+                                last_issued = $2, expires_at_ms = $3, attempts = $4
+                                WHERE event_id = $5")
+                                .bind(owner_id).bind(token).bind(row.7).bind(row.5)
                                 .bind(&row.0).execute(&mut *tx).await?;
                             let status = status(&row)?;
                             ExecutionResponse::Delivery(Some(ExecutionDelivery {
-                                lease: ExecutionDeliveryLease { event_id: status.event_id, owner_id: owner_id.clone(), token, expires_at_ms: row.7 },
+                                lease: ExecutionDeliveryLease {
+                                    event_id: status.event_id, owner_id: owner_id.clone(),
+                                    token: token.to_string(), expires_at_ms: row.7,
+                                },
                                 status, body_json: row.9,
                             }))
                         } else {
@@ -281,13 +314,21 @@ macro_rules! impl_outbox {
                             "WHERE scope = $1 AND event_id = $2", $lock
                         )).bind(scope).bind(lease.event_id.to_string())
                             .fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
-                        if row.10 != lease.owner_id || row.11.as_deref() != Some(lease.token.to_string().as_str()) {
+                        let held = lease_row(&row)?;
+                        let presented = token(&lease.token).map(|token| token.value());
+                        if held.owner_id != lease.owner_id || held.token != presented {
                             return Err(conflict("delivery writer was fenced"));
                         }
                         if row.8.is_some() && matches!(request, ExecutionDeliveryRequest::Acknowledge { .. }) {
                             // Identical lost-ack retries are read-only, even after expiry.
                         } else {
-                            if row.8.is_some() || row.7 <= now {
+                            let mut authority = ResourceLease::restore(&row.0, Some(&held))?;
+                            let released = authority.release(
+                                &lease.owner_id,
+                                &lease.token,
+                                super::storage::clock(now)?,
+                            );
+                            if released != Decision::Released {
                                 return Err(conflict("delivery lease expired or event already acknowledged"));
                             }
                             if matches!(request, ExecutionDeliveryRequest::Acknowledge { .. }) {

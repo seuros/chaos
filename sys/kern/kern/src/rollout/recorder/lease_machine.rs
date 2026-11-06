@@ -1,135 +1,110 @@
-use state_machines::state_machine;
+use lease_machines::{Cadence, FencingToken, Holder, HolderState};
 use std::time::{Duration, Instant};
 
 use super::{JOURNAL_LEASE_REFRESH_INTERVAL, JOURNAL_LEASE_TTL};
 
-#[derive(Debug)]
-struct LeaseWindow {
-    warning_at: Instant,
+const JOURNAL_LEASE_WARN_BEFORE: Duration = Duration::from_secs(5);
+
+const CADENCE: Cadence = match Cadence::new(
+    JOURNAL_LEASE_TTL,
+    JOURNAL_LEASE_REFRESH_INTERVAL,
+    JOURNAL_LEASE_WARN_BEFORE,
+) {
+    Some(cadence) => cadence,
+    None => panic!("journal lease renewal fits inside its ttl"),
+};
+
+const FIRST_TOKEN: FencingToken = match FencingToken::new(1) {
+    Some(token) => token,
+    None => panic!("1 is a valid fencing token"),
+};
+
+fn fencing_token(raw: &str, previous: Option<FencingToken>) -> FencingToken {
+    raw.parse::<u64>()
+        .ok()
+        .and_then(FencingToken::new)
+        .or_else(|| FencingToken::new(previous.map_or(1, |token| token.value().saturating_add(1))))
+        .unwrap_or(FIRST_TOKEN)
 }
 
 #[derive(Debug)]
-struct Renewal {
-    due: Instant,
-}
-
-state_machine! {
-    name: WriterLease,
-    dynamic: true,
-    initial: Confirmed,
-    states: [
-        superstate Owned(LeaseWindow) {
-            state Confirmed(Renewal), state Unconfirmed, state Expired
-        },
-        Fenced,
-    ],
-    final_states: [Fenced],
-    events {
-        refresh {
-            transition: { from: Confirmed, to: Unconfirmed }
-            transition: { from: Unconfirmed, internal: true }
-            transition: { from: Expired, internal: true }
-        }
-        confirm {
-            payload: Instant,
-            transition: { from: Unconfirmed, to: Confirmed, data: renewal }
-        }
-        expire { transition: { from: Owned, to: Expired } }
-        reacquire { transition: { from: Expired, to: Unconfirmed } }
-        fence {
-            transition: { from: Owned, to: Fenced }
-        }
-    }
-}
-
-impl<C, S> WriterLease<C, S> {
-    fn renewal(&self, confirmed_at: &mut Instant) -> Renewal {
-        Renewal {
-            due: *confirmed_at + JOURNAL_LEASE_REFRESH_INTERVAL,
-        }
-    }
-}
-
 pub(super) struct Lease {
-    machine: DynamicWriterLease<()>,
+    epoch: Instant,
+    holder: Holder,
 }
 
+#[cfg(test)]
 impl Default for Lease {
     fn default() -> Self {
-        Self::new(Instant::now())
+        Self::new("", Instant::now())
     }
 }
 
 impl Lease {
-    pub(super) fn new(confirmed_at: Instant) -> Self {
+    pub(super) fn new(token: &str, confirmed_at: Instant) -> Self {
         Self {
-            machine: WriterLease::new(())
-                .with_owned_data(LeaseWindow {
-                    warning_at: confirmed_at + JOURNAL_LEASE_TTL - Duration::from_secs(5),
-                })
-                .with_confirmed_data(Renewal {
-                    due: confirmed_at + JOURNAL_LEASE_REFRESH_INTERVAL,
-                })
-                .into_dynamic(),
+            epoch: confirmed_at,
+            holder: Holder::new(fencing_token(token, None), Duration::ZERO, CADENCE),
         }
     }
 
+    fn offset(&self, at: Instant) -> Duration {
+        at.saturating_duration_since(self.epoch)
+    }
+
+    #[cfg(test)]
     pub(super) fn confirmed(&self) -> bool {
-        self.machine.current_state() == WriterLeaseState::Confirmed
+        self.holder.state() == HolderState::Confirmed
     }
+
     pub(super) fn fenced(&self) -> bool {
-        self.machine.is_finished()
+        self.holder.state() == HolderState::Fenced
     }
+
     pub(super) fn needs_reacquire(&self) -> bool {
-        self.machine.current_state() == WriterLeaseState::Expired
+        self.holder.state() == HolderState::Expired
     }
+
     pub(super) fn renewal_due(&self, now: Instant) -> bool {
-        self.machine
-            .confirmed_data()
-            .is_none_or(|data| now >= data.due)
+        self.holder.renewal_due(self.offset(now))
     }
 
     pub(super) fn warning_deadline(&self) -> Option<Instant> {
-        self.machine.owned_data().map(|data| data.warning_at)
+        self.holder
+            .warning_deadline()
+            .map(|deadline| self.epoch + deadline)
     }
 
     pub(super) fn at_risk(&self, now: Instant) -> bool {
-        !self.confirmed()
-            || self
-                .warning_deadline()
-                .is_some_and(|deadline| now >= deadline)
+        self.holder.at_risk(self.offset(now))
     }
 
-    pub(super) fn apply(&mut self, event: WriterLeaseEvent) {
-        if self.fenced() && matches!(event, WriterLeaseEvent::Fence) {
-            return;
-        }
-        let confirmed_at = match &event {
-            WriterLeaseEvent::Confirm(at) => Some(*at),
-            _ => None,
-        };
-        assert!(
-            self.machine.handle(event).is_ok(),
-            "journal lease operation respects ownership"
-        );
-        if let Some(at) = confirmed_at {
-            self.machine
-                .owned_data_mut()
-                .unwrap_or_else(|| unreachable!("confirmed lease owns expiry"))
-                .warning_at = at + JOURNAL_LEASE_TTL - Duration::from_secs(5);
-        }
+    pub(super) fn refresh(&mut self, now: Instant) {
+        self.holder.refresh(self.offset(now));
+    }
+
+    pub(super) fn confirm(&mut self, token: &str, at: Instant) -> bool {
+        let token = fencing_token(token, Some(self.holder.token()));
+        self.holder.confirm(token, self.offset(at))
+    }
+
+    pub(super) fn expire(&mut self) {
+        self.holder.expire();
+    }
+
+    pub(super) fn reacquire(&mut self, token: &str, at: Instant) -> bool {
+        let token = fencing_token(token, Some(self.holder.token()));
+        self.holder.reacquire(token, self.offset(at))
+    }
+
+    pub(super) fn fence(&mut self) {
+        self.holder.fence();
     }
 
     #[cfg(test)]
     pub(super) fn set_confirmed_at(&mut self, at: Instant) {
-        self.machine
-            .confirmed_data_mut()
-            .unwrap_or_else(|| unreachable!("test ages a confirmed lease"))
-            .due = at + JOURNAL_LEASE_REFRESH_INTERVAL;
-        self.machine
-            .owned_data_mut()
-            .unwrap_or_else(|| unreachable!("test lease owns expiry"))
-            .warning_at = at + JOURNAL_LEASE_TTL - Duration::from_secs(5);
+        self.epoch = at;
+        self.holder = Holder::new(self.holder.token(), Duration::ZERO, CADENCE);
     }
 }
 

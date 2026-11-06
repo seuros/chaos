@@ -60,6 +60,9 @@ pub enum JournalError {
     #[error("invalid lease for process {process_id}")]
     InvalidLease { process_id: chaos_ipc::ProcessId },
 
+    #[error("lease history for {resource} is inconsistent: {message}")]
+    LeaseHistory { resource: String, message: String },
+
     #[error(
         "sequence conflict for process {process_id}: expected next seq {expected_next_seq}, actual {actual_next_seq}"
     )]

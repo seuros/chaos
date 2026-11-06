@@ -102,7 +102,7 @@ async fn background_fenced_writer_cannot_reacquire_a_lease() {
         pending_items: Vec::new(),
         lease: {
             let mut lease = Lease::default();
-            lease.apply(WriterLeaseEvent::Fence);
+            lease.fence();
             lease
         },
     };

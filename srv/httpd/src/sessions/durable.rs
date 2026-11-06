@@ -12,6 +12,7 @@ use chaos_journald::{
     ErrorCode, ExecutionLease, ExecutionRequest as Request, ExecutionResponse as Response,
     ExecutionSessionState, ExecutionTurn, ExecutionTurnState, JournalClient, JournalClientError,
 };
+use lease_machines::{Cadence, FencingToken, Holder, HolderState};
 use rama::http::StatusCode;
 use tokio::sync::{Semaphore, mpsc, watch};
 use tokio::time::Instant;
@@ -25,6 +26,14 @@ use super::{
 const LEASE_MS: u64 = 90_000;
 const STORE_TIMEOUT: Duration = Duration::from_secs(5);
 const HEARTBEAT: Duration = Duration::from_secs(15);
+const CADENCE: Cadence = match Cadence::new(Duration::from_millis(LEASE_MS), HEARTBEAT, HEARTBEAT) {
+    Some(cadence) => cadence,
+    None => panic!("session heartbeat fits inside the lease"),
+};
+const FIRST_TOKEN: FencingToken = match FencingToken::new(1) {
+    Some(token) => token,
+    None => panic!("1 is a valid fencing token"),
+};
 
 #[derive(Clone)]
 pub(super) enum Client {
@@ -125,9 +134,25 @@ fn store_error(error: JournalClientError) -> ApiError {
 
 pub(super) struct Owner {
     store: Arc<Store>,
-    lease: Mutex<Option<ExecutionLease>>,
+    lease: Mutex<Grant>,
+    epoch: Instant,
     id: Uuid,
     lost: watch::Sender<bool>,
+}
+
+struct Grant {
+    lease: Option<ExecutionLease>,
+    holder: Holder,
+}
+
+fn fencing_token(lease: &ExecutionLease, previous: Option<FencingToken>) -> FencingToken {
+    lease
+        .token
+        .parse::<u64>()
+        .ok()
+        .and_then(FencingToken::new)
+        .or_else(|| FencingToken::new(previous.map_or(1, |token| token.value().saturating_add(1))))
+        .unwrap_or(FIRST_TOKEN)
 }
 
 struct AcceptanceGuard<'a> {
@@ -150,12 +175,35 @@ impl Drop for AcceptanceGuard<'_> {
 impl Owner {
     fn new(store: Arc<Store>, id: Uuid, lease: Option<ExecutionLease>) -> Arc<Self> {
         let (lost, _) = watch::channel(false);
+        let mut holder = Holder::new(
+            lease
+                .as_ref()
+                .map_or(FIRST_TOKEN, |lease| fencing_token(lease, None)),
+            Duration::ZERO,
+            CADENCE,
+        );
+        if lease.is_none() {
+            holder.fence();
+        }
         Arc::new(Self {
             store,
-            lease: Mutex::new(lease),
+            lease: Mutex::new(Grant { lease, holder }),
+            epoch: Instant::now(),
             id,
             lost,
         })
+    }
+
+    fn elapsed(&self) -> Duration {
+        Instant::now().saturating_duration_since(self.epoch)
+    }
+
+    pub(super) fn fenced(&self) -> bool {
+        self.lease.lock().unwrap().holder.state() == HolderState::Fenced
+    }
+
+    pub(super) fn fence(&self) {
+        self.lease.lock().unwrap().holder.fence();
     }
 
     pub(super) async fn claim(
@@ -192,7 +240,27 @@ impl Owner {
         if *self.lost.borrow() {
             return Err(unavailable());
         }
-        self.lease.lock().unwrap().clone().ok_or_else(unavailable)
+        let grant = self.lease.lock().unwrap();
+        if grant.holder.state() == HolderState::Fenced {
+            return Err(unavailable());
+        }
+        grant.lease.clone().ok_or_else(unavailable)
+    }
+
+    pub(super) fn start_renewal(&self) -> Result<ExecutionLease, ApiError> {
+        let lease = self.lease()?;
+        self.lease.lock().unwrap().holder.refresh(self.elapsed());
+        Ok(lease)
+    }
+
+    pub(super) fn confirm(&self, lease: ExecutionLease) -> bool {
+        let mut grant = self.lease.lock().unwrap();
+        let token = fencing_token(&lease, Some(grant.holder.token()));
+        let confirmed = grant.holder.confirm(token, self.elapsed());
+        if confirmed {
+            grant.lease = Some(lease);
+        }
+        confirmed
     }
 
     pub(super) fn abandon(&self) {
@@ -202,16 +270,12 @@ impl Owner {
     pub(super) async fn renew(&self) -> Result<(), ApiError> {
         let response = self
             .write(Request::Heartbeat {
-                lease: self.lease()?,
+                lease: self.start_renewal()?,
                 ttl_ms: LEASE_MS,
             })
             .await?;
         if let Response::Lease(lease) = response {
-            let mut current = self.lease.lock().unwrap();
-            // A delayed heartbeat response must not resurrect retired ownership.
-            if current.is_some() {
-                *current = Some(lease);
-            }
+            self.confirm(lease);
             Ok(())
         } else {
             self.abandon();
@@ -315,7 +379,7 @@ impl Owner {
             lease: self.lease()?,
         })
         .await?;
-        *self.lease.lock().unwrap() = None;
+        self.fence();
         Ok(())
     }
 
@@ -651,7 +715,7 @@ impl Session {
         let Some(owner) = self.ledger.get().cloned() else {
             return;
         };
-        if owner.lease.lock().unwrap().is_none() {
+        if owner.fenced() {
             return;
         }
         let weak = Arc::downgrade(self);
@@ -659,7 +723,7 @@ impl Session {
             loop {
                 tokio::time::sleep(HEARTBEAT).await;
                 let Some(session) = weak.upgrade() else { break };
-                if owner.lease.lock().unwrap().is_none() || *owner.lost.borrow() {
+                if owner.fenced() || *owner.lost.borrow() {
                     break;
                 }
                 let result = owner.renew().await;
@@ -671,7 +735,7 @@ impl Session {
                     }
                 });
                 if result.is_err() {
-                    if owner.lease.lock().unwrap().is_none() {
+                    if owner.fenced() {
                         break;
                     }
                     owner.abandon();

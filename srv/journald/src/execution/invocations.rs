@@ -347,7 +347,7 @@ macro_rules! impl_invocations {
     ($store:ty, $begin:expr, $lock:literal, $clock:literal) => {
         impl $store {
             pub(crate) async fn execute_invocation(&self, request: ExecutionInvocationRequest) -> Result<ExecutionResponse, JournalError> {
-                use super::storage::{SessionRow, check_lease, session};
+                use super::storage::{SessionRow, check_lease, session, session_select_sql};
                 request.validate()?;
                 let session_id = match &request {
                     ExecutionInvocationRequest::Begin { lease, .. } | ExecutionInvocationRequest::Complete { lease, .. }
@@ -357,12 +357,8 @@ macro_rules! impl_invocations {
                     ExecutionInvocationRequest::Read { session_id, .. } => *session_id,
                 }.to_string();
                 let mut tx = self.pool().begin_with($begin).await?;
-                let row = sqlx::query_as::<_, SessionRow>(concat!(
-                    "SELECT session_id, scope, process_id, state, active_turn_id,
-                     owner_id, lease_token, expires_at_ms,
-                     (SELECT COUNT(*) FROM execution_turns t WHERE t.session_id = execution_sessions.session_id),
-                     recovery_epoch FROM execution_sessions WHERE session_id = $1", $lock
-                )).bind(&session_id).fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
+                let row = sqlx::query_as::<_, SessionRow>(session_select_sql!("WHERE session_id = $1", $lock))
+                    .bind(&session_id).fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
                 let now: i64 = sqlx::query_scalar($clock).fetch_one(&mut *tx).await?;
                 let mut source_turn_id = None;
                 let mut expected_process_id = None;

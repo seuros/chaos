@@ -198,7 +198,7 @@ impl Session {
         data.orphan_permit = None;
         data.process_id = record.request.expected_process_id.map(|id| id.to_string());
         data.status = SessionStatus::Closed;
-        *owner.lease.lock().unwrap() = None;
+        owner.fence();
         drop(data);
         self.notify();
         Ok(record)

@@ -1,10 +1,11 @@
+use std::time::Duration;
+
 use chaos_ipc::ProcessId;
 use sqlx::{Row, SqlitePool};
 
 use crate::error::JournalError;
-use crate::lease_policy::validate_lease;
-use crate::model::{EntrySeq, Lease, OwnerId};
-use crate::store::timestamp_from_epoch_seconds;
+use crate::lease_policy::{LeaseRow, column};
+use crate::model::EntrySeq;
 
 pub(super) async fn ensure_process_exists(
     pool: &SqlitePool,
@@ -34,41 +35,35 @@ pub(super) async fn ensure_process_exists_in_tx(
     Err(JournalError::ProcessNotFound(*process_id))
 }
 
-pub(super) async fn load_valid_lease_in_tx(
+pub(super) async fn load_lease_row_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
+) -> Result<Option<LeaseRow>, JournalError> {
     let row = sqlx::query(
-        "SELECT owner_id, lease_token, expires_at
+        "SELECT owner_id, lease_token, last_issued, expires_at
          FROM process_leases
          WHERE process_id = ?",
     )
     .bind(process_id.to_string())
     .fetch_optional(&mut **tx)
     .await?;
-    validate_lease_row(row, process_id, owner_id, lease_token, now)
+    row.map(|row| lease_row(process_id, &row)).transpose()
 }
 
-fn validate_lease_row(
-    row: Option<sqlx::sqlite::SqliteRow>,
+fn lease_row(
     process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
-    let lease = match row {
-        Some(row) => Some(Lease {
-            process_id: *process_id,
-            owner_id: row.get("owner_id"),
-            lease_token: row.get("lease_token"),
-            expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
-        }),
-        None => None,
-    };
-    validate_lease(lease, process_id, owner_id, lease_token, now)
+    row: &sqlx::sqlite::SqliteRow,
+) -> Result<LeaseRow, JournalError> {
+    let resource = process_id.to_string();
+    Ok(LeaseRow {
+        owner_id: row.get("owner_id"),
+        token: row
+            .get::<Option<i64>, _>("lease_token")
+            .map(|token| column(&resource, "lease_token", token))
+            .transpose()?,
+        last_issued: column(&resource, "last_issued", row.get("last_issued"))?,
+        expires_at: Duration::from_secs(column(&resource, "expires_at", row.get("expires_at"))?),
+    })
 }
 
 pub(super) async fn next_seq_in_tx(

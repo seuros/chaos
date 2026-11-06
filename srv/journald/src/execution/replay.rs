@@ -71,7 +71,7 @@ macro_rules! impl_replay {
             pool: &$pool,
             request: ExecutionReplayRequest,
         ) -> Result<ExecutionReplayResponse, JournalError> {
-            use super::storage::{SessionRow, check_lease};
+            use super::storage::{SessionRow, check_lease, session_select_sql};
             request.validate()?;
             let session_id = match &request {
                 ExecutionReplayRequest::Append { lease, .. } => lease.session_id,
@@ -79,11 +79,8 @@ macro_rules! impl_replay {
             }.to_string();
             let mut tx = pool.begin_with($begin).await?;
             // Share the execution row lock with every ownership transition.
-            let row = sqlx::query_as::<_, SessionRow>(concat!(
-                "SELECT session_id, scope, process_id, state, active_turn_id,
-                 owner_id, lease_token, expires_at_ms,
-                 (SELECT COUNT(*) FROM execution_turns t WHERE t.session_id = execution_sessions.session_id),
-                 recovery_epoch FROM execution_sessions WHERE session_id = $1", $lock
+            let row = sqlx::query_as::<_, SessionRow>(session_select_sql!(
+                "WHERE session_id = $1", $lock
             )).bind(&session_id).fetch_optional(&mut *tx).await?
                 .ok_or(JournalError::ExecutionNotFound)?;
             let current: i64 = sqlx::query_scalar(

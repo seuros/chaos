@@ -1,11 +1,13 @@
+use std::time::Duration;
+
 use chaos_ipc::ProcessId;
 use sqlx::{Postgres, Row, Transaction};
 
 use super::codec::serialize_item;
 use crate::error::JournalError;
-use crate::lease_policy::validate_lease;
-use crate::model::{EntrySeq, JournalEntry, Lease, OwnerId};
-use crate::store::{journal_item_type, timestamp_from_epoch_seconds};
+use crate::lease_policy::{LeaseRow, column};
+use crate::model::{EntrySeq, JournalEntry};
+use crate::store::journal_item_type;
 
 pub(super) async fn lock_process(
     tx: &mut Transaction<'_, Postgres>,
@@ -21,15 +23,12 @@ pub(super) async fn lock_process(
     Ok(())
 }
 
-pub(super) async fn load_valid_lease_in_tx(
+pub(super) async fn load_lease_row_in_tx(
     tx: &mut Transaction<'_, Postgres>,
     process_id: &ProcessId,
-    owner_id: &OwnerId,
-    lease_token: &str,
-    now: jiff::Timestamp,
-) -> Result<Lease, JournalError> {
+) -> Result<Option<LeaseRow>, JournalError> {
     let row = sqlx::query(
-        "SELECT owner_id, lease_token, expires_at
+        "SELECT owner_id, lease_token, last_issued, expires_at
          FROM process_leases
          WHERE process_id = $1
          FOR UPDATE",
@@ -37,16 +36,23 @@ pub(super) async fn load_valid_lease_in_tx(
     .bind(process_id.to_string())
     .fetch_optional(&mut **tx)
     .await?;
-    let lease = match row {
-        Some(row) => Some(Lease {
-            process_id: *process_id,
+    let resource = process_id.to_string();
+    row.map(|row| {
+        Ok(LeaseRow {
             owner_id: row.get("owner_id"),
-            lease_token: row.get("lease_token"),
-            expires_at: timestamp_from_epoch_seconds(row.get("expires_at"))?,
-        }),
-        None => None,
-    };
-    validate_lease(lease, process_id, owner_id, lease_token, now)
+            token: row
+                .get::<Option<i64>, _>("lease_token")
+                .map(|token| column(&resource, "lease_token", token))
+                .transpose()?,
+            last_issued: column(&resource, "last_issued", row.get("last_issued"))?,
+            expires_at: Duration::from_secs(column(
+                &resource,
+                "expires_at",
+                row.get("expires_at"),
+            )?),
+        })
+    })
+    .transpose()
 }
 
 pub(super) async fn next_seq_in_tx(

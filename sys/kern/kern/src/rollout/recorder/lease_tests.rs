@@ -214,7 +214,7 @@ async fn recovery_never_steals_a_live_lease_or_skips_foreign_history() {
     let journal = TestJournal::new().await;
     let mut writer = journal.writer().await;
     journal.expire(writer.process_id).await;
-    writer.lease.apply(WriterLeaseEvent::Expire);
+    writer.lease.expire();
     let other = journal
         .client
         .acquire_lease(
@@ -402,7 +402,7 @@ async fn heartbeat_timeout_keeps_writer_retryable() {
         lease_token: "lease".into(),
         next_seq: 0,
         pending_items: vec![item("pending")],
-        lease: Lease::new(Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL),
+        lease: Lease::new("lease", Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL),
     };
     let warning_at = writer.lease.warning_deadline();
     assert!(
@@ -447,7 +447,7 @@ async fn assert_shutdown_releases_lease(client: JournalClient, config: PendingJo
         }
         if scenario == "failed-flush" {
             // A history conflict can fence a writer while it still owns a lease.
-            writer.lease.apply(WriterLeaseEvent::Fence);
+            writer.lease.fence();
         }
         sink.activate(writer);
         let (tx, rx) = mpsc::unbounded_channel();
@@ -653,7 +653,7 @@ async fn stale_shutdown_does_not_release_another_writers_lease() {
         .acquire_lease(process_id, "next-writer".into(), 30_000)
         .await
         .unwrap();
-    writer.lease.apply(WriterLeaseEvent::Fence);
+    writer.lease.fence();
     writer.defer_items(&[item("must not be written")]);
     let mut sink = JournalSink::pending(journal.config());
     sink.activate(writer);

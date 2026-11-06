@@ -708,7 +708,7 @@ async fn scope_process_ownership_and_storage_loss_fail_closed() {
             .is_err()
     );
     let mut forged = lease.clone();
-    forged.token = Uuid::new_v4();
+    forged.token = u64::MAX.to_string();
     forged.expires_at_ms = i64::MAX;
     assert!(
         store

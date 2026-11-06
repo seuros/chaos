@@ -58,7 +58,7 @@ async fn assert_operator_resolution<S: JournalStore>(store: &S) {
     unconfirmed.containment_confirmed = false;
     assert!(store.execution(resolve(unconfirmed)).await.is_err());
     let mut forged = lease.clone();
-    forged.token = Uuid::new_v4();
+    forged.token = u64::MAX.to_string();
     assert!(
         store
             .execution(ExecutionRequest::Resolve {

@@ -492,3 +492,21 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
     supervisor.task.await.unwrap();
     fixture.db.close().await;
 }
+
+#[tokio::test]
+async fn stale_heartbeat_reply_cannot_resurrect_a_retired_lease() {
+    let fixture = Fixture::new().await;
+    let (owner, _) = Owner::claim(
+        fixture.store.clone(),
+        Uuid::new_v4(),
+        fixture.manager.daemon_id.clone(),
+    )
+    .await
+    .unwrap();
+    let in_flight = owner.start_renewal().unwrap();
+    owner.retire(true).await.unwrap();
+    assert!(owner.fenced());
+    assert!(!owner.confirm(in_flight));
+    assert!(owner.fenced());
+    assert!(owner.quarantine().await.is_err());
+}

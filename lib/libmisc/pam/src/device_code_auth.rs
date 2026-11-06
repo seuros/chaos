@@ -2,13 +2,15 @@ use chaos_client::ChaosHttpClient;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::OS_NAME;
 use chaos_ipc::product::display_name;
+use deadline_machines::Clock;
+use deadline_machines::tokio_support::TokioClock;
+use deadline_machines::tokio_support::deadline_after;
 use rama::http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::de::Deserializer;
 use serde::de::{self};
 use std::time::Duration;
-use std::time::Instant;
 
 use crate::pkce::PkceCodes;
 use crate::server::ServerOptions;
@@ -17,6 +19,7 @@ use std::io;
 const ANSI_BLUE: &str = "\x1b[94m";
 const ANSI_GRAY: &str = "\x1b[90m";
 const ANSI_RESET: &str = "\x1b[0m";
+const POLL_BUDGET: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Debug, Clone)]
 pub struct DeviceCode {
@@ -107,12 +110,20 @@ async fn poll_for_token(
     device_auth_id: &str,
     user_code: &str,
     interval: u64,
+    budget: Duration,
 ) -> std::io::Result<CodeSuccessResp> {
     let url = format!("{auth_base_url}/deviceauth/token");
-    let max_wait = Duration::from_secs(15 * 60);
-    let start = Instant::now();
+    let clock = TokioClock::new();
+    let deadline = deadline_after(&clock, budget);
+    let interval_ns = interval.saturating_mul(deadline_machines::NS_PER_SECOND);
 
     loop {
+        let now = clock.now();
+        if deadline.is_expired(now) {
+            return Err(std::io::Error::other(
+                "device auth timed out after 15 minutes",
+            ));
+        }
         let body = serde_json::to_string(&TokenPollReq {
             device_auth_id: device_auth_id.to_string(),
             user_code: user_code.to_string(),
@@ -122,6 +133,9 @@ async fn poll_for_token(
             .post(&url)
             .header("Content-Type", "application/json")
             .body(body)
+            .timeout(Duration::from_nanos(
+                deadline.remaining_ns(now).unwrap_or(u64::MAX),
+            ))
             .send()
             .await
             .map_err(std::io::Error::other)?;
@@ -133,13 +147,8 @@ async fn poll_for_token(
         }
 
         if status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND {
-            if start.elapsed() >= max_wait {
-                return Err(std::io::Error::other(
-                    "device auth timed out after 15 minutes",
-                ));
-            }
-            let sleep_for = Duration::from_secs(interval).min(max_wait - start.elapsed());
-            tokio::time::sleep(sleep_for).await;
+            let sleep_ns = deadline.clamp_sleep_ns(clock.now(), interval_ns);
+            tokio::time::sleep(Duration::from_nanos(sleep_ns)).await;
             continue;
         }
 
@@ -192,6 +201,7 @@ pub async fn complete_device_code_login(
         &device_code.device_auth_id,
         &device_code.user_code,
         device_code.interval,
+        POLL_BUDGET,
     )
     .await?;
 
@@ -234,3 +244,6 @@ pub async fn run_device_code_login(opts: ServerOptions) -> std::io::Result<()> {
     print_device_code_prompt(&device_code.verification_url, &device_code.user_code);
     complete_device_code_login(opts, device_code).await
 }
+
+#[cfg(test)]
+mod tests;

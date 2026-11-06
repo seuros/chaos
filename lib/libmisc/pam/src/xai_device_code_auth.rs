@@ -1,11 +1,13 @@
 use chaos_client::ChaosHttpClient;
 use chaos_kern::auth::AuthCredentialsStoreMode;
 use chaos_kern::auth::login_with_xai_oauth_tokens;
+use deadline_machines::Clock;
+use deadline_machines::tokio_support::TokioClock;
+use deadline_machines::tokio_support::deadline_after;
 use serde::Deserialize;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
-use std::time::Instant;
 use url::Url;
 
 pub const XAI_OAUTH_ISSUER: &str = "https://auth.x.ai";
@@ -214,14 +216,18 @@ pub async fn complete_xai_device_code_login(
     device_code: XaiDeviceCode,
 ) -> io::Result<()> {
     let client = ChaosHttpClient::default_client();
-    let started = Instant::now();
-    let max_wait = Duration::from_secs(device_code.expires_in);
+    let clock = TokioClock::new();
+    let deadline = deadline_after(&clock, Duration::from_secs(device_code.expires_in));
     let mut poll_interval = device_code.interval;
 
     let tokens = loop {
-        let remaining = max_wait.saturating_sub(started.elapsed());
-        tokio::time::sleep(Duration::from_secs(poll_interval).min(remaining)).await;
-        if started.elapsed() >= max_wait {
+        let sleep_ns = deadline.clamp_sleep_ns(
+            clock.now(),
+            poll_interval.saturating_mul(deadline_machines::NS_PER_SECOND),
+        );
+        tokio::time::sleep(Duration::from_nanos(sleep_ns)).await;
+        let now = clock.now();
+        if deadline.is_expired(now) {
             return Err(io::Error::other(
                 "xAI device authorization expired before it was completed",
             ));
@@ -237,6 +243,9 @@ pub async fn complete_xai_device_code_login(
             .header("Content-Type", crate::MIME_FORM_URLENCODED)
             .header("Accept", "application/json")
             .body(body)
+            .timeout(Duration::from_nanos(
+                deadline.remaining_ns(now).unwrap_or(u64::MAX),
+            ))
             .send()
             .await
             .map_err(io::Error::other)?;
@@ -281,3 +290,6 @@ pub async fn complete_xai_device_code_login(
         opts.auth_credentials_store_mode,
     )
 }
+
+#[cfg(test)]
+mod tests;

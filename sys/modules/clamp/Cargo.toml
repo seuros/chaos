@@ -21,6 +21,7 @@ chaos-realpath = { workspace = true }
 libc = { workspace = true }
 mcp-host = { workspace = true }
 rama = { workspace = true }
+regex-lite = { workspace = true }
 chaos-snitch = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

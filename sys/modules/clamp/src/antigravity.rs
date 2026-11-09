@@ -184,6 +184,11 @@ pub struct AntigravityResult {
     pub num_turns: Option<u64>,
     #[serde(default)]
     pub usage: Option<AntigravityUsage>,
+    /// Fields this adapter does not model. agy reports why a run ended with
+    /// a non-`SUCCESS` status in fields of its result event, so they are kept
+    /// to explain the failure instead of being dropped by deserialisation.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 /// Parsed `agy --output-format stream-json` event.
@@ -416,7 +421,11 @@ impl AntigravityTransport {
             ));
         };
         if result.status != "SUCCESS" {
-            return Err(AntigravityError::InvocationFailed(result.status.clone()));
+            return Err(AntigravityError::InvocationFailed(failed_result_detail(
+                result,
+                &events,
+                &invocation.stderr_tail,
+            )));
         }
         if let Some(expected) = self.conversation_id.as_deref()
             && result.conversation_id != expected
@@ -907,6 +916,243 @@ fn is_executable(_path: &Path) -> bool {
 
 /// Prefix glog adds when agy logs before its logger is initialised.
 const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
+/// Upper bound on one value lifted from a non-`SUCCESS` result.
+const FAILED_RESULT_VALUE_LIMIT: usize = 256;
+/// Upper bound on the stderr tail carried by a non-`SUCCESS` result.
+const FAILED_RESULT_STDERR_LIMIT: usize = 1024;
+/// Upper bound on the whole diagnostic for a non-`SUCCESS` result.
+const FAILED_RESULT_DETAIL_LIMIT: usize = 2 * 1024;
+/// Result-event keys read as a diagnosis, compared lowercased without `_`.
+/// Everything else in the event is ignored: an unknown field may carry the
+/// prompt, a request body or a credential.
+const FAILED_RESULT_ERROR_KEYS: &[&str] = &[
+    "error",
+    "errormessage",
+    "errorcode",
+    "errortype",
+    "errorreason",
+    "errorstatus",
+    "errordetail",
+    "reason",
+    "statuscode",
+    "code",
+];
+/// Keys read inside an object-valued error key; nothing deeper is read.
+const FAILED_RESULT_NESTED_KEYS: &[&str] = &["code", "status", "message", "reason", "type"];
+
+/// Explains a result event whose status is not `SUCCESS`.
+///
+/// agy exits 0 in that case, so the exit status says nothing and its log
+/// usually holds only start-up noise. What it does say is in the result
+/// event's error fields, the step it stopped on, and its stderr. Only an
+/// allow-listed projection of the event is used, each value is sanitised
+/// and bounded, and so is the whole: the response text, step text and any
+/// other field are left out, since they can be the model's or the user's
+/// words rather than a diagnosis.
+fn failed_result_detail(
+    result: &AntigravityResult,
+    events: &[AntigravityEvent],
+    stderr_tail: &str,
+) -> String {
+    let mut detail = diagnostic_token(&result.status);
+    let fields = failed_result_error_fields(&result.extra);
+    if !fields.is_empty() {
+        detail.push_str("; result detail: ");
+        detail.push_str(&fields.join(", "));
+    }
+    let last_step = events.iter().rev().find_map(|event| match event {
+        AntigravityEvent::StepUpdate { step_update } => Some(step_update),
+        _ => None,
+    });
+    if let Some(step) = last_step {
+        detail.push_str(&format!(
+            "; last step {}: {} {}",
+            step.step_index,
+            diagnostic_token(&step.step_type),
+            diagnostic_token(&step.state)
+        ));
+        if let Some(tool) = step.tool_name.as_deref() {
+            detail.push_str(&format!(" ({})", diagnostic_token(tool)));
+        }
+    }
+    let stderr = stderr_tail.trim();
+    if !stderr.is_empty() {
+        detail.push_str("; stderr: ");
+        // Sanitise before clipping so a cut cannot strip the context
+        // ("Bearer ", "password=") that marks the next word as a secret.
+        let sanitised = sanitise_diagnostic(bounded_tail(stderr, SANITISE_WINDOW));
+        detail.push_str(bounded_tail(&sanitised, FAILED_RESULT_STDERR_LIMIT));
+    }
+    bounded_head(&detail, FAILED_RESULT_DETAIL_LIMIT).to_string()
+}
+
+/// `key=value` pairs for the allow-listed error keys of a result event.
+fn failed_result_error_fields(extra: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut fields = Vec::new();
+    for (key, value) in extra {
+        let normalised = key.to_ascii_lowercase().replace('_', "");
+        if !FAILED_RESULT_ERROR_KEYS.contains(&normalised.as_str()) {
+            continue;
+        }
+        let key = diagnostic_token(key);
+        match value {
+            Value::Object(nested) => {
+                for (inner, value) in nested {
+                    if FAILED_RESULT_NESTED_KEYS.contains(&inner.to_ascii_lowercase().as_str())
+                        && let Some(value) = diagnostic_scalar(value)
+                    {
+                        fields.push(format!("{key}.{}={value}", diagnostic_token(inner)));
+                    }
+                }
+            }
+            value => {
+                if let Some(value) = diagnostic_scalar(value) {
+                    fields.push(format!("{key}={value}"));
+                }
+            }
+        }
+    }
+    fields
+}
+
+/// A string, number or boolean as sanitised, bounded text; nothing else.
+fn diagnostic_scalar(value: &Value) -> Option<String> {
+    let text = match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        _ => return None,
+    };
+    let sanitised = sanitise_diagnostic(bounded_head(&text, SANITISE_WINDOW));
+    Some(bounded_head(&sanitised, FAILED_RESULT_VALUE_LIMIT).to_string())
+}
+
+/// An identifier-like field (status, step type, key) kept to a safe alphabet.
+fn diagnostic_token(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
+        .take(64)
+        .collect()
+}
+
+/// How much text is sanitised before the final clip. Far larger than any
+/// clip, so the window's own cut lands in text the clip discards.
+const SANITISE_WINDOW: usize = 16 * 1024;
+
+/// Secret-bearing key names: a key containing one of these marks its value.
+const SECRET_KEY: &str = r"[A-Za-z0-9_.-]*(?i:token|secret|passw(?:or)?d|api[_-]?key|credential|cookie|session|authorization|auth|private[_-]?key|signature)[A-Za-z0-9_.-]*";
+
+/// How many contextual redaction rules there are; a test checks all compiled.
+#[cfg(test)]
+const REDACTION_RULE_COUNT: usize = 6;
+
+static CONTEXTUAL_REDACTIONS: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
+    std::sync::LazyLock::new(|| {
+        let rules = [
+            // Bearer / Basic credentials, wherever they appear.
+            (
+                r#"(?i)\b(bearer|basic)\s+[^\s"',;]+"#.to_string(),
+                "$1 [redacted]",
+            ),
+            // A secret key with a double-quoted value, escapes and spaces included.
+            (
+                format!(r#"("?{SECRET_KEY}"?\s*[:=]\s*)"(?:[^"\\]|\\.)*""#),
+                "$1\"[redacted]\"",
+            ),
+            // The same with a single-quoted value.
+            (
+                format!(r"('?{SECRET_KEY}'?\s*[:=]\s*)'(?:[^'\\]|\\.)*'"),
+                "$1'[redacted]'",
+            ),
+            // An unquoted value: everything to the next separator or line end,
+            // so a value with spaces goes whole.
+            (
+                format!(r#"(\b{SECRET_KEY}\s*[:=]\s*)[^\s"'\[][^;,&\r\n]*"#),
+                "$1[redacted]",
+            ),
+            // Known key shapes too short for the opaque-run rule.
+            (
+                r"\b(?:sk-|AIza|ya29\.|gh[pousr]_|xox[abpr]-)[A-Za-z0-9_.-]+".to_string(),
+                "[redacted]",
+            ),
+            // URL query strings carry signatures and keys.
+            (r#"\?[^\s"']+"#.to_string(), "?[redacted]"),
+        ];
+        // A rule that fails to compile is dropped here, so a test pins
+        // that all of them did (`REDACTION_RULE_COUNT`).
+        rules
+            .into_iter()
+            .filter_map(|(pattern, replacement)| {
+                regex_lite::Regex::new(&pattern)
+                    .ok()
+                    .map(|regex| (regex, replacement))
+            })
+            .collect()
+    });
+
+/// Redacts credentials from free text before it leaves the adapter: bearer
+/// and basic credentials, values of secret-named keys (whole, quoted or
+/// not), known key shapes, URL query strings, then any long opaque run.
+/// Control characters collapse to spaces.
+fn sanitise_diagnostic(text: &str) -> String {
+    let mut text = text.to_string();
+    for (pattern, replacement) in CONTEXTUAL_REDACTIONS.iter() {
+        text = pattern.replace_all(&text, *replacement).into_owned();
+    }
+    redact_opaque_runs(&text)
+}
+
+/// Collapses control characters and redacts long opaque runs (keys, tokens,
+/// signatures).
+fn redact_opaque_runs(text: &str) -> String {
+    const OPAQUE_RUN: usize = 32;
+    let is_opaque =
+        |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '=' | '.');
+    let mut out = String::with_capacity(text.len());
+    let mut run = String::new();
+    let flush = |run: &mut String, out: &mut String| {
+        if run.len() >= OPAQUE_RUN {
+            out.push_str("[redacted]");
+        } else {
+            out.push_str(run);
+        }
+        run.clear();
+    };
+    for c in text.chars() {
+        if is_opaque(c) {
+            run.push(c);
+            continue;
+        }
+        flush(&mut run, &mut out);
+        out.push(if c.is_control() { ' ' } else { c });
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
+/// The first `limit` bytes of `text`, cut back to a character boundary.
+fn bounded_head(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut end = limit;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+/// The last `limit` bytes of `text`, moved forward to a character boundary.
+fn bounded_tail(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut start = text.len() - limit;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    &text[start..]
+}
 /// Upper bound on the diagnostic text lifted from an agy log.
 const AGY_LOG_ERROR_LIMIT: usize = 2 * 1024;
 /// Upper bound on how much of an agy log is read from disk.

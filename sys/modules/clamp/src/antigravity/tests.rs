@@ -735,3 +735,214 @@ exit 1
         "Antigravity invocation failed with status 1; candidate recent agy log diagnostic: not authenticated"
     );
 }
+
+#[tokio::test]
+async fn non_success_result_keeps_its_reason_but_not_the_model_text() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let dir = directory.path();
+    let script = dir.join("agy");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+cat > /dev/null
+printf '%s\n' '{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":7,"state":"ERROR","step_type":"tool","tool_name":"call_mcp_tool","text_delta":"private model words"}}'
+printf '%s\n' '{"event":"result","result":{"conversation_id":"conversation-1","status":"ERROR","response":"partial private reply","num_turns":3,"error":{"code":503,"message":"model overloaded"}}}'
+printf 'upstream said 503\n' >&2
+exit 0
+"#,
+    )
+    .expect("write fake agy");
+    let mut permissions = std::fs::metadata(&script)
+        .expect("fake agy metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&script, permissions).expect("make fake agy executable");
+
+    let config = AntigravityConfig {
+        cli_path: Some(script),
+        home: Some(dir.join("home")),
+        cwd: Some(dir.to_path_buf()),
+        model: "gemini-test".to_string(),
+        print_timeout: Duration::from_secs(5),
+        bridge: Some(test_bridge(dir)),
+        ..Default::default()
+    };
+    let mut transport = AntigravityTransport::new(config).expect("create transport");
+    let error = transport
+        .run_turn("hello")
+        .await
+        .expect_err("ERROR result fails the turn");
+    assert!(matches!(error, AntigravityError::InvocationFailed(_)));
+    assert_eq!(
+        error.to_string(),
+        "Antigravity invocation failed with status ERROR; result detail: \
+         error.code=503, error.message=model overloaded; \
+         last step 7: tool ERROR (call_mcp_tool); stderr: upstream said 503"
+    );
+}
+
+#[test]
+fn bare_non_success_result_says_only_what_it_has() {
+    let result: AntigravityResult =
+        serde_json::from_str(r#"{"conversation_id":"c","status":"ERROR","response":"private"}"#)
+            .expect("result parses");
+    assert!(result.extra.is_empty());
+    assert_eq!(failed_result_detail(&result, &[], "  \n"), "ERROR");
+}
+
+#[test]
+fn failed_result_detail_reads_only_allow_listed_error_fields() {
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "response": "PRIVATE-RESPONSE",
+        "prompt": "PRIVATE-PROMPT",
+        "messages": [{"role": "user", "content": "PRIVATE-MESSAGE"}],
+        "request": {"body": {"contents": "PRIVATE-BODY"}, "error": "PRIVATE-NESTED"},
+        "credentials": {"access_token": "PRIVATE-TOKEN"},
+        "error": {
+            "code": 500,
+            "message": "internal key AIzaSyA0123456789abcdefghijklmnopqrstu",
+            "details": [{"request": "PRIVATE-DETAILS"}],
+            "metadata": {"prompt": "PRIVATE-METADATA"}
+        },
+        "error_reason": "INTERNAL"
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[], "");
+    assert_eq!(
+        detail,
+        "ERROR; result detail: error.code=500, error.message=internal key [redacted], \
+         error_reason=INTERNAL"
+    );
+    assert!(!detail.contains("PRIVATE"), "{detail}");
+}
+
+#[test]
+fn failed_result_identifiers_are_kept_to_a_safe_alphabet() {
+    let step: AntigravityEvent = serde_json::from_value(serde_json::json!({
+        "event": "step_update",
+        "step_update": {
+            "conversation_id": "c",
+            "step_index": 1,
+            "state": format!("ERROR {}", "x".repeat(5000)),
+            "step_type": "tool\n kind",
+            "tool_name": "call; rm"
+        }
+    }))
+    .expect("step parses");
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "y".repeat(5000),
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[step], "");
+    assert_eq!(
+        detail,
+        format!(
+            "{}; last step 1: toolkind ERROR{} (callrm)",
+            "y".repeat(64),
+            "x".repeat(59)
+        )
+    );
+}
+
+#[test]
+fn failed_result_detail_is_bounded_on_character_boundaries() {
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "error": "é ".repeat(FAILED_RESULT_VALUE_LIMIT),
+        "reason": "ü ".repeat(FAILED_RESULT_VALUE_LIMIT),
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[], &"ö ".repeat(FAILED_RESULT_DETAIL_LIMIT));
+    assert!(detail.len() <= FAILED_RESULT_DETAIL_LIMIT);
+    let (_, stderr) = detail.split_once("; stderr: ").expect("stderr part");
+    assert!(stderr.chars().all(|c| c == 'ö' || c == ' '));
+}
+
+#[test]
+fn sanitise_diagnostic_redacts_contextual_credentials() {
+    assert_eq!(CONTEXTUAL_REDACTIONS.len(), REDACTION_RULE_COUNT);
+    for (input, expected) in [
+        (
+            "Authorization: Bearer abcdefghijklmnop",
+            "Authorization: [redacted]",
+        ),
+        (
+            "upstream sent Bearer abcdefghijklmnop",
+            "upstream sent Bearer [redacted]",
+        ),
+        (
+            "proxy said Basic dXNlcjpwYXNz; retry",
+            "proxy said Basic [redacted]; retry",
+        ),
+        ("password=two secret words", "password=[redacted]"),
+        (
+            "password=two secret words; code=7",
+            "password=[redacted]; code=7",
+        ),
+        (
+            r#"{"password":"two secret words"}"#,
+            r#"{"password":"[redacted]"}"#,
+        ),
+        (
+            r#"{"client_secret":"synthetic-secret"}"#,
+            r#"{"client_secret":"[redacted]"}"#,
+        ),
+        (
+            r#"{"token":"say \"hi\" there"}"#,
+            r#"{"token":"[redacted]"}"#,
+        ),
+        ("api_key='a b c'", "api_key='[redacted]'"),
+        ("key sk-short1 rejected", "key [redacted] rejected"),
+        (
+            "GET https://x.test/v1?key=abc&sig=def failed",
+            "GET https://x.test/v1?[redacted] failed",
+        ),
+        ("quota exceeded (code 429)", "quota exceeded (code 429)"),
+    ] {
+        assert_eq!(sanitise_diagnostic(input), expected, "input: {input}");
+    }
+}
+
+#[test]
+fn failed_result_detail_redacts_credentials_in_message_and_stderr() {
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "error": {
+            "code": 401,
+            "message": "rejected Authorization: Bearer abcdefghijklmnop with password=two secret words"
+        },
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(
+        &result,
+        &[],
+        "retrying\nAuthorization: Bearer abcdefghijklmnop\npassword=two secret words\n",
+    );
+    for fragment in ["abcdefghijklmnop", "two secret", "secret words"] {
+        assert!(!detail.contains(fragment), "{fragment} leaked: {detail}");
+    }
+    assert!(detail.contains("error.code=401"), "{detail}");
+    assert!(detail.contains("stderr: retrying"), "{detail}");
+}
+
+#[test]
+fn stderr_credentials_are_redacted_before_the_tail_clip() {
+    // The tail clip falls inside the token. Clipping first would drop the
+    // "Bearer " that marks it and leave a run too short to look opaque.
+    let stderr = format!(
+        "Authorization: Bearer abcdefghijklmnop{}",
+        " y".repeat((FAILED_RESULT_STDERR_LIMIT - 10) / 2)
+    );
+    let result: AntigravityResult =
+        serde_json::from_value(serde_json::json!({"conversation_id": "c", "status": "ERROR"}))
+            .expect("result parses");
+    let detail = failed_result_detail(&result, &[], &stderr);
+    assert!(!detail.contains("klmnop"), "{detail}");
+}

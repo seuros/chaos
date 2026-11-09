@@ -778,7 +778,7 @@ exit 0
     assert_eq!(
         error.to_string(),
         "Antigravity invocation failed with status ERROR; result detail: \
-         {\"error\":{\"code\":503,\"message\":\"model overloaded\"}}; \
+         error.code=503, error.message=model overloaded; \
          last step 7: tool ERROR (call_mcp_tool); stderr: upstream said 503"
     );
 }
@@ -793,17 +793,73 @@ fn bare_non_success_result_says_only_what_it_has() {
 }
 
 #[test]
-fn failed_result_detail_is_bounded_on_character_boundaries() {
-    let long = "é".repeat(FAILED_RESULT_DETAIL_LIMIT);
+fn failed_result_detail_reads_only_allow_listed_error_fields() {
     let result: AntigravityResult = serde_json::from_value(serde_json::json!({
         "conversation_id": "c",
         "status": "ERROR",
-        "error": long,
+        "response": "PRIVATE-RESPONSE",
+        "prompt": "PRIVATE-PROMPT",
+        "messages": [{"role": "user", "content": "PRIVATE-MESSAGE"}],
+        "request": {"body": {"contents": "PRIVATE-BODY"}, "error": "PRIVATE-NESTED"},
+        "credentials": {"access_token": "PRIVATE-TOKEN"},
+        "error": {
+            "code": 500,
+            "message": "internal key AIzaSyA0123456789abcdefghijklmnopqrstu",
+            "details": [{"request": "PRIVATE-DETAILS"}],
+            "metadata": {"prompt": "PRIVATE-METADATA"}
+        },
+        "error_reason": "INTERNAL"
     }))
     .expect("result parses");
-    let detail = failed_result_detail(&result, &[], &"ü".repeat(FAILED_RESULT_DETAIL_LIMIT));
-    let (head, stderr) = detail.split_once("; stderr: ").expect("stderr part");
-    assert!(head.len() <= "ERROR; result detail: ".len() + FAILED_RESULT_DETAIL_LIMIT);
-    assert!(stderr.len() <= FAILED_RESULT_DETAIL_LIMIT);
-    assert!(stderr.chars().all(|c| c == 'ü'));
+    let detail = failed_result_detail(&result, &[], "");
+    assert_eq!(
+        detail,
+        "ERROR; result detail: error.code=500, error.message=internal key [redacted], \
+         error_reason=INTERNAL"
+    );
+    assert!(!detail.contains("PRIVATE"), "{detail}");
+}
+
+#[test]
+fn failed_result_identifiers_are_kept_to_a_safe_alphabet() {
+    let step: AntigravityEvent = serde_json::from_value(serde_json::json!({
+        "event": "step_update",
+        "step_update": {
+            "conversation_id": "c",
+            "step_index": 1,
+            "state": format!("ERROR {}", "x".repeat(5000)),
+            "step_type": "tool\n kind",
+            "tool_name": "call; rm"
+        }
+    }))
+    .expect("step parses");
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "y".repeat(5000),
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[step], "");
+    assert_eq!(
+        detail,
+        format!(
+            "{}; last step 1: toolkind ERROR{} (callrm)",
+            "y".repeat(64),
+            "x".repeat(59)
+        )
+    );
+}
+
+#[test]
+fn failed_result_detail_is_bounded_on_character_boundaries() {
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "error": "é ".repeat(FAILED_RESULT_VALUE_LIMIT),
+        "reason": "ü ".repeat(FAILED_RESULT_VALUE_LIMIT),
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[], &"ö ".repeat(FAILED_RESULT_DETAIL_LIMIT));
+    assert!(detail.len() <= FAILED_RESULT_DETAIL_LIMIT);
+    let (_, stderr) = detail.split_once("; stderr: ").expect("stderr part");
+    assert!(stderr.chars().all(|c| c == 'ö' || c == ' '));
 }

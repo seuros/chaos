@@ -916,26 +916,49 @@ fn is_executable(_path: &Path) -> bool {
 
 /// Prefix glog adds when agy logs before its logger is initialised.
 const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
-/// Upper bound on each part of the detail carried by a non-`SUCCESS` result.
-const FAILED_RESULT_DETAIL_LIMIT: usize = 1024;
+/// Upper bound on one value lifted from a non-`SUCCESS` result.
+const FAILED_RESULT_VALUE_LIMIT: usize = 256;
+/// Upper bound on the stderr tail carried by a non-`SUCCESS` result.
+const FAILED_RESULT_STDERR_LIMIT: usize = 1024;
+/// Upper bound on the whole diagnostic for a non-`SUCCESS` result.
+const FAILED_RESULT_DETAIL_LIMIT: usize = 2 * 1024;
+/// Result-event keys read as a diagnosis, compared lowercased without `_`.
+/// Everything else in the event is ignored: an unknown field may carry the
+/// prompt, a request body or a credential.
+const FAILED_RESULT_ERROR_KEYS: &[&str] = &[
+    "error",
+    "errormessage",
+    "errorcode",
+    "errortype",
+    "errorreason",
+    "errorstatus",
+    "errordetail",
+    "reason",
+    "statuscode",
+    "code",
+];
+/// Keys read inside an object-valued error key; nothing deeper is read.
+const FAILED_RESULT_NESTED_KEYS: &[&str] = &["code", "status", "message", "reason", "type"];
 
 /// Explains a result event whose status is not `SUCCESS`.
 ///
 /// agy exits 0 in that case, so the exit status says nothing and its log
 /// usually holds only start-up noise. What it does say is in the result
-/// event's own fields, the step it stopped on, and its stderr. The response
-/// text and step text are left out: they are the model's words, not a
-/// diagnosis.
+/// event's error fields, the step it stopped on, and its stderr. Only an
+/// allow-listed projection of the event is used, each value is sanitised
+/// and bounded, and so is the whole: the response text, step text and any
+/// other field are left out, since they can be the model's or the user's
+/// words rather than a diagnosis.
 fn failed_result_detail(
     result: &AntigravityResult,
     events: &[AntigravityEvent],
     stderr_tail: &str,
 ) -> String {
-    let mut detail = result.status.clone();
-    if !result.extra.is_empty() {
-        let fields = Value::Object(result.extra.clone()).to_string();
+    let mut detail = diagnostic_token(&result.status);
+    let fields = failed_result_error_fields(&result.extra);
+    if !fields.is_empty() {
         detail.push_str("; result detail: ");
-        detail.push_str(bounded_head(&fields, FAILED_RESULT_DETAIL_LIMIT));
+        detail.push_str(&fields.join(", "));
     }
     let last_step = events.iter().rev().find_map(|event| match event {
         AntigravityEvent::StepUpdate { step_update } => Some(step_update),
@@ -944,18 +967,102 @@ fn failed_result_detail(
     if let Some(step) = last_step {
         detail.push_str(&format!(
             "; last step {}: {} {}",
-            step.step_index, step.step_type, step.state
+            step.step_index,
+            diagnostic_token(&step.step_type),
+            diagnostic_token(&step.state)
         ));
         if let Some(tool) = step.tool_name.as_deref() {
-            detail.push_str(&format!(" ({tool})"));
+            detail.push_str(&format!(" ({})", diagnostic_token(tool)));
         }
     }
     let stderr = stderr_tail.trim();
     if !stderr.is_empty() {
         detail.push_str("; stderr: ");
-        detail.push_str(bounded_tail(stderr, FAILED_RESULT_DETAIL_LIMIT));
+        detail.push_str(&sanitise_diagnostic(bounded_tail(
+            stderr,
+            FAILED_RESULT_STDERR_LIMIT,
+        )));
     }
-    detail
+    bounded_head(&detail, FAILED_RESULT_DETAIL_LIMIT).to_string()
+}
+
+/// `key=value` pairs for the allow-listed error keys of a result event.
+fn failed_result_error_fields(extra: &serde_json::Map<String, Value>) -> Vec<String> {
+    let mut fields = Vec::new();
+    for (key, value) in extra {
+        let normalised = key.to_ascii_lowercase().replace('_', "");
+        if !FAILED_RESULT_ERROR_KEYS.contains(&normalised.as_str()) {
+            continue;
+        }
+        let key = diagnostic_token(key);
+        match value {
+            Value::Object(nested) => {
+                for (inner, value) in nested {
+                    if FAILED_RESULT_NESTED_KEYS.contains(&inner.to_ascii_lowercase().as_str())
+                        && let Some(value) = diagnostic_scalar(value)
+                    {
+                        fields.push(format!("{key}.{}={value}", diagnostic_token(inner)));
+                    }
+                }
+            }
+            value => {
+                if let Some(value) = diagnostic_scalar(value) {
+                    fields.push(format!("{key}={value}"));
+                }
+            }
+        }
+    }
+    fields
+}
+
+/// A string, number or boolean as sanitised, bounded text; nothing else.
+fn diagnostic_scalar(value: &Value) -> Option<String> {
+    let text = match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        _ => return None,
+    };
+    Some(sanitise_diagnostic(bounded_head(
+        &text,
+        FAILED_RESULT_VALUE_LIMIT,
+    )))
+}
+
+/// An identifier-like field (status, step type, key) kept to a safe alphabet.
+fn diagnostic_token(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
+        .take(64)
+        .collect()
+}
+
+/// Collapses control characters and redacts long opaque runs (keys, tokens,
+/// signatures) from free text before it leaves the adapter.
+fn sanitise_diagnostic(text: &str) -> String {
+    const OPAQUE_RUN: usize = 32;
+    let is_opaque =
+        |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '=' | '.');
+    let mut out = String::with_capacity(text.len());
+    let mut run = String::new();
+    let flush = |run: &mut String, out: &mut String| {
+        if run.len() >= OPAQUE_RUN {
+            out.push_str("[redacted]");
+        } else {
+            out.push_str(run);
+        }
+        run.clear();
+    };
+    for c in text.chars() {
+        if is_opaque(c) {
+            run.push(c);
+            continue;
+        }
+        flush(&mut run, &mut out);
+        out.push(if c.is_control() { ' ' } else { c });
+    }
+    flush(&mut run, &mut out);
+    out
 }
 
 /// The first `limit` bytes of `text`, cut back to a character boundary.

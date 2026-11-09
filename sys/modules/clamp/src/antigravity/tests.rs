@@ -863,3 +863,86 @@ fn failed_result_detail_is_bounded_on_character_boundaries() {
     let (_, stderr) = detail.split_once("; stderr: ").expect("stderr part");
     assert!(stderr.chars().all(|c| c == 'ö' || c == ' '));
 }
+
+#[test]
+fn sanitise_diagnostic_redacts_contextual_credentials() {
+    assert_eq!(CONTEXTUAL_REDACTIONS.len(), REDACTION_RULE_COUNT);
+    for (input, expected) in [
+        (
+            "Authorization: Bearer abcdefghijklmnop",
+            "Authorization: [redacted]",
+        ),
+        (
+            "upstream sent Bearer abcdefghijklmnop",
+            "upstream sent Bearer [redacted]",
+        ),
+        (
+            "proxy said Basic dXNlcjpwYXNz; retry",
+            "proxy said Basic [redacted]; retry",
+        ),
+        ("password=two secret words", "password=[redacted]"),
+        (
+            "password=two secret words; code=7",
+            "password=[redacted]; code=7",
+        ),
+        (
+            r#"{"password":"two secret words"}"#,
+            r#"{"password":"[redacted]"}"#,
+        ),
+        (
+            r#"{"client_secret":"synthetic-secret"}"#,
+            r#"{"client_secret":"[redacted]"}"#,
+        ),
+        (
+            r#"{"token":"say \"hi\" there"}"#,
+            r#"{"token":"[redacted]"}"#,
+        ),
+        ("api_key='a b c'", "api_key='[redacted]'"),
+        ("key sk-short1 rejected", "key [redacted] rejected"),
+        (
+            "GET https://x.test/v1?key=abc&sig=def failed",
+            "GET https://x.test/v1?[redacted] failed",
+        ),
+        ("quota exceeded (code 429)", "quota exceeded (code 429)"),
+    ] {
+        assert_eq!(sanitise_diagnostic(input), expected, "input: {input}");
+    }
+}
+
+#[test]
+fn failed_result_detail_redacts_credentials_in_message_and_stderr() {
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "error": {
+            "code": 401,
+            "message": "rejected Authorization: Bearer abcdefghijklmnop with password=two secret words"
+        },
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(
+        &result,
+        &[],
+        "retrying\nAuthorization: Bearer abcdefghijklmnop\npassword=two secret words\n",
+    );
+    for fragment in ["abcdefghijklmnop", "two secret", "secret words"] {
+        assert!(!detail.contains(fragment), "{fragment} leaked: {detail}");
+    }
+    assert!(detail.contains("error.code=401"), "{detail}");
+    assert!(detail.contains("stderr: retrying"), "{detail}");
+}
+
+#[test]
+fn stderr_credentials_are_redacted_before_the_tail_clip() {
+    // The tail clip falls inside the token. Clipping first would drop the
+    // "Bearer " that marks it and leave a run too short to look opaque.
+    let stderr = format!(
+        "Authorization: Bearer abcdefghijklmnop{}",
+        " y".repeat((FAILED_RESULT_STDERR_LIMIT - 10) / 2)
+    );
+    let result: AntigravityResult =
+        serde_json::from_value(serde_json::json!({"conversation_id": "c", "status": "ERROR"}))
+            .expect("result parses");
+    let detail = failed_result_detail(&result, &[], &stderr);
+    assert!(!detail.contains("klmnop"), "{detail}");
+}

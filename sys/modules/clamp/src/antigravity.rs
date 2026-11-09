@@ -978,10 +978,10 @@ fn failed_result_detail(
     let stderr = stderr_tail.trim();
     if !stderr.is_empty() {
         detail.push_str("; stderr: ");
-        detail.push_str(&sanitise_diagnostic(bounded_tail(
-            stderr,
-            FAILED_RESULT_STDERR_LIMIT,
-        )));
+        // Sanitise before clipping so a cut cannot strip the context
+        // ("Bearer ", "password=") that marks the next word as a secret.
+        let sanitised = sanitise_diagnostic(bounded_tail(stderr, SANITISE_WINDOW));
+        detail.push_str(bounded_tail(&sanitised, FAILED_RESULT_STDERR_LIMIT));
     }
     bounded_head(&detail, FAILED_RESULT_DETAIL_LIMIT).to_string()
 }
@@ -1023,10 +1023,8 @@ fn diagnostic_scalar(value: &Value) -> Option<String> {
         Value::Bool(flag) => flag.to_string(),
         _ => return None,
     };
-    Some(sanitise_diagnostic(bounded_head(
-        &text,
-        FAILED_RESULT_VALUE_LIMIT,
-    )))
+    let sanitised = sanitise_diagnostic(bounded_head(&text, SANITISE_WINDOW));
+    Some(bounded_head(&sanitised, FAILED_RESULT_VALUE_LIMIT).to_string())
 }
 
 /// An identifier-like field (status, step type, key) kept to a safe alphabet.
@@ -1037,9 +1035,76 @@ fn diagnostic_token(text: &str) -> String {
         .collect()
 }
 
-/// Collapses control characters and redacts long opaque runs (keys, tokens,
-/// signatures) from free text before it leaves the adapter.
+/// How much text is sanitised before the final clip. Far larger than any
+/// clip, so the window's own cut lands in text the clip discards.
+const SANITISE_WINDOW: usize = 16 * 1024;
+
+/// Secret-bearing key names: a key containing one of these marks its value.
+const SECRET_KEY: &str = r"[A-Za-z0-9_.-]*(?i:token|secret|passw(?:or)?d|api[_-]?key|credential|cookie|session|authorization|auth|private[_-]?key|signature)[A-Za-z0-9_.-]*";
+
+/// How many contextual redaction rules there are; a test checks all compiled.
+#[cfg(test)]
+const REDACTION_RULE_COUNT: usize = 6;
+
+static CONTEXTUAL_REDACTIONS: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
+    std::sync::LazyLock::new(|| {
+        let rules = [
+            // Bearer / Basic credentials, wherever they appear.
+            (
+                r#"(?i)\b(bearer|basic)\s+[^\s"',;]+"#.to_string(),
+                "$1 [redacted]",
+            ),
+            // A secret key with a double-quoted value, escapes and spaces included.
+            (
+                format!(r#"("?{SECRET_KEY}"?\s*[:=]\s*)"(?:[^"\\]|\\.)*""#),
+                "$1\"[redacted]\"",
+            ),
+            // The same with a single-quoted value.
+            (
+                format!(r"('?{SECRET_KEY}'?\s*[:=]\s*)'(?:[^'\\]|\\.)*'"),
+                "$1'[redacted]'",
+            ),
+            // An unquoted value: everything to the next separator or line end,
+            // so a value with spaces goes whole.
+            (
+                format!(r#"(\b{SECRET_KEY}\s*[:=]\s*)[^\s"'\[][^;,&\r\n]*"#),
+                "$1[redacted]",
+            ),
+            // Known key shapes too short for the opaque-run rule.
+            (
+                r"\b(?:sk-|AIza|ya29\.|gh[pousr]_|xox[abpr]-)[A-Za-z0-9_.-]+".to_string(),
+                "[redacted]",
+            ),
+            // URL query strings carry signatures and keys.
+            (r#"\?[^\s"']+"#.to_string(), "?[redacted]"),
+        ];
+        // A rule that fails to compile is dropped here, so a test pins
+        // that all of them did (`REDACTION_RULE_COUNT`).
+        rules
+            .into_iter()
+            .filter_map(|(pattern, replacement)| {
+                regex_lite::Regex::new(&pattern)
+                    .ok()
+                    .map(|regex| (regex, replacement))
+            })
+            .collect()
+    });
+
+/// Redacts credentials from free text before it leaves the adapter: bearer
+/// and basic credentials, values of secret-named keys (whole, quoted or
+/// not), known key shapes, URL query strings, then any long opaque run.
+/// Control characters collapse to spaces.
 fn sanitise_diagnostic(text: &str) -> String {
+    let mut text = text.to_string();
+    for (pattern, replacement) in CONTEXTUAL_REDACTIONS.iter() {
+        text = pattern.replace_all(&text, *replacement).into_owned();
+    }
+    redact_opaque_runs(&text)
+}
+
+/// Collapses control characters and redacts long opaque runs (keys, tokens,
+/// signatures).
+fn redact_opaque_runs(text: &str) -> String {
     const OPAQUE_RUN: usize = 32;
     let is_opaque =
         |c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '=' | '.');

@@ -1973,6 +1973,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "serial_test",
  "shlex 2.0.1",
  "sqlx",
  "tempfile",

@@ -351,3 +351,26 @@ fn only_an_exact_stop_hook_block_is_kept_as_user() {
         format!("base\n\n{quoted}\n\n{two_blocks}").as_str()
     );
 }
+
+#[test]
+fn stop_hook_continuation_quoting_its_close_tag_still_stays_in_place_as_user() {
+    let close = chaos_ipc::protocol::STOP_HOOK_CONTINUATION_CLOSE_TAG;
+    let continuation: ResponseItem =
+        chaos_ipc::models::DeveloperInstructions::stop_hook_continuation(format!(
+            "the hook mentions {close} on purpose"
+        ))
+        .into();
+    let request = stop_hook_request(vec![
+        text_message("user", "hello"),
+        text_message("assistant", "done"),
+        continuation,
+    ]);
+    let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
+    let messages = body["messages"].as_array().expect("messages");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(roles, vec!["system", "user", "assistant", "user"]);
+    assert_eq!(messages[0]["content"], "base");
+}

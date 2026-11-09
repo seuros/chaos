@@ -58,10 +58,15 @@ impl DeveloperInstructions {
 
     /// The continuation prompt a Stop hook returned when it blocked the turn
     /// from ending, wrapped so its provenance survives into the wire adapters.
+    /// A closing tag quoted inside the prompt is escaped, so the block stays
+    /// recognisable whatever the hook wrote.
     pub fn stop_hook_continuation(prompt: impl AsRef<str>) -> Self {
+        let escaped_close = STOP_HOOK_CONTINUATION_CLOSE_TAG.replacen("</", "<\\/", 1);
+        let body = prompt
+            .as_ref()
+            .replace(STOP_HOOK_CONTINUATION_CLOSE_TAG, &escaped_close);
         DeveloperInstructions::new(format!(
-            "{STOP_HOOK_CONTINUATION_OPEN_TAG}\n{}\n{STOP_HOOK_CONTINUATION_CLOSE_TAG}",
-            prompt.as_ref()
+            "{STOP_HOOK_CONTINUATION_OPEN_TAG}\n{body}\n{STOP_HOOK_CONTINUATION_CLOSE_TAG}"
         ))
     }
 

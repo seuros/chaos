@@ -119,6 +119,8 @@ pub(crate) fn build_request_body(
 /// order, into one leading block. Instructions are never relabeled as `user`
 /// input; the chat format only carries their cumulative state, not when each
 /// one arrived.
+/// A Stop-hook continuation is not an instruction in this sense and never
+/// reaches here as `system`; see `convert_input_to_messages`.
 pub(super) fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
     let misplaced = messages
         .iter()
@@ -166,6 +168,15 @@ pub(super) fn normalize_system_messages(messages: &mut Vec<ChatMessage>) {
     }
 }
 
+/// A system/developer item whose whole text is one kernel-written Stop-hook
+/// continuation block. Anything else (several parts, extra text, an image)
+/// keeps the ordinary instruction mapping.
+fn is_stop_hook_continuation(content: &Value) -> bool {
+    content
+        .as_str()
+        .is_some_and(chaos_ipc::models::DeveloperInstructions::is_stop_hook_continuation)
+}
+
 pub(super) fn convert_content_item_to_value(c: &ContentItem) -> Option<Value> {
     match c {
         ContentItem::InputText { text } | ContentItem::OutputText { text, .. } => {
@@ -210,8 +221,15 @@ pub(super) fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<ChatMessa
                 };
                 // Chat completions accepts "system", "user", "assistant".
                 // Map OpenAI "developer" to "system", anything else to "user".
+                // One exception: a Stop-hook continuation is feedback that
+                // arrives after the assistant has answered, not operator
+                // instruction. Hoisting it into the leading system block would
+                // leave the conversation ending on the assistant turn, which
+                // providers that refuse assistant prefill reject with a 400.
+                // It stays where it arrived, as a labelled user message.
                 let chat_role = match role.as_str() {
                     "assistant" => "assistant",
+                    "system" | "developer" if is_stop_hook_continuation(&content_value) => "user",
                     "system" | "developer" => "system",
                     _ => "user",
                 };

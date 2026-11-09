@@ -905,3 +905,29 @@ fn tool_search_server_items_allow_null_call_id() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn stop_hook_continuation_round_trips_its_marker() {
+    let text = DeveloperInstructions::stop_hook_continuation("journal now").into_text();
+    assert!(DeveloperInstructions::is_stop_hook_continuation(&text));
+    assert!(!DeveloperInstructions::is_stop_hook_continuation(
+        "journal now"
+    ));
+    assert!(!DeveloperInstructions::is_stop_hook_continuation(&format!(
+        "x{text}"
+    )));
+    assert!(!DeveloperInstructions::is_stop_hook_continuation(&format!(
+        "{text}{text}"
+    )));
+}
+
+#[test]
+fn stop_hook_continuation_quoting_its_close_tag_is_still_recognised() {
+    let prompt = format!(
+        "explain {} literally",
+        crate::protocol::STOP_HOOK_CONTINUATION_CLOSE_TAG
+    );
+    let text = DeveloperInstructions::stop_hook_continuation(&prompt).into_text();
+    assert!(DeveloperInstructions::is_stop_hook_continuation(&text));
+    assert!(text.contains("explain <\\/stop_hook_continuation> literally"));
+}

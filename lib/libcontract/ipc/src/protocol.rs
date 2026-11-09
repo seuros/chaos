@@ -72,6 +72,10 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
+/// Marks a Stop-hook continuation prompt. The kernel is the only writer; wire
+/// adapters may use it to tell hook feedback apart from other instructions.
+pub const STOP_HOOK_CONTINUATION_OPEN_TAG: &str = "<stop_hook_continuation>";
+pub const STOP_HOOK_CONTINUATION_CLOSE_TAG: &str = "</stop_hook_continuation>";
 pub static USER_MESSAGE_BEGIN: LazyLock<String> =
     LazyLock::new(|| format!("## My request for {OS_NAME}:"));
 

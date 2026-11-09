@@ -184,6 +184,11 @@ pub struct AntigravityResult {
     pub num_turns: Option<u64>,
     #[serde(default)]
     pub usage: Option<AntigravityUsage>,
+    /// Fields this adapter does not model. agy reports why a run ended with
+    /// a non-`SUCCESS` status in fields of its result event, so they are kept
+    /// to explain the failure instead of being dropped by deserialisation.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
 }
 
 /// Parsed `agy --output-format stream-json` event.
@@ -416,7 +421,11 @@ impl AntigravityTransport {
             ));
         };
         if result.status != "SUCCESS" {
-            return Err(AntigravityError::InvocationFailed(result.status.clone()));
+            return Err(AntigravityError::InvocationFailed(failed_result_detail(
+                result,
+                &events,
+                &invocation.stderr_tail,
+            )));
         }
         if let Some(expected) = self.conversation_id.as_deref()
             && result.conversation_id != expected
@@ -907,6 +916,71 @@ fn is_executable(_path: &Path) -> bool {
 
 /// Prefix glog adds when agy logs before its logger is initialised.
 const AGY_EARLY_LOG_PREFIX: &str = "ERROR: logging before google.Init: ";
+/// Upper bound on each part of the detail carried by a non-`SUCCESS` result.
+const FAILED_RESULT_DETAIL_LIMIT: usize = 1024;
+
+/// Explains a result event whose status is not `SUCCESS`.
+///
+/// agy exits 0 in that case, so the exit status says nothing and its log
+/// usually holds only start-up noise. What it does say is in the result
+/// event's own fields, the step it stopped on, and its stderr. The response
+/// text and step text are left out: they are the model's words, not a
+/// diagnosis.
+fn failed_result_detail(
+    result: &AntigravityResult,
+    events: &[AntigravityEvent],
+    stderr_tail: &str,
+) -> String {
+    let mut detail = result.status.clone();
+    if !result.extra.is_empty() {
+        let fields = Value::Object(result.extra.clone()).to_string();
+        detail.push_str("; result detail: ");
+        detail.push_str(bounded_head(&fields, FAILED_RESULT_DETAIL_LIMIT));
+    }
+    let last_step = events.iter().rev().find_map(|event| match event {
+        AntigravityEvent::StepUpdate { step_update } => Some(step_update),
+        _ => None,
+    });
+    if let Some(step) = last_step {
+        detail.push_str(&format!(
+            "; last step {}: {} {}",
+            step.step_index, step.step_type, step.state
+        ));
+        if let Some(tool) = step.tool_name.as_deref() {
+            detail.push_str(&format!(" ({tool})"));
+        }
+    }
+    let stderr = stderr_tail.trim();
+    if !stderr.is_empty() {
+        detail.push_str("; stderr: ");
+        detail.push_str(bounded_tail(stderr, FAILED_RESULT_DETAIL_LIMIT));
+    }
+    detail
+}
+
+/// The first `limit` bytes of `text`, cut back to a character boundary.
+fn bounded_head(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut end = limit;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
+/// The last `limit` bytes of `text`, moved forward to a character boundary.
+fn bounded_tail(text: &str, limit: usize) -> &str {
+    if text.len() <= limit {
+        return text;
+    }
+    let mut start = text.len() - limit;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    &text[start..]
+}
 /// Upper bound on the diagnostic text lifted from an agy log.
 const AGY_LOG_ERROR_LIMIT: usize = 2 * 1024;
 /// Upper bound on how much of an agy log is read from disk.

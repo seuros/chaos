@@ -735,3 +735,75 @@ exit 1
         "Antigravity invocation failed with status 1; candidate recent agy log diagnostic: not authenticated"
     );
 }
+
+#[tokio::test]
+async fn non_success_result_keeps_its_reason_but_not_the_model_text() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let dir = directory.path();
+    let script = dir.join("agy");
+    std::fs::write(
+        &script,
+        r#"#!/bin/sh
+cat > /dev/null
+printf '%s\n' '{"event":"step_update","step_update":{"conversation_id":"conversation-1","step_index":7,"state":"ERROR","step_type":"tool","tool_name":"call_mcp_tool","text_delta":"private model words"}}'
+printf '%s\n' '{"event":"result","result":{"conversation_id":"conversation-1","status":"ERROR","response":"partial private reply","num_turns":3,"error":{"code":503,"message":"model overloaded"}}}'
+printf 'upstream said 503\n' >&2
+exit 0
+"#,
+    )
+    .expect("write fake agy");
+    let mut permissions = std::fs::metadata(&script)
+        .expect("fake agy metadata")
+        .permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(&script, permissions).expect("make fake agy executable");
+
+    let config = AntigravityConfig {
+        cli_path: Some(script),
+        home: Some(dir.join("home")),
+        cwd: Some(dir.to_path_buf()),
+        model: "gemini-test".to_string(),
+        print_timeout: Duration::from_secs(5),
+        bridge: Some(test_bridge(dir)),
+        ..Default::default()
+    };
+    let mut transport = AntigravityTransport::new(config).expect("create transport");
+    let error = transport
+        .run_turn("hello")
+        .await
+        .expect_err("ERROR result fails the turn");
+    assert!(matches!(error, AntigravityError::InvocationFailed(_)));
+    assert_eq!(
+        error.to_string(),
+        "Antigravity invocation failed with status ERROR; result detail: \
+         {\"error\":{\"code\":503,\"message\":\"model overloaded\"}}; \
+         last step 7: tool ERROR (call_mcp_tool); stderr: upstream said 503"
+    );
+}
+
+#[test]
+fn bare_non_success_result_says_only_what_it_has() {
+    let result: AntigravityResult =
+        serde_json::from_str(r#"{"conversation_id":"c","status":"ERROR","response":"private"}"#)
+            .expect("result parses");
+    assert!(result.extra.is_empty());
+    assert_eq!(failed_result_detail(&result, &[], "  \n"), "ERROR");
+}
+
+#[test]
+fn failed_result_detail_is_bounded_on_character_boundaries() {
+    let long = "é".repeat(FAILED_RESULT_DETAIL_LIMIT);
+    let result: AntigravityResult = serde_json::from_value(serde_json::json!({
+        "conversation_id": "c",
+        "status": "ERROR",
+        "error": long,
+    }))
+    .expect("result parses");
+    let detail = failed_result_detail(&result, &[], &"ü".repeat(FAILED_RESULT_DETAIL_LIMIT));
+    let (head, stderr) = detail.split_once("; stderr: ").expect("stderr part");
+    assert!(head.len() <= "ERROR; result detail: ".len() + FAILED_RESULT_DETAIL_LIMIT);
+    assert!(stderr.len() <= FAILED_RESULT_DETAIL_LIMIT);
+    assert!(stderr.chars().all(|c| c == 'ü'));
+}

@@ -7,6 +7,8 @@ use super::response::ResponseItem;
 use crate::config_types::CollaborationMode;
 use crate::protocol::COLLABORATION_MODE_CLOSE_TAG;
 use crate::protocol::COLLABORATION_MODE_OPEN_TAG;
+use crate::protocol::STOP_HOOK_CONTINUATION_CLOSE_TAG;
+use crate::protocol::STOP_HOOK_CONTINUATION_OPEN_TAG;
 
 /// Base instructions for the model in a thread. Corresponds to the `instructions` field in the ResponsesAPI.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -52,6 +54,22 @@ impl DeveloperInstructions {
             "<personality_spec> The user has requested a new communication style. Future messages should adhere to the following personality: \n{spec} </personality_spec>"
         );
         DeveloperInstructions::new(message)
+    }
+
+    /// The continuation prompt a Stop hook returned when it blocked the turn
+    /// from ending, wrapped so its provenance survives into the wire adapters.
+    pub fn stop_hook_continuation(prompt: impl AsRef<str>) -> Self {
+        DeveloperInstructions::new(format!(
+            "{STOP_HOOK_CONTINUATION_OPEN_TAG}\n{}\n{STOP_HOOK_CONTINUATION_CLOSE_TAG}",
+            prompt.as_ref()
+        ))
+    }
+
+    /// Whether `text` is exactly one Stop-hook continuation block.
+    pub fn is_stop_hook_continuation(text: &str) -> bool {
+        text.strip_prefix(STOP_HOOK_CONTINUATION_OPEN_TAG)
+            .and_then(|rest| rest.strip_suffix(STOP_HOOK_CONTINUATION_CLOSE_TAG))
+            .is_some_and(|body| !body.contains(STOP_HOOK_CONTINUATION_CLOSE_TAG))
     }
 
     /// Returns developer instructions from a collaboration mode if they exist and are non-empty.

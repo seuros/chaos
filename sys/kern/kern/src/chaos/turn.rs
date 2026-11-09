@@ -742,7 +742,8 @@ async fn run_turn_inner(
                         if let Some(continuation_prompt) = stop_outcome.continuation_prompt.clone()
                         {
                             let developer_message: ResponseItem =
-                                DeveloperInstructions::new(continuation_prompt).into();
+                                DeveloperInstructions::stop_hook_continuation(continuation_prompt)
+                                    .into();
                             sess.record_conversation_items(
                                 &turn_context,
                                 std::slice::from_ref(&developer_message),

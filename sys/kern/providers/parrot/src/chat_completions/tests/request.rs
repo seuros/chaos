@@ -271,3 +271,83 @@ fn build_headers_includes_bearer_token() {
         Some("Bearer sk-test")
     );
 }
+
+fn stop_hook_request(input: Vec<ResponseItem>) -> TurnRequest {
+    TurnRequest {
+        model: TEST_MODEL.to_string(),
+        instructions: "base".to_string(),
+        input,
+        tools: vec![],
+        parallel_tool_calls: false,
+        reasoning: None,
+        output_schema: None,
+        verbosity: None,
+        turn_state: None,
+        extensions: serde_json::Map::new(),
+    }
+}
+
+fn text_message(role: &str, text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: role.into(),
+        content: vec![ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+#[test]
+fn stop_hook_continuation_stays_in_place_as_user_so_the_wire_never_ends_on_assistant() {
+    let continuation: ResponseItem =
+        chaos_ipc::models::DeveloperInstructions::stop_hook_continuation("write a journal entry")
+            .into();
+    let continuation_text = match &continuation {
+        ResponseItem::Message { content, .. } => match &content[0] {
+            ContentItem::InputText { text } => text.clone(),
+            other => panic!("unexpected content {other:?}"),
+        },
+        other => panic!("unexpected item {other:?}"),
+    };
+    let request = stop_hook_request(vec![
+        text_message("system", "permissions"),
+        text_message("user", "hello"),
+        text_message("assistant", "done"),
+        continuation,
+    ]);
+    let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
+    let messages = body["messages"].as_array().expect("messages");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(roles, vec!["system", "user", "assistant", "user"]);
+    assert_eq!(messages[0]["content"], "base\n\npermissions");
+    assert_eq!(messages[3]["content"], continuation_text.as_str());
+    assert!(continuation_text.contains("write a journal entry"));
+}
+
+#[test]
+fn only_an_exact_stop_hook_block_is_kept_as_user() {
+    let open = chaos_ipc::protocol::STOP_HOOK_CONTINUATION_OPEN_TAG;
+    let close = chaos_ipc::protocol::STOP_HOOK_CONTINUATION_CLOSE_TAG;
+    let quoted = format!("operator note quoting {open}\nx\n{close}");
+    let two_blocks = format!("{open}\na\n{close}{open}\nb\n{close}");
+    let request = stop_hook_request(vec![
+        text_message("user", "hello"),
+        text_message("assistant", "done"),
+        text_message("developer", &quoted),
+        text_message("system", &two_blocks),
+    ]);
+    let body = build_request_body(&request, TEST_MODEL, true).expect("body should build");
+    let messages = body["messages"].as_array().expect("messages");
+    let roles: Vec<&str> = messages
+        .iter()
+        .map(|m| m["role"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(roles, vec!["system", "user", "assistant"]);
+    assert_eq!(
+        messages[0]["content"],
+        format!("base\n\n{quoted}\n\n{two_blocks}").as_str()
+    );
+}

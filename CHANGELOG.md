@@ -9,6 +9,17 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- `chaos trust` for operators: `list`/`show` read project trust decisions
+  without changing them; `set`/`revoke` change one exact project directory
+  only when the stored decision matches `--expect`; `export`/`apply` carry an
+  installation's granted and denied decisions through a manifest bound to the
+  installation identity and a reviewed digest, all or nothing, refusing any
+  entry a resident has changed since. Mutations print a receipt and are refused
+  from agent shells, even with `--yes`. This is the supported path for moving
+  the same installation from SQLite to PostgreSQL without per-home onboarding.
+  See [chaos-trust(7)](man/chaos-trust.7.md).
+
 ### Changed
 - Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`
   re-exports `mcp-host` types, so applications that also depend on `mcp-host`

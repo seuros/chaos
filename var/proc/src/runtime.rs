@@ -93,6 +93,37 @@ pub struct ClampExchangeRecord {
     pub response_truncated: bool,
 }
 
+/// One stored project trust decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrustRecord {
+    pub project_path: String,
+    pub trust_level: TrustLevel,
+    pub updated_at: i64,
+}
+
+/// A compare-and-set project trust change: applied only when the stored
+/// decision equals `expected`. `None` means "no stored decision"; a `desired`
+/// of `None` removes the decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrustChange {
+    pub project_path: PathBuf,
+    pub expected: Option<TrustLevel>,
+    pub desired: Option<TrustLevel>,
+}
+
+fn trust_level_label(level: Option<TrustLevel>) -> String {
+    level.map_or_else(|| "none".to_string(), |level| level.to_string())
+}
+
+fn project_trust_conflict(change: &ProjectTrustChange, found: Option<TrustLevel>) -> anyhow::Error {
+    anyhow::anyhow!(
+        "project trust conflict at {}: expected {}, found {}; no changes were applied",
+        change.project_path.display(),
+        trust_level_label(change.expected),
+        trust_level_label(found)
+    )
+}
+
 #[derive(Clone)]
 pub struct StateRuntime {
     chaos_home: PathBuf,
@@ -206,6 +237,88 @@ SET trust_level = excluded.trust_level,
         .bind(trust_level.to_string())
         .execute(self.pool())
         .await?;
+        Ok(())
+    }
+
+    async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
+        let rows = sqlx::query(
+            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let trust_level: String = row.try_get("trust_level")?;
+                Ok(ProjectTrustRecord {
+                    project_path: row.try_get("project_path")?,
+                    trust_level: parse_trust_level(&trust_level)?,
+                    updated_at: row.try_get("updated_at")?,
+                })
+            })
+            .collect()
+    }
+
+    async fn apply_project_trust_changes(
+        &self,
+        changes: &[ProjectTrustChange],
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool().begin().await?;
+        for change in changes {
+            let path = change.project_path.to_string_lossy().to_string();
+            let affected = match (change.expected, change.desired) {
+                (None, None) => {
+                    let found = sqlx::query("SELECT 1 FROM project_trust WHERE project_path = ?")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                    u64::from(found.is_none())
+                }
+                (None, Some(desired)) => sqlx::query(
+                    r#"
+INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
+VALUES (?, ?, UNIXEPOCH(), UNIXEPOCH())
+ON CONFLICT(project_path) DO NOTHING
+                    "#,
+                )
+                .bind(&path)
+                .bind(desired.to_string())
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+                (Some(expected), Some(desired)) => sqlx::query(
+                    r#"
+UPDATE project_trust
+SET trust_level = ?, updated_at = UNIXEPOCH()
+WHERE project_path = ? AND trust_level = ?
+                    "#,
+                )
+                .bind(desired.to_string())
+                .bind(&path)
+                .bind(expected.to_string())
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+                (Some(expected), None) => sqlx::query(
+                    "DELETE FROM project_trust WHERE project_path = ? AND trust_level = ?",
+                )
+                .bind(&path)
+                .bind(expected.to_string())
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+            };
+            if affected != 1 {
+                let found =
+                    sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = ?")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(|row| parse_trust_level(&row.try_get::<String, _>("trust_level")?))
+                        .transpose()?;
+                return Err(project_trust_conflict(change, found));
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -506,6 +619,12 @@ impl RuntimeDbHandle {
             project_path: &Path,
             trust_level: TrustLevel,
         ) -> anyhow::Result<()>;
+        pub async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>>;
+        /// Apply every change or none: each must find exactly its expected decision.
+        pub async fn apply_project_trust_changes(
+            &self,
+            changes: &[ProjectTrustChange],
+        ) -> anyhow::Result<()>;
         pub async fn list_global_mcp_servers(
             &self,
         ) -> anyhow::Result<std::collections::BTreeMap<String, McpServerConfig>>;
@@ -801,6 +920,88 @@ SET trust_level = EXCLUDED.trust_level,
         .bind(trust_level.to_string())
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
+        let rows = sqlx::query(
+            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let trust_level: String = row.try_get("trust_level")?;
+                Ok(ProjectTrustRecord {
+                    project_path: row.try_get("project_path")?,
+                    trust_level: parse_trust_level(&trust_level)?,
+                    updated_at: row.try_get("updated_at")?,
+                })
+            })
+            .collect()
+    }
+
+    async fn apply_project_trust_changes(
+        &self,
+        changes: &[ProjectTrustChange],
+    ) -> anyhow::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for change in changes {
+            let path = change.project_path.to_string_lossy().to_string();
+            let affected = match (change.expected, change.desired) {
+                (None, None) => {
+                    let found = sqlx::query("SELECT 1 FROM project_trust WHERE project_path = $1")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+                    u64::from(found.is_none())
+                }
+                (None, Some(desired)) => sqlx::query(
+                    r#"
+INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
+VALUES ($1, $2, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)
+ON CONFLICT(project_path) DO NOTHING
+                    "#,
+                )
+                .bind(&path)
+                .bind(desired.to_string())
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+                (Some(expected), Some(desired)) => sqlx::query(
+                    r#"
+UPDATE project_trust
+SET trust_level = $1, updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+WHERE project_path = $2 AND trust_level = $3
+                    "#,
+                )
+                .bind(desired.to_string())
+                .bind(&path)
+                .bind(expected.to_string())
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+                (Some(expected), None) => {
+                    sqlx::query("DELETE FROM project_trust WHERE project_path = $1 AND trust_level = $2")
+                        .bind(&path)
+                        .bind(expected.to_string())
+                        .execute(&mut *tx)
+                        .await?
+                        .rows_affected()
+                }
+            };
+            if affected != 1 {
+                let found =
+                    sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = $1")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(|row| parse_trust_level(&row.try_get::<String, _>("trust_level")?))
+                        .transpose()?;
+                return Err(project_trust_conflict(change, found));
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 

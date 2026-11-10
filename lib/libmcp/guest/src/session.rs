@@ -470,14 +470,18 @@ impl McpSession {
         &self,
         uri: impl Into<String>,
     ) -> Result<ReadResourceResult, GuestError> {
-        self.request(
-            "resources/read",
-            &ReadResourceRequestParams {
-                uri: uri.into(),
-                meta: None,
-            },
-        )
+        self.read_resource_with(ReadResourceRequestParams {
+            uri: uri.into(),
+            meta: None,
+        })
         .await
+    }
+
+    pub async fn read_resource_with(
+        &self,
+        params: ReadResourceRequestParams,
+    ) -> Result<ReadResourceResult, GuestError> {
+        self.request("resources/read", &params).await
     }
 
     /// Read a view without executing HTML or granting its requested permissions.

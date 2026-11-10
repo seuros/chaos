@@ -13,6 +13,7 @@ struct CursorLoopTransport {
     incoming_tx: mpsc::UnboundedSender<JsonRpcMessage>,
     incoming_rx: Mutex<mpsc::UnboundedReceiver<JsonRpcMessage>>,
     logging_requests: Mutex<Vec<Value>>,
+    resource_reads: Mutex<Vec<Value>>,
 }
 
 impl CursorLoopTransport {
@@ -22,6 +23,7 @@ impl CursorLoopTransport {
             incoming_tx,
             incoming_rx: Mutex::new(incoming_rx),
             logging_requests: Mutex::new(Vec::new()),
+            resource_reads: Mutex::new(Vec::new()),
         })
     }
 }
@@ -47,6 +49,12 @@ impl MessageTransport for CursorLoopTransport {
                             .await
                             .push(request.params.clone().unwrap());
                         serde_json::json!({})
+                    }
+                    "resources/read" => {
+                        let params = request.params.clone().unwrap();
+                        let uri = params["uri"].clone();
+                        self.resource_reads.lock().await.push(params);
+                        serde_json::json!({"contents": [{"uri": uri, "text": "ok"}]})
                     }
                     other => serde_json::json!({"unexpected": other}),
                 };
@@ -151,4 +159,38 @@ async fn list_tools_rejects_a_server_that_repeats_cursors() {
         session.request_value("tools/list", None).await,
         Err(GuestError::Disconnected)
     ));
+}
+
+#[tokio::test]
+async fn read_resource_with_sends_request_meta_and_read_resource_omits_it() {
+    let transport = CursorLoopTransport::new();
+    let session = connect_with_transport(
+        transport.clone(),
+        ConnectionOptions {
+            client_info: Implementation::new("test-client", "1.0.0"),
+            capabilities: ClientCapabilities::default(),
+            handler: Arc::new(NoopClientHandler),
+            default_timeout: Duration::from_secs(5),
+        },
+    )
+    .await
+    .unwrap();
+
+    session
+        .read_resource_with(ReadResourceRequestParams {
+            uri: "demo://item/1".into(),
+            meta: Some(serde_json::json!({"example.com/trace": "abc"})),
+        })
+        .await
+        .unwrap();
+    session.read_resource("demo://item/2").await.unwrap();
+
+    assert_eq!(
+        *transport.resource_reads.lock().await,
+        vec![
+            serde_json::json!({"uri": "demo://item/1", "_meta": {"example.com/trace": "abc"}}),
+            serde_json::json!({"uri": "demo://item/2"}),
+        ]
+    );
+    session.disconnect().await.unwrap();
 }

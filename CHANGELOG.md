@@ -34,6 +34,13 @@ should. There is no patch level; the build timestamp is the patch.
   appeared later); and reading trust no longer creates an installation
   identity.
 
+### Security
+- A project marked `untrusted` now gets the same read-only default sandbox as a
+  project with no trust decision. It used to resolve to workspace-write, so
+  denying a project nobody had decided on loosened its sandbox. Its approval
+  policy stays `supervised`. Only a grant widens the default. Explicit
+  `sandbox_mode` settings are unaffected.
+
 ### Changed
 - Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`
   re-exports `mcp-host` types, so applications that also depend on `mcp-host`

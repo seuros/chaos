@@ -24,10 +24,12 @@ fn test_untrusted_project_gets_unless_trusted_approval_policy() -> anyhow::Resul
         "Expected Supervised approval policy for untrusted project"
     );
 
-    std::assert_matches!(
+    // A denial keeps the stricter approval policy and never widens the
+    // sandbox beyond the read-only default an undecided project gets.
+    assert_eq!(
         config.permissions.sandbox_policy.get(),
-        SandboxPolicy::WorkspaceWrite { .. },
-        "Expected WorkspaceWrite sandbox for untrusted project"
+        &SandboxPolicy::new_read_only_policy(),
+        "Expected the read-only default sandbox for untrusted project"
     );
 
     Ok(())

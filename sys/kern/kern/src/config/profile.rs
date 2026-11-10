@@ -29,8 +29,10 @@ impl ConfigToml {
             .or(profile_sandbox_mode)
             .or(self.sandbox_mode)
             .or_else(|| {
+                // Only a grant widens the default. An explicit denial must never
+                // resolve wider than having no decision at all.
                 active_project_trust.and_then(|p| {
-                    if p.is_trusted() || p.is_untrusted() {
+                    if p.is_trusted() {
                         Some(SandboxMode::WorkspaceWrite)
                     } else {
                         None

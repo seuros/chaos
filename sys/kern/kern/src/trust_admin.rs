@@ -26,6 +26,16 @@ pub enum Decision {
 }
 
 impl Decision {
+    /// The level this decision stores. `None` is never written: revocation is
+    /// stored as a denial so it cannot be confused with "never decided".
+    fn target(self) -> anyhow::Result<TrustLevel> {
+        self.level().ok_or_else(|| {
+            anyhow::anyhow!(
+                "a decision cannot be set to none; revoke stores untrusted so that a stale manifest cannot restore trust"
+            )
+        })
+    }
+
     fn level(self) -> Option<TrustLevel> {
         match self {
             Self::Trusted => Some(TrustLevel::Trusted),
@@ -114,6 +124,9 @@ pub struct PreparedTrustChange {
     pub unchanged: Vec<String>,
     #[serde(skip)]
     home: PathBuf,
+    /// Every reviewed entry, unchanged ones included, re-checked atomically at commit.
+    #[serde(skip)]
+    checks: Vec<ProjectTrustChange>,
 }
 
 #[derive(Debug, Serialize)]
@@ -287,6 +300,7 @@ async fn plan(
     let mut seen = std::collections::BTreeSet::new();
     let mut changes = Vec::new();
     let mut unchanged = Vec::new();
+    let mut checks = Vec::new();
     let mut conflicts = Vec::new();
     for entry in entries {
         exact_project_path(&entry.project_path, home)?;
@@ -295,6 +309,10 @@ async fn plan(
             "duplicate manifest entry for {}",
             entry.project_path
         );
+        let desired = entry
+            .decision
+            .target()
+            .with_context(|| format!("manifest entry {}", entry.project_path))?;
         let found = Decision::from_level(current.get(&entry.project_path).copied());
         let acceptable = match entry.expect {
             Some(expect) => found == expect,
@@ -309,7 +327,14 @@ async fn plan(
                     .unwrap_or_default(),
                 serde_json::to_value(found)?.as_str().unwrap_or_default()
             ));
-        } else if found == entry.decision {
+            continue;
+        }
+        checks.push(ProjectTrustChange {
+            project_path: PathBuf::from(&entry.project_path),
+            expected: found.level(),
+            desired,
+        });
+        if found == entry.decision {
             unchanged.push(entry.project_path);
         } else {
             changes.push(PlannedChange {
@@ -332,6 +357,7 @@ async fn plan(
         changes,
         unchanged,
         home: home.to_path_buf(),
+        checks,
     })
 }
 
@@ -344,18 +370,11 @@ impl PreparedTrustChange {
     }
 
     async fn commit(self) -> anyhow::Result<TrustReceipt> {
-        if !self.changes.is_empty() {
+        // Unchanged entries are checked too: the receipt claims every reviewed
+        // entry was as seen at the moment of commit, not only the ones written.
+        if !self.checks.is_empty() {
             let db = crate::user_settings::open(&self.home).await?;
-            let changes: Vec<_> = self
-                .changes
-                .iter()
-                .map(|change| ProjectTrustChange {
-                    project_path: PathBuf::from(&change.project_path),
-                    expected: change.before.level(),
-                    desired: change.after.level(),
-                })
-                .collect();
-            db.apply_project_trust_changes(&changes).await?;
+            db.apply_project_trust_changes(&self.checks).await?;
         }
         Ok(TrustReceipt {
             format: RECEIPT_FORMAT,

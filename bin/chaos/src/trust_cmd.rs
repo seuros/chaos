@@ -26,7 +26,8 @@ pub enum Action {
         #[usage(long)]
         expect: String,
     },
-    /// Remove the stored decision for one project directory (it becomes undecided).
+    /// Deny one project directory. The denial is stored (untrusted), not deleted,
+    /// so a manifest exported before the revocation cannot restore trust.
     Revoke {
         project: std::path::PathBuf,
         #[usage(long)]
@@ -90,7 +91,7 @@ pub async fn run(command: TrustCommand) -> anyhow::Result<()> {
             let decision: Decision = decision.parse()?;
             anyhow::ensure!(
                 decision != Decision::None,
-                "use `chaos trust revoke` to remove a decision"
+                "a decision cannot be set to none; use `chaos trust revoke` to deny a project"
             );
             trust_admin::prepare_set(
                 &home,
@@ -104,7 +105,7 @@ pub async fn run(command: TrustCommand) -> anyhow::Result<()> {
             trust_admin::prepare_set(
                 &home,
                 &std::path::absolute(&project)?,
-                Decision::None,
+                Decision::Untrusted,
                 expect.parse()?,
             )
             .await?

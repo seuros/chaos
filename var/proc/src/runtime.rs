@@ -101,14 +101,17 @@ pub struct ProjectTrustRecord {
     pub updated_at: i64,
 }
 
-/// A compare-and-set project trust change: applied only when the stored
-/// decision equals `expected`. `None` means "no stored decision"; a `desired`
-/// of `None` removes the decision.
+/// A compare-and-set project trust entry: applied only when the stored decision
+/// equals `expected` (`None` means "no stored decision"). An entry whose
+/// `expected` already equals `desired` changes nothing but is still checked, so
+/// a batch commits only if every entry the operator reviewed is still as seen.
+/// There is no way to delete a decision here: a revocation is stored as
+/// `Untrusted`, so a later stale manifest cannot mistake it for "never decided".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectTrustChange {
     pub project_path: PathBuf,
     pub expected: Option<TrustLevel>,
-    pub desired: Option<TrustLevel>,
+    pub desired: TrustLevel,
 }
 
 fn trust_level_label(level: Option<TrustLevel>) -> String {
@@ -262,52 +265,54 @@ SET trust_level = excluded.trust_level,
         &self,
         changes: &[ProjectTrustChange],
     ) -> anyhow::Result<()> {
-        let mut tx = self.pool().begin().await?;
+        // IMMEDIATE takes the write lock before the first read, so every check
+        // and write in this batch happens against one serialized state.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         for change in changes {
             let path = change.project_path.to_string_lossy().to_string();
-            let affected = match (change.expected, change.desired) {
-                (None, None) => {
-                    let found = sqlx::query("SELECT 1 FROM project_trust WHERE project_path = ?")
-                        .bind(&path)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                    u64::from(found.is_none())
-                }
-                (None, Some(desired)) => sqlx::query(
-                    r#"
+            let ok = match change.expected {
+                None => {
+                    sqlx::query(
+                        r#"
 INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
 VALUES (?, ?, UNIXEPOCH(), UNIXEPOCH())
 ON CONFLICT(project_path) DO NOTHING
                     "#,
-                )
-                .bind(&path)
-                .bind(desired.to_string())
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
-                (Some(expected), Some(desired)) => sqlx::query(
-                    r#"
+                    )
+                    .bind(&path)
+                    .bind(change.desired.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+                Some(expected) if expected == change.desired => {
+                    let found: Option<String> = sqlx::query_scalar(
+                        "SELECT trust_level FROM project_trust WHERE project_path = ?",
+                    )
+                    .bind(&path)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    found.as_deref() == Some(expected.to_string().as_str())
+                }
+                Some(expected) => {
+                    sqlx::query(
+                        r#"
 UPDATE project_trust
 SET trust_level = ?, updated_at = UNIXEPOCH()
 WHERE project_path = ? AND trust_level = ?
                     "#,
-                )
-                .bind(desired.to_string())
-                .bind(&path)
-                .bind(expected.to_string())
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
-                (Some(expected), None) => sqlx::query(
-                    "DELETE FROM project_trust WHERE project_path = ? AND trust_level = ?",
-                )
-                .bind(&path)
-                .bind(expected.to_string())
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
+                    )
+                    .bind(change.desired.to_string())
+                    .bind(&path)
+                    .bind(expected.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
             };
-            if affected != 1 {
+            if !ok {
                 let found =
                     sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = ?")
                         .bind(&path)
@@ -945,52 +950,57 @@ SET trust_level = EXCLUDED.trust_level,
         &self,
         changes: &[ProjectTrustChange],
     ) -> anyhow::Result<()> {
+        // Every entry either writes its row (INSERT .. ON CONFLICT, conditional
+        // UPDATE) or locks it (SELECT .. FOR UPDATE), so all reviewed rows are
+        // held until commit and none can change between check and commit.
+        // Absence is never asserted by a plain read: an expected-absent entry
+        // always inserts, and the unique key arbitrates concurrent inserts.
         let mut tx = self.pool.begin().await?;
         for change in changes {
             let path = change.project_path.to_string_lossy().to_string();
-            let affected = match (change.expected, change.desired) {
-                (None, None) => {
-                    let found = sqlx::query("SELECT 1 FROM project_trust WHERE project_path = $1")
-                        .bind(&path)
-                        .fetch_optional(&mut *tx)
-                        .await?;
-                    u64::from(found.is_none())
-                }
-                (None, Some(desired)) => sqlx::query(
-                    r#"
+            let ok = match change.expected {
+                None => {
+                    sqlx::query(
+                        r#"
 INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
 VALUES ($1, $2, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)
 ON CONFLICT(project_path) DO NOTHING
                     "#,
-                )
-                .bind(&path)
-                .bind(desired.to_string())
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
-                (Some(expected), Some(desired)) => sqlx::query(
-                    r#"
+                    )
+                    .bind(&path)
+                    .bind(change.desired.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+                Some(expected) if expected == change.desired => {
+                    let found: Option<String> = sqlx::query_scalar(
+                        "SELECT trust_level FROM project_trust WHERE project_path = $1 FOR UPDATE",
+                    )
+                    .bind(&path)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    found.as_deref() == Some(expected.to_string().as_str())
+                }
+                Some(expected) => {
+                    sqlx::query(
+                        r#"
 UPDATE project_trust
 SET trust_level = $1, updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
 WHERE project_path = $2 AND trust_level = $3
                     "#,
-                )
-                .bind(desired.to_string())
-                .bind(&path)
-                .bind(expected.to_string())
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
-                (Some(expected), None) => {
-                    sqlx::query("DELETE FROM project_trust WHERE project_path = $1 AND trust_level = $2")
-                        .bind(&path)
-                        .bind(expected.to_string())
-                        .execute(&mut *tx)
-                        .await?
-                        .rows_affected()
+                    )
+                    .bind(change.desired.to_string())
+                    .bind(&path)
+                    .bind(expected.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
                 }
             };
-            if affected != 1 {
+            if !ok {
                 let found =
                     sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = $1")
                         .bind(&path)

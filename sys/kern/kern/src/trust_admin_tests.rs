@@ -92,16 +92,203 @@ async fn set_and_revoke_are_compare_and_set() -> anyhow::Result<()> {
         .is_err()
     );
 
-    prepare_set(
+    // "none" is never a decision anyone can write.
+    let err = prepare_set(
         home.path(),
         project.path(),
         Decision::None,
         Decision::Trusted,
     )
+    .await
+    .unwrap_err();
+    let err = format!("{err:#}");
+    assert!(err.contains("cannot be set to none"), "{err}");
+
+    // Revocation (what `chaos trust revoke` prepares) stores a denial.
+    prepare_set(
+        home.path(),
+        project.path(),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
     .await?
     .commit()
     .await?;
-    assert_eq!(stored(home.path(), &path).await, Decision::None);
+    assert_eq!(stored(home.path(), &path).await, Decision::Untrusted);
+    Ok(())
+}
+
+/// Mira's round-1 replay: grant A, export, revoke A, apply the same export and
+/// digest. The revocation must hold.
+#[tokio::test]
+async fn stale_export_cannot_restore_revoked_trust() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let a = tempfile::tempdir()?;
+    prepare_set(home.path(), a.path(), Decision::Trusted, Decision::None)
+        .await?
+        .commit()
+        .await?;
+    let manifest = export(home.path()).await?;
+    let json = serde_json::to_string(&manifest)?;
+    prepare_set(
+        home.path(),
+        a.path(),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit()
+    .await?;
+    let err = prepare_apply(home.path(), &json, &manifest.digest()?)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("nothing was changed"), "{err}");
+    assert_eq!(stored(home.path(), &key(&a)).await, Decision::Untrusted);
+
+    // A hand-written manifest cannot delete the denial either.
+    let mut forget = manifest.clone();
+    forget.entries[0].decision = Decision::None;
+    forget.entries[0].expect = Some(Decision::Untrusted);
+    let forget_json = serde_json::to_string(&forget)?;
+    let err = prepare_apply(home.path(), &forget_json, &forget.digest()?)
+        .await
+        .unwrap_err();
+    let err = format!("{err:#}");
+    assert!(err.contains("cannot be set to none"), "{err}");
+    assert_eq!(stored(home.path(), &key(&a)).await, Decision::Untrusted);
+    Ok(())
+}
+
+/// A reviewed batch where `a` is already trusted (unchanged) and `b` is new.
+async fn prepare_mixed_batch(
+    home: &Path,
+    a: &tempfile::TempDir,
+    b: &tempfile::TempDir,
+) -> anyhow::Result<PreparedTrustChange> {
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: crate::user_settings::installation_id(home)?,
+        entries: vec![
+            ManifestEntry {
+                project_path: key(a),
+                decision: Decision::Trusted,
+                expect: Some(Decision::Trusted),
+            },
+            ManifestEntry {
+                project_path: key(b),
+                decision: Decision::Trusted,
+                expect: Some(Decision::None),
+            },
+        ],
+    };
+    let prepared = prepare_apply(
+        home,
+        &serde_json::to_string(&manifest)?,
+        &manifest.digest()?,
+    )
+    .await?;
+    assert_eq!(prepared.unchanged, vec![key(a)]);
+    assert_eq!(prepared.changes.len(), 1);
+    Ok(prepared)
+}
+
+/// Every reviewed entry is re-checked at commit, including unchanged ones, in
+/// a mixed batch and in a batch that changes nothing at all.
+async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
+    let a = tempfile::tempdir()?;
+    let b = tempfile::tempdir()?;
+    prepare_set(home, a.path(), Decision::Trusted, Decision::None)
+        .await?
+        .commit()
+        .await?;
+
+    // Mixed: `a` revoked after review; granting `b` must not go through.
+    let prepared = prepare_mixed_batch(home, &a, &b).await?;
+    crate::user_settings::open(home)
+        .await?
+        .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted)
+        .await?;
+    let err = prepared.commit().await.unwrap_err().to_string();
+    assert!(err.contains("project trust conflict"), "{err}");
+    assert_eq!(stored(home, &key(&b)).await, Decision::None);
+
+    // All no-op: the receipt may not claim `a` is untrusted once it is not.
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: crate::user_settings::installation_id(home)?,
+        entries: vec![ManifestEntry {
+            project_path: key(&a),
+            decision: Decision::Untrusted,
+            expect: None,
+        }],
+    };
+    let prepared = prepare_apply(
+        home,
+        &serde_json::to_string(&manifest)?,
+        &manifest.digest()?,
+    )
+    .await?;
+    assert!(prepared.changes.is_empty());
+    crate::user_settings::open(home)
+        .await?
+        .set_project_trust(Path::new(&key(&a)), TrustLevel::Trusted)
+        .await?;
+    let err = prepared.commit().await.unwrap_err().to_string();
+    assert!(err.contains("project trust conflict"), "{err}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn unchanged_entries_are_rechecked_at_commit_sqlite() -> anyhow::Result<()> {
+    unchanged_entries_are_rechecked(sqlite_home().await.path()).await
+}
+
+#[tokio::test]
+async fn unchanged_entries_are_rechecked_at_commit_postgres() -> anyhow::Result<()> {
+    let Some(url) = postgres_url() else {
+        tracing::warn!("skipping postgres trust recheck; TEST_DATABASE_URL not set");
+        return Ok(());
+    };
+    unchanged_entries_are_rechecked(postgres_home(&url, None).path()).await
+}
+
+/// A concurrent writer that changes an unchanged entry while the batch is
+/// committing: the batch must wait for it and then refuse, not commit `b`
+/// against the old snapshot of `a` (what a plain READ COMMITTED SELECT would do).
+#[tokio::test]
+async fn postgres_unchanged_entry_is_locked_against_concurrent_change() -> anyhow::Result<()> {
+    let Some(url) = postgres_url() else {
+        tracing::warn!("skipping postgres trust lock test; TEST_DATABASE_URL not set");
+        return Ok(());
+    };
+    let home = postgres_home(&url, None);
+    let a = tempfile::tempdir()?;
+    let b = tempfile::tempdir()?;
+    prepare_set(home.path(), a.path(), Decision::Trusted, Decision::None)
+        .await?
+        .commit()
+        .await?;
+    let prepared = prepare_mixed_batch(home.path(), &a, &b).await?;
+
+    let pool = sqlx::PgPool::connect(&url).await?;
+    let mut other = pool.begin().await?;
+    sqlx::query("UPDATE project_trust SET trust_level = 'untrusted' WHERE project_path = $1")
+        .bind(key(&a))
+        .execute(&mut *other)
+        .await?;
+    let commit = tokio::spawn(prepared.commit());
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!commit.is_finished(), "batch did not wait for the row lock");
+    other.commit().await?;
+    let err = commit.await?.unwrap_err().to_string();
+    assert!(err.contains("project trust conflict"), "{err}");
+    assert_eq!(stored(home.path(), &key(&b)).await, Decision::None);
+
+    sqlx::query("DELETE FROM project_trust WHERE project_path = ANY($1)")
+        .bind(vec![key(&a), key(&b)])
+        .execute(&pool)
+        .await?;
     Ok(())
 }
 
@@ -383,13 +570,10 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
             .await
             .is_err()
     );
-    // Clean the shared database.
-    for dir in [&trusted, &denied] {
-        let found = stored(destination.path(), &key(dir)).await;
-        prepare_set(destination.path(), dir.path(), Decision::None, found)
-            .await?
-            .commit()
-            .await?;
-    }
+    // Clean the shared database (the admin interface cannot delete decisions).
+    sqlx::query("DELETE FROM project_trust WHERE project_path = ANY($1)")
+        .bind(vec![key(&trusted), key(&denied)])
+        .execute(&sqlx::PgPool::connect(&url).await?)
+        .await?;
     Ok(())
 }

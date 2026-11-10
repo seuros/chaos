@@ -83,8 +83,12 @@ impl McpEndpoint {
         kernel: McpServerHandle,
         cli: &ServeCli,
         token: &str,
+        chaos_home: &std::path::Path,
     ) -> anyhow::Result<Self> {
         let config = transport_config(cli, token)?;
+        // Trust administration exists only on this endpoint, behind the
+        // operator bearer; the stdio server never registers it.
+        chaos_mcpd::register_operator_trust_tools(&kernel, chaos_home)?;
         let service = McpHttpService::new(Arc::clone(&kernel.server), config.clone())?;
         let sessions = service.session_handle();
         Ok(Self {

@@ -124,8 +124,8 @@ pub struct PreparedTrustChange {
     pub changes: Vec<PlannedChange>,
     pub unchanged: Vec<String>,
     /// Grants that fail the grant guards. They are not written; a caller that
-    /// needs every entry carried must treat a non-empty list as failure.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    /// needs every entry carried must treat a non-empty list as failure. Always
+    /// serialized, so a preflight reads an explicit empty list.
     pub held: Vec<HeldEntry>,
     #[serde(skip)]
     home: PathBuf,
@@ -145,7 +145,6 @@ pub struct TrustReceipt {
     pub manifest_digest: Option<String>,
     pub changes: Vec<PlannedChange>,
     pub unchanged: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub held: Vec<HeldEntry>,
 }
 

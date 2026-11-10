@@ -10,6 +10,7 @@ use anyhow::Context;
 use anyhow::bail;
 use chaos_cron::CronJob;
 use chaos_cron::CronScope;
+use chaos_ipc::ProcessId;
 use chaos_ipc::permissions::SocketPolicy;
 use chaos_ipc::permissions::VfsPolicy;
 use chaos_ipc::permissions::VfsPolicyKind;
@@ -49,6 +50,18 @@ struct ScheduledShellPolicy {
 }
 
 impl ScheduledShellPolicy {
+    fn command_env(
+        &self,
+        config: &Config,
+    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        let creator = ProcessId::from_string(&self.creator_session_id)
+            .context("scheduled job has no valid creator session")?;
+        Ok(create_env(
+            &config.permissions.shell_environment_policy,
+            Some(creator),
+        ))
+    }
+
     fn validate_config(&self, config: &Config) -> anyhow::Result<()> {
         if self.version != POLICY_VERSION
             || self.chaos_home != config.chaos_home
@@ -221,12 +234,15 @@ pub(crate) fn executor(config: &Config) -> chaos_cron::JobExecutor {
                 .await
                 .map_err(|_| "scheduled policy check timed out".to_string())?
                 .map_err(|err| err.to_string())?;
+            let env = policy
+                .command_env(&current)
+                .map_err(|err| err.to_string())?;
             let output = process_exec_tool_call(
                 ExecParams {
                     command: shell_command(&job.command),
                     cwd: policy.cwd.clone(),
                     expiration: ExecExpiration::Timeout(COMMAND_TIMEOUT),
-                    env: create_env(&current.permissions.shell_environment_policy, None),
+                    env,
                     network: None,
                     sandbox_permissions: SandboxPermissions::UseDefault,
                     justification: None,

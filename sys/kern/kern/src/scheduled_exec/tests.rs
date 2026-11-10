@@ -51,6 +51,14 @@ async fn scheduled_authorization_survives_storage_but_not_policy_revocation() {
         saved.creator_session_id,
         session.conversation_id.to_string()
     );
+    assert_eq!(
+        saved
+            .command_env(&config)
+            .unwrap()
+            .get(crate::exec_env::CHAOS_THREAD_ID_ENV_VAR),
+        Some(&session.conversation_id.to_string()),
+        "a scheduled job runs as an agent shell of the session that created it"
+    );
 
     // A legacy job and an edited command must never reach the shell.
     let mut invalid = job.clone();

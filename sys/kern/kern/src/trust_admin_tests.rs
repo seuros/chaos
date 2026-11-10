@@ -248,7 +248,6 @@ async fn unchanged_entries_are_rechecked_at_commit_sqlite() -> anyhow::Result<()
     unchanged_entries_are_rechecked(sqlite_home().await.path()).await
 }
 
-#[tokio::test]
 async fn unchanged_entries_are_rechecked_at_commit_postgres() -> anyhow::Result<()> {
     let Some(url) = postgres_url() else {
         tracing::warn!("skipping postgres trust recheck; TEST_DATABASE_URL not set");
@@ -260,7 +259,6 @@ async fn unchanged_entries_are_rechecked_at_commit_postgres() -> anyhow::Result<
 /// A concurrent writer that changes an unchanged entry while the batch is
 /// committing: the batch must wait for it and then refuse, not commit `b`
 /// against the old snapshot of `a` (what a plain READ COMMITTED SELECT would do).
-#[tokio::test]
 async fn postgres_unchanged_entry_is_locked_against_concurrent_change() -> anyhow::Result<()> {
     let Some(url) = postgres_url() else {
         tracing::warn!("skipping postgres trust lock test; TEST_DATABASE_URL not set");
@@ -277,22 +275,52 @@ async fn postgres_unchanged_entry_is_locked_against_concurrent_change() -> anyho
 
     let pool = sqlx::PgPool::connect(&url).await?;
     let mut other = pool.begin().await?;
+    let writer: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *other)
+        .await?;
     sqlx::query("UPDATE project_trust SET trust_level = 'untrusted' WHERE project_path = $1")
         .bind(key(&a))
         .execute(&mut *other)
         .await?;
     let commit = tokio::spawn(prepared.commit());
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-    assert!(!commit.is_finished(), "batch did not wait for the row lock");
+
+    // Positive evidence, not a sleep: a backend running a project_trust query is
+    // blocked by exactly this writer. Without the row lock the batch never
+    // blocks, so this wait fails regardless of scheduling.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let blocked = loop {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity \
+             WHERE $1 = ANY(pg_blocking_pids(pid)) AND query LIKE '%project_trust%'",
+        )
+        .bind(writer)
+        .fetch_one(&pool)
+        .await?;
+        if waiting > 0 {
+            break true;
+        }
+        if commit.is_finished() || tokio::time::Instant::now() >= deadline {
+            break false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    let cleanup = || async {
+        sqlx::query("DELETE FROM project_trust WHERE project_path = ANY($1)")
+            .bind(vec![key(&a), key(&b)])
+            .execute(&pool)
+            .await
+    };
+    if !blocked {
+        other.rollback().await?;
+        let _ = commit.await;
+        cleanup().await?;
+        panic!("the batch never waited on the concurrent writer's row lock");
+    }
     other.commit().await?;
     let err = commit.await?.unwrap_err().to_string();
     assert!(err.contains("project trust conflict"), "{err}");
     assert_eq!(stored(home.path(), &key(&b)).await, Decision::None);
-
-    sqlx::query("DELETE FROM project_trust WHERE project_path = ANY($1)")
-        .bind(vec![key(&a), key(&b)])
-        .execute(&pool)
-        .await?;
+    cleanup().await?;
     Ok(())
 }
 
@@ -498,7 +526,6 @@ async fn export_then_apply_is_idempotent_on_same_storage() -> anyhow::Result<()>
 
 /// Same installation moving from SQLite to PostgreSQL: granted AND denied decisions
 /// arrive; nothing else does.
-#[tokio::test]
 async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::Result<()> {
     let Some(url) = postgres_url() else {
         tracing::warn!("skipping postgres trust migration; TEST_DATABASE_URL not set");
@@ -580,4 +607,14 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
         .execute(&sqlx::PgPool::connect(&url).await?)
         .await?;
     Ok(())
+}
+
+/// chaos_vfs mounts storage once per process, keyed by URL, so every Postgres
+/// home here shares the pool of whichever runtime mounted it first. Run the
+/// Postgres scenarios in one runtime so that pool outlives all of them.
+#[tokio::test]
+async fn postgres_trust_scenarios() -> anyhow::Result<()> {
+    sqlite_to_postgres_migration_preserves_granted_and_denied().await?;
+    unchanged_entries_are_rechecked_at_commit_postgres().await?;
+    postgres_unchanged_entry_is_locked_against_concurrent_change().await
 }

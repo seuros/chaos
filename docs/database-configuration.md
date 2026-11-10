@@ -72,8 +72,8 @@ empty database in its place. Point `storage_url` at the new location, or remove
   `chaos hooks` or policy-authorized `hooks_*` tools (human-approved by default).
   `hooks.json` files are never loaded at runtime. Project hooks also require
   project trust. See [chaos-hooks(7)](../man/chaos-hooks.7.md).
-- Project trust decisions are inspected and provisioned with `chaos trust`,
-  including carrying them from SQLite to PostgreSQL for the same installation.
+- Project trust decisions are inspected and provisioned with the operator
+  trust tools on `chaos serve --mcp`, including carrying them from SQLite to PostgreSQL for the same installation.
   See [chaos-trust(7)](../man/chaos-trust.7.md).
 - Agent roles are database-backed, managed with `chaos agents`. A trusted
   project may still ship roles as files under `.chaos/agents/`; those overlay

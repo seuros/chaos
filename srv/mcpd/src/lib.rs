@@ -39,6 +39,7 @@ mod outgoing_message;
 mod patch_approval;
 mod session_state;
 mod telemetry;
+mod trust_tools;
 mod workflow_app;
 mod workflows;
 
@@ -53,6 +54,8 @@ pub use crate::factory::build_server;
 pub use crate::patch_approval::PatchApprovalElicitRequestMeta;
 pub use crate::patch_approval::PatchApprovalElicitRequestParams;
 pub use crate::patch_approval::PatchApprovalResponse;
+pub use crate::trust_tools::OPERATOR_PRINCIPAL;
+pub use crate::trust_tools::register_operator_trust_tools;
 
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
 const OTEL_SERVICE_NAME: &str = "chaos_mcpd";

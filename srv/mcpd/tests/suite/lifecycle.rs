@@ -243,6 +243,15 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
         .find(|tool| tool["name"] == "refresh_models")
         .expect("refresh_models advertised");
     assert_eq!(refresh["inputSchema"]["required"], json!(["provider"]));
+    // Trust administration is operator-only: stdio never advertises it, so an
+    // agent wired to `chaos mcp` cannot reach it.
+    assert!(
+        tools.iter().all(|tool| !tool["name"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("trust_")),
+        "stdio must not list trust tools: {tools:?}"
+    );
 
     Ok(())
 }

@@ -272,6 +272,8 @@ pub async fn run_main(
     #[cfg(feature = "mcpd")]
     let mcp = if serve_cli.mcp {
         let handle = chaos_mcpd::build_server(config.clone(), arg0_paths).await?;
+        // Trust administration exists only here, behind the operator bearer.
+        chaos_mcpd::register_operator_trust_tools(&handle, &config.chaos_home)?;
         Some(mcp::McpEndpoint::new(handle, &serve_cli, &bearer_token)?)
     } else {
         None

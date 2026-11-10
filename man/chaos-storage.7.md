@@ -160,9 +160,11 @@ CHAOS_STORAGE_URL=sqlite::memory: chaos exec "say hi"
 
 ## MIGRATING AN EXISTING INSTALL
 
-There is no cross-backend export. A fresh database starts with empty history;
+There is no cross-backend export of history. A fresh database starts with empty history;
 the old database remains untouched. To return to it, explicitly select its URL.
 After upgrading, refresh provider catalogs online before relying on offline use.
+Project trust decisions can be carried across with a reviewed manifest; see
+chaos-trust(7).
 
 ## NOTES
 

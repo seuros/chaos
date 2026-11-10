@@ -45,7 +45,6 @@ mod models_cmd;
 mod planning_cmd;
 mod reflex_cmd;
 mod rules_cmd;
-mod trust_cmd;
 #[cfg(feature = "self-update")]
 mod update_cmd;
 
@@ -136,8 +135,6 @@ enum Subcommand {
     Config(config_cmd::ConfigCommand),
     /// Manage database lifecycle hooks.
     Hooks(hooks_cmd::HooksCommand),
-    /// Inspect and manage project trust decisions (operator, non-interactive capable).
-    Trust(trust_cmd::TrustCommand),
     /// Manage stored agent role definitions.
     Agents(agents_cmd::AgentsCommand),
     /// Manage stored user exec-policy rules (restrictions only).
@@ -472,7 +469,6 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
-        Some(Subcommand::Trust(command)) => trust_cmd::run(command).await?,
         Some(Subcommand::Agents(command)) => agents_cmd::run(command).await?,
         Some(Subcommand::Rules(command)) => rules_cmd::run(command).await?,
         Some(Subcommand::Modes(command)) => {

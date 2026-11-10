@@ -473,13 +473,6 @@ async fn plan(
 }
 
 impl PreparedTrustChange {
-    pub fn approval_message(&self) -> anyhow::Result<String> {
-        Ok(format!(
-            "Apply these project trust decisions on THIS installation?\n{}\nTrusted projects load their .mcp.json, rules, agents and project hooks.",
-            serde_json::to_string_pretty(self)?
-        ))
-    }
-
     /// Commit for an already-authorised operator. `actor` names the authenticated
     /// caller and is recorded with every change in the same transaction.
     pub async fn commit(self, actor: &str) -> anyhow::Result<TrustReceipt> {
@@ -506,40 +499,6 @@ impl PreparedTrustChange {
             held: self.held,
         })
     }
-
-    /// Commit after the operator approves: interactively, or with explicit `yes`
-    /// from a non-agent process.
-    pub async fn confirm_terminal(self, yes: bool) -> anyhow::Result<TrustReceipt> {
-        confirm_operator(
-            &self.approval_message()?,
-            yes,
-            std::env::var_os(crate::exec_env::CHAOS_THREAD_ID_ENV_VAR).is_some(),
-        )?;
-        self.commit("operator-cli").await
-    }
-}
-
-fn confirm_operator(message: &str, yes: bool, agent_shell: bool) -> anyhow::Result<()> {
-    use std::io::{BufRead, IsTerminal, Write};
-    ensure!(
-        !agent_shell,
-        "agent shell commands cannot change project trust; this is an operator decision"
-    );
-    if yes {
-        return Ok(());
-    }
-    ensure!(
-        std::io::stdin().is_terminal(),
-        "project trust changes require an interactive terminal or explicit --yes"
-    );
-    let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "{message}")?;
-    write!(stdout, "Type yes to approve: ")?;
-    stdout.flush()?;
-    let mut answer = String::new();
-    std::io::stdin().lock().read_line(&mut answer)?;
-    ensure!(answer.trim() == "yes", "project trust change cancelled");
-    Ok(())
 }
 
 #[cfg(test)]

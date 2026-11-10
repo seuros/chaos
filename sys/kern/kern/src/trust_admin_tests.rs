@@ -396,15 +396,6 @@ async fn trust_set_through_admin_activates_project_hooks() -> anyhow::Result<()>
 }
 
 #[tokio::test]
-async fn agent_shell_is_refused_even_with_yes() {
-    let err = confirm_operator("change", true, true)
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("agent shell"), "{err}");
-    assert!(confirm_operator("change", true, false).is_ok());
-}
-
-#[tokio::test]
 async fn scope_escapes_fail_closed() -> anyhow::Result<()> {
     let home = sqlite_home().await;
     let project = tempfile::tempdir()?;

@@ -1,6 +1,6 @@
 +++
 title = "chaos-trust(7)"
-summary = "Inspect and provision project trust decisions without a terminal prompt."
+summary = "Inspect and provision project trust decisions as the operator over chaos serve."
 +++
 
 # chaos-trust(7)
@@ -12,32 +12,36 @@ chaos-trust - inspect and manage project trust decisions
 ## DESCRIPTION
 
 A trusted project loads its `.mcp.json`, rules, agents and project hooks. The
-console asks once per directory. `chaos trust` is the operator interface for the
-same decision where no console runs: hosted residents, fleet provisioning, and
+console asks once per directory. The operator trust tools make the same
+decision where no console runs: hosted residents, fleet provisioning, and
 moving an installation from SQLite to PostgreSQL. Decisions are stored per
 installation, keyed by the exact canonical project directory.
 
-## INSPECTION
+The tools are served by `chaos serve --mcp` at `/mcp`, and only there:
 
 ```sh
-chaos trust list
-chaos trust show /srv/resident/identity
+CHAOS_BEARER_TOKEN=… chaos serve --mcp --bind 127.0.0.1 --port 4000
 ```
 
-Both print JSON with this installation's identity and storage kind, and change
-nothing. A decision is `trusted`, `untrusted` (an explicit refusal), or `none`
-(never decided). `none` can be read and expected but never written.
+| Tool           | Does                                                        |
+|----------------|-------------------------------------------------------------|
+| `trust_list`   | every stored decision, with installation and storage kind   |
+| `trust_show`   | the key a directory is decided under, and what is stored    |
+| `trust_set`    | grant (`trusted`) or revoke (`untrusted`) one decision      |
+| `trust_export` | every decision as a manifest, with its digest               |
+| `trust_plan`   | what a reviewed manifest would change, without writing      |
+| `trust_apply`  | apply a reviewed manifest                                   |
+
+`trust_list`, `trust_show`, `trust_export` and `trust_plan` change nothing.
+A decision is `trusted`, `untrusted` (an explicit refusal), or `none` (never
+decided). `none` can be read and expected but never written.
 
 ## CHANGING ONE DECISION
 
-```sh
-chaos trust --yes set /srv/resident/identity trusted --expect none
-chaos trust --yes revoke /srv/resident/identity --expect trusted
-```
-
-`--expect` is the decision you saw. If the stored decision differs when the
-change is prepared or when it commits, nothing changes and the command fails,
-so a stale script cannot overwrite a choice made since.
+`trust_set` takes `project_path`, `decision` and `expect`, the decision you
+saw. If the stored decision differs when the change is prepared or when it
+commits, nothing changes and the call fails, so a stale script cannot
+overwrite a choice made since.
 
 A decision sits on the key the trust gates read: the Git root of the
 directory, or the directory itself outside a repository. Hooks and onboarding
@@ -69,11 +73,8 @@ installation identity; a home without one has nothing of its own to export.
 
 ## MANIFESTS AND MIGRATION
 
-```sh
-chaos trust export > trust.json          # digest printed on stderr
-chaos trust digest trust.json            # recompute after review
-chaos trust --yes apply trust.json --digest v1:…
-```
+`trust_export` returns `{manifest, digest}`. `trust_plan` and `trust_apply`
+take the manifest exactly as reviewed and that digest.
 
 A manifest names one installation and lists decisions, denied ones included.
 `apply` refuses a manifest for another installation, a digest that is not the
@@ -90,14 +91,19 @@ set is all or nothing: one conflict in it refuses the batch, and each of its
 entries, the ones that change nothing included, is checked again inside the
 committing transaction, so a receipt never reports one as it was reviewed if
 it moved before the commit. A receipt with held entries records a partial
-apply. A migration that must carry every grant has to treat any held entry as
-a failed cutover, and should look for them in a plan before stopping the
-resident. Re-applying the same manifest is a no-op.
+apply. `trust_apply` refuses a manifest with any held grant unless the call
+passes `allow_held: true`; a migration that must carry every grant should
+never pass it, and should run `trust_plan` before stopping the resident.
+Re-applying the same manifest is a no-op.
 
-To move the same installation from SQLite to PostgreSQL: stop or drain the
-resident first and keep it stopped, export while the bootstrap still points at
-SQLite, switch `storage_url` and transfer the data, then apply the exported
-manifest. The digest binds the exported file, not choices made on the source
+To move the same installation from SQLite to PostgreSQL: run `trust_plan` on
+a fresh export first; stop or drain the resident and keep it stopped; start
+`chaos serve --mcp` on loopback against the home while its bootstrap still
+points at SQLite, export, and stop it; switch `storage_url` and transfer the
+data; start serve again against the new database and apply the exported
+manifest with its digest. Nothing on the source side needs PostgreSQL. A
+resident started on the new database before the apply comes up with no
+decisions, which is the read-only default. The digest binds the exported file, not choices made on the source
 after it was written; a source left running can decide again and the manifest
 will not know. The installation identity lives in the Chaos
 home, so it carries over; another home is another installation and is refused.
@@ -106,17 +112,20 @@ grants are never exported or imported here.
 
 A fleet job writes one manifest per Chaos home (separate homes, such as one
 per OAuth account, are separate installations), has each reviewed, and runs
-`apply` once per home with that home's reviewed digest. Hook approval is a
+`trust_apply` once per home with that home's reviewed digest. Hook approval is a
 separate step (chaos-hooks(7)).
 
 ## AUTHORITY
 
-Mutations need an interactive confirmation or explicit `--yes`. Agent shells
-(`CHAOS_THREAD_ID` is set) are refused even with `--yes`: an agent cannot grant
-itself project trust. Do not unset that marker to bypass the policy. As with
-hooks, a process with direct shell and database access is not contained by this
-interface; separate homes and OS permissions must enforce stronger separation.
+The tools exist only on the HTTP endpoint, never on the stdio server
+(`chaos mcp`), and every call must come from the principal the operator bearer
+authenticates. Serve strips `CHAOS_BEARER_TOKEN` from the environment of the
+processes it starts, so an agent it runs does not hold the credential. Each
+change is audited with the operator and the MCP session as actor. As with
+hooks, a process with direct shell and database access is not contained by
+this interface; separate homes and OS permissions must enforce stronger
+separation.
 
 ## SEE ALSO
 
-chaos-hooks(7), chaos-storage(7)
+chaos-hooks(7), chaos-storage(7), chaos-httpd(8)

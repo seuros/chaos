@@ -26,7 +26,10 @@ with asynchronous turns, live steering and authenticated event replay/SSE.
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
 Builds with `mcpd` (the default) support authenticated MCP at `/mcp` through
-`--mcp`. Set permitted browser origins with `--mcp-allowed-origin`.
+`--mcp`. Set permitted browser origins with `--mcp-allowed-origin`. The HTTP
+endpoint also carries the operator's project trust tools (`trust_list`,
+`trust_show`, `trust_set`, `trust_export`, `trust_plan`, `trust_apply`), which
+the stdio server never lists; see chaos-trust(7).
 
 ## OPTIONS
 

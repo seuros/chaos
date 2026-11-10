@@ -10,22 +10,25 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
-- `chaos trust` for operators: `list`/`show` read project trust decisions
-  without changing them; `set`/`revoke` change one exact project directory
-  only when the stored decision matches `--expect` (`revoke` stores a denial,
-  so a manifest exported earlier cannot restore trust); `export`/`apply` carry
-  an installation's granted and denied decisions through a manifest bound to
-  the installation identity and a reviewed digest, all or nothing, re-checking
-  every reviewed entry at commit and refusing any a resident has changed since. Mutations print a receipt and are refused
-  from agent shells, even with `--yes`. This is the supported path for moving
-  the same installation from SQLite to PostgreSQL without per-home onboarding.
-  See [chaos-trust(7)](man/chaos-trust.7.md).
+- Operator project trust tools on `chaos serve --mcp`: `trust_list` and
+  `trust_show` read decisions; `trust_set` grants or revokes one project root
+  only when the stored decision matches `expect` (a revoke stores a denial, so
+  a manifest exported earlier cannot restore trust); `trust_export`,
+  `trust_plan` and `trust_apply` carry an installation's granted and denied
+  decisions through a manifest bound to the installation identity and a
+  reviewed digest, re-checking every committed entry at commit. A grant that
+  fails the grant guards is held, and `trust_apply` refuses while any grant is
+  held unless the call allows a partial apply. The tools exist only on the
+  HTTP endpoint and require the operator bearer's principal; stdio never
+  lists them. This is the supported path for moving the same installation
+  from SQLite to PostgreSQL without per-home onboarding. See
+  [chaos-trust(7)](man/chaos-trust.7.md).
 - Project trust writes, onboarding included, now record a
   `configuration_events` row with path, before, after, installation and actor.
-  Operator decisions sit on the key hooks read (the Git root); denials reach
-  paths grants cannot (`~`, deleted directories); manifest grants that fail
-  the grant guards are reported as `held` instead of failing the batch; and
-  reading trust no longer creates an installation identity.
+  Grants sit on the key hooks read (the Git root); denials reach paths grants
+  cannot (`~`, deleted directories, and decisions stored below a root that
+  appeared later); and reading trust no longer creates an installation
+  identity.
 
 ### Changed
 - Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`

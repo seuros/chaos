@@ -34,7 +34,7 @@ pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
     if cli.mcp
         && let Some(token) = &cli.bearer_token
     {
-        HttpBearerAuthConfig::new(token.clone(), "chaos-operator")
+        HttpBearerAuthConfig::new(token.clone(), chaos_mcpd::OPERATOR_PRINCIPAL)
             .context("invalid MCP operator bearer credential")?;
     }
     for origin in &cli.mcp_allowed_origin {
@@ -50,7 +50,7 @@ pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
 }
 
 fn transport_config(cli: &ServeCli, token: &str) -> anyhow::Result<HttpTransportConfig> {
-    let credential = HttpBearerAuthConfig::new(token, "chaos-operator")
+    let credential = HttpBearerAuthConfig::new(token, chaos_mcpd::OPERATOR_PRINCIPAL)
         .context("invalid MCP operator bearer credential")?;
     Ok(HttpTransportConfig {
         endpoint: "/mcp".to_owned(),

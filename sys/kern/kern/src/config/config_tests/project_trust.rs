@@ -76,6 +76,8 @@ async fn onboarding_trust_audit_names_the_installation() -> anyhow::Result<()> {
 
     // An unreadable identity fails the write rather than auditing none.
     std::fs::write(chaos_home.path().join("installation-id"), "not-a-uuid")?;
-    assert!(set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Untrusted).is_err());
+    assert!(
+        set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Untrusted).is_err()
+    );
     Ok(())
 }

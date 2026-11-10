@@ -31,9 +31,13 @@ fn postgres_url() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-fn postgres_home(url: &str, installation_from: Option<&Path>) -> tempfile::TempDir {
+/// A home on the test database. The bootstrap names the environment variable,
+/// not the URL: credential-bearing URLs are refused in the bootstrap (and CI's
+/// carries a password).
+fn postgres_home(_url: &str, installation_from: Option<&Path>) -> tempfile::TempDir {
     let home = tempfile::tempdir().unwrap();
-    crate::user_settings::set_bootstrap(home.path(), "storage_url", url).unwrap();
+    crate::user_settings::set_bootstrap(home.path(), "storage_url", "env:TEST_DATABASE_URL")
+        .unwrap();
     if let Some(source) = installation_from {
         std::fs::copy(
             source.join("installation-id"),

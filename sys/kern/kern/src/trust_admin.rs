@@ -209,13 +209,22 @@ fn lexical_project_path(raw: &str) -> anyhow::Result<PathBuf> {
 }
 
 /// Extra checks for a grant: the directory exists, the stored key is its exact
-/// canonical form, and it neither contains nor sits inside CHAOS_HOME.
+/// canonical form, it is the gate root the hooks read (its Git root, or itself
+/// outside a repository), and it neither contains nor sits inside CHAOS_HOME.
+/// `set` and manifest apply share this check, so a grant `set` refuses is held
+/// on apply, naming the real root; it is never silently retargeted.
 fn grant_guard(raw: &str, home: &Path) -> anyhow::Result<()> {
     let normalized = normalize_project_path(Path::new(raw))?;
     ensure!(
         normalized.to_string_lossy() == raw,
         "path {raw:?} is not normalized; its exact key is {}",
         normalized.display()
+    );
+    let root = trust_key(&normalized)?;
+    ensure!(
+        root == normalized,
+        "trust for {raw} is decided at its project root {}; grant that path instead",
+        root.display()
     );
     if let Ok(home) = std::fs::canonicalize(home) {
         ensure!(
@@ -293,16 +302,25 @@ pub async fn prepare_set(
 ) -> anyhow::Result<PreparedTrustChange> {
     let raw = match normalize_project_path(project) {
         Ok(path) => {
-            // An existing directory: the decision must sit on the key the gates
-            // read, or it would change nothing.
-            let key = trust_key(&path)?;
-            ensure!(
-                key == path,
-                "trust for {} is decided at its project root {}; set that path instead",
-                path.display(),
-                key.display()
-            );
-            path.to_string_lossy().to_string()
+            let raw = path.to_string_lossy().to_string();
+            // Grants are checked against the gate root in `grant_guard`. A denial
+            // below the root is refused unless a decision is stored under exactly
+            // this key: the config loader reads exact-directory rows, so an old
+            // grant left there (say, from before the directory joined a
+            // repository) must stay revocable in place, not be redirected.
+            if decision == Decision::Untrusted {
+                let key = trust_key(&path)?;
+                if key != path {
+                    let db = crate::user_settings::open(home).await?;
+                    ensure!(
+                        current_decisions(&db).await?.contains_key(&raw),
+                        "trust for {} is decided at its project root {}; set that path instead",
+                        path.display(),
+                        key.display()
+                    );
+                }
+            }
+            raw
         }
         Err(err) => {
             // A path that no longer resolves can only be denied, and only where a

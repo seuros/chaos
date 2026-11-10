@@ -1497,6 +1497,10 @@ pub fn set_project_trust_level(
 ) -> anyhow::Result<()> {
     let bootstrap = runtime_storage_config(chaos_home)?;
     let project_path = crate::runtime_db::normalize_cwd_for_runtime_db(project_path);
+    // The audit row names the home that made the decision. Read the identity
+    // without minting one; an unreadable identity fails the write instead of
+    // quietly recording none.
+    let installation_id = crate::user_settings::existing_installation_id(chaos_home)?;
     std::thread::spawn(move || -> anyhow::Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -1509,7 +1513,11 @@ pub fn set_project_trust_level(
                 )
                 .await?;
                 runtime
-                    .set_project_trust(project_path.as_path(), trust_level)
+                    .set_project_trust(
+                        project_path.as_path(),
+                        trust_level,
+                        installation_id.as_deref(),
+                    )
                     .await
             })
     })

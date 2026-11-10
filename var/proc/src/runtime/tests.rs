@@ -292,7 +292,7 @@ async fn project_trust_round_trips() {
     );
 
     runtime
-        .set_project_trust(&project_path, TrustLevel::Trusted)
+        .set_project_trust(&project_path, TrustLevel::Trusted, None)
         .await
         .expect("set trust");
     assert_eq!(
@@ -304,7 +304,7 @@ async fn project_trust_round_trips() {
     );
 
     runtime
-        .set_project_trust(&project_path, TrustLevel::Untrusted)
+        .set_project_trust(&project_path, TrustLevel::Untrusted, None)
         .await
         .expect("update trust");
     assert_eq!(

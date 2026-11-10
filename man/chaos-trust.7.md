@@ -41,9 +41,11 @@ so a stale script cannot overwrite a choice made since.
 
 A decision sits on the key the trust gates read: the Git root of the
 directory, or the directory itself outside a repository. Hooks and onboarding
-use the same key. Naming a subdirectory or worktree inside a repository is
-refused with the root it belongs to, because a decision there would change
-nothing.
+use the same key. A grant on a subdirectory or worktree inside a repository is
+refused (and held, on apply) with the root it belongs to. A denial there is
+refused too, unless a decision is already stored under exactly that path: the
+configuration loader reads exact-directory decisions, so an old grant left on a
+directory that has since moved into a repository can still be revoked in place.
 
 The guards restrict grants only. A grant needs an existing directory outside
 `CHAOS_HOME` that does not contain it. A denial needs only an absolute,
@@ -61,8 +63,9 @@ storage, actor, before and after per path, and the time. Each change also
 writes a `configuration_events` row (`project_trust_trusted` or
 `project_trust_untrusted`) in the same transaction, naming the path, before,
 after, installation, actor and manifest digest. Onboarding writes record the
-actor `onboarding`. Reading decisions never creates an installation identity;
-a home without one has nothing of its own to export.
+actor `onboarding` and the home's installation identity if it has one; an
+unreadable identity fails the write. Reading decisions never creates an
+installation identity; a home without one has nothing of its own to export.
 
 ## MANIFESTS AND MIGRATION
 
@@ -77,15 +80,19 @@ A manifest names one installation and lists decisions, denied ones included.
 one you reviewed, duplicate or non-canonical paths, and any entry whose stored
 decision differs from what the manifest expects. Without an explicit `expect`,
 an entry applies only where nothing is stored or the stored decision already
-matches. It is all or nothing: one conflict refuses the batch. A grant that
-fails the grant guards (its directory is missing, or it contains or sits
-inside `CHAOS_HOME`) is not written: the plan and the receipt list it under
-`held` with the reason, and the rest of the batch applies. A migration that
-must carry every grant has to treat any held entry as a failed cutover, and
-should check for them before stopping the resident. Every entry is
-checked again inside the committing transaction, the ones that change nothing
-included, so a receipt never reports an entry as it was reviewed if it moved
-before the commit. Re-applying the same manifest is a no-op.
+matches.
+
+A grant that fails the grant guards (its directory is missing, it is not its
+project's root, or it contains or sits inside `CHAOS_HOME`) is *held*: it is
+not written, not compared and not rechecked, and the plan and the receipt list
+it under `held` with the reason. Every other entry is the committing set. That
+set is all or nothing: one conflict in it refuses the batch, and each of its
+entries, the ones that change nothing included, is checked again inside the
+committing transaction, so a receipt never reports one as it was reviewed if
+it moved before the commit. A receipt with held entries records a partial
+apply. A migration that must carry every grant has to treat any held entry as
+a failed cutover, and should look for them in a plan before stopping the
+resident. Re-applying the same manifest is a no-op.
 
 To move the same installation from SQLite to PostgreSQL: stop or drain the
 resident first and keep it stopped, export while the bootstrap still points at

@@ -247,6 +247,7 @@ WHERE project_path = ?
         &self,
         project_path: &Path,
         trust_level: TrustLevel,
+        installation_id: Option<&str>,
     ) -> anyhow::Result<()> {
         let path = project_path.to_string_lossy().to_string();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
@@ -280,8 +281,14 @@ SET trust_level = excluded.trust_level,
         .bind(trust_level.to_string())
         .execute(&mut *tx)
         .await?;
-        let (event, subject) =
-            project_trust_event(&path, before, trust_level, None, "onboarding", None)?;
+        let (event, subject) = project_trust_event(
+            &path,
+            before,
+            trust_level,
+            installation_id,
+            "onboarding",
+            None,
+        )?;
         sqlx::query(
             "INSERT INTO configuration_events (id, event, subject, created_at) VALUES (?, ?, ?, UNIXEPOCH())",
         )
@@ -693,6 +700,7 @@ impl RuntimeDbHandle {
             &self,
             project_path: &Path,
             trust_level: TrustLevel,
+            installation_id: Option<&str>,
         ) -> anyhow::Result<()>;
         pub async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>>;
         /// Apply every change or none: each must find exactly its expected decision.
@@ -973,18 +981,16 @@ WHERE project_path = $1
         &self,
         project_path: &Path,
         trust_level: TrustLevel,
+        installation_id: Option<&str>,
     ) -> anyhow::Result<()> {
         let path = project_path.to_string_lossy().to_string();
         let mut tx = self.pool.begin().await?;
-        let before = sqlx::query_scalar::<_, String>(
-            "SELECT trust_level FROM project_trust WHERE project_path = $1 FOR UPDATE",
-        )
-        .bind(&path)
-        .fetch_optional(&mut *tx)
-        .await?
-        .map(|level| parse_trust_level(&level))
-        .transpose()?;
-        sqlx::query(
+        // `FOR UPDATE` cannot lock a row that does not exist yet, so a plain
+        // SELECT-then-upsert could record `before = none` over a decision a
+        // concurrent writer committed in between. Insert first: the unique key
+        // makes a concurrent inserter wait for us (or us for it). If the row
+        // already exists, lock it and read the decision we are replacing.
+        let inserted = sqlx::query(
             r#"
 INSERT INTO project_trust (
     project_path,
@@ -997,17 +1003,46 @@ INSERT INTO project_trust (
     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
 )
-ON CONFLICT (project_path) DO UPDATE
-SET trust_level = EXCLUDED.trust_level,
-    updated_at = EXCLUDED.updated_at
+ON CONFLICT (project_path) DO NOTHING
             "#,
         )
         .bind(&path)
         .bind(trust_level.to_string())
         .execute(&mut *tx)
-        .await?;
-        let (event, subject) =
-            project_trust_event(&path, before, trust_level, None, "onboarding", None)?;
+        .await?
+        .rows_affected()
+            == 1;
+        let before = if inserted {
+            None
+        } else {
+            // Trust rows are never deleted (a revoke stores a denial), so the
+            // conflicting row is still there to lock.
+            let before = sqlx::query_scalar::<_, String>(
+                "SELECT trust_level FROM project_trust WHERE project_path = $1 FOR UPDATE",
+            )
+            .bind(&path)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("project trust row vanished during onboarding"))?;
+            sqlx::query(
+                "UPDATE project_trust SET trust_level = $2, \
+                 updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT \
+                 WHERE project_path = $1",
+            )
+            .bind(&path)
+            .bind(trust_level.to_string())
+            .execute(&mut *tx)
+            .await?;
+            Some(parse_trust_level(&before)?)
+        };
+        let (event, subject) = project_trust_event(
+            &path,
+            before,
+            trust_level,
+            installation_id,
+            "onboarding",
+            None,
+        )?;
         sqlx::query(
             "INSERT INTO configuration_events (id, event, subject, created_at) VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
         )

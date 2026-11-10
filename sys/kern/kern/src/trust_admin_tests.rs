@@ -211,7 +211,7 @@ async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
     let prepared = prepare_mixed_batch(home, &a, &b).await?;
     crate::user_settings::open(home)
         .await?
-        .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted)
+        .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted, None)
         .await?;
     let err = prepared
         .commit("test-operator")
@@ -240,7 +240,7 @@ async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
     assert!(prepared.changes.is_empty());
     crate::user_settings::open(home)
         .await?
-        .set_project_trust(Path::new(&key(&a)), TrustLevel::Trusted)
+        .set_project_trust(Path::new(&key(&a)), TrustLevel::Trusted, None)
         .await?;
     let err = prepared
         .commit("test-operator")
@@ -347,7 +347,7 @@ async fn race_between_prepare_and_commit_fails_closed() -> anyhow::Result<()> {
     // The resident (or anyone) decides "untrusted" after the operator reviewed.
     crate::user_settings::open(home.path())
         .await?
-        .set_project_trust(Path::new(&path), TrustLevel::Untrusted)
+        .set_project_trust(Path::new(&path), TrustLevel::Untrusted, None)
         .await?;
     let err = prepared
         .commit("test-operator")
@@ -529,6 +529,72 @@ async fn set_resolves_to_the_key_the_gates_read() -> anyhow::Result<()> {
         trust_key(&sub)?.to_string_lossy(),
         crate::hooks::project_root(&sub)?.to_string_lossy()
     );
+
+    // Apply shares the guard: the same subdirectory grant is held, naming the
+    // root, and nothing is written or retargeted.
+    let sub_key = normalize_project_path(&sub)?.to_string_lossy().to_string();
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: crate::user_settings::installation_id(home.path())?,
+        entries: vec![ManifestEntry {
+            project_path: sub_key.clone(),
+            decision: Decision::Trusted,
+            expect: None,
+        }],
+    };
+    let json = serde_json::to_string(&manifest)?;
+    let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
+        .await?
+        .commit("test-operator")
+        .await?;
+    assert_eq!(receipt.held.len(), 1, "{receipt:?}");
+    assert_eq!(receipt.held[0].project_path, sub_key);
+    assert!(
+        receipt.held[0].reason.contains(&key(&repo)),
+        "{}",
+        receipt.held[0].reason
+    );
+    assert!(receipt.changes.is_empty());
+    assert_eq!(stored(home.path(), &sub_key).await, Decision::None);
+    assert_eq!(stored(home.path(), &key(&repo)).await, Decision::None);
+    Ok(())
+}
+
+/// A grant stored on a directory that later moved under a Git root still sits
+/// on an exact key the config loader reads. It must stay revocable in place;
+/// a denial below a root with no stored row is still refused as misleading.
+#[tokio::test]
+async fn stored_key_below_a_new_root_stays_revocable() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let parent = tempfile::tempdir()?;
+    let old = parent.path().join("old");
+    let other = parent.path().join("other");
+    std::fs::create_dir_all(&old)?;
+    std::fs::create_dir_all(&other)?;
+    prepare_set(home.path(), &old, Decision::Trusted, Decision::None)
+        .await?
+        .commit("test-operator")
+        .await?;
+    std::fs::create_dir(parent.path().join(".git"))?;
+    let old_key = normalize_project_path(&old)?.to_string_lossy().to_string();
+    assert_ne!(trust_key(&old)?.to_string_lossy(), old_key);
+
+    let receipt = prepare_set(home.path(), &old, Decision::Untrusted, Decision::Trusted)
+        .await?
+        .commit("test-operator")
+        .await?;
+    assert_eq!(receipt.changes[0].project_path, old_key);
+    assert_eq!(stored(home.path(), &old_key).await, Decision::Untrusted);
+    let root = normalize_project_path(parent.path())?
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(stored(home.path(), &root).await, Decision::None);
+
+    let err = prepare_set(home.path(), &other, Decision::Untrusted, Decision::None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("decided at its project root"), "{err}");
     Ok(())
 }
 
@@ -676,7 +742,7 @@ async fn manifest_is_bound_to_digest_installation_and_current_state() -> anyhow:
     // A resident already chose differently for `a`: the whole batch is refused.
     crate::user_settings::open(home.path())
         .await?
-        .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted)
+        .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted, None)
         .await?;
     let err = prepare_apply(home.path(), &json, &manifest.digest()?)
         .await
@@ -811,6 +877,93 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
     Ok(())
 }
 
+/// Onboarding races a writer that inserts a denial for the same, previously
+/// absent, project. Onboarding must wait for that insert and audit the denial
+/// it replaced as `before`, not `none` (what SELECT .. FOR UPDATE on a missing
+/// row followed by an upsert would record).
+async fn postgres_onboarding_audits_the_decision_it_replaced() -> anyhow::Result<()> {
+    let Some(url) = postgres_url() else {
+        tracing::warn!("skipping postgres onboarding race test; TEST_DATABASE_URL not set");
+        return Ok(());
+    };
+    let home = postgres_home(&url, None);
+    let project = tempfile::tempdir()?;
+    let path = key(&project);
+    let db = crate::user_settings::open(home.path()).await?;
+
+    let pool = sqlx::PgPool::connect(&url).await?;
+    let mut other = pool.begin().await?;
+    let writer: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *other)
+        .await?;
+    sqlx::query(
+        "INSERT INTO project_trust (project_path, trust_level, created_at, updated_at) \
+         VALUES ($1, 'untrusted', 0, 0)",
+    )
+    .bind(&path)
+    .execute(&mut *other)
+    .await?;
+    let onboarding = {
+        let db = db.clone();
+        let path = path.clone();
+        tokio::spawn(async move {
+            db.set_project_trust(Path::new(&path), TrustLevel::Trusted, Some("inst-test"))
+                .await
+        })
+    };
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let blocked = loop {
+        let waiting: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM pg_stat_activity \
+             WHERE $1 = ANY(pg_blocking_pids(pid)) AND query LIKE '%project_trust%'",
+        )
+        .bind(writer)
+        .fetch_one(&pool)
+        .await?;
+        if waiting > 0 {
+            break true;
+        }
+        if onboarding.is_finished() || tokio::time::Instant::now() >= deadline {
+            break false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    };
+    let cleanup = || async {
+        sqlx::query("DELETE FROM project_trust WHERE project_path = $1")
+            .bind(&path)
+            .execute(&pool)
+            .await?;
+        sqlx::query("DELETE FROM configuration_events WHERE subject LIKE $1")
+            .bind(format!("%{path}%"))
+            .execute(&pool)
+            .await
+    };
+    if !blocked {
+        other.rollback().await?;
+        let _ = onboarding.await;
+        cleanup().await?;
+        panic!("onboarding never waited on the concurrent insert");
+    }
+    other.commit().await?;
+    onboarding.await??;
+
+    let subjects: Vec<String> = sqlx::query_scalar(
+        "SELECT subject FROM configuration_events \
+         WHERE event = 'project_trust_trusted' AND subject LIKE $1",
+    )
+    .bind(format!("%{path}%"))
+    .fetch_all(&pool)
+    .await?;
+    cleanup().await?;
+    assert_eq!(subjects.len(), 1, "{subjects:?}");
+    let subject: serde_json::Value = serde_json::from_str(&subjects[0])?;
+    assert_eq!(subject["before"], "untrusted");
+    assert_eq!(subject["actor"], "onboarding");
+    assert_eq!(subject["installation_id"], "inst-test");
+    Ok(())
+}
+
 /// chaos_vfs mounts storage once per process, keyed by URL, so every Postgres
 /// home here shares the pool of whichever runtime mounted it first. Run the
 /// Postgres scenarios in one runtime so that pool outlives all of them.
@@ -818,5 +971,6 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
 async fn postgres_trust_scenarios() -> anyhow::Result<()> {
     sqlite_to_postgres_migration_preserves_granted_and_denied().await?;
     unchanged_entries_are_rechecked_at_commit_postgres().await?;
-    postgres_unchanged_entry_is_locked_against_concurrent_change().await
+    postgres_unchanged_entry_is_locked_against_concurrent_change().await?;
+    postgres_onboarding_audits_the_decision_it_replaced().await
 }

@@ -684,6 +684,24 @@ async fn reading_trust_does_not_create_an_installation_identity() -> anyhow::Res
     let identity = home.path().join("installation-id");
     let _ = std::fs::remove_file(&identity);
     let listing = list(home.path()).await?;
+
+    // A plan is a preflight: on a home with no identity, even a correctly
+    // digested manifest is refused without creating one.
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: uuid::Uuid::new_v4().to_string(),
+        entries: Vec::new(),
+    };
+    let json = serde_json::to_string(&manifest)?;
+    let err = prepare_apply(home.path(), &json, &manifest.digest()?)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("no installation identity"), "{err}");
+    assert!(
+        !identity.exists(),
+        "a failed plan must not mint an identity"
+    );
     assert_eq!(listing.installation_id, None);
     assert!(export(home.path()).await.is_err());
     assert!(!identity.exists());

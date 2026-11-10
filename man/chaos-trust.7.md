@@ -14,8 +14,16 @@ chaos-trust - inspect and manage project trust decisions
 A trusted project loads its `.mcp.json`, rules, agents and project hooks. The
 console asks once per directory. The operator trust tools make the same
 decision where no console runs: hosted residents, fleet provisioning, and
-moving an installation from SQLite to PostgreSQL. Decisions are stored per
-installation, keyed by the exact canonical project directory.
+moving an installation from SQLite to PostgreSQL. Decisions are keyed by the
+exact canonical project directory, in the database the home's `storage_url`
+names.
+
+The trust table has no installation column. Every home that points at the
+same database shares its decisions: a grant made through one home is a grant
+for all of them. Give each Chaos home its own database (a home per OAuth
+account is a separate home). A manifest's installation identity is checked
+against the home applying it, which keeps a manifest from crossing homes; it
+does not isolate homes that share a database.
 
 The tools are served by `chaos serve --mcp` at `/mcp`, and only there:
 
@@ -103,7 +111,9 @@ points at SQLite, export, and stop it; switch `storage_url` and transfer the
 data; start serve again against the new database and apply the exported
 manifest with its digest. Nothing on the source side needs PostgreSQL. A
 resident started on the new database before the apply comes up with no
-decisions, which is the read-only default. The digest binds the exported file, not choices made on the source
+decisions, so its projects get the implicit read-only default; explicit
+sandbox settings, permission profiles and requirements still apply as
+configured. The digest binds the exported file, not choices made on the source
 after it was written; a source left running can decide again and the manifest
 will not know. The installation identity lives in the Chaos
 home, so it carries over; another home is another installation and is refused.

@@ -100,6 +100,17 @@ async fn mount() -> (tempfile::TempDir, Arc<crate::ServerState>) {
 }
 
 #[test]
+fn plain_mcp_runs_the_control_plane_environment_check() {
+    // The --mcp bearer is the operator credential for project trust, so plain
+    // --mcp gets the same startup check as --sessions.
+    assert!(crate::checks_control_plane_environment(&cli(&["--mcp"])));
+    assert!(crate::checks_control_plane_environment(&cli(&[
+        "--sessions"
+    ])));
+    assert!(!crate::checks_control_plane_environment(&cli(&[])));
+}
+
+#[test]
 fn flags_default_off_repeat_origins_and_refuse_recovery_only() {
     let defaults = cli(&[]);
     assert!(!defaults.mcp);

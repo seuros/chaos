@@ -21,8 +21,12 @@ should. There is no patch level; the build timestamp is the patch.
   held unless the call allows a partial apply. The tools exist only on the
   HTTP endpoint and require the operator bearer's principal; stdio never
   lists them. This is the supported path for moving the same installation
-  from SQLite to PostgreSQL without per-home onboarding. See
-  [chaos-trust(7)](man/chaos-trust.7.md).
+  from SQLite to PostgreSQL without per-home onboarding. Decisions are not
+  yet isolated per installation within one database: give each Chaos home its
+  own database. See [chaos-trust(7)](man/chaos-trust.7.md).
+- `chaos serve --mcp` now refuses to start when its shell environment policy
+  would pass `CHAOS_BEARER_TOKEN` or `CHAOS_RECOVERY_TOKEN` to commands or MCP
+  servers, as `--sessions` already did.
 - Project trust writes, onboarding included, now record a
   `configuration_events` row with path, before, after, installation and actor.
   Grants sit on the key hooks read (the Git root); denials reach paths grants

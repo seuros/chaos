@@ -340,8 +340,12 @@ pub async fn prepare_set(
             raw
         }
     };
+    // An explicit operator decision may create the home's identity; the audit
+    // row needs one.
+    let installation_id = crate::user_settings::installation_id(home)?;
     let prepared = plan(
         home,
+        installation_id,
         vec![ManifestEntry {
             project_path: raw,
             decision,
@@ -375,7 +379,10 @@ pub async fn prepare_apply(
         actual == digest,
         "manifest digest mismatch: reviewed {digest}, file is {actual}; review the file again"
     );
-    let installation_id = crate::user_settings::installation_id(home)?;
+    // Read-only: a plan is a preflight and must not create an identity. A home
+    // without one cannot be the installation a manifest names.
+    let installation_id = crate::user_settings::existing_installation_id(home)?
+        .context("this home has no installation identity, so no manifest can belong to it")?;
     ensure!(
         manifest.installation_id == installation_id,
         "manifest belongs to installation {}, this is {installation_id}; trust decisions do not cross installations",
@@ -385,15 +392,15 @@ pub async fn prepare_apply(
         manifest.entries.len() <= MAX_MANIFEST_ENTRIES,
         "manifest has more than {MAX_MANIFEST_ENTRIES} entries"
     );
-    plan(home, manifest.entries, Some(actual)).await
+    plan(home, installation_id, manifest.entries, Some(actual)).await
 }
 
 async fn plan(
     home: &Path,
+    installation_id: String,
     entries: Vec<ManifestEntry>,
     manifest_digest: Option<String>,
 ) -> anyhow::Result<PreparedTrustChange> {
-    let installation_id = crate::user_settings::installation_id(home)?;
     let db = crate::user_settings::open(home).await?;
     let current = current_decisions(&db).await?;
     let mut seen = std::collections::BTreeSet::new();

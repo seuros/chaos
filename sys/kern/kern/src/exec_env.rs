@@ -26,7 +26,9 @@ pub fn create_env(
     create_env_from(std::env::vars(), policy, process_id)
 }
 
-pub(crate) fn create_env_from<I>(
+/// [`create_env`] over an explicit variable source instead of the process
+/// environment.
+pub fn create_env_from<I>(
     vars: I,
     policy: &ShellEnvironmentPolicy,
     process_id: Option<ProcessId>,

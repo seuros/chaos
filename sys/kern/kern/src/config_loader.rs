@@ -321,6 +321,17 @@ pub(crate) async fn resolve_active_project_trust(
     })
 }
 
+pub(crate) async fn reload_project_mcp_layer(
+    bootstrap: &ResolvedBootstrap,
+    cwd: &Path,
+    config_layer_stack: &ConfigLayerStack,
+) -> io::Result<Option<ConfigLayerEntry>> {
+    let cwd = normalize_absolute_path_for_trust(cwd)?;
+    let project_root_markers = project_root_markers_from_stack(config_layer_stack);
+    let trust_context = project_trust_context(&cwd, &project_root_markers, bootstrap).await?;
+    load_project_mcp_layer(&trust_context).await
+}
+
 pub(crate) fn find_project_root_sync(cwd: &Path, project_root_markers: &[String]) -> PathBuf {
     if project_root_markers.is_empty() {
         return cwd.to_path_buf();

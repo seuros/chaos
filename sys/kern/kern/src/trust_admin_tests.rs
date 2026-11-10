@@ -74,10 +74,10 @@ async fn set_and_revoke_are_compare_and_set() -> anyhow::Result<()> {
         Decision::None,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     assert_eq!(receipt.format, RECEIPT_FORMAT);
-    assert_eq!(receipt.actor, "operator-cli");
+    assert_eq!(receipt.actor, "test-operator");
     assert_eq!(receipt.storage, "sqlite");
     assert_eq!(receipt.changes.len(), 1);
     assert_eq!(receipt.changes[0].before, Decision::None);
@@ -116,7 +116,7 @@ async fn set_and_revoke_are_compare_and_set() -> anyhow::Result<()> {
         Decision::Trusted,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     assert_eq!(stored(home.path(), &path).await, Decision::Untrusted);
     Ok(())
@@ -130,7 +130,7 @@ async fn stale_export_cannot_restore_revoked_trust() -> anyhow::Result<()> {
     let a = tempfile::tempdir()?;
     prepare_set(home.path(), a.path(), Decision::Trusted, Decision::None)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     let manifest = export(home.path()).await?;
     let json = serde_json::to_string(&manifest)?;
@@ -141,7 +141,7 @@ async fn stale_export_cannot_restore_revoked_trust() -> anyhow::Result<()> {
         Decision::Trusted,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     let err = prepare_apply(home.path(), &json, &manifest.digest()?)
         .await
@@ -204,7 +204,7 @@ async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
     let b = tempfile::tempdir()?;
     prepare_set(home, a.path(), Decision::Trusted, Decision::None)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
 
     // Mixed: `a` revoked after review; granting `b` must not go through.
@@ -213,7 +213,11 @@ async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
         .await?
         .set_project_trust(Path::new(&key(&a)), TrustLevel::Untrusted)
         .await?;
-    let err = prepared.commit().await.unwrap_err().to_string();
+    let err = prepared
+        .commit("test-operator")
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("project trust conflict"), "{err}");
     assert_eq!(stored(home, &key(&b)).await, Decision::None);
 
@@ -238,7 +242,11 @@ async fn unchanged_entries_are_rechecked(home: &Path) -> anyhow::Result<()> {
         .await?
         .set_project_trust(Path::new(&key(&a)), TrustLevel::Trusted)
         .await?;
-    let err = prepared.commit().await.unwrap_err().to_string();
+    let err = prepared
+        .commit("test-operator")
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("project trust conflict"), "{err}");
     Ok(())
 }
@@ -269,7 +277,7 @@ async fn postgres_unchanged_entry_is_locked_against_concurrent_change() -> anyho
     let b = tempfile::tempdir()?;
     prepare_set(home.path(), a.path(), Decision::Trusted, Decision::None)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     let prepared = prepare_mixed_batch(home.path(), &a, &b).await?;
 
@@ -282,7 +290,7 @@ async fn postgres_unchanged_entry_is_locked_against_concurrent_change() -> anyho
         .bind(key(&a))
         .execute(&mut *other)
         .await?;
-    let commit = tokio::spawn(prepared.commit());
+    let commit = tokio::spawn(prepared.commit("test-operator"));
 
     // Positive evidence, not a sleep: a backend running a project_trust query is
     // blocked by exactly this writer. Without the row lock the batch never
@@ -341,7 +349,11 @@ async fn race_between_prepare_and_commit_fails_closed() -> anyhow::Result<()> {
         .await?
         .set_project_trust(Path::new(&path), TrustLevel::Untrusted)
         .await?;
-    let err = prepared.commit().await.unwrap_err().to_string();
+    let err = prepared
+        .commit("test-operator")
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("project trust conflict"), "{err}");
     assert_eq!(stored(home.path(), &path).await, Decision::Untrusted);
     Ok(())
@@ -374,7 +386,7 @@ async fn trust_set_through_admin_activates_project_hooks() -> anyhow::Result<()>
         Decision::None,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     assert_eq!(
         reason(crate::hooks::list(home.path(), project.path()).await?),
@@ -435,6 +447,196 @@ async fn scope_escapes_fail_closed() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn denials_reach_paths_grants_cannot() -> anyhow::Result<()> {
+    // CHAOS_HOME inside a trusted directory, like a grant on `~`.
+    let outer = tempfile::tempdir()?;
+    let home_dir = outer.path().join("home");
+    std::fs::create_dir(&home_dir)?;
+    crate::test_support::bootstrap_sqlite(&home_dir)?;
+    let outer_key = key(&outer);
+    crate::config::set_project_trust_level(&home_dir, outer.path(), TrustLevel::Trusted)?;
+    // Granting it again through the operator is refused ...
+    assert!(
+        prepare_set(
+            &home_dir,
+            outer.path(),
+            Decision::Trusted,
+            Decision::Trusted
+        )
+        .await
+        .is_err()
+    );
+    // ... but the existing grant can be revoked.
+    prepare_set(
+        &home_dir,
+        outer.path(),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    assert_eq!(stored(&home_dir, &outer_key).await, Decision::Untrusted);
+
+    // A grant on a directory that has since been deleted can be revoked by its
+    // stored key; a missing path with nothing stored cannot.
+    let gone = tempfile::tempdir()?;
+    let gone_key = key(&gone);
+    crate::config::set_project_trust_level(&home_dir, gone.path(), TrustLevel::Trusted)?;
+    let gone_path = gone.path().to_path_buf();
+    drop(gone);
+    assert!(!gone_path.exists());
+    prepare_set(
+        &home_dir,
+        Path::new(&gone_key),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    assert_eq!(stored(&home_dir, &gone_key).await, Decision::Untrusted);
+    assert!(
+        prepare_set(
+            &home_dir,
+            &outer.path().join("never-existed"),
+            Decision::Untrusted,
+            Decision::None
+        )
+        .await
+        .is_err()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_resolves_to_the_key_the_gates_read() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let repo = tempfile::tempdir()?;
+    std::fs::create_dir(repo.path().join(".git"))?;
+    let sub = repo.path().join("crates").join("one");
+    std::fs::create_dir_all(&sub)?;
+    let err = prepare_set(home.path(), &sub, Decision::Trusted, Decision::None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("decided at its project root"), "{err}");
+    assert!(err.contains(&key(&repo)), "{err}");
+    // The root itself is accepted, and is the key hooks read.
+    let prepared = prepare_set(home.path(), repo.path(), Decision::Trusted, Decision::None).await?;
+    assert_eq!(prepared.changes[0].project_path, key(&repo));
+    assert_eq!(
+        trust_key(&sub)?.to_string_lossy(),
+        crate::hooks::project_root(&sub)?.to_string_lossy()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn manifest_grants_that_fail_the_guards_are_held_not_written() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let present = tempfile::tempdir()?;
+    let missing = present.path().join("missing");
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: crate::user_settings::installation_id(home.path())?,
+        entries: vec![
+            ManifestEntry {
+                project_path: key(&present),
+                decision: Decision::Trusted,
+                expect: None,
+            },
+            ManifestEntry {
+                project_path: missing.to_string_lossy().to_string(),
+                decision: Decision::Trusted,
+                expect: None,
+            },
+            ManifestEntry {
+                project_path: missing.join("denied").to_string_lossy().to_string(),
+                decision: Decision::Untrusted,
+                expect: None,
+            },
+        ],
+    };
+    let json = serde_json::to_string(&manifest)?;
+    let prepared = prepare_apply(home.path(), &json, &manifest.digest()?).await?;
+    assert_eq!(prepared.held.len(), 1);
+    assert_eq!(prepared.held[0].project_path, missing.to_string_lossy());
+    let receipt = prepared.commit("test-operator").await?;
+    assert_eq!(receipt.held.len(), 1);
+    assert_eq!(receipt.changes.len(), 2);
+    assert_eq!(stored(home.path(), &key(&present)).await, Decision::Trusted);
+    assert_eq!(
+        stored(home.path(), &missing.to_string_lossy()).await,
+        Decision::None
+    );
+    // A denial on a path that does not exist is carried.
+    assert_eq!(
+        stored(home.path(), &missing.join("denied").to_string_lossy()).await,
+        Decision::Untrusted
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn every_change_is_audited_with_actor_and_installation() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let project = tempfile::tempdir()?;
+    let installation = crate::user_settings::installation_id(home.path())?;
+    prepare_set(
+        home.path(),
+        project.path(),
+        Decision::Trusted,
+        Decision::None,
+    )
+    .await?
+    .commit("operator:alice")
+    .await?;
+    // A no-op recheck writes no event.
+    prepare_set(
+        home.path(),
+        project.path(),
+        Decision::Trusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("operator:alice")
+    .await?;
+    let db = crate::user_settings::open(home.path()).await?;
+    let RuntimeDbHandle::Sqlite(runtime) = db else {
+        anyhow::bail!("expected sqlite");
+    };
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT event, subject FROM configuration_events WHERE event LIKE 'project_trust_%'",
+    )
+    .fetch_all(runtime.pool())
+    .await?;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].0, "project_trust_trusted");
+    let subject: serde_json::Value = serde_json::from_str(&rows[0].1)?;
+    assert_eq!(subject["actor"], "operator:alice");
+    assert_eq!(subject["installation_id"], installation.as_str());
+    assert_eq!(subject["before"], "none");
+    assert_eq!(subject["project_path"], key(&project).as_str());
+    Ok(())
+}
+
+#[tokio::test]
+async fn reading_trust_does_not_create_an_installation_identity() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let identity = home.path().join("installation-id");
+    let _ = std::fs::remove_file(&identity);
+    let listing = list(home.path()).await?;
+    assert_eq!(listing.installation_id, None);
+    assert!(export(home.path()).await.is_err());
+    assert!(!identity.exists());
+    // A malformed identity is an error, never "no identity".
+    std::fs::write(&identity, "not-a-uuid\n")?;
+    assert!(list(home.path()).await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn manifest_is_bound_to_digest_installation_and_current_state() -> anyhow::Result<()> {
     let home = sqlite_home().await;
     let a = tempfile::tempdir()?;
@@ -488,7 +690,7 @@ async fn manifest_is_bound_to_digest_installation_and_current_state() -> anyhow:
     let json = serde_json::to_string(&manifest)?;
     let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     assert_eq!(receipt.manifest_digest, Some(manifest.digest()?));
     assert_eq!(receipt.changes.len(), 2);
@@ -511,13 +713,13 @@ async fn export_then_apply_is_idempotent_on_same_storage() -> anyhow::Result<()>
     let a = tempfile::tempdir()?;
     prepare_set(home.path(), a.path(), Decision::Untrusted, Decision::None)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     let manifest = export(home.path()).await?;
     let json = serde_json::to_string(&manifest)?;
     let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     assert!(receipt.changes.is_empty());
     assert_eq!(receipt.unchanged, vec![key(&a)]);
@@ -541,7 +743,7 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
         Decision::None,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     prepare_set(
         source.path(),
@@ -550,7 +752,7 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
         Decision::None,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     let manifest = export(source.path()).await?;
     assert_eq!(manifest.entries.len(), 2);
@@ -568,7 +770,7 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
     let destination = postgres_home(&url, Some(source.path()));
     let receipt = prepare_apply(destination.path(), &json, &manifest.digest()?)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     assert_eq!(receipt.storage, "postgres");
     assert_eq!(receipt.changes.len(), 2);
@@ -584,7 +786,7 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
     // Retry is a no-op; a resident's later choice makes a stale replay refuse.
     let receipt = prepare_apply(destination.path(), &json, &manifest.digest()?)
         .await?
-        .commit()
+        .commit("test-operator")
         .await?;
     assert!(receipt.changes.is_empty());
     prepare_set(
@@ -594,7 +796,7 @@ async fn sqlite_to_postgres_migration_preserves_granted_and_denied() -> anyhow::
         Decision::Untrusted,
     )
     .await?
-    .commit()
+    .commit("test-operator")
     .await?;
     assert!(
         prepare_apply(destination.path(), &json, &manifest.digest()?)

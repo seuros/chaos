@@ -20,6 +20,12 @@ should. There is no patch level; the build timestamp is the patch.
   from agent shells, even with `--yes`. This is the supported path for moving
   the same installation from SQLite to PostgreSQL without per-home onboarding.
   See [chaos-trust(7)](man/chaos-trust.7.md).
+- Project trust writes, onboarding included, now record a
+  `configuration_events` row with path, before, after, installation and actor.
+  Operator decisions sit on the key hooks read (the Git root); denials reach
+  paths grants cannot (`~`, deleted directories); manifest grants that fail
+  the grant guards are reported as `held` instead of failing the batch; and
+  reading trust no longer creates an installation identity.
 
 ### Changed
 - Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`

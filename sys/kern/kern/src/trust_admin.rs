@@ -7,7 +7,7 @@
 //! itself project trust through this interface.
 use anyhow::{Context, ensure};
 use chaos_ipc::config_types::TrustLevel;
-use chaos_proc::{ProjectTrustChange, RuntimeDbHandle};
+use chaos_proc::{ProjectTrustAudit, ProjectTrustChange, RuntimeDbHandle};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -93,7 +93,8 @@ impl Manifest {
 
 #[derive(Debug, Serialize)]
 pub struct TrustListing {
-    pub installation_id: String,
+    /// `None` when this home has no installation identity yet; reading never creates one.
+    pub installation_id: Option<String>,
     pub storage: &'static str,
     pub entries: Vec<ListedDecision>,
 }
@@ -122,6 +123,10 @@ pub struct PreparedTrustChange {
     pub manifest_digest: Option<String>,
     pub changes: Vec<PlannedChange>,
     pub unchanged: Vec<String>,
+    /// Grants that fail the grant guards. They are not written; a caller that
+    /// needs every entry carried must treat a non-empty list as failure.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<HeldEntry>,
     #[serde(skip)]
     home: PathBuf,
     /// Every reviewed entry, unchanged ones included, re-checked atomically at commit.
@@ -134,12 +139,21 @@ pub struct TrustReceipt {
     pub format: &'static str,
     pub installation_id: String,
     pub storage: &'static str,
-    pub actor: &'static str,
+    pub actor: String,
     pub applied_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manifest_digest: Option<String>,
     pub changes: Vec<PlannedChange>,
     pub unchanged: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<HeldEntry>,
+}
+
+/// A manifest grant that was not written, and why.
+#[derive(Debug, Clone, Serialize)]
+pub struct HeldEntry {
+    pub project_path: String,
+    pub reason: String,
 }
 
 fn storage_kind(db: &RuntimeDbHandle) -> &'static str {
@@ -171,20 +185,52 @@ pub fn normalize_project_path(path: &Path) -> anyhow::Result<PathBuf> {
     Ok(normalized)
 }
 
-fn exact_project_path(raw: &str, home: &Path) -> anyhow::Result<PathBuf> {
+/// Checks every entry must pass: an absolute, lexically normal path that is not
+/// the filesystem root. Denials need nothing more, so a grant on `~` or on a
+/// directory that no longer exists can always be revoked.
+fn lexical_project_path(raw: &str) -> anyhow::Result<PathBuf> {
+    use std::path::Component;
+    let path = PathBuf::from(raw);
+    ensure!(path.is_absolute(), "project path must be absolute: {raw}");
+    // `components()` silently drops `.` and trailing slashes, so compare the
+    // rebuilt path too: a key must be spelled exactly as it is stored.
+    ensure!(
+        path.components().all(|c| matches!(
+            c,
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_)
+        )) && path.components().collect::<PathBuf>().to_string_lossy() == raw,
+        "project path {raw:?} is not normalized"
+    );
+    ensure!(
+        path.parent().is_some(),
+        "refusing to change trust for the filesystem root"
+    );
+    Ok(path)
+}
+
+/// Extra checks for a grant: the directory exists, the stored key is its exact
+/// canonical form, and it neither contains nor sits inside CHAOS_HOME.
+fn grant_guard(raw: &str, home: &Path) -> anyhow::Result<()> {
     let normalized = normalize_project_path(Path::new(raw))?;
     ensure!(
         normalized.to_string_lossy() == raw,
-        "manifest path {raw:?} is not normalized; its exact key is {}",
+        "path {raw:?} is not normalized; its exact key is {}",
         normalized.display()
     );
     if let Ok(home) = std::fs::canonicalize(home) {
         ensure!(
             !home.starts_with(&normalized) && !normalized.starts_with(&home),
-            "refusing to change trust for a path that contains or is inside CHAOS_HOME: {raw}"
+            "refusing to trust a path that contains or is inside CHAOS_HOME: {raw}"
         );
     }
-    Ok(normalized)
+    Ok(())
+}
+
+/// The key the trust gates read for an existing directory: its Git root, or the
+/// directory itself outside a repository. Hooks and onboarding use the same key.
+pub fn trust_key(path: &Path) -> anyhow::Result<PathBuf> {
+    let root = crate::hooks::project_root(path)?;
+    Ok(crate::runtime_db::normalize_cwd_for_runtime_db(&root))
 }
 
 async fn current_decisions(db: &RuntimeDbHandle) -> anyhow::Result<BTreeMap<String, TrustLevel>> {
@@ -198,7 +244,7 @@ async fn current_decisions(db: &RuntimeDbHandle) -> anyhow::Result<BTreeMap<Stri
 
 /// Read every stored decision. Changes nothing.
 pub async fn list(home: &Path) -> anyhow::Result<TrustListing> {
-    let installation_id = crate::user_settings::installation_id(home)?;
+    let installation_id = crate::user_settings::existing_installation_id(home)?;
     let db = crate::user_settings::open(home).await?;
     let entries = db
         .list_project_trust()
@@ -220,9 +266,12 @@ pub async fn list(home: &Path) -> anyhow::Result<TrustListing> {
 /// Every stored decision, granted and denied, as a manifest bound to this installation.
 pub async fn export(home: &Path) -> anyhow::Result<Manifest> {
     let listing = list(home).await?;
+    let installation_id = listing.installation_id.context(
+        "this home has no installation identity, so it has no decisions of its own to export",
+    )?;
     Ok(Manifest {
         format: MANIFEST_FORMAT.to_string(),
-        installation_id: listing.installation_id,
+        installation_id,
         entries: listing
             .entries
             .into_iter()
@@ -242,10 +291,39 @@ pub async fn prepare_set(
     decision: Decision,
     expect: Decision,
 ) -> anyhow::Result<PreparedTrustChange> {
-    let path = normalize_project_path(project)?;
-    let raw = path.to_string_lossy().to_string();
-    exact_project_path(&raw, home)?;
-    plan(
+    let raw = match normalize_project_path(project) {
+        Ok(path) => {
+            // An existing directory: the decision must sit on the key the gates
+            // read, or it would change nothing.
+            let key = trust_key(&path)?;
+            ensure!(
+                key == path,
+                "trust for {} is decided at its project root {}; set that path instead",
+                path.display(),
+                key.display()
+            );
+            path.to_string_lossy().to_string()
+        }
+        Err(err) => {
+            // A path that no longer resolves can only be denied, and only where a
+            // decision is stored under exactly that key.
+            ensure!(
+                decision == Decision::Untrusted,
+                "cannot grant trust to {}: {err:#}",
+                project.display()
+            );
+            let raw = lexical_project_path(&project.to_string_lossy())?
+                .to_string_lossy()
+                .to_string();
+            let db = crate::user_settings::open(home).await?;
+            ensure!(
+                current_decisions(&db).await?.contains_key(&raw),
+                "{raw} does not resolve and has no stored decision to revoke"
+            );
+            raw
+        }
+    };
+    let prepared = plan(
         home,
         vec![ManifestEntry {
             project_path: raw,
@@ -254,7 +332,11 @@ pub async fn prepare_set(
         }],
         None,
     )
-    .await
+    .await?;
+    if let Some(held) = prepared.held.first() {
+        anyhow::bail!("{}: {}", held.project_path, held.reason);
+    }
+    Ok(prepared)
 }
 
 /// Prepare a reviewed manifest. `digest` must equal the manifest's own digest, and the
@@ -302,8 +384,9 @@ async fn plan(
     let mut unchanged = Vec::new();
     let mut checks = Vec::new();
     let mut conflicts = Vec::new();
+    let mut held = Vec::new();
     for entry in entries {
-        exact_project_path(&entry.project_path, home)?;
+        lexical_project_path(&entry.project_path)?;
         ensure!(
             seen.insert(entry.project_path.clone()),
             "duplicate manifest entry for {}",
@@ -313,6 +396,15 @@ async fn plan(
             .decision
             .target()
             .with_context(|| format!("manifest entry {}", entry.project_path))?;
+        if entry.decision == Decision::Trusted
+            && let Err(err) = grant_guard(&entry.project_path, home)
+        {
+            held.push(HeldEntry {
+                project_path: entry.project_path,
+                reason: format!("{err:#}"),
+            });
+            continue;
+        }
         let found = Decision::from_level(current.get(&entry.project_path).copied());
         let acceptable = match entry.expect {
             Some(expect) => found == expect,
@@ -356,6 +448,7 @@ async fn plan(
         manifest_digest,
         changes,
         unchanged,
+        held,
         home: home.to_path_buf(),
         checks,
     })
@@ -369,22 +462,30 @@ impl PreparedTrustChange {
         ))
     }
 
-    async fn commit(self) -> anyhow::Result<TrustReceipt> {
+    /// Commit for an already-authorised operator. `actor` names the authenticated
+    /// caller and is recorded with every change in the same transaction.
+    pub async fn commit(self, actor: &str) -> anyhow::Result<TrustReceipt> {
         // Unchanged entries are checked too: the receipt claims every reviewed
         // entry was as seen at the moment of commit, not only the ones written.
         if !self.checks.is_empty() {
             let db = crate::user_settings::open(&self.home).await?;
-            db.apply_project_trust_changes(&self.checks).await?;
+            let audit = ProjectTrustAudit {
+                installation_id: self.installation_id.clone(),
+                actor: actor.to_string(),
+                manifest_digest: self.manifest_digest.clone(),
+            };
+            db.apply_project_trust_changes(&self.checks, &audit).await?;
         }
         Ok(TrustReceipt {
             format: RECEIPT_FORMAT,
             installation_id: self.installation_id,
             storage: self.storage,
-            actor: "operator-cli",
+            actor: actor.to_string(),
             applied_at: jiff::Timestamp::now().as_second(),
             manifest_digest: self.manifest_digest,
             changes: self.changes,
             unchanged: self.unchanged,
+            held: self.held,
         })
     }
 
@@ -396,7 +497,7 @@ impl PreparedTrustChange {
             yes,
             std::env::var_os(crate::exec_env::CHAOS_THREAD_ID_ENV_VAR).is_some(),
         )?;
-        self.commit().await
+        self.commit("operator-cli").await
     }
 }
 

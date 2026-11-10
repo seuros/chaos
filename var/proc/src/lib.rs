@@ -24,7 +24,7 @@ pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
 pub use runtime::{DocumentKind, StoredDocument};
-pub use runtime::{ProjectTrustChange, ProjectTrustRecord};
+pub use runtime::{ProjectTrustAudit, ProjectTrustChange, ProjectTrustRecord};
 
 /// Low-level storage engine: useful for focused tests.
 ///

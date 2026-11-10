@@ -37,16 +37,32 @@ chaos trust --yes revoke /srv/resident/identity --expect trusted
 
 `--expect` is the decision you saw. If the stored decision differs when the
 change is prepared or when it commits, nothing changes and the command fails,
-so a stale script cannot overwrite a choice made since. The path must be an
-existing absolute directory; it is stored under its canonical form, which the
-receipt prints. The filesystem root and `CHAOS_HOME` are refused.
+so a stale script cannot overwrite a choice made since.
+
+A decision sits on the key the trust gates read: the Git root of the
+directory, or the directory itself outside a repository. Hooks and onboarding
+use the same key. Naming a subdirectory or worktree inside a repository is
+refused with the root it belongs to, because a decision there would change
+nothing.
+
+The guards restrict grants only. A grant needs an existing directory outside
+`CHAOS_HOME` that does not contain it. A denial needs only an absolute,
+normalised path, so a grant on a directory that contains `CHAOS_HOME` (such as
+`~`) or on a directory that has since been deleted can still be revoked; a
+path that no longer resolves is revoked by its exact stored key, and only if a
+decision is stored there. The filesystem root is always refused.
 
 `revoke` stores `untrusted`; it does not delete the decision. A manifest
 exported before the revocation therefore finds a denial where it expects
 nothing or its own grant, and is refused instead of restoring trust.
 
 Every change prints a receipt (`chaos-project-trust-receipt/v1`): installation,
-storage, before and after per path, and the time.
+storage, actor, before and after per path, and the time. Each change also
+writes a `configuration_events` row (`project_trust_trusted` or
+`project_trust_untrusted`) in the same transaction, naming the path, before,
+after, installation, actor and manifest digest. Onboarding writes record the
+actor `onboarding`. Reading decisions never creates an installation identity;
+a home without one has nothing of its own to export.
 
 ## MANIFESTS AND MIGRATION
 
@@ -61,7 +77,12 @@ A manifest names one installation and lists decisions, denied ones included.
 one you reviewed, duplicate or non-canonical paths, and any entry whose stored
 decision differs from what the manifest expects. Without an explicit `expect`,
 an entry applies only where nothing is stored or the stored decision already
-matches. It is all or nothing: one conflict refuses the batch. Every entry is
+matches. It is all or nothing: one conflict refuses the batch. A grant that
+fails the grant guards (its directory is missing, or it contains or sits
+inside `CHAOS_HOME`) is not written: the plan and the receipt list it under
+`held` with the reason, and the rest of the batch applies. A migration that
+must carry every grant has to treat any held entry as a failed cutover, and
+should check for them before stopping the resident. Every entry is
 checked again inside the committing transaction, the ones that change nothing
 included, so a receipt never reports an entry as it was reviewed if it moved
 before the commit. Re-applying the same manifest is a no-op.

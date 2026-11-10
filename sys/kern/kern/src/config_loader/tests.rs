@@ -19,6 +19,7 @@ use chaos_ipc::config_types::TrustLevel;
 use chaos_ipc::config_types::WebSearchMode;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_realpath::AbsolutePathBuf;
+use chaos_sysctl::types::McpServerConfig;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 use std::path::PathBuf;
@@ -587,6 +588,56 @@ async fn project_root_dot_mcp_json_is_ignored_when_project_is_untrusted() -> std
         "untrusted project .mcp.json should not affect effective MCP servers"
     );
 
+    Ok(())
+}
+
+async fn reload_project_mcp_servers(
+    trust_level: TrustLevel,
+) -> std::io::Result<std::collections::HashMap<String, McpServerConfig>> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let chaos_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&project_root).await?;
+    tokio::fs::create_dir_all(&chaos_home).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    make_config_for_test(&chaos_home, &project_root, trust_level, None).await?;
+
+    let mut config = ConfigBuilder::default()
+        .chaos_home(chaos_home)
+        .fallback_cwd(Some(project_root.clone()))
+        .build()
+        .await?;
+    tokio::fs::write(
+        project_root.join(".mcp.json"),
+        r#"{"mcpServers": {"docs": {"command": "node", "args": ["server.js"]}}}"#,
+    )
+    .await?;
+
+    let layer = crate::config_loader::reload_project_mcp_layer(
+        &config.resolved_bootstrap(),
+        &project_root,
+        &config.config_layer_stack,
+    )
+    .await?;
+    config.config_layer_stack = config.config_layer_stack.with_project_mcp_layer(layer);
+    config.reload_mcp_servers_from_layer_stack().await?;
+    Ok(config.mcp_servers.get().clone())
+}
+
+#[tokio::test]
+async fn reloaded_dot_mcp_json_stays_disabled_when_project_is_untrusted() -> std::io::Result<()> {
+    let servers = reload_project_mcp_servers(TrustLevel::Untrusted).await?;
+    assert!(
+        !servers.contains_key("docs"),
+        "an in-session reload must not load an untrusted project's .mcp.json"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn reloaded_dot_mcp_json_loads_when_project_is_trusted() -> std::io::Result<()> {
+    let servers = reload_project_mcp_servers(TrustLevel::Trusted).await?;
+    assert!(servers.contains_key("docs"));
     Ok(())
 }
 

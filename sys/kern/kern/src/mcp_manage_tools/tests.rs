@@ -1,3 +1,4 @@
+use chaos_sysctl::types::McpServerTransportConfig;
 use tempfile::tempdir;
 
 use super::mcp_add_server::execute_add_server;

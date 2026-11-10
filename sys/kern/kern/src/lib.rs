@@ -198,7 +198,6 @@ pub use exec_policy::load_exec_policy;
 pub use file_watcher::FileWatcherEvent;
 pub use mcp_manage_tools::McpAddServerParams;
 pub use mcp_manage_tools::add_server_to_dot_mcp_json;
-pub use mcp_manage_tools::build_project_mcp_refresh_config;
 pub use mcp_manage_tools::project_mcp_json_path_for_cwd;
 pub use safety::get_platform_sandbox;
 pub use turn_metadata::build_turn_metadata_header;

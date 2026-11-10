@@ -6,7 +6,6 @@ use chaos_ipc::api::SettingsScope;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::SessionSource;
 use chaos_ipc::protocol::SubAgentSource;
-use chaos_realpath::AbsolutePathBuf;
 use tracing::warn;
 
 use super::Session;
@@ -238,42 +237,27 @@ impl Session {
     }
 
     async fn reload_project_mcp_layer_and_refresh_now(&self, turn_context: &TurnContext) {
-        let project_mcp_json_path = {
+        let (bootstrap, cwd, config_layer_stack) = {
             let state = self.state.lock().await;
             let session_config = &state.session_configuration;
-            crate::config_loader::project_mcp_json_path_for_stack(
-                &session_config.original_config_do_not_use.config_layer_stack,
-                &session_config.cwd,
+            let config = &session_config.original_config_do_not_use;
+            (
+                config.resolved_bootstrap(),
+                session_config.cwd.clone(),
+                config.config_layer_stack.clone(),
             )
         };
 
-        let layer = match std::fs::read_to_string(&project_mcp_json_path) {
-            Ok(contents) => match crate::config_loader::parse_project_mcp_json(&contents) {
-                Ok(config) => {
-                    let Ok(file) = AbsolutePathBuf::try_from(project_mcp_json_path.clone()) else {
-                        warn!(
-                            "failed to resolve project MCP path while \
-                                 reloading layer: {}",
-                            project_mcp_json_path.display()
-                        );
-                        return;
-                    };
-                    Some(crate::config_loader::ConfigLayerEntry::new(
-                        chaos_ipc::api::ConfigLayerSource::ProjectMcp { file },
-                        config,
-                    ))
-                }
-                Err(err) => {
-                    warn!(
-                        "failed to parse project MCP config while \
-                             reloading layer: {err}"
-                    );
-                    return;
-                }
-            },
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        let layer = match crate::config_loader::reload_project_mcp_layer(
+            &bootstrap,
+            &cwd,
+            &config_layer_stack,
+        )
+        .await
+        {
+            Ok(layer) => layer,
             Err(err) => {
-                warn!("failed to read project MCP config while reloading layer: {err}");
+                warn!("failed to reload project MCP config: {err}");
                 return;
             }
         };

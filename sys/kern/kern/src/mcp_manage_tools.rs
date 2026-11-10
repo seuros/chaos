@@ -2,16 +2,10 @@ mod mcp_add_server;
 mod mcp_server;
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use chaos_ipc::api::ConfigLayerSource;
-use chaos_ipc::protocol::McpServerRefreshConfig;
-use chaos_realpath::AbsolutePathBuf;
 use chaos_sysctl::types::McpServerConfig;
-use chaos_sysctl::types::McpServerTransportConfig;
-use chaos_sysctl::types::OAuthCredentialsStoreMode;
 use chaos_traits::catalog::CatalogRegistration;
 use chaos_traits::catalog::CatalogTool;
 use chaos_traits::catalog::CatalogToolDriver;
@@ -45,57 +39,6 @@ pub fn tool_infos() -> Vec<ToolInfo> {
         McpManageServer::mcp_add_server_tool_info(),
         McpManageServer::mcp_server_tool_info(),
     ]
-}
-
-fn mcp_server_matches_requirement(
-    requirement: &crate::config_loader::McpServerRequirement,
-    server: &McpServerConfig,
-) -> bool {
-    match &requirement.identity {
-        crate::config_loader::McpServerIdentity::Command {
-            command: want_command,
-        } => matches!(
-            &server.transport,
-            McpServerTransportConfig::Stdio { command: got_command, .. }
-                if got_command == want_command
-        ),
-        crate::config_loader::McpServerIdentity::Url { url: want_url } => matches!(
-            &server.transport,
-            McpServerTransportConfig::StreamableHttp { url: got_url, .. }
-                if got_url == want_url
-        ),
-    }
-}
-
-fn filter_mcp_servers_by_requirements(
-    mcp_servers: &mut HashMap<String, McpServerConfig>,
-    mcp_requirements: Option<
-        &crate::config_loader::Sourced<
-            BTreeMap<String, crate::config_loader::McpServerRequirement>,
-        >,
-    >,
-) {
-    let Some(allowlist) = mcp_requirements else {
-        return;
-    };
-
-    let source = allowlist.source.clone();
-    for (name, server) in mcp_servers.iter_mut() {
-        let allowed = allowlist
-            .value
-            .get(name)
-            .is_some_and(|requirement| mcp_server_matches_requirement(requirement, server));
-        if allowed {
-            server.disabled_reason = None;
-        } else {
-            server.enabled = false;
-            server.disabled_reason = Some(
-                crate::config::types::McpServerDisabledReason::Requirements {
-                    source: source.clone(),
-                },
-            );
-        }
-    }
 }
 
 fn catalog_tools() -> Vec<CatalogTool> {
@@ -195,75 +138,6 @@ pub fn project_mcp_json_path_for_cwd(
     cwd: &Path,
 ) -> std::path::PathBuf {
     crate::config_loader::project_mcp_json_path_for_stack(config_layer_stack, cwd)
-}
-
-pub fn build_project_mcp_refresh_config(
-    config_layer_stack: &crate::config_loader::ConfigLayerStack,
-    cwd: &Path,
-    store_mode: OAuthCredentialsStoreMode,
-) -> Result<McpServerRefreshConfig, String> {
-    let project_mcp_json_path =
-        crate::config_loader::project_mcp_json_path_for_stack(config_layer_stack, cwd);
-    let layer = match std::fs::read_to_string(&project_mcp_json_path) {
-        Ok(contents) => match crate::config_loader::parse_project_mcp_json(&contents) {
-            Ok(config) => {
-                let file =
-                    AbsolutePathBuf::try_from(project_mcp_json_path.clone()).map_err(|_| {
-                        format!(
-                            "failed to resolve project MCP path while reloading layer: {}",
-                            project_mcp_json_path.display()
-                        )
-                    })?;
-                Some(crate::config_loader::ConfigLayerEntry::new(
-                    ConfigLayerSource::ProjectMcp { file },
-                    config,
-                ))
-            }
-            Err(err) => {
-                return Err(format!(
-                    "failed to parse project MCP config while reloading layer: {err}"
-                ));
-            }
-        },
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-        Err(err) => {
-            return Err(format!(
-                "failed to read project MCP config while reloading layer: {err}"
-            ));
-        }
-    };
-
-    let updated_stack = config_layer_stack.with_project_mcp_layer(layer);
-    let mut mcp_servers = HashMap::new();
-    for layer in updated_stack.get_layers(
-        crate::config_loader::ConfigLayerStackOrdering::LowestPrecedenceFirst,
-        /*include_disabled*/ false,
-    ) {
-        if !matches!(layer.name, ConfigLayerSource::ProjectMcp { .. }) {
-            continue;
-        }
-        let Some(servers_value) = layer.config.get("mcp_servers") else {
-            continue;
-        };
-        let layer_servers: HashMap<String, crate::config::types::McpServerConfig> =
-            servers_value.clone().try_into().map_err(|err| {
-                format!(
-                    "failed to parse effective project MCP config while reloading servers: {err}"
-                )
-            })?;
-        mcp_servers.extend(layer_servers);
-    }
-    filter_mcp_servers_by_requirements(
-        &mut mcp_servers,
-        updated_stack.requirements().mcp_servers.as_ref(),
-    );
-
-    Ok(McpServerRefreshConfig {
-        mcp_servers: serde_json::to_value(mcp_servers)
-            .map_err(|err| format!("failed to serialize project MCP servers: {err}"))?,
-        mcp_oauth_credentials_store_mode: serde_json::to_value(store_mode)
-            .map_err(|err| format!("failed to serialize MCP OAuth store mode: {err}"))?,
-    })
 }
 
 #[cfg(test)]

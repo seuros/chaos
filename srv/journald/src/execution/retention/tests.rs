@@ -17,7 +17,7 @@ macro_rules! retention_scenario {
         sqlx::query(
             "INSERT INTO execution_sessions (session_id,scope,process_id,state,owner_id,lease_token,expires_at_ms)
              VALUES ($1,$2,$3,'idle','writer',$4,9999999999999)"
-        ).bind(&id).bind(&scope).bind(&process).bind(Uuid::new_v4().to_string()).execute(&$pool).await.unwrap();
+        ).bind(&id).bind(&scope).bind(&process).bind(1_i64).execute(&$pool).await.unwrap();
         let export = ExecutionRetentionRequest::Export { scope: scope.clone(), session_id };
         assert!(matches!($execute(&$pool, &export).await, Err(JournalError::ExecutionConflict(_))));
         sqlx::query("UPDATE execution_sessions SET state = 'closed' WHERE session_id = $1")

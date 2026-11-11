@@ -19,6 +19,7 @@ const CHAOS_HOME_ENV_VAR: &str = "CHAOS_HOME";
 // based on the arg0.
 // NOTE: this doesn't work on ARM
 #[ctor(unsafe)]
+// SAFETY: This constructor runs before test threads exist, so environment edits cannot race.
 pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     #[allow(clippy::unwrap_used)]
     let chaos_home = tempfile::Builder::new()
@@ -29,7 +30,7 @@ pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     // arg0_dispatch() creates helper links under CHAOS_HOME/tmp. Point it at a
     // test-owned temp dir so startup never mutates the developer's real ~/.chaos.
     //
-    // Safety: #[ctor] runs before tests start, so no test threads exist yet.
+    // SAFETY: #[ctor] runs before tests start, so no test threads exist yet.
     unsafe {
         std::env::set_var(CHAOS_HOME_ENV_VAR, chaos_home.path());
     }
@@ -39,12 +40,18 @@ pub static CHAOS_ALIASES_TEMP_DIR: TestChaosAliasesGuard = unsafe {
     // Restore the process environment immediately so later tests observe the
     // same CHAOS_HOME state they started with.
     match previous_chaos_home.as_ref() {
-        Some(value) => unsafe {
-            std::env::set_var(CHAOS_HOME_ENV_VAR, value);
-        },
-        None => unsafe {
-            std::env::remove_var(CHAOS_HOME_ENV_VAR);
-        },
+        Some(value) => {
+            // SAFETY: The constructor is still running before any test threads start.
+            unsafe {
+                std::env::set_var(CHAOS_HOME_ENV_VAR, value);
+            }
+        }
+        None => {
+            // SAFETY: The constructor is still running before any test threads start.
+            unsafe {
+                std::env::remove_var(CHAOS_HOME_ENV_VAR);
+            }
+        }
     }
 
     TestChaosAliasesGuard {
@@ -84,6 +91,7 @@ mod list_dir;
 mod live_cli;
 #[path = "mcp_client.rs"]
 mod mcp_client;
+mod mcp_management;
 #[path = "minion_jobs.rs"]
 mod minion_jobs;
 #[path = "model_info_overrides.rs"]

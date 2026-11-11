@@ -160,9 +160,18 @@ macro_rules! mcp_delegate {
 }
 
 impl Session {
-    mcp_delegate!(pub fn list_resources(server, params: Option<PaginatedRequestParams>) -> ListResourcesResult => list_resources);
-    mcp_delegate!(pub fn list_resource_templates(server, params: Option<PaginatedRequestParams>) -> ListResourceTemplatesResult => list_resource_templates);
-    mcp_delegate!(pub fn read_resource(server, params: ReadResourceRequestParams) -> ReadResourceResult => read_resource);
+    mcp_delegate!(
+        pub fn list_resources(server, params: Option<PaginatedRequestParams>)
+        -> ListResourcesResult => list_resources
+    );
+    mcp_delegate!(
+        pub fn list_resource_templates(server, params: Option<PaginatedRequestParams>)
+        -> ListResourceTemplatesResult => list_resource_templates
+    );
+    mcp_delegate!(
+        pub fn read_resource(server, params: ReadResourceRequestParams)
+        -> ReadResourceResult => read_resource
+    );
     mcp_delegate!(pub fn list_mcp_tasks(server) -> ListTasksResult => list_tasks);
 
     pub async fn subscribe_resource(&self, server: &str, uri: String) -> anyhow::Result<()> {
@@ -553,7 +562,13 @@ impl Session {
         ready.sort();
         failed.sort_by(|a, b| a.server.cmp(&b.server));
 
-        if !failed.is_empty() {
+        // Optional servers may already be offline. They must not veto unrelated
+        // additions/removals and leave the previous tool surface active.
+        if failed.iter().any(|failure| {
+            mcp_servers
+                .get(&failure.server)
+                .is_some_and(|config| config.required)
+        }) {
             cancel_token.cancel();
             refreshed_manager.shutdown().await.map_err(|error| {
                 anyhow::anyhow!("failed to clean up rejected MCP refresh generation: {error:#}")

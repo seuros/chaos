@@ -1,23 +1,21 @@
 use super::*;
 
 #[test]
-fn test_untrusted_project_gets_workspace_write_sandbox() -> anyhow::Result<()> {
+fn untrusted_project_never_resolves_wider_than_no_decision() -> anyhow::Result<()> {
     let cfg = ConfigToml::default();
+    let resolve = |trust_level: Option<TrustLevel>| {
+        cfg.derive_sandbox_policy(None, None, Some(&ProjectTrust { trust_level }), None)
+    };
 
-    let resolution = cfg.derive_sandbox_policy(
-        None,
-        None,
-        Some(&ProjectTrust {
-            trust_level: Some(TrustLevel::Untrusted),
-        }),
-        None,
-    );
+    let undecided = resolve(None);
+    let denied = resolve(Some(TrustLevel::Untrusted));
+    let granted = resolve(Some(TrustLevel::Trusted));
 
-    std::assert_matches!(
-        resolution,
-        SandboxPolicy::WorkspaceWrite { .. },
-        "Expected WorkspaceWrite for untrusted project, got {resolution:?}"
-    );
+    // A denial is the same read-only default as having no decision; only a
+    // grant widens to workspace-write.
+    assert_eq!(undecided, SandboxPolicy::new_read_only_policy());
+    assert_eq!(denied, undecided, "a denial must not widen the sandbox");
+    std::assert_matches!(granted, SandboxPolicy::WorkspaceWrite { .. });
 
     Ok(())
 }

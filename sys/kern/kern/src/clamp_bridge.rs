@@ -159,6 +159,12 @@ async fn handle_request(
             message: "no active turn for clamp bridge".to_string(),
         };
     };
+    // The task keeps the context captured when the turn started. The prompt is
+    // rendered from the effective context, which re-reads the plan attachment,
+    // the active mode and permissions before every sample. List and dispatch
+    // from the same view, or a clamped model is told to use `plan_progress`
+    // (or `plan` after switching to Plan mode) and never given it.
+    let turn_context = session.effective_turn_context(&turn_context).await;
 
     let cancellation = CancellationToken::new();
     let router = match built_tools(&session, &turn_context, &[], &cancellation).await {

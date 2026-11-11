@@ -24,6 +24,10 @@ pub use runtime::RuntimeDbHandle;
 pub use runtime::StateRuntime;
 pub use runtime::{ApprovalState, RememberedApproval, SettingsSnapshot};
 pub use runtime::{DocumentKind, StoredDocument};
+pub use runtime::{
+    MAX_RECOVERY_CHECKPOINT_BYTES, MAX_RECOVERY_CHECKPOINTS, RecoveryCheckpoint,
+    RecoveryCheckpointCommit, RecoveryCheckpointNote, RecoveryCheckpointWrite,
+};
 pub use runtime::{ProjectTrustAudit, ProjectTrustChange, ProjectTrustRecord};
 
 /// Low-level storage engine: useful for focused tests.

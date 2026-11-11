@@ -3,6 +3,10 @@ use super::*;
 #[test]
 fn resolves_builtin_resource_uris() {
     assert_eq!(
+        resolve_resource_uri(CHAOS_RECOVERY_URI).unwrap(),
+        Some(ResolvedChaosBuiltinResource::Recovery)
+    );
+    assert_eq!(
         resolve_resource_uri("chaos://hooks").unwrap(),
         Some(ResolvedChaosBuiltinResource::Hooks)
     );
@@ -43,6 +47,36 @@ fn resolves_builtin_resource_uris() {
         resolve_resource_uri(CHAOS_MANUAL_URI).expect("resolve manual"),
         Some(ResolvedChaosBuiltinResource::ManualIndex)
     );
+}
+
+#[test]
+fn recovery_checkpoint_uris_are_strict_ids() {
+    for id in [1, 7, i64::MAX] {
+        assert_eq!(
+            resolve_resource_uri(&format!("chaos://recovery/{id}")).unwrap(),
+            Some(ResolvedChaosBuiltinResource::RecoveryCheckpoint { id })
+        );
+    }
+    for suffix in [
+        "",
+        "../other",
+        "not-a-number",
+        "0",
+        "-1",
+        "+7",
+        "07",
+        " 7",
+        "7 ",
+        "7.0",
+        "9223372036854775808",
+        "7/extra",
+        "7?session=other",
+        "7#fragment",
+        "%37",
+        "01900000-0000-7000-8000-000000000001",
+    ] {
+        assert!(resolve_resource_uri(&format!("chaos://recovery/{suffix}")).is_err());
+    }
 }
 
 #[test]

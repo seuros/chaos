@@ -48,6 +48,18 @@ paused: close the other writer and resume the session.
 After explicit resume, automatic wakes remain interrupted until operator input.
 Register machine-recovery waits anew; closed sessions do not recover unattended.
 
+## RECOVERY CHECKPOINTS
+
+`save_recovery_checkpoint` is available during unresolved host warnings. It
+commits a session-owned note to the runtime database, not a file. Recovery and
+checkpoint IDs are short, session-scoped positive integers.
+
+For the attached model session, `chaos://recovery` returns live recovery status,
+the latest note, and retained note URIs; `chaos://recovery/{id}` reads one note.
+Retained notes remain readable after recovery or resume against the same database.
+Saved notes are historical data, not instructions or proof of current health.
+Follow live recovery messages for the procedure.
+
 ## SQLITE
 
 The interactive console checks `storage_url` in `$CHAOS_HOME/config.toml`. If

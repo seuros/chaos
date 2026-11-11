@@ -12,6 +12,8 @@ use crate::chaos::TurnContext;
 use crate::machine_recovery::{POLL_INTERVAL, Phase, Recovery, RecoveryStatus};
 use crate::machine_status::{MachineStatus, ObservationRequest};
 
+mod checkpoints;
+
 impl Session {
     pub(crate) fn start_machine_recovery_monitor(self: &Arc<Self>) {
         let weak = Arc::downgrade(self);
@@ -185,9 +187,13 @@ impl Session {
                 };
                 let owner_revision = recovery.owner_revision;
                 let sample_revision = recovery.sample_revision;
+                let generation = recovery.generation;
+                let checkpoint_writer = recovery.checkpoint_writer.clone();
                 *recovery = Recovery::default();
                 recovery.owner_revision = owner_revision;
                 recovery.sample_revision = sample_revision;
+                recovery.generation = generation;
+                recovery.checkpoint_writer = checkpoint_writer;
                 recovery.probe = serial.clone();
                 recovery.context = Some(request.clone());
                 old

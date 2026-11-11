@@ -134,9 +134,14 @@ pub(crate) fn build_specs_with_discoverable_tools(
         return builder;
     }
     if config.machine_recovery {
-        use crate::tools::handlers::machine_recovery;
+        use crate::tools::handlers::{machine_recovery, recovery_checkpoint};
         push_tool_spec(&mut builder, machine_recovery::tool(), false);
         builder.register_handler(machine_recovery::NAME, Arc::new(machine_recovery::Handler));
+        push_tool_spec(&mut builder, recovery_checkpoint::tool(), false);
+        builder.register_handler(
+            recovery_checkpoint::NAME,
+            Arc::new(recovery_checkpoint::Handler),
+        );
     }
     if config.recall_available {
         use crate::tools::handlers::recall;
@@ -483,15 +488,19 @@ pub(crate) fn build_specs_with_discoverable_tools(
                     }
                 }
                 _ => {
-                    let reg = catalog_registrations.get(source.as_str()).unwrap_or_else(|| {
-                        panic!(
-                            "catalog module {source} registered tool {} but has no CatalogRegistration",
-                            tool.name
-                        )
-                    });
+                    let reg = catalog_registrations
+                        .get(source.as_str())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "catalog module {source} registered tool {} \
+                             but has no CatalogRegistration",
+                                tool.name
+                            )
+                        });
                     let tool_driver = reg.tool_driver.unwrap_or_else(|| {
                         panic!(
-                            "catalog module {source} registered tool {} but provides no tool_driver",
+                            "catalog module {source} registered tool {} \
+                             but provides no tool_driver",
                             tool.name
                         )
                     });

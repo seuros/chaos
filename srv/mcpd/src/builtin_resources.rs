@@ -281,6 +281,32 @@ fn machine_handler<'a>(
     read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_MACHINE_URI)
 }
 
+fn recovery_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    read_static_resource_handler(server, ctx, builtin_mcp_resources::CHAOS_RECOVERY_URI)
+}
+
+fn recovery_checkpoint_handler<'a>(
+    server: &'a ChaosMcpServer,
+    ctx: ExecutionContext<'a>,
+) -> ResourceReadFuture<'a> {
+    Box::pin(async move {
+        let id = ctx
+            .uri_params
+            .get("id")
+            .ok_or_else(|| ResourceError::InvalidUri("missing checkpoint id".into()))?;
+        let uri = format!("chaos://recovery/{id}");
+        let content = read_builtin_resource(server, ctx.session, &uri).await?;
+        Ok(vec![text_resource_with_mime(
+            uri,
+            content.text,
+            content.mime_type,
+        )])
+    })
+}
+
 fn session_detail_handler<'a>(
     server: &'a ChaosMcpServer,
     ctx: ExecutionContext<'a>,
@@ -369,6 +395,7 @@ pub(crate) fn resource_router() -> McpResourceRouter<ChaosMcpServer> {
             builtin_mcp_resources::ChaosBuiltinResourceKind::Hooks => hooks_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Manual => manual_list_handler,
             builtin_mcp_resources::ChaosBuiltinResourceKind::Machine => machine_handler,
+            builtin_mcp_resources::ChaosBuiltinResourceKind::Recovery => recovery_handler,
         };
         router = router.with_resource(resource_info(spec), handler, None);
     }
@@ -387,6 +414,9 @@ pub(crate) fn resource_template_router() -> McpResourceTemplateRouter<ChaosMcpSe
             }
             builtin_mcp_resources::ChaosBuiltinResourceTemplateKind::ManualPage => {
                 manual_page_handler
+            }
+            builtin_mcp_resources::ChaosBuiltinResourceTemplateKind::RecoveryCheckpoint => {
+                recovery_checkpoint_handler
             }
         };
         router = router.with_template(template_info(spec), handler, None);

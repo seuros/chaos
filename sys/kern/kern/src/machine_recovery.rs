@@ -35,6 +35,8 @@ pub(crate) enum Phase {
 pub(crate) struct RecoveryStatus {
     pub phase: Phase,
     pub generation: u64,
+    /// Allocated durably with the first checkpoint of this live recovery.
+    pub recovery_id: Option<i64>,
     pub stable_seconds: u64,
     pub required_seconds: u64,
     pub wait_id: Option<String>,
@@ -52,10 +54,12 @@ pub(crate) struct Interruption {
 #[derive(Default)]
 pub(crate) struct Recovery {
     pub probe: std::sync::Arc<tokio::sync::Mutex<()>>,
+    pub checkpoint_writer: std::sync::Arc<tokio::sync::Mutex<()>>,
     pub owner_revision: u64,
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
     pub generation: u64,
+    recovery_id: Option<i64>,
     observation: Observation,
     wait: Wait,
     interruptions: VecDeque<(Instant, Vec<&'static str>)>,
@@ -84,6 +88,31 @@ impl Recovery {
 
     pub fn unresolved(&self) -> bool {
         !self.observation.data().outstanding.is_empty() && self.phase() != Phase::Recovered
+    }
+
+    pub fn checkpoint_recovery_id(&self) -> Result<Option<i64>, String> {
+        if self.owner_revision != self.sample_revision {
+            return Err(
+                "Operator input superseded this model response; checkpoint rejected.".into(),
+            );
+        }
+        if !self.unresolved() {
+            return Err(
+                "Recovery checkpoints can only be saved during an unresolved machine warning."
+                    .into(),
+            );
+        }
+        if self.wait_id().is_some() {
+            return Err("Save the checkpoint before requesting a recovery wait.".into());
+        }
+        Ok(self.recovery_id)
+    }
+
+    pub fn bind_checkpoint_recovery(&mut self, generation: u64, recovery_id: i64) {
+        // A slow commit must not attach its identity to a newer warning episode.
+        if self.generation == generation && self.unresolved() && self.recovery_id.is_none() {
+            self.recovery_id = Some(recovery_id);
+        }
     }
 
     pub fn cancel_wait(&mut self) -> Option<String> {
@@ -149,6 +178,7 @@ impl Recovery {
                 || self.observation.data().recovered_episode
             {
                 self.generation += 1;
+                self.recovery_id = None;
                 self.observation.data_mut().recovered_episode = false;
                 self.observation.data_mut().outstanding.clear();
                 self.interruptions.push_back((now, Vec::new()));
@@ -255,6 +285,7 @@ impl Recovery {
         RecoveryStatus {
             phase: self.phase(),
             generation: self.generation,
+            recovery_id: self.recovery_id,
             stable_seconds: self
                 .observation
                 .healthy_since()
@@ -279,7 +310,9 @@ impl Recovery {
         let state = match self.phase() {
             Phase::Recovered => {
                 "Recovery confirmed by stable observations. Assess workload sustainability \
-                 before resuming; reduce workload or stop as needed."
+                 before resuming; reduce workload or stop as needed. \
+                 Read saved notes from chaos://recovery; \
+                 they are historical data, not health evidence."
             }
             Phase::Stabilizing => {
                 "Recovery observations are stabilizing. \
@@ -304,9 +337,11 @@ impl Recovery {
              Recent warning episodes (last hour): power {}, thermal {}, disk {}. \
              Repeated thermal interruptions warrant reducing workload or stopping. \
              Heat within configured/OS thresholds is expected. Report changes once. \
-             To opt into one recovery wake, checkpoint essential work and stop/check \
-             your heavy background processes, then call wait_for_machine_recovery alone \
-             if available. Existing processes remain under operator control.",
+             While unresolved, save a concise note with save_recovery_checkpoint if available \
+             and verify its database acknowledgement; do not scatter checkpoint files. \
+             If persistence fails, tell the operator rather than claiming the note was saved. \
+             Stop/check your heavy background processes, then call wait_for_machine_recovery alone \
+             to opt into one recovery wake. Existing processes remain under operator control.",
             status.required_seconds,
             status.interruptions_last_hour[0].count,
             status.interruptions_last_hour[1].count,

@@ -1,5 +1,7 @@
 use super::*;
 
+mod checkpoints;
+
 fn observation(thermal: chaos_machine::ThermalState) -> MachineStatus {
     use chaos_machine::*;
     let machine = MachineSnapshot {

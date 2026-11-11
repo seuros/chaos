@@ -14,6 +14,7 @@ pub(crate) mod minion_jobs;
 mod parent_effort;
 mod plan;
 pub(crate) mod recall;
+pub(crate) mod recovery_checkpoint;
 mod refresh_models;
 mod request_permissions;
 mod request_user_input;
@@ -185,7 +186,9 @@ pub(crate) fn normalize_and_validate_additional_permissions(
         && (uses_additional_permissions || additional_permissions.is_some())
     {
         return Err(
-            "additional permissions are disabled by the current approval policy; switch to an approval policy that allows sandbox approval before using `with_additional_permissions`"
+            "additional permissions are disabled by the current approval policy; \
+             switch to an approval policy that allows sandbox approval before using \
+             `with_additional_permissions`"
                 .to_string(),
         );
     }
@@ -193,12 +196,15 @@ pub(crate) fn normalize_and_validate_additional_permissions(
     if uses_additional_permissions {
         if !permissions_preapproved && !matches!(approval_policy, ApprovalPolicy::Interactive) {
             return Err(format!(
-                "approval policy is {approval_policy:?}; reject command — you cannot request additional permissions unless the approval policy is Interactive"
+                "approval policy is {approval_policy:?}; reject command — \
+                 you cannot request additional permissions \
+                 unless the approval policy is Interactive"
             ));
         }
         let Some(additional_permissions) = additional_permissions else {
             return Err(
-                "missing `additional_permissions`; provide at least one of `network`, `file_system`, or `macos` when using `with_additional_permissions`"
+                "missing `additional_permissions`; provide at least one of `network`, \
+                 `file_system`, or `macos` when using `with_additional_permissions`"
                     .to_string(),
             );
         };
@@ -209,7 +215,8 @@ pub(crate) fn normalize_and_validate_additional_permissions(
         let normalized = normalize_additional_permissions(additional_permissions);
         if normalized.is_empty() {
             return Err(
-                "`additional_permissions` must include at least one requested permission in `network`, `file_system`, or `macos`"
+                "`additional_permissions` must include at least one requested permission \
+                 in `network`, `file_system`, or `macos`"
                     .to_string(),
             );
         }
@@ -218,7 +225,8 @@ pub(crate) fn normalize_and_validate_additional_permissions(
 
     if additional_permissions.is_some() {
         Err(
-            "`additional_permissions` requires `sandbox_permissions` set to `with_additional_permissions`"
+            "`additional_permissions` requires `sandbox_permissions` set to \
+             `with_additional_permissions`"
                 .to_string(),
         )
     } else {

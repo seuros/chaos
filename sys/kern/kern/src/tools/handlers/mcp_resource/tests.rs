@@ -442,8 +442,10 @@ fn template_with_server_serializes_server_field() {
 fn inline_resources_include_builtin_resources() {
     let resources = chaos_inline_resources();
 
-    assert_eq!(resources.len(), 9);
+    assert_eq!(resources.len(), 10);
     assert_eq!(resources[8].uri, builtin_mcp_resources::CHAOS_HOOKS_URI);
+    assert_eq!(resources[9].uri, builtin_mcp_resources::CHAOS_RECOVERY_URI);
+    assert_eq!(resources[9].name, "recovery");
     let machine = resources
         .iter()
         .find(|resource| resource.uri == builtin_mcp_resources::CHAOS_MACHINE_URI)
@@ -523,7 +525,11 @@ fn inline_text_resource_result_wraps_json_text_content() {
 fn inline_resource_templates_include_builtin_templates() {
     let templates = chaos_inline_resource_templates();
 
-    assert_eq!(templates.len(), 3);
+    assert_eq!(templates.len(), 4);
+    assert_eq!(
+        templates[3].uri_template,
+        builtin_mcp_resources::CHAOS_RECOVERY_URI_TEMPLATE
+    );
     assert_eq!(
         templates[2].uri_template,
         builtin_mcp_resources::CHAOS_HOOKS_URI_TEMPLATE

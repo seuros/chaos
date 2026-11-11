@@ -63,10 +63,15 @@ mod message_history;
 mod minion_jobs;
 mod planning;
 mod processes;
+mod recovery_checkpoints;
 mod reviewer_orchestration;
 mod settings;
 pub use agent_roles::AgentRoleRecord;
 pub use documents::{DocumentKind, StoredDocument};
+pub use recovery_checkpoints::{
+    MAX_RECOVERY_CHECKPOINT_BYTES, MAX_RECOVERY_CHECKPOINTS, RecoveryCheckpoint,
+    RecoveryCheckpointCommit, RecoveryCheckpointNote, RecoveryCheckpointWrite,
+};
 pub use settings::{ApprovalState, RememberedApproval, SettingsSnapshot};
 #[cfg(test)]
 mod test_support;
@@ -290,7 +295,8 @@ SET trust_level = excluded.trust_level,
             None,
         )?;
         sqlx::query(
-            "INSERT INTO configuration_events (id, event, subject, created_at) VALUES (?, ?, ?, UNIXEPOCH())",
+            "INSERT INTO configuration_events (id, event, subject, created_at) \
+             VALUES (?, ?, ?, UNIXEPOCH())",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(event)
@@ -303,7 +309,8 @@ SET trust_level = excluded.trust_level,
 
     async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
         let rows = sqlx::query(
-            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+            "SELECT project_path, trust_level, updated_at FROM project_trust \
+             ORDER BY project_path ASC",
         )
         .fetch_all(self.pool())
         .await?;
@@ -391,7 +398,8 @@ WHERE project_path = ? AND trust_level = ?
                     audit.manifest_digest.as_deref(),
                 )?;
                 sqlx::query(
-                    "INSERT INTO configuration_events (id, event, subject, created_at) VALUES (?, ?, ?, UNIXEPOCH())",
+                    "INSERT INTO configuration_events (id, event, subject, created_at) \
+                     VALUES (?, ?, ?, UNIXEPOCH())",
                 )
                 .bind(Uuid::now_v7().to_string())
                 .bind(event)
@@ -1044,7 +1052,8 @@ ON CONFLICT (project_path) DO NOTHING
             None,
         )?;
         sqlx::query(
-            "INSERT INTO configuration_events (id, event, subject, created_at) VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
+            "INSERT INTO configuration_events (id, event, subject, created_at) \
+             VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(event)
@@ -1057,7 +1066,8 @@ ON CONFLICT (project_path) DO NOTHING
 
     async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
         let rows = sqlx::query(
-            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+            "SELECT project_path, trust_level, updated_at FROM project_trust \
+             ORDER BY project_path ASC",
         )
         .fetch_all(&self.pool)
         .await?;
@@ -1091,7 +1101,8 @@ ON CONFLICT (project_path) DO NOTHING
                     sqlx::query(
                         r#"
 INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
-VALUES ($1, $2, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)
+VALUES ($1, $2, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
+        EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)
 ON CONFLICT(project_path) DO NOTHING
                     "#,
                     )
@@ -1148,7 +1159,8 @@ WHERE project_path = $2 AND trust_level = $3
                     audit.manifest_digest.as_deref(),
                 )?;
                 sqlx::query(
-                    "INSERT INTO configuration_events (id, event, subject, created_at) VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
+                    "INSERT INTO configuration_events (id, event, subject, created_at) \
+                     VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
                 )
                 .bind(Uuid::now_v7().to_string())
                 .bind(event)

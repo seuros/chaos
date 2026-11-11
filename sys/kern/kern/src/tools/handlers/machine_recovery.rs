@@ -14,7 +14,8 @@ pub(crate) fn tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: NAME.into(),
         description:
-            "Opt into one recovery wake and park this turn. First checkpoint essential work \
+            "Opt into one recovery wake and park this turn. First save and verify a concise note \
+                      with save_recovery_checkpoint if available \
                       and stop/check your heavy background processes. Call this tool ALONE in the \
                       response. The kernel waits for all outstanding host warnings to recover with \
                       configured headroom and a stable observation window, then wakes you to \

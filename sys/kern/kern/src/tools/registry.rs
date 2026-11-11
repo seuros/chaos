@@ -42,6 +42,12 @@ pub trait ToolHandler: Send + Sync {
         false
     }
 
+    /// Only the native recovery-note writer may persist bounded session notes in
+    /// read-only modes. It must recheck unresolved recovery and ownership at execution.
+    fn is_recovery_checkpoint_writer(&self) -> bool {
+        false
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(
             (self.kind(), payload),
@@ -105,6 +111,8 @@ impl AnyToolResult {
 trait AnyToolHandler: Send + Sync {
     fn is_execution_container(&self) -> bool;
 
+    fn is_recovery_checkpoint_writer(&self) -> bool;
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool;
 
     fn is_mutating<'a>(
@@ -124,6 +132,10 @@ where
 {
     fn is_execution_container(&self) -> bool {
         ToolHandler::is_execution_container(self)
+    }
+
+    fn is_recovery_checkpoint_writer(&self) -> bool {
+        ToolHandler::is_recovery_checkpoint_writer(self)
     }
 
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
@@ -310,7 +322,16 @@ impl ToolRegistry {
         let is_mutating = handler.is_mutating(&invocation).await;
         let planning_write = matches!(tool_name.as_ref(), "plan" | "plan_progress")
             && invocation.turn.mode_capabilities.planning_records;
-        if is_mutating && !invocation.turn.mode_capabilities.mutation && !planning_write {
+        // This built-in only writes bounded notes for its own session, and rechecks live
+        // recovery eligibility itself. Emergency notes remain usable in read-only modes.
+        let recovery_note = tool_namespace.is_none()
+            && matches!(&invocation.payload, ToolPayload::Function { .. })
+            && handler.is_recovery_checkpoint_writer();
+        if is_mutating
+            && !invocation.turn.mode_capabilities.mutation
+            && !planning_write
+            && !recovery_note
+        {
             return Err(FunctionCallError::RespondToModel(format!(
                 "tool `{tool_name}` would mutate state, but mutation is disabled in mode `{}`",
                 invocation.turn.mode_id

@@ -106,7 +106,7 @@ async fn machine_resource_reads_are_fresh_and_use_the_active_turn_directory() {
                 value["warning_instruction"]
                     .as_str()
                     .unwrap()
-                    .contains("minimal checkpoint")
+                    .contains("save_recovery_checkpoint")
             );
         } else {
             assert_eq!(value["warnings"], json!([]));

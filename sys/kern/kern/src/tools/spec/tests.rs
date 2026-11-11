@@ -236,18 +236,23 @@ fn machine_recovery_tool_is_conditional_exclusive_and_not_hidden_by_groups() {
     let state = catalog.new_state();
     let mut config = capability_group_test_config();
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    assert!(
-        !tools
-            .iter()
-            .any(|tool| tool.spec.name() == "wait_for_machine_recovery")
-    );
+    for name in ["wait_for_machine_recovery", "save_recovery_checkpoint"] {
+        assert!(!tools.iter().any(|tool| tool.spec.name() == name));
+    }
     config.machine_recovery = true;
     let tools = build_grouped_tools(&config, &catalog, &state, None, &[]);
-    let wait = tools
-        .iter()
-        .find(|tool| tool.spec.name() == "wait_for_machine_recovery")
-        .unwrap();
-    assert!(!wait.supports_parallel_tool_calls);
+    for name in ["wait_for_machine_recovery", "save_recovery_checkpoint"] {
+        let tool = tools.iter().find(|tool| tool.spec.name() == name).unwrap();
+        assert!(!tool.supports_parallel_tool_calls);
+    }
+    config.machine_recovery = false;
+    let healthy = build_grouped_tools(&config, &catalog, &state, None, &[]);
+    assert!(
+        !healthy
+            .iter()
+            .any(|tool| tool.spec.name() == "save_recovery_checkpoint")
+    );
+    config.machine_recovery = true;
     config.model_tools_disabled = true;
     assert!(build_grouped_tools(&config, &catalog, &state, None, &[]).is_empty());
 }
@@ -2572,9 +2577,12 @@ fn test_shell_tool() {
     };
     assert_eq!(name, "shell");
 
-    let expected = r#"Runs a shell command and returns its output.
-- The arguments to `shell` will be passed to execvp(). Most terminal commands should be prefixed with ["bash", "-lc"].
-- Always set the `workdir` param when using the shell function. Do not use `cd` unless absolutely necessary."#.to_string();
+    let expected = "Runs a shell command and returns its output.\n\
+        - The arguments to `shell` will be passed to execvp(). \
+        Most terminal commands should be prefixed with [\"bash\", \"-lc\"].\n\
+        - Always set the `workdir` param when using the shell function. \
+        Do not use `cd` unless absolutely necessary."
+        .to_string();
     assert_eq!(description, &expected);
 }
 
@@ -2669,8 +2677,10 @@ fn test_shell_command_tool() {
     };
     assert_eq!(name, "shell_command");
 
-    let expected = r#"Runs a shell command and returns its output.
-- Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary."#.to_string();
+    let expected = "Runs a shell command and returns its output.\n\
+        - Always set the `workdir` param when using the shell_command function. \
+        Do not use `cd` unless absolutely necessary."
+        .to_string();
     assert_eq!(description, &expected);
 }
 

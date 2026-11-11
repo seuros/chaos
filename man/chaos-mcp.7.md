@@ -179,6 +179,8 @@ effects are unacceptable.
 | `chaos://hooks` | List database lifecycle hooks visible to the caller, revisions, and activation status |
 | `chaos://hooks/{id}` | Read one visible hook definition |
 | `chaos://machine` | Read host, power, thermal, storage, and indexing status |
+| `chaos://recovery` | Read attached-session recovery status, latest note, and retained note URIs |
+| `chaos://recovery/{id}` | Read one retained session checkpoint |
 | `chaos://man` | List embedded manual pages and their resource URIs |
 | `chaos://man/{page}` | Read an embedded manual page without its frontmatter |
 
@@ -205,9 +207,8 @@ and on demand, with explicit availability status. FreeBSD reports `unsupported`.
 
 ### Machine warnings
 
-On a host warning, checkpoint to verified persistent storage outside temporary
-directories, pause heavy/interruption-sensitive work, and notify the operator.
-Checkpoint before suspending and preserve existing files.
+Live host warnings provide recovery instructions. For checkpoint storage, see
+[chaos-storage(7)](./chaos-storage.7.md).
 
 Manage global `machine_warnings` with `chaos config set` / `chaos config unset`.
 Restart to apply changes. Project configuration cannot override this host policy.
@@ -227,39 +228,23 @@ Restart to apply changes. Project configuration cannot override this host policy
 | `machine_warnings.recovery_disk_margin_percent` | `2` | Additional free percentage points for recovery, subject to the byte cap; integer 0–100 |
 | `machine_warnings.recovery_disk_margin_bytes` | `1073741824` | Additional free bytes above the capped warning reserve; also required for recovery |
 
-Disk warnings require both limits: `available <= min(total * percent / 100, cap)`.
-A 4 TB disk with 200 GB available does not warn; the default reserve caps at
-20 GiB. Small disks retain percentage-based reserves. Existing configurations
-inherit the cap unless overridden.
-
-Disk recovery requires the greater of the capped percentage-with-margin reserve
-and the capped warning reserve plus the byte margin. Percentage-derived recovery
-reserves round up to whole bytes. Defaults require 21 GiB on large disks, followed
-by the stable observation window—not 7% of their capacity. Impossible recovery
-targets remain blocked. This policy does not predict depletion or guarantee a
-large write will fit.
+Disk warnings: `available <= min(total * percent / 100, cap)`.
+Recovery requires the greater of the capped percentage-with-margin reserve
+(rounded up) and the warning reserve plus the byte margin, then a stable window.
+Defaults cap warnings at 20 GiB and require 21 GiB for recovery on large disks.
+Impossible recovery targets stay blocked; this is not a capacity guarantee.
 
 ### Opt-in recovery wake
 
-After checkpointing and stopping heavy background work, call
-`wait_for_machine_recovery` **alone** to request one recovery wake. It does not
-stop processes, suspend the host, or restart commands.
+`wait_for_machine_recovery` requests one wake after stable recovery; call it
+**alone**. It does not save work, stop processes, suspend the host, or restart commands.
 
-Thermal recovery requires five continuously observed stable minutes: normal
-thermal state and the configured temperature margin. Power and disk warnings
-recover after `recovery_instant_seconds` instead, because external power,
-battery charge, and free space are read directly rather than dissipating.
-Missing measurements and gaps over 60 seconds reset the window;
-suspend time does not count. On waking, reassess rather than blindly retrying.
+Missing readings or observation gaps over 60 seconds reset stability; suspension
+does not count. Input, interruption, workspace/policy changes, closure, or restart
+cancel waits. Read `chaos://machine` for progress. No wait means no recovery turn.
 
-Input, interruption, workspace/policy changes, closure, and restart cancel waits.
-Read `chaos://machine` for recovery progress. Without an opted-in wait, recovery
-does not start a new model turn.
-
-Warnings cannot interrupt tools or save work automatically. Failed probes require
-operator verification before risky work. Standalone MCP clients must reread the
-resource; warnings are not pushed. See [chaos-appearance(7)](./chaos-appearance.7.md)
-for UI indicators.
+Standalone MCP clients must reread the resource; warnings are not pushed.
+See [chaos-appearance(7)](./chaos-appearance.7.md) for UI indicators.
 
 ### Resource tool rules
 

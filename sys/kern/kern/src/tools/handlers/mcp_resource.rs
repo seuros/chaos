@@ -381,6 +381,10 @@ struct KernelBuiltinResourceBackend<'a> {
 }
 
 impl builtin_mcp_resources::ChaosBuiltinResourceBackend for KernelBuiltinResourceBackend<'_> {
+    async fn recovery_json(&self, id: Option<i64>) -> Result<String, String> {
+        self.session.recovery_resource_json(id).await
+    }
+
     async fn hooks_json(&self, id: Option<&str>) -> Result<String, String> {
         crate::hooks::resource_json(&self.turn.config.chaos_home, &self.turn.cwd, id).await
     }

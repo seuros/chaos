@@ -52,6 +52,84 @@ async fn session_bridge_reads_fixture_through_kernel_tool_dispatch() {
     );
 }
 
+/// A plan attached after the turn started (by the operator CLI or a previous
+/// tool call) must reach the clamped model's tool list, as it reaches the
+/// prompt. The task's turn context is the one captured at turn start.
+#[tokio::test]
+async fn session_bridge_lists_plan_progress_for_plan_attached_mid_turn() {
+    use chaos_proc::planning::{PlanChange, PlanMutation, PlanningActor};
+    use chaos_proc::{RuntimeDbHandle, StateRuntime};
+
+    let (home, _workspace, session) = session_bridge_fixture().await;
+    let db = RuntimeDbHandle::Sqlite(
+        StateRuntime::init(home.path().into(), "test".into())
+            .await
+            .expect("runtime db"),
+    );
+    let workspace = db
+        .planning_create_workspace("bridge")
+        .await
+        .expect("workspace");
+    let plan = db
+        .planning_mutate(
+            &PlanningActor {
+                session: "operator".into(),
+                installation: "test".into(),
+            },
+            &PlanMutation {
+                request_id: "bridge-plan".into(),
+                plan: None,
+                expected_revision: None,
+                change: PlanChange::Create {
+                    workspace: workspace.id.clone(),
+                    title: "Bridge".into(),
+                    body: String::new(),
+                },
+            },
+        )
+        .await
+        .expect("plan")
+        .plan;
+    let session = {
+        let mut session = Arc::into_inner(session).expect("sole session owner");
+        session.services.runtime_db = Some(db.clone());
+        Arc::new(session)
+    };
+    let bridge = ClampSessionBridge::spawn(Arc::downgrade(&session))
+        .await
+        .expect("bridge");
+    let list = || async {
+        match bridge_test_request(
+            bridge.socket_path(),
+            ClampBridgeRequest::ListTools {
+                token: bridge.token().to_string(),
+            },
+        )
+        .await
+        .expect("list response")
+        {
+            ClampBridgeResponse::Tools { tools } => {
+                tools.into_iter().map(|tool| tool.name).collect::<Vec<_>>()
+            }
+            _ => panic!("bridge did not list tools"),
+        }
+    };
+
+    assert!(!list().await.iter().any(|name| name == "plan_progress"));
+    db.planning_attach(&session.conversation_id.to_string(), Some(&plan.id))
+        .await
+        .expect("attach");
+    assert!(
+        list().await.iter().any(|name| name == "plan_progress"),
+        "a plan attached mid-turn is missing from the clamp tool list"
+    );
+    db.planning_attach(&session.conversation_id.to_string(), None)
+        .await
+        .expect("detach");
+    assert!(!list().await.iter().any(|name| name == "plan_progress"));
+    bridge.shutdown().await.expect("stop bridge");
+}
+
 async fn session_bridge_fixture() -> (
     tempfile::TempDir,
     tempfile::TempDir,

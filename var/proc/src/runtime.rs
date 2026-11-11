@@ -29,6 +29,7 @@ use chaos_sysctl::types::McpServerConfig;
 use log::LevelFilter;
 use serde_json::Value;
 use sqlx::ConnectOptions;
+use sqlx::Connection as _;
 use sqlx::PgConnection;
 use sqlx::PgPool;
 use sqlx::QueryBuilder;
@@ -928,16 +929,40 @@ pub async fn open_runtime_db_url(database_url: &str) -> anyhow::Result<SqlitePoo
     open_sqlite_with_options(options, &STATE_MIGRATOR).await
 }
 
+/// Run `migrator` against Postgres on a dedicated connection that never joins a pool.
+///
+/// sqlx's migrator takes a session-level `pg_advisory_lock` (one key per database
+/// name, shared by every migrator on that database) and releases it only when the
+/// whole run succeeds. On a pooled connection, any migration error, or a caller
+/// dropping the future, hands the connection back to the pool with the lock still
+/// held, and every other process that opens the database then blocks in
+/// `pg_advisory_lock` until this process exits. Here the connection is owned by
+/// this future: an early return or a cancellation drops the socket, and Postgres
+/// releases the session lock when the backend ends.
+pub async fn run_postgres_migrator_isolated(
+    options: &PgConnectOptions,
+    migrator: &Migrator,
+) -> anyhow::Result<()> {
+    let mut conn = PgConnection::connect_with(options).await?;
+    // `run_direct` is exactly what `Migrator::run` does after acquiring, minus the
+    // `Acquire` bound that makes `run(&mut conn)` futures non-`Send` in spawned tasks.
+    migrator.run_direct(None, &mut conn, false).await?;
+    // The run succeeded, so the migrator already unlocked. A failed graceful close
+    // still drops the socket, so it is not a reason to fail the open.
+    let _ = conn.close().await;
+    Ok(())
+}
+
 async fn open_postgres_with_options(
     options: PgConnectOptions,
     migrator: &'static Migrator,
 ) -> anyhow::Result<PgPool> {
+    run_postgres_migrator_isolated(&options, migrator).await?;
     let pool = PgPoolOptions::new()
         .acquire_timeout(POSTGRES_POOL_ACQUIRE_TIMEOUT)
         .max_connections(5)
         .connect_with(options)
         .await?;
-    migrator.run(&pool).await?;
     Ok(pool)
 }
 

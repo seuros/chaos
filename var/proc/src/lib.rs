@@ -59,5 +59,6 @@ pub use runtime::open_runtime_db;
 pub use runtime::open_runtime_db_at_path;
 pub use runtime::open_runtime_db_postgres_url;
 pub use runtime::open_runtime_db_url;
+pub use runtime::run_postgres_migrator_isolated;
 pub use runtime::runtime_db_filename;
 pub use runtime::runtime_db_path;

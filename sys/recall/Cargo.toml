@@ -19,6 +19,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+chaos-proc = { workspace = true }
 chaos-vfs = { workspace = true }
 chaos-synopsis = { workspace = true }
 model2vec-rs = { workspace = true }

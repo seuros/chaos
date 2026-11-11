@@ -100,8 +100,21 @@ impl WebhookConfig {
         config: &chaos_kern::config::Config,
         environment_names: &[&str],
     ) -> anyhow::Result<()> {
-        let command_environment =
-            chaos_kern::exec_env::create_env(&config.permissions.shell_environment_policy, None);
+        Self::check_control_plane_environment_from(config, environment_names, std::env::vars())
+    }
+
+    /// The same check over an explicit environment, so a test can plant a
+    /// sentinel credential without touching the process environment.
+    pub(crate) fn check_control_plane_environment_from(
+        config: &chaos_kern::config::Config,
+        environment_names: &[&str],
+        environment: impl IntoIterator<Item = (String, String)>,
+    ) -> anyhow::Result<()> {
+        let command_environment = chaos_kern::exec_env::create_env_from(
+            environment,
+            &config.permissions.shell_environment_policy,
+            None,
+        );
         for env in environment_names {
             anyhow::ensure!(
                 !command_environment.contains_key(*env),
@@ -298,5 +311,40 @@ mod tests {
                 .set(state.config.mcp_servers.get().clone())
                 .unwrap();
         }
+    }
+
+    /// A shell policy that inherits everything and drops the default
+    /// `*TOKEN*`/`*SECRET*` excludes would hand the operator bearer to every
+    /// command. Plain `--mcp` must refuse to start in that configuration, not
+    /// only `--sessions`.
+    #[tokio::test]
+    async fn plain_mcp_refuses_a_policy_that_leaks_the_operator_bearer() {
+        use chaos_kern::config::types::ShellEnvironmentPolicyInherit;
+
+        let (_home, state) = crate::test_support::server_state(8192, false).await;
+        let mut config = state.config.as_ref().clone();
+        config.permissions.shell_environment_policy.inherit = ShellEnvironmentPolicyInherit::All;
+        config
+            .permissions
+            .shell_environment_policy
+            .ignore_default_excludes = true;
+        let sentinel = || {
+            vec![(
+                "CHAOS_BEARER_TOKEN".to_string(),
+                "sentinel-operator-credential".to_string(),
+            )]
+        };
+        let names = ["CHAOS_BEARER_TOKEN", "CHAOS_RECOVERY_TOKEN"];
+        assert!(
+            WebhookConfig::check_control_plane_environment_from(&config, &names, sentinel())
+                .is_err(),
+            "the sentinel bearer would reach commands"
+        );
+        // The default excludes alone keep it out; the check passes again.
+        config
+            .permissions
+            .shell_environment_policy
+            .ignore_default_excludes = false;
+        WebhookConfig::check_control_plane_environment_from(&config, &names, sentinel()).unwrap();
     }
 }

@@ -16,6 +16,7 @@ mod monitor;
 pub mod protocol;
 mod runner;
 mod sessions;
+
 #[cfg(test)]
 mod test_support;
 mod webhooks;
@@ -47,6 +48,18 @@ use tokio::sync::Semaphore;
 use tracing_subscriber::prelude::*;
 
 pub use cli::ServeCli;
+
+/// Whether this serve configuration must prove its control-plane credentials
+/// cannot reach a command or MCP server it starts. Retained sessions run
+/// agents; `--mcp` runs agents too, and its bearer is the operator credential
+/// that changes project trust.
+pub(crate) fn checks_control_plane_environment(serve_cli: &ServeCli) -> bool {
+    #[cfg(feature = "mcpd")]
+    let mcp = serve_cli.mcp;
+    #[cfg(not(feature = "mcpd"))]
+    let mcp = false;
+    (serve_cli.sessions || mcp) && !serve_cli.session_recovery_only
+}
 
 const OTEL_SERVICE_NAME: &str = "chaos_httpd";
 const DEFAULT_ANALYTICS_ENABLED: bool = true;
@@ -213,7 +226,7 @@ pub async fn run_main(
     // 7. Mount the storage backend for the life of the process.
     chaos_kern::runtime_db::mount_vfs_for_startup(&config).await?;
 
-    if serve_cli.sessions && !serve_cli.session_recovery_only {
+    if checks_control_plane_environment(&serve_cli) {
         webhooks::WebhookConfig::check_control_plane_environment(
             &config,
             &[
@@ -272,7 +285,12 @@ pub async fn run_main(
     #[cfg(feature = "mcpd")]
     let mcp = if serve_cli.mcp {
         let handle = chaos_mcpd::build_server(config.clone(), arg0_paths).await?;
-        Some(mcp::McpEndpoint::new(handle, &serve_cli, &bearer_token)?)
+        Some(mcp::McpEndpoint::new(
+            handle,
+            &serve_cli,
+            &bearer_token,
+            &config.chaos_home,
+        )?)
     } else {
         None
     };

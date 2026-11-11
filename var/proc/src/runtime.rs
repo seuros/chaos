@@ -93,6 +93,70 @@ pub struct ClampExchangeRecord {
     pub response_truncated: bool,
 }
 
+/// One stored project trust decision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrustRecord {
+    pub project_path: String,
+    pub trust_level: TrustLevel,
+    pub updated_at: i64,
+}
+
+/// A compare-and-set project trust entry: applied only when the stored decision
+/// equals `expected` (`None` means "no stored decision"). An entry whose
+/// `expected` already equals `desired` changes nothing but is still checked, so
+/// a batch commits only if every entry the operator reviewed is still as seen.
+/// There is no way to delete a decision here: a revocation is stored as
+/// `Untrusted`, so a later stale manifest cannot mistake it for "never decided".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrustChange {
+    pub project_path: PathBuf,
+    pub expected: Option<TrustLevel>,
+    pub desired: TrustLevel,
+}
+
+fn trust_level_label(level: Option<TrustLevel>) -> String {
+    level.map_or_else(|| "none".to_string(), |level| level.to_string())
+}
+
+fn project_trust_conflict(change: &ProjectTrustChange, found: Option<TrustLevel>) -> anyhow::Error {
+    anyhow::anyhow!(
+        "project trust conflict at {}: expected {}, found {}; no changes were applied",
+        change.project_path.display(),
+        trust_level_label(change.expected),
+        trust_level_label(found)
+    )
+}
+
+/// Who made a batch of project trust changes, recorded with every change.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTrustAudit {
+    pub installation_id: String,
+    pub actor: String,
+    pub manifest_digest: Option<String>,
+}
+
+/// The `configuration_events` row for one trust write: the event names the
+/// stored decision; the subject carries path, before/after, actor and digest.
+fn project_trust_event(
+    path: &str,
+    before: Option<TrustLevel>,
+    after: TrustLevel,
+    installation_id: Option<&str>,
+    actor: &str,
+    manifest_digest: Option<&str>,
+) -> anyhow::Result<(String, String)> {
+    let event = format!("project_trust_{after}");
+    let subject = serde_json::to_string(&serde_json::json!({
+        "project_path": path,
+        "before": trust_level_label(before),
+        "after": after.to_string(),
+        "installation_id": installation_id,
+        "actor": actor,
+        "manifest_digest": manifest_digest,
+    }))?;
+    Ok((event, subject))
+}
+
 #[derive(Clone)]
 pub struct StateRuntime {
     chaos_home: PathBuf,
@@ -183,7 +247,18 @@ WHERE project_path = ?
         &self,
         project_path: &Path,
         trust_level: TrustLevel,
+        installation_id: Option<&str>,
     ) -> anyhow::Result<()> {
+        let path = project_path.to_string_lossy().to_string();
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let before = sqlx::query_scalar::<_, String>(
+            "SELECT trust_level FROM project_trust WHERE project_path = ?",
+        )
+        .bind(&path)
+        .fetch_optional(&mut *tx)
+        .await?
+        .map(|level| parse_trust_level(&level))
+        .transpose()?;
         sqlx::query(
             r#"
 INSERT INTO project_trust (
@@ -202,10 +277,130 @@ SET trust_level = excluded.trust_level,
     updated_at = UNIXEPOCH()
             "#,
         )
-        .bind(project_path.to_string_lossy().to_string())
+        .bind(&path)
         .bind(trust_level.to_string())
-        .execute(self.pool())
+        .execute(&mut *tx)
         .await?;
+        let (event, subject) = project_trust_event(
+            &path,
+            before,
+            trust_level,
+            installation_id,
+            "onboarding",
+            None,
+        )?;
+        sqlx::query(
+            "INSERT INTO configuration_events (id, event, subject, created_at) VALUES (?, ?, ?, UNIXEPOCH())",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(event)
+        .bind(subject)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
+        let rows = sqlx::query(
+            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let trust_level: String = row.try_get("trust_level")?;
+                Ok(ProjectTrustRecord {
+                    project_path: row.try_get("project_path")?,
+                    trust_level: parse_trust_level(&trust_level)?,
+                    updated_at: row.try_get("updated_at")?,
+                })
+            })
+            .collect()
+    }
+
+    async fn apply_project_trust_changes(
+        &self,
+        changes: &[ProjectTrustChange],
+        audit: &ProjectTrustAudit,
+    ) -> anyhow::Result<()> {
+        // IMMEDIATE takes the write lock before the first read, so every check
+        // and write in this batch happens against one serialized state.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        for change in changes {
+            let path = change.project_path.to_string_lossy().to_string();
+            let ok = match change.expected {
+                None => {
+                    sqlx::query(
+                        r#"
+INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
+VALUES (?, ?, UNIXEPOCH(), UNIXEPOCH())
+ON CONFLICT(project_path) DO NOTHING
+                    "#,
+                    )
+                    .bind(&path)
+                    .bind(change.desired.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+                Some(expected) if expected == change.desired => {
+                    let found: Option<String> = sqlx::query_scalar(
+                        "SELECT trust_level FROM project_trust WHERE project_path = ?",
+                    )
+                    .bind(&path)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    found.as_deref() == Some(expected.to_string().as_str())
+                }
+                Some(expected) => {
+                    sqlx::query(
+                        r#"
+UPDATE project_trust
+SET trust_level = ?, updated_at = UNIXEPOCH()
+WHERE project_path = ? AND trust_level = ?
+                    "#,
+                    )
+                    .bind(change.desired.to_string())
+                    .bind(&path)
+                    .bind(expected.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+            };
+            if !ok {
+                let found =
+                    sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = ?")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(|row| parse_trust_level(&row.try_get::<String, _>("trust_level")?))
+                        .transpose()?;
+                return Err(project_trust_conflict(change, found));
+            }
+            if change.expected != Some(change.desired) {
+                let (event, subject) = project_trust_event(
+                    &path,
+                    change.expected,
+                    change.desired,
+                    Some(audit.installation_id.as_str()),
+                    &audit.actor,
+                    audit.manifest_digest.as_deref(),
+                )?;
+                sqlx::query(
+                    "INSERT INTO configuration_events (id, event, subject, created_at) VALUES (?, ?, ?, UNIXEPOCH())",
+                )
+                .bind(Uuid::now_v7().to_string())
+                .bind(event)
+                .bind(subject)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -505,6 +700,14 @@ impl RuntimeDbHandle {
             &self,
             project_path: &Path,
             trust_level: TrustLevel,
+            installation_id: Option<&str>,
+        ) -> anyhow::Result<()>;
+        pub async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>>;
+        /// Apply every change or none: each must find exactly its expected decision.
+        pub async fn apply_project_trust_changes(
+            &self,
+            changes: &[ProjectTrustChange],
+            audit: &ProjectTrustAudit,
         ) -> anyhow::Result<()>;
         pub async fn list_global_mcp_servers(
             &self,
@@ -778,8 +981,16 @@ WHERE project_path = $1
         &self,
         project_path: &Path,
         trust_level: TrustLevel,
+        installation_id: Option<&str>,
     ) -> anyhow::Result<()> {
-        sqlx::query(
+        let path = project_path.to_string_lossy().to_string();
+        let mut tx = self.pool.begin().await?;
+        // `FOR UPDATE` cannot lock a row that does not exist yet, so a plain
+        // SELECT-then-upsert could record `before = none` over a decision a
+        // concurrent writer committed in between. Insert first: the unique key
+        // makes a concurrent inserter wait for us (or us for it). If the row
+        // already exists, lock it and read the decision we are replacing.
+        let inserted = sqlx::query(
             r#"
 INSERT INTO project_trust (
     project_path,
@@ -792,15 +1003,161 @@ INSERT INTO project_trust (
     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT,
     EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
 )
-ON CONFLICT (project_path) DO UPDATE
-SET trust_level = EXCLUDED.trust_level,
-    updated_at = EXCLUDED.updated_at
+ON CONFLICT (project_path) DO NOTHING
             "#,
         )
-        .bind(project_path.to_string_lossy().to_string())
+        .bind(&path)
         .bind(trust_level.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1;
+        let before = if inserted {
+            None
+        } else {
+            // Trust rows are never deleted (a revoke stores a denial), so the
+            // conflicting row is still there to lock.
+            let before = sqlx::query_scalar::<_, String>(
+                "SELECT trust_level FROM project_trust WHERE project_path = $1 FOR UPDATE",
+            )
+            .bind(&path)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("project trust row vanished during onboarding"))?;
+            sqlx::query(
+                "UPDATE project_trust SET trust_level = $2, \
+                 updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT \
+                 WHERE project_path = $1",
+            )
+            .bind(&path)
+            .bind(trust_level.to_string())
+            .execute(&mut *tx)
+            .await?;
+            Some(parse_trust_level(&before)?)
+        };
+        let (event, subject) = project_trust_event(
+            &path,
+            before,
+            trust_level,
+            installation_id,
+            "onboarding",
+            None,
+        )?;
+        sqlx::query(
+            "INSERT INTO configuration_events (id, event, subject, created_at) VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(event)
+        .bind(subject)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn list_project_trust(&self) -> anyhow::Result<Vec<ProjectTrustRecord>> {
+        let rows = sqlx::query(
+            "SELECT project_path, trust_level, updated_at FROM project_trust ORDER BY project_path ASC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let trust_level: String = row.try_get("trust_level")?;
+                Ok(ProjectTrustRecord {
+                    project_path: row.try_get("project_path")?,
+                    trust_level: parse_trust_level(&trust_level)?,
+                    updated_at: row.try_get("updated_at")?,
+                })
+            })
+            .collect()
+    }
+
+    async fn apply_project_trust_changes(
+        &self,
+        changes: &[ProjectTrustChange],
+        audit: &ProjectTrustAudit,
+    ) -> anyhow::Result<()> {
+        // Every entry either writes its row (INSERT .. ON CONFLICT, conditional
+        // UPDATE) or locks it (SELECT .. FOR UPDATE), so all reviewed rows are
+        // held until commit and none can change between check and commit.
+        // Absence is never asserted by a plain read: an expected-absent entry
+        // always inserts, and the unique key arbitrates concurrent inserts.
+        let mut tx = self.pool.begin().await?;
+        for change in changes {
+            let path = change.project_path.to_string_lossy().to_string();
+            let ok = match change.expected {
+                None => {
+                    sqlx::query(
+                        r#"
+INSERT INTO project_trust (project_path, trust_level, created_at, updated_at)
+VALUES ($1, $2, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)
+ON CONFLICT(project_path) DO NOTHING
+                    "#,
+                    )
+                    .bind(&path)
+                    .bind(change.desired.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+                Some(expected) if expected == change.desired => {
+                    let found: Option<String> = sqlx::query_scalar(
+                        "SELECT trust_level FROM project_trust WHERE project_path = $1 FOR UPDATE",
+                    )
+                    .bind(&path)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+                    found.as_deref() == Some(expected.to_string().as_str())
+                }
+                Some(expected) => {
+                    sqlx::query(
+                        r#"
+UPDATE project_trust
+SET trust_level = $1, updated_at = EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT
+WHERE project_path = $2 AND trust_level = $3
+                    "#,
+                    )
+                    .bind(change.desired.to_string())
+                    .bind(&path)
+                    .bind(expected.to_string())
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        == 1
+                }
+            };
+            if !ok {
+                let found =
+                    sqlx::query("SELECT trust_level FROM project_trust WHERE project_path = $1")
+                        .bind(&path)
+                        .fetch_optional(&mut *tx)
+                        .await?
+                        .map(|row| parse_trust_level(&row.try_get::<String, _>("trust_level")?))
+                        .transpose()?;
+                return Err(project_trust_conflict(change, found));
+            }
+            if change.expected != Some(change.desired) {
+                let (event, subject) = project_trust_event(
+                    &path,
+                    change.expected,
+                    change.desired,
+                    Some(audit.installation_id.as_str()),
+                    &audit.actor,
+                    audit.manifest_digest.as_deref(),
+                )?;
+                sqlx::query(
+                    "INSERT INTO configuration_events (id, event, subject, created_at) VALUES ($1, $2, $3, EXTRACT(EPOCH FROM CURRENT_TIMESTAMP)::BIGINT)",
+                )
+                .bind(Uuid::now_v7().to_string())
+                .bind(event)
+                .bind(subject)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await?;
         Ok(())
     }
 

@@ -16,7 +16,7 @@ pub mod storage_setup;
 #[cfg(test)]
 mod tests;
 
-pub use approvals::{fingerprint, installation_id, workspace_scope};
+pub use approvals::{existing_installation_id, fingerprint, installation_id, workspace_scope};
 pub(crate) use approvals::{put_scoped_approval, shell_policy};
 pub use bootstrap::{
     BOOTSTRAP_KEYS, BootstrapConfig, ResolvedBootstrap, resolve_bootstrap, set_bootstrap,

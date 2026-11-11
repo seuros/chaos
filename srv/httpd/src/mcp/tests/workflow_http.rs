@@ -2,7 +2,7 @@ use super::*;
 
 #[tokio::test]
 async fn http_workflows_tasks_and_apps_use_the_same_isolated_owner() {
-    let (_home, mut state) = server_state(4096, false).await;
+    let (home, mut state) = server_state(4096, false).await;
     let mut config = state.config.as_ref().clone();
     // No catalog discovery, model generation, commands or external services.
     config.clamp = true;
@@ -19,6 +19,7 @@ async fn http_workflows_tasks_and_apps_use_the_same_isolated_owner() {
             kernel,
             &cli(&["--mcp", "--body-limit", "4096"]),
             "test-token",
+            home.path(),
         )
         .unwrap(),
     );

@@ -92,10 +92,22 @@ async fn mount() -> (tempfile::TempDir, Arc<crate::ServerState>) {
             kernel,
             &cli(&["--mcp", "--body-limit", "4096"]),
             "test-token",
+            home.path(),
         )
         .unwrap(),
     );
     (home, state)
+}
+
+#[test]
+fn plain_mcp_runs_the_control_plane_environment_check() {
+    // The --mcp bearer is the operator credential for project trust, so plain
+    // --mcp gets the same startup check as --sessions.
+    assert!(crate::checks_control_plane_environment(&cli(&["--mcp"])));
+    assert!(crate::checks_control_plane_environment(&cli(&[
+        "--sessions"
+    ])));
+    assert!(!crate::checks_control_plane_environment(&cli(&[])));
 }
 
 #[test]
@@ -415,6 +427,50 @@ async fn authenticated_factory_lists_tools_resources_tasks_and_independent_sessi
         ids.push(session);
     }
     assert_ne!(ids[0], ids[1]);
+
+    // The operator trust tools are listed here, and the bearer's principal
+    // reaches them through the real transport.
+    let response = service
+        .serve(post(
+            Some(&ids[0]),
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/list"}),
+        ))
+        .await
+        .unwrap();
+    let tools = answer(response).await["result"]["tools"].clone();
+    for name in [
+        "trust_list",
+        "trust_show",
+        "trust_set",
+        "trust_export",
+        "trust_plan",
+        "trust_apply",
+    ] {
+        assert!(
+            tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == name),
+            "{name} missing from {tools}"
+        );
+    }
+    let response = service
+        .serve(post(
+            Some(&ids[0]),
+            json!({"jsonrpc":"2.0","id":5,"method":"tools/call",
+                   "params":{"name":"trust_list","arguments":{}}}),
+        ))
+        .await
+        .unwrap();
+    let listed = answer(response).await;
+    assert!(listed.get("error").is_none(), "{listed}");
+    assert_ne!(listed["result"]["isError"], true, "{listed}");
+    assert!(
+        listed["result"]["structuredContent"]["entries"].is_array(),
+        "{listed}"
+    );
+
     let endpoint = state.mcp.as_ref().unwrap();
     let sessions = endpoint.sessions.clone();
     assert_eq!(sessions.session_count(), 2);

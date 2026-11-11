@@ -9,6 +9,21 @@ use uuid::Uuid;
 
 use super::open;
 
+/// The installation identity if this home already has one. Reads never create
+/// it: a missing file means nothing is bound to this home yet; a malformed one
+/// is an error, never treated as missing.
+pub fn existing_installation_id(home: &Path) -> anyhow::Result<Option<String>> {
+    match std::fs::read_to_string(home.join("installation-id")) {
+        Ok(id) => {
+            Uuid::parse_str(id.trim())
+                .context("invalid installation identity; do not adopt database grants")?;
+            Ok(Some(id.trim().to_owned()))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(anyhow::Error::new(err).context("cannot read installation identity")),
+    }
+}
+
 /// Installation IDs are local application state, not database content or export.
 pub fn installation_id(home: &Path) -> anyhow::Result<String> {
     std::fs::create_dir_all(home)?;

@@ -49,3 +49,35 @@ async fn set_project_trust_level_respects_bootstrap_storage_url() -> anyhow::Res
     assert_eq!(trust, Some(TrustLevel::Untrusted));
     Ok(())
 }
+
+#[tokio::test]
+async fn onboarding_trust_audit_names_the_installation() -> anyhow::Result<()> {
+    let chaos_home = TempDir::new()?;
+    crate::test_support::bootstrap_sqlite(chaos_home.path())?;
+    let installation = crate::user_settings::installation_id(chaos_home.path())?;
+    let project_dir = chaos_home.path().join("project");
+    tokio::fs::create_dir_all(&project_dir).await?;
+
+    set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Trusted)?;
+
+    let db = crate::user_settings::open(chaos_home.path()).await?;
+    let crate::runtime_db::RuntimeDbHandle::Sqlite(runtime) = db else {
+        anyhow::bail!("expected sqlite");
+    };
+    let subject: String = sqlx::query_scalar(
+        "SELECT subject FROM configuration_events WHERE event = 'project_trust_trusted'",
+    )
+    .fetch_one(runtime.pool())
+    .await?;
+    let subject: serde_json::Value = serde_json::from_str(&subject)?;
+    assert_eq!(subject["actor"], "onboarding");
+    assert_eq!(subject["installation_id"], installation.as_str());
+    assert_eq!(subject["before"], "none");
+
+    // An unreadable identity fails the write rather than auditing none.
+    std::fs::write(chaos_home.path().join("installation-id"), "not-a-uuid")?;
+    assert!(
+        set_project_trust_level(chaos_home.path(), &project_dir, TrustLevel::Untrusted).is_err()
+    );
+    Ok(())
+}

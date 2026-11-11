@@ -93,6 +93,7 @@ async fn make_config_for_test(
         .set_project_trust(
             runtime_db::normalize_cwd_for_runtime_db(project_path).as_path(),
             trust_level,
+            None,
         )
         .await
         .map_err(std::io::Error::other)

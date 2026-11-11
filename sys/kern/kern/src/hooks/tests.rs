@@ -35,7 +35,7 @@ async fn scopes_trust_and_no_file_discovery() -> anyhow::Result<()> {
         Some("project is not trusted")
     );
     let db = crate::user_settings::open(home.path()).await?;
-    db.set_project_trust(&project_root(project.path())?, TrustLevel::Trusted)
+    db.set_project_trust(&project_root(project.path())?, TrustLevel::Trusted, None)
         .await?;
     assert!(
         list(home.path(), project.path()).await?[1]

@@ -75,8 +75,9 @@ fn find_chaos_auth_home_uses_env_directory() {
     let chaos_home = TempDir::new().expect("temp chaos home");
     let auth_home = TempDir::new().expect("temp auth home");
     let raw = auth_home.path().to_str().expect("utf-8 path");
-    let resolved = super::find_chaos_auth_home_from_env(chaos_home.path(), Some(raw))
-        .expect("auth home from env");
+    let resolved =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), Some(std::ffi::OsStr::new(raw)))
+            .expect("auth home from env");
     assert_eq!(
         resolved,
         auth_home
@@ -91,11 +92,47 @@ fn find_chaos_auth_home_rejects_missing_directory_without_fallback() {
     let chaos_home = TempDir::new().expect("temp chaos home");
     let missing = chaos_home.path().join("missing-auth-home");
     let raw = missing.to_str().expect("utf-8 path");
-    let err = super::find_chaos_auth_home_from_env(chaos_home.path(), Some(raw))
-        .expect_err("missing auth home must be an error");
+    let err =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), Some(std::ffi::OsStr::new(raw)))
+            .expect_err("missing auth home must be an error");
     assert_eq!(err.kind(), ErrorKind::NotFound);
     assert!(
         err.to_string().contains(super::CHAOS_AUTH_HOME_ENV_VAR),
         "unexpected error: {err}"
     );
+}
+
+/// Exercises the real environment reader. This is the only test in this crate
+/// that touches `CHAOS_AUTH_HOME`, so mutating the process environment here
+/// cannot race another test.
+#[cfg(unix)]
+#[test]
+fn find_chaos_auth_home_reads_non_unicode_env_as_a_path() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let parent = TempDir::new().expect("temp parent");
+    let mut name = b"auth-".to_vec();
+    name.push(0xff);
+    let auth_home = parent.path().join(std::ffi::OsStr::from_bytes(&name));
+    std::fs::create_dir(&auth_home).expect("create non-unicode auth home");
+    let missing = parent
+        .path()
+        .join(std::ffi::OsStr::from_bytes(&[b'm', 0xff]));
+
+    // SAFETY: no other test in this crate reads or writes CHAOS_AUTH_HOME.
+    unsafe { std::env::set_var(super::CHAOS_AUTH_HOME_ENV_VAR, &auth_home) };
+    let present = super::find_chaos_auth_home(chaos_home.path());
+    // SAFETY: as above.
+    unsafe { std::env::set_var(super::CHAOS_AUTH_HOME_ENV_VAR, &missing) };
+    let absent = super::find_chaos_auth_home(chaos_home.path());
+    // SAFETY: as above.
+    unsafe { std::env::remove_var(super::CHAOS_AUTH_HOME_ENV_VAR) };
+
+    assert_eq!(
+        present.expect("non-unicode auth home resolves"),
+        auth_home.canonicalize().expect("canonical auth home")
+    );
+    let err = absent.expect_err("missing non-unicode auth home must error, not fall back");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
 }

@@ -1,4 +1,6 @@
 use dirs::home_dir;
+use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -43,6 +45,14 @@ fn find_chaos_home_from_env(chaos_home_env: Option<&str>) -> std::io::Result<Pat
     Ok(home.join(CHAOS_HOME_DIR_NAME))
 }
 
+/// Reads `CHAOS_AUTH_HOME` from the process environment as an OS string.
+///
+/// Returns `None` when it is unset or empty. A non-Unicode value is returned
+/// as-is (it is a valid path on Unix); it is never treated as unset.
+pub fn chaos_auth_home_env() -> Option<OsString> {
+    std::env::var_os(CHAOS_AUTH_HOME_ENV_VAR).filter(|val| !val.is_empty())
+}
+
 /// Returns the directory that holds provider credentials for `chaos_home`.
 ///
 /// - If `CHAOS_AUTH_HOME` is set and non-empty, it must exist and be a
@@ -51,25 +61,27 @@ fn find_chaos_home_from_env(chaos_home_env: Option<&str>) -> std::io::Result<Pat
 ///   run read or overwrite credentials that belong to another login.
 /// - Otherwise `chaos_home` is returned unchanged.
 pub fn find_chaos_auth_home(chaos_home: &Path) -> std::io::Result<PathBuf> {
-    let auth_home_env = std::env::var(CHAOS_AUTH_HOME_ENV_VAR)
-        .ok()
-        .filter(|val| !val.is_empty());
-    find_chaos_auth_home_from_env(chaos_home, auth_home_env.as_deref())
+    find_chaos_auth_home_from_env(chaos_home, chaos_auth_home_env().as_deref())
 }
 
+/// [`find_chaos_auth_home`] with the environment value passed in.
 pub fn find_chaos_auth_home_from_env(
     chaos_home: &Path,
-    auth_home_env: Option<&str>,
+    auth_home_env: Option<&OsStr>,
 ) -> std::io::Result<PathBuf> {
-    match auth_home_env {
-        Some(val) => validate_env_home(val, CHAOS_AUTH_HOME_ENV_VAR),
+    match auth_home_env.filter(|val| !val.is_empty()) {
+        Some(val) => validate_env_path(Path::new(val), CHAOS_AUTH_HOME_ENV_VAR),
         None => Ok(chaos_home.to_path_buf()),
     }
 }
 
 fn validate_env_home(raw: &str, env_var: &str) -> std::io::Result<PathBuf> {
-    let path = PathBuf::from(raw);
-    let metadata = std::fs::metadata(&path).map_err(|err| match err.kind() {
+    validate_env_path(Path::new(raw), env_var)
+}
+
+fn validate_env_path(raw: &Path, env_var: &str) -> std::io::Result<PathBuf> {
+    let path = raw;
+    let metadata = std::fs::metadata(path).map_err(|err| match err.kind() {
         std::io::ErrorKind::NotFound => std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("{env_var} points to {raw:?}, but that path does not exist"),

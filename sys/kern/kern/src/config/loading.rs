@@ -23,7 +23,7 @@ pub struct ConfigBuilder {
     /// Test-only stand-in for the `CHAOS_AUTH_HOME` environment value, so the
     /// load-time check can be exercised without mutating process state.
     #[cfg(test)]
-    pub(crate) auth_home_env: Option<Option<String>>,
+    pub(crate) auth_home_env: Option<Option<std::ffi::OsString>>,
 }
 
 impl ConfigBuilder {
@@ -66,13 +66,10 @@ impl ConfigBuilder {
         // Credential storage swallows load errors into "not signed in", so an
         // invalid CHAOS_AUTH_HOME is rejected here, where it fails the run.
         #[cfg(test)]
-        if let Some(auth_home_env) = auth_home_env {
-            chaos_pwd::find_chaos_auth_home_from_env(&chaos_home, auth_home_env.as_deref())?;
-        } else {
-            chaos_pwd::find_chaos_auth_home(&chaos_home)?;
-        }
+        let auth_home_env = auth_home_env.unwrap_or_else(chaos_pwd::chaos_auth_home_env);
         #[cfg(not(test))]
-        chaos_pwd::find_chaos_auth_home(&chaos_home)?;
+        let auth_home_env = chaos_pwd::chaos_auth_home_env();
+        chaos_pwd::find_chaos_auth_home_from_env(&chaos_home, auth_home_env.as_deref())?;
         let cli_overrides = cli_overrides.unwrap_or_default();
         let mut harness_overrides = harness_overrides.unwrap_or_default();
         let loader_overrides = loader_overrides.unwrap_or_default();

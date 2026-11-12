@@ -306,9 +306,7 @@ pub(super) fn create_auth_storage(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<Arc<dyn AuthStorageBackend>> {
-    let auth_home_env = std::env::var(chaos_pwd::CHAOS_AUTH_HOME_ENV_VAR)
-        .ok()
-        .filter(|val| !val.is_empty());
+    let auth_home_env = chaos_pwd::chaos_auth_home_env();
     create_auth_storage_from_env(chaos_home, mode, auth_home_env.as_deref())
 }
 
@@ -317,7 +315,7 @@ pub(super) fn create_auth_storage(
 fn create_auth_storage_from_env(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
-    auth_home_env: Option<&str>,
+    auth_home_env: Option<&std::ffi::OsStr>,
 ) -> std::io::Result<Arc<dyn AuthStorageBackend>> {
     let auth_home = chaos_pwd::find_chaos_auth_home_from_env(&chaos_home, auth_home_env)?;
     Ok(create_auth_storage_at(auth_home, mode))

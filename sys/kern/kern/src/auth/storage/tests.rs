@@ -571,7 +571,7 @@ fn file_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
     let split = create_auth_storage_from_env(
         chaos_home.path().to_path_buf(),
         AuthCredentialsStoreMode::File,
-        Some(raw),
+        Some(std::ffi::OsStr::new(raw)),
     )?;
     let default = create_auth_storage_from_env(
         chaos_home.path().to_path_buf(),
@@ -595,7 +595,7 @@ fn ephemeral_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
     let split = create_auth_storage_from_env(
         chaos_home.path().to_path_buf(),
         AuthCredentialsStoreMode::Ephemeral,
-        Some(raw),
+        Some(std::ffi::OsStr::new(raw)),
     )?;
     let default = create_auth_storage_from_env(
         chaos_home.path().to_path_buf(),
@@ -616,7 +616,7 @@ fn vault_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
     ] {
         let resolved = chaos_pwd::find_chaos_auth_home_from_env(
             chaos_home.path(),
-            Some(auth_home.path().to_str().context("utf-8 auth home")?),
+            Some(auth_home.path().as_os_str()),
         )?;
         let split = create_auth_storage_with_keyring_store(resolved, mode, keyring.clone());
         let default = create_auth_storage_with_keyring_store(
@@ -641,7 +641,11 @@ fn invalid_auth_home_env_is_an_error_not_a_fallback() -> anyhow::Result<()> {
         AuthCredentialsStoreMode::File,
         AuthCredentialsStoreMode::Ephemeral,
     ] {
-        let result = create_auth_storage_from_env(chaos_home.path().to_path_buf(), mode, Some(raw));
+        let result = create_auth_storage_from_env(
+            chaos_home.path().to_path_buf(),
+            mode,
+            Some(std::ffi::OsStr::new(raw)),
+        );
         assert!(
             result.is_err(),
             "missing CHAOS_AUTH_HOME must not fall back ({mode:?})"

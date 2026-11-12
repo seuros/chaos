@@ -3,6 +3,20 @@ use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
 
+#[tokio::test]
+async fn dropping_tracker_stops_worker_even_before_it_starts() {
+    let tracker = PidTracker::new(std::process::id() as i32).expect("PID tracker");
+    let worker = tracker.handle.as_ref().expect("worker").abort_handle();
+    drop(tracker);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !worker.is_finished() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("dropping tracker must stop its blocking worker");
+}
+
 #[test]
 fn pid_is_alive_detects_current_process() {
     let pid = std::process::id() as i32;
@@ -78,7 +92,7 @@ async fn pid_tracker_collects_bash_subshell_descendants() {
         .spawn()
         .expect("failed to spawn bash");
 
-    let output = child.wait_with_output().unwrap().stdout;
+    let output = child.wait_with_output().expect("wait for bash").stdout;
     let subshell_pid = String::from_utf8_lossy(&output)
         .trim()
         .parse::<i32>()

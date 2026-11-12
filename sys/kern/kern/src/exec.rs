@@ -49,6 +49,9 @@ mod oneshot;
 mod output_lifecycle;
 mod process;
 mod process_manager;
+mod sandbox_diagnostics;
+#[cfg(target_os = "macos")]
+pub mod seatbelt;
 
 #[cfg(test)]
 mod tests;

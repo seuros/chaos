@@ -96,7 +96,10 @@ fn make_exec_output(
 
 #[test]
 fn sandbox_detection_distinguishes_failures_from_unrelated_output() {
-    let network_decision = r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","source":"decider","protocol":"http","host":"google.com","port":80}"#;
+    let network_decision = concat!(
+        r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","source":"decider","#,
+        r#""protocol":"http","host":"google.com","port":80}"#
+    );
     for (name, sandbox, output, expected) in [
         (
             "no keywords",
@@ -129,7 +132,10 @@ fn sandbox_detection_distinguishes_failures_from_unrelated_output() {
                 0,
                 "",
                 "",
-                r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","reason":"not_allowed","source":"decider","protocol":"http","host":"google.com","port":80}"#,
+                concat!(
+                    r#"CHAOS_NETWORK_POLICY_DECISION {"decision":"ask","reason":"not_allowed","#,
+                    r#""source":"decider","protocol":"http","host":"google.com","port":80}"#
+                ),
             ),
             false,
         ),
@@ -305,6 +311,7 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
         SocketPolicy::Restricted,
         None,
         None,
+        &mut super::super::sandbox_diagnostics::SandboxDiagnostics::start(SandboxType::None),
     )
     .await?;
     assert!(output.timed_out);

@@ -37,6 +37,7 @@ use crate::exec::process::ExecProcess;
 use crate::exec::process::OutputBuffer;
 use crate::exec::process::OutputHandles;
 use crate::exec::process::SpawnLifecycleHandle;
+use crate::exec::sandbox_diagnostics::SandboxDiagnostics;
 use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::protocol::ExecCommandSource;
@@ -558,8 +559,13 @@ impl ExecProcessManager {
             context
                 .session
                 .record_model_warning(
-                    format!("The maximum number of exec processes you can keep open is {WARNING_EXEC_PROCESSES} and you currently have {number_processes} processes open. Reuse older processes or close them to prevent automatic pruning of old processes"),
-                    &context.turn
+                    format!(
+                        "The maximum number of exec processes you can keep open is \
+                         {WARNING_EXEC_PROCESSES} and you currently have {number_processes} \
+                         processes open. Reuse older processes or close them to prevent \
+                         automatic pruning of old processes"
+                    ),
+                    &context.turn,
                 )
                 .await;
         };
@@ -589,6 +595,7 @@ impl ExecProcessManager {
             .split_first()
             .ok_or(ExecError::MissingCommandLine)?;
         let inherited_fds = spawn_lifecycle.inherited_fds();
+        let mut diagnostics = SandboxDiagnostics::start(env.sandbox);
 
         let spawn_result = if tty {
             chaos_pty::pty::spawn_process_with_inherited_fds(
@@ -613,8 +620,9 @@ impl ExecProcessManager {
             .await
         };
         let spawned = spawn_result.map_err(|err| ExecError::create_process(err.to_string()))?;
+        diagnostics.on_spawn(spawned.session.pid());
         spawn_lifecycle.after_spawn();
-        ExecProcess::from_spawned(spawned, env.sandbox, spawn_lifecycle).await
+        ExecProcess::from_spawned(spawned, env.sandbox, spawn_lifecycle, diagnostics).await
     }
 
     pub(super) async fn open_session_with_sandbox(
@@ -673,7 +681,7 @@ impl ExecProcessManager {
             .run(&mut runtime, &req, &tool_ctx, &context.turn)
             .await
             .map(|result| (result.output, result.deferred_network_approval))
-            .map_err(|e| ExecError::create_process(format!("{e:?}")))
+            .map_err(ExecError::from_tool_error)
     }
 
     pub(super) async fn collect_output_until_deadline(

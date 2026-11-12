@@ -24,6 +24,7 @@ use chaos_pty::SpawnedProcess;
 use super::EXEC_OUTPUT_MAX_TOKENS;
 use super::ExecError;
 use super::head_tail_buffer::HeadTailBuffer;
+use super::sandbox_diagnostics::SandboxDiagnostics;
 
 pub(crate) trait SpawnLifecycle: std::fmt::Debug + Send + Sync {
     /// Returns file descriptors that must stay open across the child `exec()`.
@@ -66,6 +67,7 @@ pub(crate) struct ExecProcess {
     output_drained: Arc<Notify>,
     output_task: JoinHandle<()>,
     sandbox_type: SandboxType,
+    sandbox_diagnostics: Arc<SandboxDiagnostics>,
     _spawn_lifecycle: SpawnLifecycleHandle,
 }
 
@@ -75,6 +77,7 @@ impl ExecProcess {
         initial_output_rx: tokio::sync::broadcast::Receiver<Vec<u8>>,
         sandbox_type: SandboxType,
         spawn_lifecycle: SpawnLifecycleHandle,
+        sandbox_diagnostics: SandboxDiagnostics,
     ) -> Self {
         let output_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));
         let output_notify = Arc::new(Notify::new());
@@ -118,6 +121,7 @@ impl ExecProcess {
             output_drained,
             output_task,
             sandbox_type,
+            sandbox_diagnostics: Arc::new(sandbox_diagnostics),
             _spawn_lifecycle: spawn_lifecycle,
         }
     }
@@ -174,6 +178,7 @@ impl ExecProcess {
     }
 
     pub(super) async fn check_for_sandbox_denial(&self) -> Result<(), ExecError> {
+        // A quiet output stream is normal; this wait only gives pending readers a chance to drain.
         let _ =
             tokio::time::timeout(Duration::from_millis(20), self.output_notify.notified()).await;
 
@@ -199,15 +204,20 @@ impl ExecProcess {
         }
 
         let exit_code = self.exit_code().unwrap_or(-1);
-        let exec_output = ExecToolCallOutput {
+        let mut exec_output = ExecToolCallOutput {
             exit_code,
             stderr: StreamOutput::new(text.to_string()),
             aggregated_output: StreamOutput::new(text.to_string()),
             ..Default::default()
         };
         if is_likely_sandbox_denied(sandbox_type, &exec_output) {
-            let snippet =
-                formatted_truncate_text(text, TruncationPolicy::Tokens(EXEC_OUTPUT_MAX_TOKENS));
+            self.sandbox_diagnostics
+                .enrich_denial(&mut exec_output)
+                .await;
+            let snippet = formatted_truncate_text(
+                &exec_output.aggregated_output.text,
+                TruncationPolicy::Tokens(EXEC_OUTPUT_MAX_TOKENS),
+            );
             let message = if snippet.is_empty() {
                 format!("Process exited with code {exit_code}")
             } else {
@@ -222,6 +232,7 @@ impl ExecProcess {
         spawned: SpawnedProcess,
         sandbox_type: SandboxType,
         spawn_lifecycle: SpawnLifecycleHandle,
+        sandbox_diagnostics: SandboxDiagnostics,
     ) -> Result<Self, ExecError> {
         let SpawnedProcess {
             session: process_handle,
@@ -230,7 +241,13 @@ impl ExecProcess {
             mut exit_rx,
         } = spawned;
         let output_rx = chaos_pty::combine_output_receivers(stdout_rx, stderr_rx);
-        let managed = Self::new(process_handle, output_rx, sandbox_type, spawn_lifecycle);
+        let managed = Self::new(
+            process_handle,
+            output_rx,
+            sandbox_type,
+            spawn_lifecycle,
+            sandbox_diagnostics,
+        );
 
         let exit_ready = matches!(exit_rx.try_recv(), Ok(_) | Err(TryRecvError::Closed));
 
@@ -251,9 +268,12 @@ impl ExecProcess {
 
         tokio::spawn({
             let cancellation_token = managed.cancellation_token.clone();
+            let diagnostics = Arc::clone(&managed.sandbox_diagnostics);
             async move {
+                // A closed channel also means the process/waiter is gone; always stop audit capture.
                 let _ = exit_rx.await;
                 cancellation_token.cancel();
+                diagnostics.finish().await;
             }
         });
 
@@ -262,6 +282,12 @@ impl ExecProcess {
 
     fn signal_exit(&self) {
         self.cancellation_token.cancel();
+        if self.sandbox_type == SandboxType::MacosSeatbelt {
+            let diagnostics = Arc::clone(&self.sandbox_diagnostics);
+            tokio::spawn(async move {
+                diagnostics.finish().await;
+            });
+        }
     }
 }
 

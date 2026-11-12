@@ -66,6 +66,7 @@ fn combine_spawned_output(
     tokio::sync::broadcast::Receiver<Vec<u8>>,
     tokio::sync::oneshot::Receiver<i32>,
 ) {
+    assert!(spawned.session.pid().is_some_and(|pid| pid > 0));
     let SpawnedProcess {
         session,
         stdout_rx,
@@ -371,7 +372,8 @@ async fn pipe_and_pty_share_interface() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pipe_drains_stderr_without_stdout_activity() -> anyhow::Result<()> {
     let fixture = fixture_executable()?;
-    let script = "local chunk = string.rep('E', 65536); for _ = 1, 64 do io.stderr:write(chunk); io.stderr:flush() end";
+    let script = "local chunk = string.rep('E', 65536); \
+                  for _ = 1, 64 do io.stderr:write(chunk); io.stderr:flush() end";
     let args = vec!["--eval".to_string(), script.to_string()];
     let env_map: HashMap<String, String> = std::env::vars().collect();
     let spawned = spawn_pipe_process(&fixture, &args, Path::new("."), &env_map, &None).await?;
@@ -591,8 +593,13 @@ async fn pty_spawn_can_preserve_inherited_fds() -> anyhow::Result<()> {
     drop(write_end);
 
     let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
-    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
-    assert_eq!(code, 0, "expected preserved-fd PTY child to exit cleanly");
+    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
+    assert_eq!(
+        code,
+        0,
+        "expected preserved-fd PTY child to exit cleanly: {}",
+        String::from_utf8_lossy(&output)
+    );
 
     let mut pipe_output = String::new();
     read_end.read_to_string(&mut pipe_output)?;
@@ -728,7 +735,8 @@ async fn pty_spawn_with_inherited_fds_supports_resize() -> anyhow::Result<()> {
     let write_end = unsafe { std::fs::File::from_raw_fd(fds[1]) };
 
     let env_map: HashMap<String, String> = std::env::vars().collect();
-    let script = "stty -echo; printf 'start:%s\\n' \"$(stty size)\"; IFS= read _line; printf 'after:%s\\n' \"$(stty size)\"";
+    let script = "stty -echo; printf 'start:%s\\n' \"$(stty size)\"; \
+                  IFS= read _line; printf 'after:%s\\n' \"$(stty size)\"";
     let spawned = spawn_process_with_inherited_fds(
         "/bin/sh",
         &["-c".to_string(), script.to_string()],
@@ -807,8 +815,13 @@ async fn pipe_spawn_no_stdin_can_preserve_inherited_fds() -> anyhow::Result<()> 
     drop(write_end);
 
     let (_session, output_rx, exit_rx) = combine_spawned_output(spawned);
-    let (_, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
-    assert_eq!(code, 0, "expected preserved-fd pipe child to exit cleanly");
+    let (output, code) = collect_output_until_exit(output_rx, exit_rx, 2_000).await?;
+    assert_eq!(
+        code,
+        0,
+        "expected preserved-fd pipe child to exit cleanly: {}",
+        String::from_utf8_lossy(&output)
+    );
 
     let mut pipe_output = String::new();
     read_end.read_to_string(&mut pipe_output)?;

@@ -1,12 +1,15 @@
-use chaos_snitch::tracing::warn;
 use std::collections::HashSet;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::sync::Arc;
 use tokio::task::JoinHandle;
+use tracing::warn;
 
 /// Tracks the (recursive) descendants of a process by using `kqueue` to watch for fork events, and
 /// `proc_listchildpids` to list the children of a process.
-pub(crate) struct PidTracker {
-    kq: libc::c_int,
-    handle: JoinHandle<HashSet<i32>>,
+#[derive(Debug)]
+pub(super) struct PidTracker {
+    kq: Arc<OwnedFd>,
+    handle: Option<JoinHandle<HashSet<i32>>>,
 }
 
 impl PidTracker {
@@ -15,15 +18,51 @@ impl PidTracker {
             return None;
         }
 
-        let kq = unsafe { libc::kqueue() };
-        let handle = tokio::task::spawn_blocking(move || track_descendants(kq, root_pid));
+        // SAFETY: kqueue takes no pointers and returns a new owned descriptor.
+        let fd = unsafe { libc::kqueue() };
+        if fd < 0 {
+            warn!(
+                "failed to create sandbox PID tracker: {}",
+                std::io::Error::last_os_error()
+            );
+            return None;
+        }
+        // SAFETY: fd is a newly created, valid descriptor owned by this tracker.
+        let kq = Arc::new(unsafe { OwnedFd::from_raw_fd(fd) });
+        // Register before spawning the worker so even an immediate drop can wake it.
+        if !register_stop_event(kq.as_raw_fd()) {
+            return None;
+        }
+        let worker_kq = Arc::clone(&kq);
+        let handle =
+            tokio::task::spawn_blocking(move || track_descendants(worker_kq.as_raw_fd(), root_pid));
 
-        Some(Self { kq, handle })
+        Some(Self {
+            kq,
+            handle: Some(handle),
+        })
     }
 
-    pub(crate) async fn stop(self) -> HashSet<i32> {
-        trigger_stop_event(self.kq);
-        self.handle.await.unwrap_or_default()
+    pub(super) async fn stop(mut self) -> HashSet<i32> {
+        trigger_stop_event(self.kq.as_raw_fd());
+        match self.handle.take() {
+            Some(handle) => match handle.await {
+                Ok(seen) => seen,
+                Err(error) => {
+                    warn!("sandbox PID tracker failed: {error}");
+                    HashSet::new()
+                }
+            },
+            None => HashSet::new(),
+        }
+    }
+}
+
+impl Drop for PidTracker {
+    fn drop(&mut self) {
+        if self.handle.is_some() {
+            trigger_stop_event(self.kq.as_raw_fd());
+        }
     }
 }
 
@@ -37,6 +76,7 @@ unsafe extern "C" {
 
 /// Wrap proc_listchildpids.
 fn list_child_pids(parent: i32) -> Vec<i32> {
+    // SAFETY: each call receives a writable buffer and its exact byte capacity.
     unsafe {
         let mut capacity: usize = 16;
         loop {
@@ -63,6 +103,7 @@ fn pid_is_alive(pid: i32) -> bool {
     if pid <= 0 {
         return false;
     }
+    // SAFETY: signal zero only checks existence/permissions; no pointers are passed.
     let res = unsafe { libc::kill(pid as libc::pid_t, 0) };
     if res == 0 {
         true
@@ -94,6 +135,7 @@ fn watch_pid(kq: libc::c_int, pid: i32) -> Result<(), WatchPidError> {
         udata: std::ptr::null_mut(),
     };
 
+    // SAFETY: kev is one initialized change; no event output is requested.
     let res = unsafe { libc::kevent(kq, &kev, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
     if res < 0 {
         let err = std::io::Error::last_os_error();
@@ -160,6 +202,7 @@ fn register_stop_event(kq: libc::c_int) -> bool {
         udata: std::ptr::null_mut(),
     };
 
+    // SAFETY: kev is one initialized change; no event output is requested.
     let res = unsafe { libc::kevent(kq, &kev, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
     res >= 0
 }
@@ -178,30 +221,24 @@ fn trigger_stop_event(kq: libc::c_int) {
         udata: std::ptr::null_mut(),
     };
 
-    let _ = unsafe { libc::kevent(kq, &kev, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
+    // SAFETY: the OwnedFd keeps kq alive; kev is one initialized user event.
+    if unsafe { libc::kevent(kq, &kev, 1, std::ptr::null_mut(), 0, std::ptr::null()) } < 0 {
+        warn!(
+            "failed to stop sandbox PID tracker: {}",
+            std::io::Error::last_os_error()
+        );
+    }
 }
 
 /// Put all of the above together to track all the descendants of `root_pid`.
 fn track_descendants(kq: libc::c_int, root_pid: i32) -> HashSet<i32> {
-    if kq < 0 {
-        let mut seen = HashSet::new();
-        seen.insert(root_pid);
-        return seen;
-    }
-
-    if !register_stop_event(kq) {
-        let mut seen = HashSet::new();
-        seen.insert(root_pid);
-        let _ = unsafe { libc::close(kq) };
-        return seen;
-    }
-
     let mut seen: HashSet<i32> = HashSet::new();
     let mut active: HashSet<i32> = HashSet::new();
 
     add_pid_watch(kq, root_pid, &mut seen, &mut active);
 
     const EVENTS_CAP: usize = 32;
+    // SAFETY: kevent is a plain C struct for which zeroed storage is valid.
     let mut events: [libc::kevent; EVENTS_CAP] =
         unsafe { std::mem::MaybeUninit::zeroed().assume_init() };
 
@@ -212,11 +249,9 @@ fn track_descendants(kq: libc::c_int, root_pid: i32) -> HashSet<i32> {
                 break;
             }
             add_pid_watch(kq, root_pid, &mut seen, &mut active);
-            if active.is_empty() {
-                continue;
-            }
         }
 
+        // SAFETY: events has EVENTS_CAP writable entries; kq remains owned by the caller.
         let nev = unsafe {
             libc::kevent(
                 kq,
@@ -268,8 +303,6 @@ fn track_descendants(kq: libc::c_int, root_pid: i32) -> HashSet<i32> {
             break;
         }
     }
-
-    let _ = unsafe { libc::close(kq) };
 
     seen
 }

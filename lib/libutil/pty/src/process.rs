@@ -67,6 +67,7 @@ impl fmt::Debug for PtyHandles {
 
 /// Handle for driving an interactive process (PTY or pipe).
 pub struct ProcessHandle {
+    pid: Option<u32>,
     writer_tx: StdMutex<Option<mpsc::Sender<Vec<u8>>>>,
     killer: StdMutex<Option<Box<dyn ChildTerminator>>>,
     reader_handle: StdMutex<Option<JoinHandle<()>>>,
@@ -100,6 +101,7 @@ impl ProcessHandle {
         pty_handles: Option<PtyHandles>,
     ) -> Self {
         Self {
+            pid: None,
             writer_tx: StdMutex::new(Some(writer_tx)),
             killer: StdMutex::new(Some(killer)),
             reader_handle: StdMutex::new(Some(reader_handle)),
@@ -110,6 +112,16 @@ impl ProcessHandle {
             exit_code,
             _pty_handles: StdMutex::new(pty_handles),
         }
+    }
+
+    pub(crate) fn with_pid(mut self, pid: Option<u32>) -> Self {
+        self.pid = pid;
+        self
+    }
+
+    /// The host OS PID captured at spawn, not a managed exec session id.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Returns a channel sender for writing raw bytes to the child stdin.

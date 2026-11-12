@@ -301,9 +301,22 @@ pub(crate) async fn execute_exec_request(
     };
 
     let start = Instant::now();
-    let raw_output_result = exec(params, sandbox, socket_policy, stdout_stream, after_spawn).await;
+    let mut diagnostics = super::sandbox_diagnostics::SandboxDiagnostics::start(sandbox);
+    let raw_output_result = exec(
+        params,
+        sandbox,
+        socket_policy,
+        stdout_stream,
+        after_spawn,
+        &mut diagnostics,
+    )
+    .await;
     let duration = start.elapsed();
-    finalize_exec_result(raw_output_result, sandbox, duration)
+    let mut result = finalize_exec_result(raw_output_result, sandbox, duration);
+    if let Err(ChaosErr::Sandbox(SandboxErr::Denied { output, .. })) = &mut result {
+        diagnostics.enrich_denial(output).await;
+    }
+    result
 }
 
 fn finalize_exec_result(
@@ -560,6 +573,7 @@ async fn exec(
     socket_policy: SocketPolicy,
     stdout_stream: Option<StdoutStream>,
     after_spawn: Option<Box<dyn FnOnce() + Send>>,
+    diagnostics: &mut super::sandbox_diagnostics::SandboxDiagnostics,
 ) -> Result<RawExecToolCallOutput> {
     let ExecParams {
         command,
@@ -595,6 +609,7 @@ async fn exec(
         env,
     })
     .await?;
+    diagnostics.on_spawn(child.id());
     if let Some(after_spawn) = after_spawn {
         after_spawn();
     }

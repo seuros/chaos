@@ -1,16 +1,11 @@
-#[cfg(target_os = "macos")]
-mod pid_tracker;
-#[cfg(target_os = "macos")]
-mod seatbelt;
-
 use chaos_ipc::config_types::SandboxMode;
 use chaos_kern::config::Config;
 use chaos_kern::config::ConfigOverrides;
 use chaos_kern::config::NetworkProxyAuditMetadata;
+#[cfg(target_os = "macos")]
+use chaos_kern::exec::seatbelt::{DenialLogger, SandboxDenial};
 use chaos_kern::exec_env::create_env;
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
-#[cfg(target_os = "macos")]
-use seatbelt::DenialLogger;
 use tokio::process::Command;
 
 use crate::SandboxCommand;
@@ -125,7 +120,7 @@ pub async fn run_command_under_sandbox(
         if denials.is_empty() {
             eprintln!("None found.");
         } else {
-            for seatbelt::SandboxDenial { name, capability } in denials {
+            for SandboxDenial { name, capability } in denials {
                 eprintln!("({name}) {capability}");
             }
         }

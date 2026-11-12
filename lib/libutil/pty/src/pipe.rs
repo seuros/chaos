@@ -177,7 +177,8 @@ async fn spawn_process_with_stdin_mode(
         exit_status,
         exit_code,
         /*pty_handles*/ None,
-    );
+    )
+    .with_pid(Some(process_group_id));
 
     Ok(SpawnedProcess {
         session: handle,

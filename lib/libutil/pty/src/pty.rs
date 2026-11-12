@@ -166,7 +166,8 @@ async fn spawn_process_portable(
         exit_status,
         exit_code,
         Some(handles),
-    );
+    )
+    .with_pid(process_group_id);
 
     Ok(SpawnedProcess {
         session: handle,
@@ -287,7 +288,8 @@ async fn spawn_process_preserving_fds(
         exit_status,
         exit_code,
         Some(handles),
-    );
+    )
+    .with_pid(Some(process_group_id));
 
     Ok(SpawnedProcess {
         session: handle,

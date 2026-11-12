@@ -49,7 +49,7 @@ impl HeadTailBuffer {
     }
 
     /// Total bytes that were dropped from the middle due to the size cap.
-    #[cfg(test)]
+    #[cfg(any(test, target_os = "macos"))]
     pub(crate) fn omitted_bytes(&self) -> usize {
         self.omitted_bytes
     }

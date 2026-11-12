@@ -1446,3 +1446,60 @@ fn error_chain_recovers_the_root_cause_through_io_error() {
         "authoritative settings storage is unavailable: Connection refused"
     );
 }
+
+#[tokio::test]
+async fn config_builder_rejects_invalid_chaos_auth_home() {
+    let chaos_home = tempdir().expect("tempdir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
+    let missing = chaos_home.path().join("missing-auth-home");
+    let mut builder = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .fallback_cwd(Some(chaos_home.path().to_path_buf()));
+    builder.auth_home_env = Some(Some(missing.into_os_string()));
+    let err = builder
+        .build()
+        .await
+        .expect_err("an invalid CHAOS_AUTH_HOME must fail config load");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+    assert!(
+        err.to_string().contains(chaos_pwd::CHAOS_AUTH_HOME_ENV_VAR),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn config_builder_accepts_valid_chaos_auth_home() {
+    let chaos_home = tempdir().expect("tempdir");
+    let auth_home = tempdir().expect("auth tempdir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
+    let mut builder = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .fallback_cwd(Some(chaos_home.path().to_path_buf()));
+    builder.auth_home_env = Some(Some(auth_home.path().as_os_str().to_owned()));
+    let cfg = builder
+        .build()
+        .await
+        .expect("a valid CHAOS_AUTH_HOME loads");
+    assert_eq!(cfg.chaos_home, chaos_home.path().to_path_buf());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn config_builder_rejects_missing_non_unicode_chaos_auth_home() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let chaos_home = tempdir().expect("tempdir");
+    crate::test_support::bootstrap_sqlite(chaos_home.path()).expect("bootstrap");
+    let missing = chaos_home
+        .path()
+        .join(std::ffi::OsStr::from_bytes(&[b'm', 0xff]));
+    let mut builder = ConfigBuilder::default()
+        .chaos_home(chaos_home.path().to_path_buf())
+        .fallback_cwd(Some(chaos_home.path().to_path_buf()));
+    builder.auth_home_env = Some(Some(missing.into_os_string()));
+    let err = builder
+        .build()
+        .await
+        .expect_err("a missing non-Unicode CHAOS_AUTH_HOME must fail config load");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+}

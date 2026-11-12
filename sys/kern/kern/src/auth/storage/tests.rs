@@ -264,7 +264,7 @@ fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
         .into_iter()
         .collect(),
     };
-    let storage = create_auth_storage(dir.path().to_path_buf(), AuthCredentialsStoreMode::File);
+    let storage = create_auth_storage_at(dir.path().to_path_buf(), AuthCredentialsStoreMode::File);
     storage.save(&auth_dot_json)?;
     assert!(dir.path().join("auth.json").exists());
     let storage = FileAuthStorage::new(dir.path().to_path_buf());
@@ -277,7 +277,7 @@ fn file_storage_delete_removes_auth_file() -> anyhow::Result<()> {
 #[test]
 fn ephemeral_storage_save_load_delete_is_in_memory_only() -> anyhow::Result<()> {
     let dir = tempdir()?;
-    let storage = create_auth_storage(
+    let storage = create_auth_storage_at(
         dir.path().to_path_buf(),
         AuthCredentialsStoreMode::Ephemeral,
     );
@@ -516,5 +516,140 @@ fn vault_auth_rotation_and_logout_ignore_legacy_keychain() -> anyhow::Result<()>
         keyring.saved_value(&key).as_deref(),
         Some(serialized.as_str())
     );
+    Ok(())
+}
+
+fn api_key_auth(key: &str) -> AuthDotJson {
+    AuthDotJson {
+        providers: [(
+            "openai".to_string(),
+            ProviderAuthRecord {
+                credential_subject: Some(format!("{key}-subject")),
+                auth_mode: Some(AuthMode::ApiKey),
+                api_key: Some(key.to_string()),
+                tokens: None,
+                last_refresh: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
+    }
+}
+
+/// Seeds a distinct credential in each store, then checks that load, save and
+/// delete through `split` touch only the auth home, and the state-home
+/// credential seen by `default` is unchanged throughout.
+fn assert_split_isolated(
+    split: &Arc<dyn AuthStorageBackend>,
+    default: &Arc<dyn AuthStorageBackend>,
+) -> anyhow::Result<()> {
+    let state_cred = api_key_auth("sk-state-home");
+    let auth_cred = api_key_auth("sk-auth-home");
+    default.save(&state_cred)?;
+    split.save(&auth_cred)?;
+
+    assert_eq!(split.load()?, Some(normalized(&auth_cred)));
+    assert_eq!(default.load()?, Some(normalized(&state_cred)));
+
+    let rotated = api_key_auth("sk-auth-home-rotated");
+    split.save(&rotated)?;
+    assert_eq!(split.load()?, Some(normalized(&rotated)));
+    assert_eq!(default.load()?, Some(normalized(&state_cred)));
+
+    assert!(split.delete()?, "logout removes the auth-home credential");
+    assert_eq!(split.load()?, None);
+    assert_eq!(default.load()?, Some(normalized(&state_cred)));
+    default.delete()?;
+    Ok(())
+}
+
+#[test]
+fn file_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    let auth_home = tempdir()?;
+    let raw = auth_home.path().to_str().context("utf-8 auth home")?;
+    let split = create_auth_storage_from_env(
+        chaos_home.path().to_path_buf(),
+        AuthCredentialsStoreMode::File,
+        Some(std::ffi::OsStr::new(raw)),
+    )?;
+    let default = create_auth_storage_from_env(
+        chaos_home.path().to_path_buf(),
+        AuthCredentialsStoreMode::File,
+        None,
+    )?;
+
+    split.save(&api_key_auth("sk-where"))?;
+    assert!(auth_home.path().join("auth.json").exists());
+    assert!(!chaos_home.path().join("auth.json").exists());
+    split.delete()?;
+
+    assert_split_isolated(&split, &default)
+}
+
+#[test]
+fn ephemeral_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    let auth_home = tempdir()?;
+    let raw = auth_home.path().to_str().context("utf-8 auth home")?;
+    let split = create_auth_storage_from_env(
+        chaos_home.path().to_path_buf(),
+        AuthCredentialsStoreMode::Ephemeral,
+        Some(std::ffi::OsStr::new(raw)),
+    )?;
+    let default = create_auth_storage_from_env(
+        chaos_home.path().to_path_buf(),
+        AuthCredentialsStoreMode::Ephemeral,
+        None,
+    )?;
+    assert_split_isolated(&split, &default)
+}
+
+#[test]
+fn vault_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    let auth_home = tempdir()?;
+    let keyring = Arc::new(MockKeyringStore::default());
+    for mode in [
+        AuthCredentialsStoreMode::Keyring,
+        AuthCredentialsStoreMode::Auto,
+    ] {
+        let resolved = chaos_pwd::find_chaos_auth_home_from_env(
+            chaos_home.path(),
+            Some(auth_home.path().as_os_str()),
+        )?;
+        let split = create_auth_storage_with_keyring_store(resolved, mode, keyring.clone());
+        let default = create_auth_storage_with_keyring_store(
+            chaos_home.path().to_path_buf(),
+            mode,
+            keyring.clone(),
+        );
+        assert_split_isolated(&split, &default)?;
+    }
+    assert!(!chaos_home.path().join("auth.json").exists());
+    assert!(!auth_home.path().join("auth.json").exists());
+    Ok(())
+}
+
+#[test]
+fn invalid_auth_home_env_is_an_error_not_a_fallback() -> anyhow::Result<()> {
+    let chaos_home = tempdir()?;
+    FileAuthStorage::new(chaos_home.path().to_path_buf()).save(&api_key_auth("sk-api-home"))?;
+    let missing = chaos_home.path().join("missing-auth-home");
+    let raw = missing.to_str().context("utf-8 path")?;
+    for mode in [
+        AuthCredentialsStoreMode::File,
+        AuthCredentialsStoreMode::Ephemeral,
+    ] {
+        let result = create_auth_storage_from_env(
+            chaos_home.path().to_path_buf(),
+            mode,
+            Some(std::ffi::OsStr::new(raw)),
+        );
+        assert!(
+            result.is_err(),
+            "missing CHAOS_AUTH_HOME must not fall back ({mode:?})"
+        );
+    }
     Ok(())
 }

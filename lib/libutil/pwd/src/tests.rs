@@ -61,3 +61,98 @@ fn find_chaos_home_without_env_uses_default_chaos_home_dir() {
     let expected = home_dir().expect("home dir").join(CHAOS_HOME_DIR_NAME);
     assert_eq!(resolved, expected);
 }
+
+#[test]
+fn find_chaos_auth_home_defaults_to_chaos_home() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let resolved =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), None).expect("default auth home");
+    assert_eq!(resolved, chaos_home.path().to_path_buf());
+}
+
+#[test]
+fn find_chaos_auth_home_uses_env_directory() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let auth_home = TempDir::new().expect("temp auth home");
+    let raw = auth_home.path().to_str().expect("utf-8 path");
+    let resolved =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), Some(std::ffi::OsStr::new(raw)))
+            .expect("auth home from env");
+    assert_eq!(
+        resolved,
+        auth_home
+            .path()
+            .canonicalize()
+            .expect("canonical auth home")
+    );
+}
+
+#[test]
+fn find_chaos_auth_home_rejects_missing_directory_without_fallback() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let missing = chaos_home.path().join("missing-auth-home");
+    let raw = missing.to_str().expect("utf-8 path");
+    let err =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), Some(std::ffi::OsStr::new(raw)))
+            .expect_err("missing auth home must be an error");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+    assert!(
+        err.to_string().contains(super::CHAOS_AUTH_HOME_ENV_VAR),
+        "unexpected error: {err}"
+    );
+}
+
+/// Exercises the real environment reader. This is the only test in this crate
+/// that touches `CHAOS_AUTH_HOME`, so mutating the process environment here
+/// cannot race another test.
+#[cfg(unix)]
+#[test]
+fn find_chaos_auth_home_reads_non_unicode_env_as_a_path() {
+    use std::os::unix::ffi::OsStrExt;
+
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let parent = TempDir::new().expect("temp parent");
+    let mut name = b"auth-".to_vec();
+    name.push(0xff);
+    let auth_home = parent.path().join(std::ffi::OsStr::from_bytes(&name));
+    // APFS (macOS) refuses names that are not valid UTF-8 with EILSEQ, so a
+    // non-Unicode directory can only exist on filesystems that accept raw
+    // bytes. The missing-path half below still runs everywhere, and it is the
+    // half that fails if the reader drops a non-Unicode value to "unset".
+    let fs_accepts_name = match std::fs::create_dir(&auth_home) {
+        Ok(()) => true,
+        Err(err) if cfg!(target_os = "macos") => {
+            eprintln!("skipping existing-dir half: filesystem refused the name: {err}");
+            false
+        }
+        Err(err) => panic!("create non-unicode auth home: {err}"),
+    };
+    let missing = parent
+        .path()
+        .join(std::ffi::OsStr::from_bytes(&[b'm', 0xff]));
+
+    // SAFETY: no other test in this crate reads or writes CHAOS_AUTH_HOME.
+    unsafe { std::env::set_var(super::CHAOS_AUTH_HOME_ENV_VAR, &auth_home) };
+    let present = super::find_chaos_auth_home(chaos_home.path());
+    // SAFETY: as above.
+    unsafe { std::env::set_var(super::CHAOS_AUTH_HOME_ENV_VAR, &missing) };
+    let absent = super::find_chaos_auth_home(chaos_home.path());
+    // SAFETY: as above.
+    unsafe { std::env::remove_var(super::CHAOS_AUTH_HOME_ENV_VAR) };
+
+    if fs_accepts_name {
+        assert_eq!(
+            present.expect("non-unicode auth home resolves"),
+            auth_home.canonicalize().expect("canonical auth home")
+        );
+    } else {
+        assert!(
+            present.is_err(),
+            "an auth home the filesystem refused must error, not fall back"
+        );
+    }
+    let err = absent.expect_err("missing non-unicode auth home must error, not fall back");
+    if fs_accepts_name {
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+    }
+}

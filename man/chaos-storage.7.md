@@ -101,6 +101,22 @@ The OS credential store holds its unlock key. If that store is unavailable,
 setup fails without writing plaintext; use an `env:VARIABLE` reference instead.
 This also applies to FreeBSD hosts without D-Bus Secret Service.
 
+### Separate credentials directory
+
+`CHAOS_AUTH_HOME`, when set, moves provider credentials (`auth.json` in `file`
+mode, the vault in `keyring`/`auto` mode, and the in-memory key in `ephemeral`
+mode) out of `$CHAOS_HOME` into that directory. Sessions, history, settings,
+trust and hooks stay in `$CHAOS_HOME`. This lets one home serve runs that sign
+in differently, for example an API key and a ChatGPT subscription login for the
+same provider: give the subscription runs their own `CHAOS_AUTH_HOME`.
+
+The directory must exist. An invalid value fails config load; ChaOS never falls
+back to `$CHAOS_HOME`, because that would read or overwrite another login's
+credentials. Unset, nothing changes. An API key from the environment still takes
+precedence over stored credentials, as before: changing the credentials
+directory does not by itself select subscription auth, so clear inherited API
+key variables for subscription runs.
+
 ### Shared credential vault
 
 `$CHAOS_HOME/secrets/local.age` holds settings credentials, provider accounts in

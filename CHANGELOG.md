@@ -10,6 +10,11 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- `CHAOS_AUTH_HOME` moves provider credentials into their own directory while
+  sessions, history, settings, trust and hooks stay in `$CHAOS_HOME`, so one
+  home can serve both API-key and subscription runs for the same provider. An
+  invalid value fails config load instead of falling back. See
+  [chaos-storage(7)](man/chaos-storage.7.md).
 - Operator project trust tools on `chaos serve --mcp`: `trust_list` and
   `trust_show` read decisions; `trust_set` grants or revokes one project root
   only when the stored decision matches `expect` (a revoke stores a denial, so

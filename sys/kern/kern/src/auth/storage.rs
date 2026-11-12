@@ -296,7 +296,33 @@ impl AuthStorageBackend for EphemeralAuthStorage {
     }
 }
 
+/// Opens the credential store for `chaos_home`.
+///
+/// Credentials live in `CHAOS_AUTH_HOME` when it is set (see
+/// [`chaos_pwd::find_chaos_auth_home`]), otherwise in `chaos_home` itself. An
+/// invalid `CHAOS_AUTH_HOME` is an error rather than a fallback, so a run never
+/// reads or overwrites another login's credentials by accident.
 pub(super) fn create_auth_storage(
+    chaos_home: PathBuf,
+    mode: AuthCredentialsStoreMode,
+) -> std::io::Result<Arc<dyn AuthStorageBackend>> {
+    let auth_home_env = chaos_pwd::chaos_auth_home_env();
+    create_auth_storage_from_env(chaos_home, mode, auth_home_env.as_deref())
+}
+
+/// [`create_auth_storage`] with the `CHAOS_AUTH_HOME` value passed in, so the
+/// resolution can be tested without mutating the process environment.
+fn create_auth_storage_from_env(
+    chaos_home: PathBuf,
+    mode: AuthCredentialsStoreMode,
+    auth_home_env: Option<&std::ffi::OsStr>,
+) -> std::io::Result<Arc<dyn AuthStorageBackend>> {
+    let auth_home = chaos_pwd::find_chaos_auth_home_from_env(&chaos_home, auth_home_env)?;
+    Ok(create_auth_storage_at(auth_home, mode))
+}
+
+/// Opens the credential store rooted at an already-resolved `auth_home`.
+pub(super) fn create_auth_storage_at(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
 ) -> Arc<dyn AuthStorageBackend> {

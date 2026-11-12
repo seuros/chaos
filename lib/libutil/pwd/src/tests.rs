@@ -115,7 +115,18 @@ fn find_chaos_auth_home_reads_non_unicode_env_as_a_path() {
     let mut name = b"auth-".to_vec();
     name.push(0xff);
     let auth_home = parent.path().join(std::ffi::OsStr::from_bytes(&name));
-    std::fs::create_dir(&auth_home).expect("create non-unicode auth home");
+    // APFS (macOS) refuses names that are not valid UTF-8 with EILSEQ, so a
+    // non-Unicode directory can only exist on filesystems that accept raw
+    // bytes. The missing-path half below still runs everywhere, and it is the
+    // half that fails if the reader drops a non-Unicode value to "unset".
+    let fs_accepts_name = match std::fs::create_dir(&auth_home) {
+        Ok(()) => true,
+        Err(err) if cfg!(target_os = "macos") => {
+            eprintln!("skipping existing-dir half: filesystem refused the name: {err}");
+            false
+        }
+        Err(err) => panic!("create non-unicode auth home: {err}"),
+    };
     let missing = parent
         .path()
         .join(std::ffi::OsStr::from_bytes(&[b'm', 0xff]));
@@ -129,10 +140,19 @@ fn find_chaos_auth_home_reads_non_unicode_env_as_a_path() {
     // SAFETY: as above.
     unsafe { std::env::remove_var(super::CHAOS_AUTH_HOME_ENV_VAR) };
 
-    assert_eq!(
-        present.expect("non-unicode auth home resolves"),
-        auth_home.canonicalize().expect("canonical auth home")
-    );
+    if fs_accepts_name {
+        assert_eq!(
+            present.expect("non-unicode auth home resolves"),
+            auth_home.canonicalize().expect("canonical auth home")
+        );
+    } else {
+        assert!(
+            present.is_err(),
+            "an auth home the filesystem refused must error, not fall back"
+        );
+    }
     let err = absent.expect_err("missing non-unicode auth home must error, not fall back");
-    assert_eq!(err.kind(), ErrorKind::NotFound);
+    if fs_accepts_name {
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+    }
 }

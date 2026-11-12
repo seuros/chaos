@@ -141,7 +141,7 @@ async fn refresh_without_id_token() {
     )
     .expect("failed to write auth file");
 
-    let storage = create_auth_storage(
+    let storage = create_auth_storage_at(
         chaos_home.path().to_path_buf(),
         AuthCredentialsStoreMode::File,
     );

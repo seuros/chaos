@@ -61,3 +61,41 @@ fn find_chaos_home_without_env_uses_default_chaos_home_dir() {
     let expected = home_dir().expect("home dir").join(CHAOS_HOME_DIR_NAME);
     assert_eq!(resolved, expected);
 }
+
+#[test]
+fn find_chaos_auth_home_defaults_to_chaos_home() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let resolved =
+        super::find_chaos_auth_home_from_env(chaos_home.path(), None).expect("default auth home");
+    assert_eq!(resolved, chaos_home.path().to_path_buf());
+}
+
+#[test]
+fn find_chaos_auth_home_uses_env_directory() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let auth_home = TempDir::new().expect("temp auth home");
+    let raw = auth_home.path().to_str().expect("utf-8 path");
+    let resolved = super::find_chaos_auth_home_from_env(chaos_home.path(), Some(raw))
+        .expect("auth home from env");
+    assert_eq!(
+        resolved,
+        auth_home
+            .path()
+            .canonicalize()
+            .expect("canonical auth home")
+    );
+}
+
+#[test]
+fn find_chaos_auth_home_rejects_missing_directory_without_fallback() {
+    let chaos_home = TempDir::new().expect("temp chaos home");
+    let missing = chaos_home.path().join("missing-auth-home");
+    let raw = missing.to_str().expect("utf-8 path");
+    let err = super::find_chaos_auth_home_from_env(chaos_home.path(), Some(raw))
+        .expect_err("missing auth home must be an error");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+    assert!(
+        err.to_string().contains(super::CHAOS_AUTH_HOME_ENV_VAR),
+        "unexpected error: {err}"
+    );
+}

@@ -20,6 +20,10 @@ pub struct ConfigBuilder {
     pub(crate) harness_overrides: Option<ConfigOverrides>,
     pub(crate) loader_overrides: Option<LoaderOverrides>,
     pub(crate) fallback_cwd: Option<PathBuf>,
+    /// Test-only stand-in for the `CHAOS_AUTH_HOME` environment value, so the
+    /// load-time check can be exercised without mutating process state.
+    #[cfg(test)]
+    pub(crate) auth_home_env: Option<Option<String>>,
 }
 
 impl ConfigBuilder {
@@ -55,8 +59,20 @@ impl ConfigBuilder {
             harness_overrides,
             loader_overrides,
             fallback_cwd,
+            #[cfg(test)]
+            auth_home_env,
         } = self;
         let chaos_home = chaos_home.map_or_else(find_chaos_home, std::io::Result::Ok)?;
+        // Credential storage swallows load errors into "not signed in", so an
+        // invalid CHAOS_AUTH_HOME is rejected here, where it fails the run.
+        #[cfg(test)]
+        if let Some(auth_home_env) = auth_home_env {
+            chaos_pwd::find_chaos_auth_home_from_env(&chaos_home, auth_home_env.as_deref())?;
+        } else {
+            chaos_pwd::find_chaos_auth_home(&chaos_home)?;
+        }
+        #[cfg(not(test))]
+        chaos_pwd::find_chaos_auth_home(&chaos_home)?;
         let cli_overrides = cli_overrides.unwrap_or_default();
         let mut harness_overrides = harness_overrides.unwrap_or_default();
         let loader_overrides = loader_overrides.unwrap_or_default();
@@ -205,6 +221,7 @@ impl Config {
         cli_overrides: Vec<(String, TomlValue)>,
     ) -> std::io::Result<Self> {
         let chaos_home = find_chaos_home()?;
+        chaos_pwd::find_chaos_auth_home(&chaos_home)?;
         let mut merged = toml::Value::try_from(ConfigToml::default()).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,

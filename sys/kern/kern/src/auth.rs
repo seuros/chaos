@@ -25,6 +25,7 @@ use crate::auth::storage::AuthStorageBackend;
 pub use crate::auth::storage::CredentialSubjectFingerprint;
 pub use crate::auth::storage::ProviderAuthRecord;
 use crate::auth::storage::create_auth_storage;
+use crate::auth::storage::create_auth_storage_at;
 use crate::error::RefreshTokenFailedError;
 use crate::error::RefreshTokenFailedReason;
 use crate::token_data::KnownPlan as InternalKnownPlan;
@@ -199,11 +200,11 @@ impl ChaosAuth {
 
         match auth_mode {
             ApiAuthMode::Chatgpt => {
-                let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode);
+                let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode)?;
                 Ok(Self::Chatgpt(ChatgptAuth { state, storage }))
             }
             ApiAuthMode::Xai => {
-                let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode);
+                let storage = create_auth_storage(chaos_home.to_path_buf(), storage_mode)?;
                 Ok(Self::Xai(ChatgptAuth { state, storage }))
             }
             ApiAuthMode::ChatgptAuthTokens => {
@@ -410,7 +411,7 @@ impl ChaosAuth {
             auth_dot_json: Arc::new(Mutex::new(Some(auth_dot_json))),
             client,
         };
-        let storage = create_auth_storage(PathBuf::new(), AuthCredentialsStoreMode::File);
+        let storage = create_auth_storage_at(PathBuf::new(), AuthCredentialsStoreMode::File);
         Self::Chatgpt(ChatgptAuth { state, storage })
     }
 
@@ -492,7 +493,7 @@ pub fn logout(
     chaos_home: &Path,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<bool> {
-    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode);
+    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode)?;
     storage.delete()
 }
 
@@ -502,7 +503,7 @@ pub fn save_auth(
     auth: &AuthDotJson,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<()> {
-    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode);
+    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode)?;
     storage.save(auth)
 }
 
@@ -513,7 +514,7 @@ pub fn load_auth_dot_json(
     chaos_home: &Path,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
 ) -> std::io::Result<Option<AuthDotJson>> {
-    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode);
+    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode)?;
     storage.load()
 }
 
@@ -614,7 +615,7 @@ pub(crate) fn load_auth_for_provider(
     let ephemeral_storage = create_auth_storage(
         chaos_home.to_path_buf(),
         AuthCredentialsStoreMode::Ephemeral,
-    );
+    )?;
     if let Some(auth_dot_json) = ephemeral_storage.load()?
         && let Some(auth) = build_auth(auth_dot_json, AuthCredentialsStoreMode::Ephemeral)
     {
@@ -627,7 +628,7 @@ pub(crate) fn load_auth_for_provider(
     }
 
     // Fall back to the configured persistent store (file/keyring/auto) for managed auth.
-    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode);
+    let storage = create_auth_storage(chaos_home.to_path_buf(), auth_credentials_store_mode)?;
     let auth_dot_json = match storage.load()? {
         Some(auth) => auth,
         None => return Ok(None),

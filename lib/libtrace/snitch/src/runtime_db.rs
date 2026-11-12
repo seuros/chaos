@@ -84,7 +84,7 @@ where
         id: &Id,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut visitor = SpanFieldVisitor::default();
+        let mut visitor = LogFieldVisitor::default();
         attrs.record(&mut visitor);
 
         if let Some(span) = ctx.span(id) {
@@ -100,7 +100,7 @@ where
         values: &Record<'_>,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut visitor = SpanFieldVisitor::default();
+        let mut visitor = LogFieldVisitor::default();
         values.record(&mut visitor);
 
         if visitor.process_id.is_none() {
@@ -121,12 +121,9 @@ where
 
     fn on_event(&self, event: &Event<'_>, ctx: tracing_subscriber::layer::Context<'_, S>) {
         let metadata = event.metadata();
-        let mut visitor = MessageVisitor::default();
+        let mut visitor = LogFieldVisitor::default();
         event.record(&mut visitor);
-        let process_id = visitor
-            .process_id
-            .clone()
-            .or_else(|| event_process_id(event, &ctx));
+        let process_id = visitor.process_id.or_else(|| event_process_id(event, &ctx));
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -156,49 +153,6 @@ enum LogDbCommand {
 #[derive(Clone, Debug, Default)]
 struct SpanLogContext {
     process_id: Option<String>,
-}
-
-#[derive(Default)]
-struct SpanFieldVisitor {
-    process_id: Option<String>,
-}
-
-impl SpanFieldVisitor {
-    fn record_field(&mut self, field: &Field, value: String) {
-        if field.name() == "process_id" && self.process_id.is_none() {
-            self.process_id = Some(value);
-        }
-    }
-}
-
-impl Visit for SpanFieldVisitor {
-    fn record_i64(&mut self, field: &Field, value: i64) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_u64(&mut self, field: &Field, value: u64) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_f64(&mut self, field: &Field, value: f64) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_error(&mut self, field: &Field, value: &(dyn std::error::Error + 'static)) {
-        self.record_field(field, value.to_string());
-    }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.record_field(field, format!("{value:?}"));
-    }
 }
 
 fn event_process_id<S>(
@@ -309,23 +263,25 @@ async fn run_retention_cleanup(state_db: RuntimeDbHandle) {
 }
 
 #[derive(Default)]
-struct MessageVisitor {
+struct LogFieldVisitor {
     message: Option<String>,
     process_id: Option<String>,
 }
 
-impl MessageVisitor {
+impl LogFieldVisitor {
     fn record_field(&mut self, field: &Field, value: String) {
-        if field.name() == "message" && self.message.is_none() {
-            self.message = Some(value.clone());
-        }
-        if field.name() == "process_id" && self.process_id.is_none() {
-            self.process_id = Some(value);
+        let slot = match field.name() {
+            "message" => &mut self.message,
+            "process_id" => &mut self.process_id,
+            _ => return,
+        };
+        if slot.is_none() {
+            *slot = Some(value);
         }
     }
 }
 
-impl Visit for MessageVisitor {
+impl Visit for LogFieldVisitor {
     fn record_i64(&mut self, field: &Field, value: i64) {
         self.record_field(field, value.to_string());
     }

@@ -1,3 +1,4 @@
+use crate::collaboration_modes::CollaborationModesConfig;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -6,18 +7,20 @@ use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use chaos_ipc::config_types::ModeKind;
-use chaos_ipc::config_types::TUI_VISIBLE_COLLABORATION_MODES;
 use chaos_ipc::request_user_input::RequestUserInputArgs;
 
 fn request_user_input_is_available(mode: ModeKind, default_mode_request_user_input: bool) -> bool {
     mode.allows_request_user_input()
-        || (default_mode_request_user_input && mode == ModeKind::Default)
+        || (default_mode_request_user_input
+            && matches!(mode, ModeKind::Default | ModeKind::Harness))
 }
 
-fn format_allowed_modes(default_mode_request_user_input: bool) -> String {
-    let mode_names: Vec<&str> = TUI_VISIBLE_COLLABORATION_MODES
-        .into_iter()
-        .filter(|mode| request_user_input_is_available(*mode, default_mode_request_user_input))
+fn format_allowed_modes(config: CollaborationModesConfig) -> String {
+    let mode_names: Vec<&str> = config
+        .visible_modes()
+        .filter(|mode| {
+            request_user_input_is_available(*mode, config.default_mode_request_user_input)
+        })
         .map(ModeKind::display_name)
         .collect();
 
@@ -25,7 +28,7 @@ fn format_allowed_modes(default_mode_request_user_input: bool) -> String {
         [] => "no modes".to_string(),
         [mode] => format!("{mode} mode"),
         [first, second] => format!("{first} or {second} mode"),
-        [..] => format!("modes: {}", mode_names.join(",")),
+        [..] => format!("{} modes", mode_names.join(", ")),
     }
 }
 
@@ -43,8 +46,8 @@ pub(crate) fn request_user_input_unavailable_message(
     }
 }
 
-pub(crate) fn request_user_input_tool_description(default_mode_request_user_input: bool) -> String {
-    let allowed_modes = format_allowed_modes(default_mode_request_user_input);
+pub(crate) fn request_user_input_tool_description(config: CollaborationModesConfig) -> String {
+    let allowed_modes = format_allowed_modes(config);
     format!(
         "Request user input for one to three short questions and wait for the response. This tool is only available in {allowed_modes}."
     )

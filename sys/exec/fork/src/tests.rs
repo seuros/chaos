@@ -308,6 +308,7 @@ fn exec_does_not_offer_request_user_input_in_default_mode() {
         exec_collaboration_modes_config(),
         CollaborationModesConfig {
             default_mode_request_user_input: false,
+            ..Default::default()
         }
     );
 }

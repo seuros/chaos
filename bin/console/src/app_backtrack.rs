@@ -481,6 +481,7 @@ impl App {
                 self.server.session_source(),
                 CollaborationModesConfig {
                     default_mode_request_user_input: true,
+                    ..Default::default()
                 },
             ));
         }

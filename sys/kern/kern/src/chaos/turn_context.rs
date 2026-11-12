@@ -424,7 +424,10 @@ impl SessionConfiguration {
                 .mode_registry
                 .get(&self.mode_policy.active_mode)
                 .is_some_and(|definition| definition.reasoning_effort.is_some());
-            if collaboration_mode.mode == ModeKind::Default && !current_mode_has_reasoning_override
+            if matches!(
+                collaboration_mode.mode,
+                ModeKind::Default | ModeKind::Harness
+            ) && !current_mode_has_reasoning_override
             {
                 next_configuration.mode_base_reasoning_effort =
                     collaboration_mode.reasoning_effort();

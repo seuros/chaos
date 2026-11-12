@@ -197,6 +197,7 @@ fn exec_config_overrides(inputs: ExecConfigOverrideInputs) -> ConfigOverrides {
 fn exec_collaboration_modes_config() -> CollaborationModesConfig {
     CollaborationModesConfig {
         default_mode_request_user_input: false,
+        ..Default::default()
     }
 }
 

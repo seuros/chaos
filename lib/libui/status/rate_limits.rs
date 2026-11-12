@@ -179,28 +179,8 @@ pub fn compose_rate_limit_data_many(
         stale |= now.as_second() - snapshot.captured_at.as_second()
             > RATE_LIMIT_STALE_THRESHOLD_MINUTES * 60;
 
-        let limit_bucket_label = snapshot.limit_name.clone();
+        let limit_bucket_label = &snapshot.limit_name;
         let show_limit_prefix = !limit_bucket_label.eq_ignore_ascii_case("chaos");
-        let primary_label = snapshot
-            .primary
-            .as_ref()
-            .map(|window| {
-                window
-                    .window_minutes
-                    .map(get_limits_duration)
-                    .unwrap_or_else(|| "5h".to_string())
-            })
-            .map(|label| capitalize_first(&label));
-        let secondary_label = snapshot
-            .secondary
-            .as_ref()
-            .map(|window| {
-                window
-                    .window_minutes
-                    .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string())
-            })
-            .map(|label| capitalize_first(&label));
         let window_count =
             usize::from(snapshot.primary.is_some()) + usize::from(snapshot.secondary.is_some());
         let combine_non_codex_single_limit = show_limit_prefix && window_count == 1;
@@ -212,50 +192,29 @@ pub fn compose_rate_limit_data_many(
             });
         }
 
-        if let Some(primary) = snapshot.primary.as_ref() {
+        for (window, fallback_label) in [
+            (snapshot.primary.as_ref(), "5h"),
+            (snapshot.secondary.as_ref(), "weekly"),
+        ] {
+            let Some(window) = window else {
+                continue;
+            };
+            let window_label = capitalize_first(
+                &window
+                    .window_minutes
+                    .map(get_limits_duration)
+                    .unwrap_or_else(|| fallback_label.to_string()),
+            );
             let label = if combine_non_codex_single_limit {
-                format!(
-                    "{} {} limit",
-                    limit_bucket_label,
-                    primary_label.clone().unwrap_or_else(|| "5h".to_string())
-                )
+                format!("{limit_bucket_label} {window_label} limit")
             } else {
-                format!(
-                    "{} limit",
-                    primary_label.clone().unwrap_or_else(|| "5h".to_string())
-                )
+                format!("{window_label} limit")
             };
             rows.push(StatusRateLimitRow {
                 label,
                 value: StatusRateLimitValue::Window {
-                    percent_used: primary.used_percent,
-                    resets_at: primary.resets_at.clone(),
-                },
-            });
-        }
-
-        if let Some(secondary) = snapshot.secondary.as_ref() {
-            let label = if combine_non_codex_single_limit {
-                format!(
-                    "{} {} limit",
-                    limit_bucket_label,
-                    secondary_label
-                        .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
-                )
-            } else {
-                format!(
-                    "{} limit",
-                    secondary_label
-                        .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
-                )
-            };
-            rows.push(StatusRateLimitRow {
-                label,
-                value: StatusRateLimitValue::Window {
-                    percent_used: secondary.used_percent,
-                    resets_at: secondary.resets_at.clone(),
+                    percent_used: window.used_percent,
+                    resets_at: window.resets_at.clone(),
                 },
             });
         }

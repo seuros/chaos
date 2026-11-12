@@ -26,7 +26,7 @@
 //! let coreboot = CoreBoot::boot(
 //!     &config,
 //!     SessionSource::Cli,
-//!     CollaborationModesConfig { default_mode_request_user_input: true },
+//!     CollaborationModesConfig::default(),
 //! );
 //! // coreboot.auth_manager and coreboot.process_table are now ready to hand to
 //! // chaos_session::ClientSession::spawn.

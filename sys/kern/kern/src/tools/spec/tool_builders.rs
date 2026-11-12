@@ -1313,9 +1313,7 @@ pub(crate) fn create_request_user_input_tool(
 
     ToolSpec::Function(ResponsesApiTool {
         name: "request_user_input".to_string(),
-        description: request_user_input_tool_description(
-            collaboration_modes_config.default_mode_request_user_input,
-        ),
+        description: request_user_input_tool_description(collaboration_modes_config),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {

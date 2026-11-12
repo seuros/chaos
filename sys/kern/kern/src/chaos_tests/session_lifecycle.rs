@@ -371,6 +371,46 @@ async fn switch_mode_changes_the_next_sample_context_in_the_same_session() {
     assert!(default_context.mode_capabilities.mutation);
     assert!(!default_context.tools_config.planning_authoring);
     assert_eq!(default_context.reasoning_effort, base_reasoning_effort);
+
+    if crate::collaboration_modes::CollaborationModesConfig::default().harness_mode {
+        session
+            .switch_mode(crate::modes::HARNESS_MODE_ID, default_context.as_ref())
+            .await
+            .expect("switch to harness");
+        let harness_context = session.effective_turn_context(&turn_context).await;
+        assert_eq!(harness_context.mode_id, crate::modes::HARNESS_MODE_ID);
+        assert_eq!(
+            harness_context.collaboration_mode.mode,
+            chaos_ipc::config_types::ModeKind::Harness
+        );
+        assert_eq!(
+            harness_context.mode_capabilities,
+            default_context.mode_capabilities
+        );
+        assert_eq!(
+            harness_context.tools_config.apply_patch_tool_type,
+            default_context.tools_config.apply_patch_tool_type
+        );
+        assert_eq!(harness_context.reasoning_effort, base_reasoning_effort);
+        assert!(
+            harness_context
+                .collaboration_mode
+                .settings
+                .developer_instructions
+                .as_ref()
+                .unwrap()
+                .contains("## Harness feedback")
+        );
+        session
+            .switch_mode(crate::modes::DEFAULT_MODE_ID, harness_context.as_ref())
+            .await
+            .expect("leave harness mode");
+        let restored = session.effective_turn_context(&turn_context).await;
+        assert_eq!(
+            restored.collaboration_mode,
+            default_context.collaboration_mode
+        );
+    }
 }
 
 #[tokio::test]

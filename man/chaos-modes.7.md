@@ -13,8 +13,9 @@ chaos-modes - define and switch session-scoped FreeChaOS collaboration modes
 
 Modes select instructions, reasoning effort, and available tools for a session.
 
-Every installation includes the `default` and `plan` modes. Additional modes
-can be imported as Markdown documents.
+Every installation includes the `default` and `plan` modes. Debug builds also
+expose `harness`; release builds expose it when launched with `chaos --debug`.
+Additional modes can be imported as Markdown documents.
 
 Mode state is isolated per process. Switching a root session changes its TUI
 mode indicator. Switching a minion changes only that minion and does not change
@@ -26,6 +27,16 @@ the parent or sibling sessions.
 |------|-------------|
 | `default` | Execution mode; compact progress tools appear only for an explicitly attached plan |
 | `plan` | Conversational planning with durable planning-record writes permitted, repository mutation disabled |
+| `harness` | Default execution behavior plus evidence-based feedback for improving the model-facing harness; debug only |
+
+Harness is automatically available in non-release builds (`debug_assertions`),
+without requiring `--debug`. It appears in the mode picker and `chaos://modes`;
+normal release runs omit it from both. Default remains the initial mode.
+
+Harness feedback identifies observed friction, its impact, and a concrete
+suggested improvement. It covers instructions, tool interfaces, context delivery,
+errors, and interaction flow. The user's task stays primary; the mode does not
+require invented or repeated feedback and grants no additional permissions.
 
 Plan mode retains tools used for inspection, builds, tests, structured
 questions, and mode switching. It removes `apply_patch`,
@@ -96,7 +107,7 @@ facts from inferences and report uncertainty explicitly.
 
 Mode IDs must start with a lowercase ASCII letter or digit. Remaining
 characters can be lowercase ASCII letters, digits, `-`, or `_`. The IDs
-`default` and `plan` are reserved.
+`default`, `plan`, and `harness` are reserved, even when Harness is unavailable.
 
 ## CAPABILITIES
 

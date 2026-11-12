@@ -22,6 +22,14 @@ async fn flush_persists_logs_for_query() {
         .set_default();
 
     tracing::info!("buffered-log");
+    {
+        let span = tracing::info_span!("operation", process_id = "span");
+        let _entered = span.enter();
+        tracing::info!("inherited-log");
+        span.record("process_id", "updated-span");
+        tracing::info!("updated-log");
+        tracing::info!(process_id = "event", "override-log");
+    }
 
     layer.flush().await;
     drop(guard);
@@ -30,8 +38,19 @@ async fn flush_persists_logs_for_query() {
         .query_logs(&chaos_proc::LogQuery::default())
         .await
         .expect("query logs after flush");
-    assert_eq!(after_flush.len(), 1);
-    assert_eq!(after_flush[0].message.as_deref(), Some("buffered-log"));
+    assert_eq!(after_flush.len(), 4);
+    for (message, process_id) in [
+        ("buffered-log", None),
+        ("inherited-log", Some("span")),
+        ("updated-log", Some("updated-span")),
+        ("override-log", Some("event")),
+    ] {
+        let log = after_flush
+            .iter()
+            .find(|log| log.message.as_deref() == Some(message))
+            .expect("persisted event");
+        assert_eq!(log.process_id.as_deref(), process_id);
+    }
 
     let _ = tokio::fs::remove_dir_all(chaos_home).await;
 }

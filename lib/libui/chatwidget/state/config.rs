@@ -327,7 +327,7 @@ impl ChatWidget {
         }
     }
 
-    /// Cycle to the next collaboration mode variant (Plan -> Default -> Plan).
+    /// Cycle through available collaboration modes, including Harness in debug runs.
     pub(crate) fn cycle_collaboration_mode(&mut self) {
         if !self.collaboration_modes_enabled() {
             return;

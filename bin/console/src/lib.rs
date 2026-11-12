@@ -131,6 +131,7 @@ fn boot_core(config: &Config) -> CoreBoot {
         chaos_ipc::protocol::SessionSource::Cli,
         CollaborationModesConfig {
             default_mode_request_user_input: true,
+            ..Default::default()
         },
     )
 }

@@ -45,7 +45,7 @@ fn mode_kind_rejects_legacy_alias_values() {
 
 #[test]
 fn tui_visible_collaboration_modes_match_mode_kind_visibility() {
-    let expected = [ModeKind::Default, ModeKind::Plan];
+    let expected = [ModeKind::Default, ModeKind::Plan, ModeKind::Harness];
     assert_eq!(expected, TUI_VISIBLE_COLLABORATION_MODES);
 
     for mode in TUI_VISIBLE_COLLABORATION_MODES {
@@ -54,6 +54,19 @@ fn tui_visible_collaboration_modes_match_mode_kind_visibility() {
 
     assert!(!ModeKind::PairProgramming.is_tui_visible());
     assert!(!ModeKind::Execute.is_tui_visible());
+}
+
+#[test]
+fn harness_mode_has_a_stable_wire_name() {
+    assert_eq!(
+        serde_json::to_string(&ModeKind::Harness).unwrap(),
+        "\"harness\""
+    );
+    assert_eq!(
+        serde_json::from_str::<ModeKind>("\"harness\"").unwrap(),
+        ModeKind::Harness
+    );
+    assert_eq!(ModeKind::Harness.display_name(), "Harness");
 }
 
 #[test]

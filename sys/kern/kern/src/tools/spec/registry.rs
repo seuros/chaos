@@ -376,6 +376,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
             &mut builder,
             create_request_user_input_tool(CollaborationModesConfig {
                 default_mode_request_user_input: config.default_mode_request_user_input,
+                ..Default::default()
             }),
             /*supports_parallel_tool_calls*/ false,
         );

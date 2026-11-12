@@ -312,6 +312,7 @@ pub enum ModeKind {
     Plan,
     #[default]
     Default,
+    Harness,
     #[doc(hidden)]
     #[serde(skip_serializing, skip_deserializing)]
     #[schemars(skip)]
@@ -322,20 +323,23 @@ pub enum ModeKind {
     Execute,
 }
 
-pub const TUI_VISIBLE_COLLABORATION_MODES: [ModeKind; 2] = [ModeKind::Default, ModeKind::Plan];
+/// Modes the TUI can render; the kernel filters debug-only presets at runtime.
+pub const TUI_VISIBLE_COLLABORATION_MODES: [ModeKind; 3] =
+    [ModeKind::Default, ModeKind::Plan, ModeKind::Harness];
 
 impl ModeKind {
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::Plan => "Plan",
             Self::Default => "Default",
+            Self::Harness => "Harness",
             Self::PairProgramming => "Pair Programming",
             Self::Execute => "Execute",
         }
     }
 
     pub const fn is_tui_visible(self) -> bool {
-        matches!(self, Self::Plan | Self::Default)
+        matches!(self, Self::Plan | Self::Default | Self::Harness)
     }
 
     pub const fn allows_request_user_input(self) -> bool {

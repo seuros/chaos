@@ -57,6 +57,7 @@ impl Backend {
             SessionSource::Acp,
             CollaborationModesConfig {
                 default_mode_request_user_input: false,
+                ..Default::default()
             },
         ));
         let guard = session::OwnerGuard::new(table.clone());

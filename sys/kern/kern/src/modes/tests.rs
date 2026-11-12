@@ -53,6 +53,71 @@ fn mode_switches_keep_storage_specific_instructions() {
     assert!(!text.contains("`consolidate`"));
 }
 
+#[test]
+fn harness_catalog_and_execution_follow_the_debug_gate() {
+    let base = CollaborationMode {
+        mode: ModeKind::Default,
+        settings: Settings {
+            model: "test".to_string(),
+            reasoning_effort: Some(ReasoningEffort::High),
+            developer_instructions: None,
+        },
+    };
+    for harness_mode in [false, true] {
+        for default_mode_request_user_input in [false, true] {
+            let registry = ModeRegistry::builtins(CollaborationModesConfig {
+                default_mode_request_user_input,
+                harness_mode,
+            })
+            .unwrap();
+            let policy = ModePolicy::root(&registry);
+            assert_eq!(policy.active_mode, DEFAULT_MODE_ID);
+            assert_eq!(policy.allowed_modes.contains(HARNESS_MODE_ID), harness_mode);
+            for resource in [
+                registry.resource_json(&policy).unwrap(),
+                registry.installation_resource_json(&policy).unwrap(),
+            ] {
+                let resource: serde_json::Value = serde_json::from_str(&resource).unwrap();
+                let listed = resource["modes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|mode| mode["id"] == HARNESS_MODE_ID);
+                assert_eq!(listed, harness_mode);
+            }
+            if !harness_mode {
+                assert!(registry.apply_mode(HARNESS_MODE_ID, &base).is_err());
+                continue;
+            }
+            let harness = registry.get(HARNESS_MODE_ID).unwrap();
+            let default = registry.get(DEFAULT_MODE_ID).unwrap();
+            assert!(harness.builtin);
+            assert_eq!(harness.capabilities, default.capabilities);
+            assert_eq!(harness.reasoning_effort, default.reasoning_effort);
+            let execution = registry.apply_mode(HARNESS_MODE_ID, &base).unwrap();
+            assert_eq!(execution.mode, ModeKind::Harness);
+            assert_eq!(execution.model(), base.model());
+            assert_eq!(execution.reasoning_effort(), base.reasoning_effort());
+            assert!(
+                execution
+                    .settings
+                    .developer_instructions
+                    .as_ref()
+                    .unwrap()
+                    .contains("## Harness feedback")
+            );
+            assert_eq!(
+                registry.mode_for_legacy_update(DEFAULT_MODE_ID, &execution),
+                HARNESS_MODE_ID
+            );
+            assert_eq!(
+                registry.mode_for_legacy_update(HARNESS_MODE_ID, &base),
+                DEFAULT_MODE_ID
+            );
+        }
+    }
+}
+
 const RESEARCH_MODE: &str = r#"+++
 id = "research"
 title = "Research"
@@ -200,7 +265,7 @@ fn child_policy_cannot_broaden_parent_modes() {
 
 #[test]
 fn reserved_mode_ids_are_rejected_at_import() {
-    for reserved in [DEFAULT_MODE_ID, PLAN_MODE_ID] {
+    for reserved in [DEFAULT_MODE_ID, PLAN_MODE_ID, HARNESS_MODE_ID] {
         let source = RESEARCH_MODE.replace("id = \"research\"", &format!("id = \"{reserved}\""));
         let error = crate::user_documents::validate(
             crate::user_documents::DocumentKind::Mode,

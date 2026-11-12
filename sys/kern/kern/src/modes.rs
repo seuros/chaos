@@ -18,6 +18,7 @@ use crate::collaboration_modes::builtin_collaboration_mode_presets;
 
 pub(crate) const DEFAULT_MODE_ID: &str = "default";
 pub(crate) const PLAN_MODE_ID: &str = "plan";
+pub(crate) const HARNESS_MODE_ID: &str = "harness";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -116,6 +117,7 @@ impl ModeRegistry {
             let id = match mode {
                 ModeKind::Default => DEFAULT_MODE_ID,
                 ModeKind::Plan => PLAN_MODE_ID,
+                ModeKind::Harness => HARNESS_MODE_ID,
                 _ => continue,
             };
             let instructions = preset
@@ -124,8 +126,12 @@ impl ModeRegistry {
                 .context("built-in collaboration preset is missing instructions")?;
             let reasoning_effort = preset.reasoning_effort.flatten();
             let (description, capabilities) = match mode {
-                ModeKind::Default => (
-                    "General-purpose execution mode.",
+                ModeKind::Default | ModeKind::Harness => (
+                    if mode == ModeKind::Harness {
+                        "Execution mode with actionable feedback for improving the ChaOS harness."
+                    } else {
+                        "General-purpose execution mode."
+                    },
                     ModeCapabilities {
                         request_user_input: collaboration_modes_config
                             .default_mode_request_user_input,
@@ -184,13 +190,12 @@ impl ModeRegistry {
     ) -> Result<CollaborationMode, String> {
         let definition = self.get(id).ok_or_else(|| format!("unknown mode `{id}`"))?;
         Ok(CollaborationMode {
-            // Keep the existing protocol compatible. Custom mode identity is
-            // kernel-owned; clients that only understand Default and Plan see
-            // custom modes as Default.
-            mode: if id == PLAN_MODE_ID {
-                ModeKind::Plan
-            } else {
-                ModeKind::Default
+            // Custom mode identity is kernel-owned; custom modes retain
+            // Default execution semantics.
+            mode: match id {
+                PLAN_MODE_ID => ModeKind::Plan,
+                HARNESS_MODE_ID => ModeKind::Harness,
+                _ => ModeKind::Default,
             },
             settings: Settings {
                 model: base.model().to_string(),
@@ -207,7 +212,10 @@ impl ModeRegistry {
     ) -> &'a str {
         match collaboration_mode.mode {
             ModeKind::Plan => PLAN_MODE_ID,
-            ModeKind::Default if current_mode == PLAN_MODE_ID => DEFAULT_MODE_ID,
+            ModeKind::Harness => HARNESS_MODE_ID,
+            ModeKind::Default if matches!(current_mode, PLAN_MODE_ID | HARNESS_MODE_ID) => {
+                DEFAULT_MODE_ID
+            }
             ModeKind::Default => current_mode,
             _ => current_mode,
         }
@@ -424,7 +432,7 @@ fn parse_custom_mode(source: &str) -> Result<ModeDefinition> {
 }
 
 fn validate_mode_id(id: &str) -> Result<()> {
-    if matches!(id, DEFAULT_MODE_ID | PLAN_MODE_ID) {
+    if matches!(id, DEFAULT_MODE_ID | PLAN_MODE_ID | HARNESS_MODE_ID) {
         bail!("mode id `{id}` is reserved");
     }
     let mut chars = id.chars();

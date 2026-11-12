@@ -41,6 +41,7 @@ impl McpSessionState {
                 SessionSource::Mcp,
                 CollaborationModesConfig {
                     default_mode_request_user_input: true,
+                    ..Default::default()
                 },
             ))
         };

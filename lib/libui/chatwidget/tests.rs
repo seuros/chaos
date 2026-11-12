@@ -5607,6 +5607,20 @@ async fn collab_mode_shift_tab_cycles_only_when_idle() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
     assert_eq!(chat.current_collaboration_mode(), &initial);
 
+    if collaboration_modes::mask_for_kind(chat.models_manager.as_ref(), ModeKind::Harness).is_some()
+    {
+        chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
+        assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Harness);
+        assert_eq!(chat.current_collaboration_mode(), &initial);
+        assert!(
+            chat.effective_collaboration_mode()
+                .settings
+                .developer_instructions
+                .as_ref()
+                .unwrap()
+                .contains("## Harness feedback")
+        );
+    }
     chat.handle_key_event(KeyEvent::from(KeyCode::BackTab));
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Default);
     assert_eq!(chat.current_collaboration_mode(), &initial);

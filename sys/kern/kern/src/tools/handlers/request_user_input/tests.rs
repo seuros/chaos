@@ -16,6 +16,14 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
         None
     );
     assert_eq!(
+        request_user_input_unavailable_message(ModeKind::Harness, false),
+        Some("request_user_input is unavailable in Harness mode".to_string())
+    );
+    assert_eq!(
+        request_user_input_unavailable_message(ModeKind::Harness, true),
+        None
+    );
+    assert_eq!(
         request_user_input_unavailable_message(ModeKind::Execute, false),
         Some("request_user_input is unavailable in Execute mode".to_string())
     );
@@ -27,12 +35,22 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
 
 #[test]
 fn request_user_input_tool_description_mentions_available_modes() {
-    assert_eq!(
-            request_user_input_tool_description(false),
-            "Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.".to_string()
+    for (default_mode_request_user_input, harness_mode, expected) in [
+        (false, false, "Plan mode"),
+        (false, true, "Plan mode"),
+        (true, false, "Default or Plan mode"),
+        (true, true, "Default, Plan, Harness modes"),
+    ] {
+        let description = request_user_input_tool_description(CollaborationModesConfig {
+            default_mode_request_user_input,
+            harness_mode,
+        });
+        assert_eq!(
+            description,
+            format!(
+                "Request user input for one to three short questions and wait for the response. \
+                 This tool is only available in {expected}."
+            )
         );
-    assert_eq!(
-            request_user_input_tool_description(true),
-            "Request user input for one to three short questions and wait for the response. This tool is only available in Default or Plan mode.".to_string()
-        );
+    }
 }

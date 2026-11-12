@@ -304,21 +304,15 @@ pub(super) fn split_request_user_input_answer(
 
 pub fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<String> {
     let mut parts = Vec::new();
-    if summary.tool_calls.count > 0 {
-        let duration = format_duration_ms(summary.tool_calls.duration_ms);
-        let calls = pluralize(summary.tool_calls.count, "call", "calls");
-        parts.push(format!(
-            "Local tools: {} {calls} ({duration})",
-            summary.tool_calls.count
-        ));
-    }
-    if summary.api_calls.count > 0 {
-        let duration = format_duration_ms(summary.api_calls.duration_ms);
-        let calls = pluralize(summary.api_calls.count, "call", "calls");
-        parts.push(format!(
-            "Inference: {} {calls} ({duration})",
-            summary.api_calls.count
-        ));
+    for (label, totals) in [
+        ("Local tools", summary.tool_calls),
+        ("Inference", summary.api_calls),
+    ] {
+        if totals.count > 0 {
+            let duration = format_duration_ms(totals.duration_ms);
+            let calls = pluralize(totals.count, "call", "calls");
+            parts.push(format!("{label}: {} {calls} ({duration})", totals.count));
+        }
     }
     if summary.streaming_events.count > 0 {
         let duration = format_duration_ms(summary.streaming_events.duration_ms);
@@ -329,41 +323,37 @@ pub fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<String> {
             summary.streaming_events.count
         ));
     }
-    if summary.responses_api_overhead_ms > 0 {
-        let duration = format_duration_ms(summary.responses_api_overhead_ms);
-        parts.push(format!("Responses API overhead: {duration}"));
+    for (label, duration_ms) in [
+        ("overhead", summary.responses_api_overhead_ms),
+        ("inference", summary.responses_api_inference_time_ms),
+    ] {
+        if duration_ms > 0 {
+            let duration = format_duration_ms(duration_ms);
+            parts.push(format!("Responses API {label}: {duration}"));
+        }
     }
-    if summary.responses_api_inference_time_ms > 0 {
-        let duration = format_duration_ms(summary.responses_api_inference_time_ms);
-        parts.push(format!("Responses API inference: {duration}"));
-    }
-    if summary.responses_api_engine_iapi_ttft_ms > 0
-        || summary.responses_api_engine_service_ttft_ms > 0
-    {
-        let mut ttft_parts = Vec::new();
-        if summary.responses_api_engine_iapi_ttft_ms > 0 {
-            let duration = format_duration_ms(summary.responses_api_engine_iapi_ttft_ms);
-            ttft_parts.push(format!("{duration} (iapi)"));
+    for (label, iapi_ms, service_ms) in [
+        (
+            "TTFT",
+            summary.responses_api_engine_iapi_ttft_ms,
+            summary.responses_api_engine_service_ttft_ms,
+        ),
+        (
+            "TBT",
+            summary.responses_api_engine_iapi_tbt_ms,
+            summary.responses_api_engine_service_tbt_ms,
+        ),
+    ] {
+        let mut durations = Vec::new();
+        for (source, duration_ms) in [("iapi", iapi_ms), ("service", service_ms)] {
+            if duration_ms > 0 {
+                let duration = format_duration_ms(duration_ms);
+                durations.push(format!("{duration} ({source})"));
+            }
         }
-        if summary.responses_api_engine_service_ttft_ms > 0 {
-            let duration = format_duration_ms(summary.responses_api_engine_service_ttft_ms);
-            ttft_parts.push(format!("{duration} (service)"));
+        if !durations.is_empty() {
+            parts.push(format!("{label}: {}", durations.join(" ")));
         }
-        parts.push(format!("TTFT: {}", ttft_parts.join(" ")));
-    }
-    if summary.responses_api_engine_iapi_tbt_ms > 0
-        || summary.responses_api_engine_service_tbt_ms > 0
-    {
-        let mut tbt_parts = Vec::new();
-        if summary.responses_api_engine_iapi_tbt_ms > 0 {
-            let duration = format_duration_ms(summary.responses_api_engine_iapi_tbt_ms);
-            tbt_parts.push(format!("{duration} (iapi)"));
-        }
-        if summary.responses_api_engine_service_tbt_ms > 0 {
-            let duration = format_duration_ms(summary.responses_api_engine_service_tbt_ms);
-            tbt_parts.push(format!("{duration} (service)"));
-        }
-        parts.push(format!("TBT: {}", tbt_parts.join(" ")));
     }
     if parts.is_empty() {
         None

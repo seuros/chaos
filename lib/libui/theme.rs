@@ -110,6 +110,7 @@ pub fn is_clamped() -> bool {
 const fn collaboration_mode_to_u8(mode: ModeKind) -> u8 {
     match mode {
         ModeKind::Plan => 1,
+        ModeKind::Harness => 2,
         ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => 0,
     }
 }
@@ -117,6 +118,7 @@ const fn collaboration_mode_to_u8(mode: ModeKind) -> u8 {
 fn collaboration_mode_from_u8(value: u8) -> ModeKind {
     match value {
         1 => ModeKind::Plan,
+        2 => ModeKind::Harness,
         _ => ModeKind::Default,
     }
 }
@@ -234,7 +236,7 @@ fn plan_badge_bg() -> Color {
 pub(crate) fn palette_for_mode(mode: ModeKind, clamped: bool) -> Palette {
     match mode {
         ModeKind::Plan => plan_palette(),
-        ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => {
+        ModeKind::Default | ModeKind::Harness | ModeKind::PairProgramming | ModeKind::Execute => {
             execution_palette(clamped)
         }
     }
@@ -379,10 +381,12 @@ pub fn collaboration_mode_badge(mode: ModeKind) -> Style {
             .fg(Color::White)
             .bg(plan_badge_bg())
             .add_modifier(Modifier::BOLD),
-        ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => Style::default()
-            .fg(Color::Black)
-            .bg(default_badge_bg())
-            .add_modifier(Modifier::BOLD),
+        ModeKind::Default | ModeKind::Harness | ModeKind::PairProgramming | ModeKind::Execute => {
+            Style::default()
+                .fg(Color::Black)
+                .bg(default_badge_bg())
+                .add_modifier(Modifier::BOLD)
+        }
     }
 }
 

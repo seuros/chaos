@@ -61,7 +61,7 @@ fn defaults_and_mode_overrides() {
     let overrides: Appearance =
         toml::from_str("[colors]\nfg = '#123456'\nborder = 'default'\naccent = 'light_blue'")
             .unwrap();
-    for mode in [ModeKind::Default, ModeKind::Plan] {
+    for mode in [ModeKind::Default, ModeKind::Plan, ModeKind::Harness] {
         for clamped in [false, true] {
             let original = palette_for_mode(mode, clamped);
             assert_eq!(
@@ -74,6 +74,7 @@ fn defaults_and_mode_overrides() {
             assert_eq!(resolved.accent, Color::LightBlue);
             assert_eq!(resolved.warning, original.warning);
             set_collaboration_mode(mode);
+            assert_eq!(collaboration_mode(), mode);
             set_clamped(clamped);
             set_appearance(overrides.clone());
             assert_eq!(palette(), resolved);

@@ -70,6 +70,7 @@ pub async fn run_main(
                 SessionSource::Api,
                 CollaborationModesConfig {
                     default_mode_request_user_input: false,
+                    ..Default::default()
                 },
             );
             // Resume claims and continuously renews the canonical writer

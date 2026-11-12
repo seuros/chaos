@@ -1333,7 +1333,11 @@ async fn build_agent_resume_config_clears_base_instructions() {
 async fn clamped_claude_spawn_models_and_transport() {
     chaos_clamp::set_cached_models(json!([
         {"value": "default", "displayName": "Default"},
-        {"value": "haiku", "displayName": "Haiku", "supportedEffortLevels": ["low", "medium", "high"]},
+        {
+            "value": "haiku",
+            "displayName": "Haiku",
+            "supportedEffortLevels": ["low", "medium", "high"]
+        },
         {"value": "sonnet", "displayName": "Sonnet", "supportedEffortLevels": ["low", "medium"]}
     ]));
     assert_spawn_validates_models_against_clamp_init_list().await;
@@ -1350,18 +1354,21 @@ async fn assert_spawn_validates_models_against_clamp_init_list() {
         .set_clamped(true, Some(ClampBackend::ClaudeCode))
         .await;
 
-    let mut config = (*turn.config).clone();
-    apply_requested_spawn_agent_model_overrides(
-        &session,
-        &turn,
-        &mut config,
-        Some("haiku"),
-        Some(ReasoningEffort::Low),
-    )
-    .await
-    .expect("haiku is advertised by Claude Code and should be accepted");
-    assert_eq!(config.model.as_deref(), Some("haiku"));
-    assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Low));
+    for model in ["haiku", "HAIKU", " \tHaIkU\r\n"] {
+        let mut config = (*turn.config).clone();
+        apply_requested_spawn_agent_model_overrides(
+            &session,
+            &turn,
+            &mut config,
+            Some(model),
+            Some(ReasoningEffort::Low),
+        )
+        .await
+        .expect("haiku is advertised by Claude Code and should be accepted");
+        assert_eq!(config.model.as_deref(), Some("haiku"));
+        assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::Low));
+        resolve_spawn_agent_transport(&session, &turn, &mut config).expect("canonical model");
+    }
 
     let mut config = (*turn.config).clone();
     let err = apply_requested_spawn_agent_model_overrides(

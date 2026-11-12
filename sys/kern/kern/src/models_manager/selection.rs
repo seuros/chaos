@@ -4,6 +4,9 @@ use crate::function_tool::FunctionCallError;
 use chaos_ipc::openai_models::{ModelPreset, ReasoningEffort, ReasoningEffortPreset};
 use std::fmt::Display;
 
+#[cfg(test)]
+mod tests;
+
 impl ModelsManager {
     pub(crate) async fn apply_provider_binding(
         &self,
@@ -57,9 +60,21 @@ pub(crate) fn find_model<'a>(
     requested: &str,
     context: impl Display,
 ) -> Result<&'a ModelPreset, FunctionCallError> {
+    let normalized = requested.trim();
     models
         .iter()
+        // Prefer an exact catalog slug before trying normalized input, since
+        // providers can advertise distinct case-sensitive model names.
         .find(|model| model.model == requested)
+        .or_else(|| models.iter().find(|model| model.model == normalized))
+        .or_else(|| {
+            let mut matches = models
+                .iter()
+                .filter(|model| model.model.trim().eq_ignore_ascii_case(normalized));
+            let selected = matches.next()?;
+            // Never resolve an ambiguous normalized id by catalog order.
+            matches.next().is_none().then_some(selected)
+        })
         .ok_or_else(|| {
             let available = models
                 .iter()
@@ -90,36 +105,7 @@ pub(crate) fn resolve_reasoning_effort(
         .collect::<Vec<_>>()
         .join(", ");
     Err(FunctionCallError::RespondToModel(format!(
-        "Reasoning effort `{requested}` is not supported for model `{model}`. Supported reasoning efforts: {supported}"
+        "Reasoning effort `{requested}` is not supported for model `{model}`. \
+         Supported reasoning efforts: {supported}"
     )))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn effort_selection_validates_overrides_and_preserves_defaults() -> Result<(), FunctionCallError>
-    {
-        use ReasoningEffort::{High, Low};
-
-        let supported = [ReasoningEffortPreset {
-            effort: Low,
-            description: String::new(),
-        }];
-        assert_eq!(
-            resolve_reasoning_effort("model", &supported, None, None)?,
-            None
-        );
-        assert_eq!(
-            resolve_reasoning_effort("model", &supported, None, Some(High))?,
-            Some(High)
-        );
-        assert_eq!(
-            resolve_reasoning_effort("model", &supported, Some(Low), Some(High))?,
-            Some(Low)
-        );
-        assert!(resolve_reasoning_effort("model", &supported, Some(High), Some(Low)).is_err());
-        Ok(())
-    }
 }

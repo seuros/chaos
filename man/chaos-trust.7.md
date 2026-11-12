@@ -14,9 +14,9 @@ chaos-trust - inspect and manage project trust decisions
 A trusted project loads its `.mcp.json`, rules, agents and project hooks. The
 console asks once per directory. The operator trust tools make the same
 decision where no console runs: hosted residents, fleet provisioning, and
-moving an installation from SQLite to PostgreSQL. Decisions are keyed by the
-exact canonical project directory, in the database the home's `storage_url`
-names.
+moving an installation from SQLite to PostgreSQL. Decisions live in the
+database the home's `storage_url` names, keyed as described under CHANGING ONE
+DECISION.
 
 The trust table has no installation column. Every home that points at the
 same database shares its decisions: a grant made through one home is a grant
@@ -70,7 +70,7 @@ decision is stored there. The filesystem root is always refused.
 exported before the revocation therefore finds a denial where it expects
 nothing or its own grant, and is refused instead of restoring trust.
 
-Every change prints a receipt (`chaos-project-trust-receipt/v1`): installation,
+Every change returns a receipt (`chaos-project-trust-receipt/v1`): installation,
 storage, actor, before and after per path, and the time. Each change also
 writes a `configuration_events` row (`project_trust_trusted` or
 `project_trust_untrusted`) in the same transaction, naming the path, before,
@@ -129,8 +129,13 @@ separate step (chaos-hooks(7)).
 
 The tools exist only on the HTTP endpoint, never on the stdio server
 (`chaos mcp`), and every call must come from the principal the operator bearer
-authenticates. Serve strips `CHAOS_BEARER_TOKEN` from the environment of the
-processes it starts, so an agent it runs does not hold the credential. Each
+authenticates. Serve refuses to start if its shell environment policy would
+pass `CHAOS_BEARER_TOKEN` to the commands or MCP servers it starts; the default
+`*TOKEN*` exclude keeps it out. That does not hide the credential from a
+process that can read serve's own environment or arguments, so pass it in the
+environment rather than with `--bearer-token`, and sandbox agents so they
+cannot inspect serve. The same bearer authorizes triggers and live monitoring:
+any client holding it can also change trust. Each
 change is audited with the operator and the MCP session as actor. As with
 hooks, a process with direct shell and database access is not contained by
 this interface; separate homes and OS permissions must enforce stronger

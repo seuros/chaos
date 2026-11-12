@@ -39,7 +39,7 @@ async fn read_file_tool_returns_requested_lines() -> anyhow::Result<()> {
     assert_eq!(output["offset"], json!(2));
     assert_eq!(output["limit"], json!(2));
     assert_eq!(output["line_count"], json!(2));
-    assert_eq!(output["lines"], json!(["L2: second", "L3: third"]));
+    assert!(output.get("lines").is_none());
     assert_eq!(output["text"], json!("L2: second\nL3: third"));
 
     Ok(())

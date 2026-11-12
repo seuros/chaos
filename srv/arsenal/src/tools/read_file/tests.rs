@@ -14,10 +14,13 @@ async fn editor_and_disk_sources_share_exact_slice_and_indentation_results() {
             let args = serde_json::json!({
                 "file_path":file,"offset":1,"limit":3,"mode":mode
             });
+            let output = execute_structured(&args).await.unwrap();
             assert_eq!(
-                execute_structured(&args).await,
-                execute_editor_structured(&args, text).await,
+                output,
+                execute_editor_structured(&args, text).await.unwrap(),
             );
+            assert!(output["text"].is_string());
+            assert!(output.get("lines").is_none());
         }
     }
 }

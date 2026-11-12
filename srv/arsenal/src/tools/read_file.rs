@@ -192,7 +192,6 @@ async fn execute_params_source(
         "mode": mode_name,
         "line_count": collected.len(),
         "text": text,
-        "lines": collected,
     }))
 }
 

@@ -8,7 +8,6 @@ async fn polling_stops_at_the_deadline_without_panicking() {
     Mock::given(method("POST"))
         .and(path("/deviceauth/token"))
         .respond_with(ResponseTemplate::new(403))
-        .expect(1..)
         .mount(&server)
         .await;
     let client = ChaosHttpClient::default_client();

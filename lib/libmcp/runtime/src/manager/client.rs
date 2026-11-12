@@ -362,6 +362,10 @@ impl ManagedClient {
 
 #[derive(Clone)]
 pub(in crate::manager) struct AsyncManagedClient {
+    pub(super) setup: Option<Arc<super::reset::ClientSetup>>,
+    pub(super) generation_token: CancellationToken,
+    pub(super) cancel_token: CancellationToken,
+    pub(super) catalog: Option<Arc<super::catalog::ClientCatalog>>,
     pub(in crate::manager) client:
         Shared<BoxFuture<'static, Result<ManagedClient, StartupOutcomeError>>>,
     pub(in crate::manager) startup_snapshot: Option<Vec<ToolInfo>>,
@@ -377,7 +381,7 @@ impl AsyncManagedClient {
         server_name: String,
         config: McpServerConfig,
         client_identity: McpClientIdentity,
-        _store_mode: OAuthCredentialsStoreMode,
+        store_mode: OAuthCredentialsStoreMode,
         cancel_token: CancellationToken,
         tx_event: async_channel::Sender<chaos_ipc::protocol::Event>,
         notification_tx: Option<async_channel::Sender<McpServerNotification>>,
@@ -386,6 +390,22 @@ impl AsyncManagedClient {
         initial_sandbox_state: SandboxState,
         chaos_home: PathBuf,
     ) -> Self {
+        let setup = Arc::new(super::reset::ClientSetup {
+            server_name: server_name.clone(),
+            config: config.clone(),
+            client_identity: client_identity.clone(),
+            store_mode,
+            tx_event: tx_event.clone(),
+            notification_tx: notification_tx.clone(),
+            elicitation_requests: elicitation_requests.clone(),
+            catalog: Arc::clone(&catalog),
+            chaos_home: chaos_home.clone(),
+        });
+        let generation_token = cancel_token;
+        let cancel_token = generation_token.child_token();
+        let startup_cancel_token = cancel_token.clone();
+        let catalog = Arc::new(super::catalog::ClientCatalog::new(catalog));
+        let client_catalog = Arc::clone(&catalog);
         let tool_filter = ToolFilter::from_config(&config);
         let startup_tool_filter = tool_filter;
         let startup_complete = Arc::new(AtomicBool::new(false));
@@ -409,11 +429,11 @@ impl AsyncManagedClient {
                         tx_event,
                         notification_tx,
                         elicitation_requests,
-                        catalog,
+                        catalog: catalog as Arc<dyn chaos_traits::McpCatalogSink>,
                         cwd: cwd_for_client,
                     },
                 )
-                .or_cancel(&cancel_token)
+                .or_cancel(&startup_cancel_token)
                 .await
                 .map_err(|CancelErr::Cancelled| StartupOutcomeError::Cancelled)?
             }
@@ -425,6 +445,10 @@ impl AsyncManagedClient {
         let client = fut.boxed().shared();
 
         Self {
+            setup: Some(setup),
+            generation_token,
+            cancel_token,
+            catalog: Some(client_catalog),
             client,
             startup_snapshot: None,
             startup_complete,
@@ -447,6 +471,10 @@ impl AsyncManagedClient {
     ) -> Self {
         let sandbox_cwd = cwd.read().expect("MCP root lock poisoned").clone();
         Self {
+            setup: None,
+            generation_token: CancellationToken::new(),
+            cancel_token: CancellationToken::new(),
+            catalog: None,
             client,
             startup_snapshot,
             startup_complete,
@@ -459,6 +487,20 @@ impl AsyncManagedClient {
             })),
             sandbox_notification_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    pub(super) fn sandbox_state_snapshot(&self) -> SandboxState {
+        let mut state = self
+            .sandbox_state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        state.sandbox_cwd = self
+            .cwd
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        state
     }
 
     fn startup_snapshot_while_initializing(&self) -> Option<Vec<ToolInfo>> {

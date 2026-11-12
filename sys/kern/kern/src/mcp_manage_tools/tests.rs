@@ -1,9 +1,37 @@
 use chaos_sysctl::types::McpServerTransportConfig;
+use std::assert_matches;
 use tempfile::tempdir;
 
 use super::mcp_add_server::execute_add_server;
 use super::mcp_server::execute_server_action;
 use super::*;
+
+#[tokio::test]
+async fn reset_requests_a_session_effect_without_reading_or_writing_project_config() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join(DOT_MCP_JSON);
+    for contents in [None, Some("not valid JSON")] {
+        if let Some(contents) = contents {
+            std::fs::write(&path, contents).expect("seed project file");
+        }
+        let result = McpManageToolDriver
+            .call_tool(CatalogToolRequest {
+                tool_name: "mcp_server".to_string(),
+                arguments: serde_json::json!({"name": "global", "action": "reset"}),
+                cwd: temp.path().to_path_buf(),
+                project_root: temp.path().to_path_buf(),
+                session_id: "session".to_string(),
+            })
+            .await
+            .expect("reset does not depend on project config");
+        assert_matches!(
+            result.effects.as_slice(),
+            [CatalogToolEffect::ResetMcpServer { name }] if name == "global"
+        );
+        assert_eq!(result.success, Some(true));
+        assert_eq!(std::fs::read_to_string(&path).ok().as_deref(), contents);
+    }
+}
 
 #[test]
 fn add_server_creates_dot_mcp_json() {

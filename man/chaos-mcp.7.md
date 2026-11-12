@@ -63,6 +63,16 @@ Use the native MCP management tools rather than editing `.mcp.json`.
 Read `chaos://mcp` before and after changes to check startup and authentication.
 Server reconnects preserve conversation identity, not expired server leases.
 
+`mcp_server` with `action: "reset"` reconnects only the named server in the current
+session, whether its definition is global or project-local. It uses the session's
+effective configuration, so a project definition overrides a global definition
+with the same name. Reset preserves client identity and restores desired resource
+subscriptions, but does not edit configuration, erase saved credentials, enable a
+disabled server, or reset other sessions. A failed reconnect is returned as an
+error; read `chaos://mcp` for its startup status.
+
+Enable, disable, and remove remain project-local configuration changes.
+
 ### Persistent tool approvals
 
 Personal MCP trust decisions are user settings in the database, separate from

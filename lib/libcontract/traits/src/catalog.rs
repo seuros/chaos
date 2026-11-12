@@ -77,6 +77,7 @@ pub struct CatalogToolRequest {
 #[derive(Debug, Clone)]
 pub enum CatalogToolEffect {
     ReloadProjectMcp,
+    ResetMcpServer { name: String },
 }
 
 #[derive(Debug, Clone)]

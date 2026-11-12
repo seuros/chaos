@@ -2,6 +2,7 @@ use super::*;
 use chaos_ipc::protocol::GranularApprovalConfig;
 use chaos_ipc::protocol::McpAuthStatus;
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,6 +28,45 @@ fn create_test_tool(server_name: &str, tool_name: &str) -> ToolInfo {
         connector_name: None,
         connector_description: None,
     }
+}
+
+fn startup_client(
+    future: impl Future<Output = Result<ManagedClient, StartupOutcomeError>> + Send + 'static,
+    snapshot: Option<Vec<ToolInfo>>,
+    complete: bool,
+) -> AsyncManagedClient {
+    AsyncManagedClient::for_tests(
+        future.boxed().shared(),
+        snapshot,
+        Arc::new(std::sync::atomic::AtomicBool::new(complete)),
+        Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
+    )
+}
+
+fn pending_client(snapshot: Option<Vec<ToolInfo>>) -> AsyncManagedClient {
+    startup_client(futures::future::pending(), snapshot, false)
+}
+
+fn failed_client(snapshot: Option<Vec<ToolInfo>>, error: &str) -> AsyncManagedClient {
+    startup_client(
+        futures::future::ready(Err(StartupOutcomeError::Failed {
+            error: error.to_string(),
+        })),
+        snapshot,
+        true,
+    )
+}
+
+fn manager_with_clients<const N: usize>(
+    clients: [(&str, AsyncManagedClient); N],
+) -> McpConnectionManager {
+    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
+    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
+    *manager.clients.get_mut().expect("client lock") = clients
+        .into_iter()
+        .map(|(name, client)| (name.to_string(), client))
+        .collect();
+    manager
 }
 
 #[test]
@@ -110,7 +150,8 @@ fn test_qualify_tools_long_names_same_server() {
         ),
         create_test_tool(
             server_name,
-            "yet_another_extremely_lengthy_function_name_that_absolutely_surpasses_all_reasonable_limits",
+            "yet_another_extremely_lengthy_function_name_that_absolutely_\
+             surpasses_all_reasonable_limits",
         ),
     ];
 
@@ -545,20 +586,7 @@ fn filter_tools_applies_per_server_filters() {
 #[tokio::test]
 async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
     let startup_tools = vec![create_test_tool("test_server", "calendar_create_event")];
-    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
-        .boxed()
-        .shared();
-    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
-    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
-    manager.clients.insert(
-        "test_server".to_string(),
-        AsyncManagedClient::for_tests(
-            pending_client,
-            Some(startup_tools),
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
+    let manager = manager_with_clients([("test_server", pending_client(Some(startup_tools)))]);
 
     let tools = manager.list_all_tools().await;
     let tool = tools
@@ -570,20 +598,7 @@ async fn list_all_tools_uses_startup_snapshot_while_client_is_pending() {
 
 #[tokio::test]
 async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot() {
-    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
-        .boxed()
-        .shared();
-    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
-    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
-    manager.clients.insert(
-        "test_server".to_string(),
-        AsyncManagedClient::for_tests(
-            pending_client,
-            None,
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
+    let manager = manager_with_clients([("test_server", pending_client(None))]);
 
     let timeout_result =
         tokio::time::timeout(Duration::from_millis(10), manager.list_all_tools()).await;
@@ -592,20 +607,7 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
 
 #[tokio::test]
 async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty() {
-    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
-        .boxed()
-        .shared();
-    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
-    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
-    manager.clients.insert(
-        "test_server".to_string(),
-        AsyncManagedClient::for_tests(
-            pending_client,
-            Some(Vec::new()),
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
+    let manager = manager_with_clients([("test_server", pending_client(Some(Vec::new())))]);
 
     let timeout_result =
         tokio::time::timeout(Duration::from_millis(10), manager.list_all_tools()).await;
@@ -616,25 +618,10 @@ async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty(
 #[tokio::test]
 async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
     let startup_tools = vec![create_test_tool("test_server", "calendar_create_event")];
-    let failed_client = futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
-        StartupOutcomeError::Failed {
-            error: "startup failed".to_string(),
-        },
-    ))
-    .boxed()
-    .shared();
-    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
-    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
-    let startup_complete = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    manager.clients.insert(
-        "test_server".to_string(),
-        AsyncManagedClient::for_tests(
-            failed_client,
-            Some(startup_tools),
-            startup_complete,
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
+    let manager = manager_with_clients([(
+        "test_server",
+        failed_client(Some(startup_tools), "startup failed"),
+    )]);
 
     let tools = manager.list_all_tools().await;
     let tool = tools
@@ -646,36 +633,10 @@ async fn list_all_tools_uses_startup_snapshot_when_client_startup_fails() {
 
 #[tokio::test]
 async fn server_startup_statuses_report_pending_and_failed_without_blocking() {
-    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
-        .boxed()
-        .shared();
-    let failed_client = futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
-        StartupOutcomeError::Failed {
-            error: "401 Unauthorized".to_string(),
-        },
-    ))
-    .boxed()
-    .shared();
-    let approval_policy = Constrained::allow_any(ApprovalPolicy::Interactive);
-    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy);
-    manager.clients.insert(
-        "pending".to_string(),
-        AsyncManagedClient::for_tests(
-            pending_client,
-            None,
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
-    manager.clients.insert(
-        "failed".to_string(),
-        AsyncManagedClient::for_tests(
-            failed_client,
-            None,
-            Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            Arc::new(StdRwLock::new(PathBuf::from("/tmp"))),
-        ),
-    );
+    let manager = manager_with_clients([
+        ("pending", pending_client(None)),
+        ("failed", failed_client(None, "401 Unauthorized")),
+    ]);
 
     let statuses =
         tokio::time::timeout(Duration::from_millis(10), manager.server_startup_statuses())

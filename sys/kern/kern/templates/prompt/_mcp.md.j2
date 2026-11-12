@@ -6,4 +6,5 @@
 {% else %}
 - Use `mcp_add_server` and `mcp_server`; never edit `.mcp.json` by hand for changes they cover.
 {% endif %}
-- A change rewrites `.mcp.json`, reconnects servers, and makes `chaos://mcp` stale. Read it again afterward for startup and auth status; if subscribed, `notifications/resources/updated` also fires.
+- Add, enable, disable, and remove edit the project's `.mcp.json` and reload its servers. Reset reconnects only the named effective server (global or project) in this session; it does not change configuration, credentials, or enabled state.
+- These operations make `chaos://mcp` stale. Read it again afterward for startup and auth status; if subscribed, `notifications/resources/updated` also fires.

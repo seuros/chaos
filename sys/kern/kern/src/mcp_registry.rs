@@ -36,6 +36,8 @@ use tracing::warn;
 use crate::catalog::McpCatalogGate;
 
 mod lifecycle;
+mod mailbox;
+mod reset;
 use lifecycle::ActorLifecycle;
 
 type ErasedResult = anyhow::Result<Box<dyn Any + Send>>;
@@ -287,12 +289,11 @@ impl McpRegistryActor {
             while let Some(packet) = receiver.recv().await {
                 match packet.op {
                     McpRegistryCommand::Dispatch { server, job, reply } => {
-                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
-                            let _ = reply.send(Err(anyhow::anyhow!(
-                                "MCP registry is shutting down; dispatch rejected for `{server}`"
-                            )));
+                        let Some(reply) = actor_lifecycle
+                            .running_reply(reply, format_args!("dispatch rejected for `{server}`"))
+                        else {
                             continue;
-                        }
+                        };
                         match server_actors.get(&server) {
                             Some(actor) => {
                                 if let Err(error) = actor.execute(job, reply).await {
@@ -384,12 +385,11 @@ impl McpRegistryActor {
                         );
                     }
                     McpRegistryCommand::SyncPermissionState { state, reply } => {
-                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
-                            let _ = reply.send(Err(anyhow::anyhow!(
-                                "MCP registry is shutting down; permission update rejected"
-                            )));
+                        let Some(reply) =
+                            actor_lifecycle.running_reply(reply, "permission update rejected")
+                        else {
                             continue;
-                        }
+                        };
                         permission_state = Some(state.clone());
                         let result = synchronize_permission_state(
                             &server_actors,
@@ -650,13 +650,13 @@ impl McpRegistryActor {
     pub(crate) async fn cancel(&self) -> anyhow::Result<()> {
         self.ensure_running()?;
         let (reply, response) = oneshot::channel();
-        tokio::time::timeout(
-            MCP_MAILBOX_TIMEOUT,
-            self.mailbox.send(McpRegistryCommand::Cancel { reply }),
+        mailbox::admit(
+            &self.mailbox,
+            McpRegistryCommand::Cancel { reply },
+            "timed out admitting MCP cancellation to registry mailbox",
+            "MCP registry actor is unavailable",
         )
-        .await
-        .context("timed out admitting MCP cancellation to registry mailbox")?
-        .context("MCP registry actor is unavailable")?;
+        .await?;
         response
             .await
             .context("MCP registry actor dropped the cancellation reply")?
@@ -673,13 +673,13 @@ impl McpRegistryActor {
         ) {
             Ok(_) => {
                 let (reply, response) = oneshot::channel();
-                tokio::time::timeout(
-                    MCP_MAILBOX_TIMEOUT,
-                    self.mailbox.send(McpRegistryCommand::Shutdown { reply }),
+                mailbox::admit(
+                    &self.mailbox,
+                    McpRegistryCommand::Shutdown { reply },
+                    "timed out admitting MCP registry shutdown",
+                    "MCP registry actor is unavailable during shutdown",
                 )
-                .await
-                .context("timed out admitting MCP registry shutdown")?
-                .context("MCP registry actor is unavailable during shutdown")?;
+                .await?;
                 tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
                     .await
                     .context("timed out waiting for MCP registry shutdown")?
@@ -714,19 +714,19 @@ impl McpRegistryActor {
     ) -> anyhow::Result<()> {
         self.ensure_running()?;
         let (reply, response) = oneshot::channel();
-        tokio::time::timeout(
-            MCP_MAILBOX_TIMEOUT,
-            self.mailbox.send(McpRegistryCommand::SyncPermissionState {
+        mailbox::admit(
+            &self.mailbox,
+            McpRegistryCommand::SyncPermissionState {
                 state: McpPermissionState {
                     approval_policy,
                     sandbox_state,
                 },
                 reply,
-            }),
+            },
+            "timed out admitting MCP permission update to registry mailbox",
+            "MCP registry actor is unavailable",
         )
-        .await
-        .context("timed out admitting MCP permission update to registry mailbox")?
-        .context("MCP registry actor is unavailable")?;
+        .await?;
         tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
             .await
             .context("timed out waiting for MCP permission update")?
@@ -751,17 +751,17 @@ impl McpRegistryActor {
                 .instrument(span),
             )
         });
-        tokio::time::timeout(
-            MCP_MAILBOX_TIMEOUT,
-            self.mailbox.send(McpRegistryCommand::Dispatch {
+        mailbox::admit(
+            &self.mailbox,
+            McpRegistryCommand::Dispatch {
                 server: server.to_string(),
                 job: erased_job,
                 reply,
-            }),
+            },
+            "timed out admitting MCP dispatch to registry mailbox",
+            "MCP registry actor is unavailable",
         )
-        .await
-        .context("timed out admitting MCP dispatch to registry mailbox")?
-        .context("MCP registry actor is unavailable")?;
+        .await?;
         let erased = response
             .await
             .context("MCP server actor dropped its reply")??;
@@ -908,16 +908,16 @@ impl McpRefreshActor {
             anyhow::bail!("MCP refresh actor is shutting down");
         }
         let (reply, response) = oneshot::channel();
-        tokio::time::timeout(
-            MCP_MAILBOX_TIMEOUT,
-            self.mailbox.send(McpRefreshCommand::Run {
+        mailbox::admit(
+            &self.mailbox,
+            McpRefreshCommand::Run {
                 job: Box::pin(job),
                 reply,
-            }),
+            },
+            "timed out admitting MCP refresh job",
+            "MCP refresh actor is unavailable",
         )
-        .await
-        .context("timed out admitting MCP refresh job")?
-        .context("MCP refresh actor is unavailable")?;
+        .await?;
         tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, response)
             .await
             .context("timed out waiting for MCP refresh completion")?
@@ -928,13 +928,13 @@ impl McpRefreshActor {
         self.lifecycle
             .shutdown("MCP refresh actor", MCP_REFRESH_DRAIN_TIMEOUT, async {
                 let (reply, response) = oneshot::channel();
-                tokio::time::timeout(
-                    MCP_MAILBOX_TIMEOUT,
-                    self.mailbox.send(McpRefreshCommand::Shutdown { reply }),
+                mailbox::admit(
+                    &self.mailbox,
+                    McpRefreshCommand::Shutdown { reply },
+                    "timed out admitting MCP refresh shutdown",
+                    "MCP refresh actor is unavailable during shutdown",
                 )
-                .await
-                .context("timed out admitting MCP refresh shutdown")?
-                .context("MCP refresh actor is unavailable during shutdown")?;
+                .await?;
                 response
                     .await
                     .context("MCP refresh actor dropped shutdown acknowledgement")

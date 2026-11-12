@@ -17,6 +17,26 @@ fn gate() -> Arc<McpCatalogGate> {
     ))))
 }
 
+fn server_config(command: &str, enabled: bool) -> McpServerConfig {
+    serde_json::from_value(json!({"command": command, "enabled": enabled})).expect("MCP config")
+}
+
+async fn bootstrap(
+    actor: &McpRegistryActor,
+    configs: HashMap<String, McpServerConfig>,
+) -> McpRegistryDiff {
+    actor
+        .bootstrap(
+            manager(),
+            configs,
+            CancellationToken::new(),
+            gate(),
+            Vec::new(),
+        )
+        .await
+        .expect("bootstrap")
+}
+
 #[tokio::test]
 async fn resource_subscription_state_tracks_transient_uris() {
     let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
@@ -119,16 +139,7 @@ async fn registry_shutdown_is_idempotent_and_stops_admissions() {
 #[tokio::test]
 async fn bootstrap_does_not_advance_revision() {
     let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
-    let diff = actor
-        .bootstrap(
-            manager(),
-            HashMap::new(),
-            CancellationToken::new(),
-            gate(),
-            Vec::new(),
-        )
-        .await
-        .expect("bootstrap");
+    let diff = bootstrap(&actor, HashMap::new()).await;
     assert_eq!(diff.revision, 0);
     assert_eq!(actor.revision(), 0);
 }
@@ -153,24 +164,30 @@ async fn reconcile_advances_revision() {
 #[tokio::test]
 async fn disabled_configs_are_not_exposed_as_server_actors() {
     let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
-    let disabled = serde_json::from_value(json!({
-        "command": "disabled-server",
-        "enabled": false
-    }))
-    .expect("disabled MCP config");
-    actor
-        .bootstrap(
-            manager(),
-            HashMap::from([("disabled".to_string(), disabled)]),
-            CancellationToken::new(),
-            gate(),
-            Vec::new(),
-        )
-        .await
-        .expect("bootstrap");
+    let disabled = server_config("disabled-server", false);
+    bootstrap(&actor, HashMap::from([("disabled".to_string(), disabled)])).await;
 
     assert!(!actor.has_servers());
     assert!(actor.server_names().is_empty());
+    assert!(
+        actor
+            .reset_server("disabled")
+            .await
+            .expect_err("reset cannot enable a server")
+            .to_string()
+            .contains("is disabled")
+    );
+    assert!(
+        actor
+            .reset_server("missing")
+            .await
+            .expect_err("unknown reset")
+            .to_string()
+            .contains("unknown MCP server")
+    );
+    assert_eq!(actor.revision(), 0);
+    assert!(!actor.configs_snapshot()["disabled"].enabled);
+    actor.shutdown().await.expect("shutdown registry");
 }
 
 #[tokio::test]
@@ -219,21 +236,8 @@ async fn refresh_actor_preserves_order_without_blocking_enqueue() {
 #[tokio::test]
 async fn permission_sync_does_not_wait_for_running_server_call() {
     let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
-    let enabled: McpServerConfig = serde_json::from_value(json!({
-        "command": "enabled-server",
-        "enabled": true
-    }))
-    .expect("enabled MCP config");
-    actor
-        .bootstrap(
-            manager(),
-            HashMap::from([("enabled".to_string(), enabled)]),
-            CancellationToken::new(),
-            gate(),
-            Vec::new(),
-        )
-        .await
-        .expect("bootstrap");
+    let enabled = server_config("enabled-server", true);
+    bootstrap(&actor, HashMap::from([("enabled".to_string(), enabled)])).await;
 
     let (started_tx, started_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
@@ -276,21 +280,12 @@ async fn permission_sync_does_not_wait_for_running_server_call() {
 #[tokio::test]
 async fn reconcile_installs_new_generation_and_awaits_bounded_retirement() {
     let actor = McpRegistryActor::spawn(manager(), CancellationToken::new());
-    let enabled: McpServerConfig = serde_json::from_value(json!({
-        "command": "enabled-server",
-        "enabled": true
-    }))
-    .expect("enabled MCP config");
-    actor
-        .bootstrap(
-            manager(),
-            HashMap::from([("enabled".to_string(), enabled.clone())]),
-            CancellationToken::new(),
-            gate(),
-            Vec::new(),
-        )
-        .await
-        .expect("bootstrap");
+    let enabled = server_config("enabled-server", true);
+    bootstrap(
+        &actor,
+        HashMap::from([("enabled".to_string(), enabled.clone())]),
+    )
+    .await;
 
     let old_manager = actor.current_manager();
     let old_cancellation_token = actor.cancellation_token().await;

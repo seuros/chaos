@@ -1,4 +1,4 @@
-//! MCP tool: mcp_server — control a project MCP server.
+//! MCP tool: mcp_server — reconnect a session server or edit a project server.
 
 use std::path::Path;
 
@@ -16,14 +16,19 @@ use super::write_dot_mcp_json;
 pub struct McpServerActionParams {
     /// Name of the MCP server entry to control.
     pub name: String,
-    /// Action: enable, disable, reset, or remove.
+    /// Action: enable, disable, reset, or remove. Reset reconnects the named
+    /// effective server (global or project) in this session only, without changing
+    /// configuration or credentials. Other actions edit the project's .mcp.json.
     pub action: String,
 }
 
 impl McpManageServer {
     #[mcp_tool(
         name = "mcp_server",
-        description = "Manage an MCP server.",
+        description = "Reset a global or project MCP server in this session only. \
+            Enable/disable/remove edit project config. Reset reconnects only the named \
+            effective server, preserves identity and saved credentials, and never enables \
+            disabled servers.",
         read_only = false,
         open_world = false
     )]
@@ -97,15 +102,8 @@ pub(super) fn execute_server_action(
                 "reload_requested": true,
             }))
         }
-        "reset" => Ok(serde_json::json!({
-            "status": "reset",
-            "action": "reset",
-            "server": params.name,
-            "path": path.display().to_string(),
-            "reload_requested": true,
-        })),
         other => Err(format!(
-            "invalid action `{other}`; expected one of: enable, disable, reset, remove"
+            "invalid project action `{other}`; expected one of: enable, disable, remove"
         )),
     }
 }

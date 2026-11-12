@@ -503,6 +503,57 @@ impl Session {
             .await
     }
 
+    pub(crate) async fn reset_mcp_server(
+        self: &Arc<Self>,
+        turn_context: &TurnContext,
+        server: &str,
+    ) -> anyhow::Result<()> {
+        let session = Arc::clone(self);
+        let turn_context = turn_context.clone();
+        let server = server.to_string();
+        let (reply, response) = oneshot::channel();
+        self.services
+            .mcp_refresh
+            .enqueue(async move {
+                let registry = &session.services.mcp_registry;
+                let previous_revision = registry.revision();
+                let result = registry.reset_server(&server).await;
+                let revision = registry.revision();
+                let (ready, failed) = match &result {
+                    Ok(()) => (vec![server.clone()], Vec::new()),
+                    Err(error) => (
+                        Vec::new(),
+                        vec![McpStartupFailure {
+                            server: server.clone(),
+                            error: format!("{error:#}"),
+                        }],
+                    ),
+                };
+                let applied = revision != previous_revision;
+                session
+                    .send_event(
+                        &turn_context,
+                        EventMsg::McpServersRefreshed(McpServersRefreshedEvent {
+                            revision,
+                            applied,
+                            added: Vec::new(),
+                            updated: if applied { vec![server] } else { Vec::new() },
+                            removed: Vec::new(),
+                            ready,
+                            failed,
+                        }),
+                    )
+                    .await;
+                // Reset remains serialized and completes even if its caller was cancelled.
+                let _ = reply.send(result);
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to enqueue MCP reset: {error}"))?;
+        response
+            .await
+            .map_err(|error| anyhow::anyhow!("MCP reset dropped its result: {error}"))?
+    }
+
     pub(super) async fn refresh_mcp_servers_inner(
         &self,
         turn_context: &TurnContext,

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -58,11 +59,14 @@ use tracing::warn;
 #[cfg(test)]
 use chaos_sysctl::types::McpServerTransportConfig;
 
+mod catalog;
 mod client;
 mod elicitation;
 mod error;
 mod filter;
 mod handler;
+mod requests;
+mod reset;
 
 use client::AsyncManagedClient;
 use client::ManagedClient;
@@ -440,7 +444,7 @@ async fn emit_update(tx_event: &Sender<Event>, update: McpStartupUpdateEvent) {
 
 /// A thin wrapper around a set of running [`mcp_guest::McpSession`] instances.
 pub struct McpConnectionManager {
-    clients: HashMap<String, AsyncManagedClient>,
+    clients: RwLock<HashMap<String, AsyncManagedClient>>,
     server_origins: HashMap<String, String>,
     elicitation_requests: ElicitationRequestManager,
 }
@@ -448,7 +452,7 @@ pub struct McpConnectionManager {
 impl McpConnectionManager {
     pub fn new_uninitialized(approval_policy: &Constrained<ApprovalPolicy>) -> Self {
         Self {
-            clients: HashMap::new(),
+            clients: RwLock::new(HashMap::new()),
             server_origins: HashMap::new(),
             elicitation_requests: ElicitationRequestManager::new(approval_policy.value()),
         }
@@ -462,7 +466,26 @@ impl McpConnectionManager {
     }
 
     pub fn has_servers(&self) -> bool {
-        !self.clients.is_empty()
+        !self
+            .clients
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    fn clients_snapshot(&self) -> HashMap<String, AsyncManagedClient> {
+        self.clients
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn async_client(&self, name: &str) -> Option<AsyncManagedClient> {
+        self.clients
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+            .cloned()
     }
 
     pub fn server_origin(&self, server_name: &str) -> Option<&str> {
@@ -499,15 +522,17 @@ impl McpConnectionManager {
                 server_origins.insert(server_name.clone(), origin);
             }
             let cancel_token = cancel_token.child_token();
-            let client_identity = client_identities
-                .get(&server_name)
-                .cloned()
-                .unwrap_or_else(|| {
-                    warn!(
-                        "missing stable client identity for MCP server {server_name}; generating a connection-local fallback"
-                    );
-                    McpClientIdentity::new()
-                });
+            let client_identity =
+                client_identities
+                    .get(&server_name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        warn!(
+                            "missing stable client identity for MCP server {server_name}; \
+                         generating a connection-local fallback"
+                        );
+                        McpClientIdentity::new()
+                    });
             emit_update(
                 &tx_event,
                 McpStartupUpdateEvent {
@@ -570,7 +595,7 @@ impl McpConnectionManager {
             });
         }
         let manager = Self {
-            clients,
+            clients: RwLock::new(clients),
             server_origins,
             elicitation_requests: elicitation_requests.clone(),
         };
@@ -606,31 +631,8 @@ impl McpConnectionManager {
     /// method so clients still handshaking resolve as cancelled.
     pub async fn shutdown(&self) -> Result<()> {
         let mut shutdowns = JoinSet::new();
-        for (server_name, client) in &self.clients {
-            let server_name = server_name.clone();
-            let client = client.clone();
-            shutdowns.spawn(async move {
-                match tokio::time::timeout(MCP_SERVER_SHUTDOWN_TIMEOUT, async {
-                    match client.client().await {
-                        Ok(client) => match client.session.disconnect().await {
-                            Ok(()) | Err(mcp_guest::GuestError::Disconnected) => Ok(()),
-                            Err(error) => Err(anyhow!(
-                                "failed to disconnect MCP server {server_name}: {error}"
-                            )),
-                        },
-                        Err(
-                            StartupOutcomeError::Cancelled | StartupOutcomeError::Failed { .. },
-                        ) => Ok(()),
-                    }
-                })
-                .await
-                {
-                    Ok(result) => result,
-                    Err(_) => Err(anyhow!(
-                        "timed out shutting down MCP server {server_name} after {MCP_SERVER_SHUTDOWN_TIMEOUT:?}"
-                    )),
-                }
-            });
+        for (server_name, client) in self.clients_snapshot() {
+            shutdowns.spawn(async move { client.shutdown(&server_name).await });
         }
 
         let mut errors = Vec::new();
@@ -649,8 +651,7 @@ impl McpConnectionManager {
     }
 
     async fn client_by_name(&self, name: &str) -> Result<ManagedClient> {
-        self.clients
-            .get(name)
+        self.async_client(name)
             .ok_or_else(|| anyhow!("unknown MCP server '{name}'"))?
             .client()
             .await
@@ -670,7 +671,7 @@ impl McpConnectionManager {
 
     #[allow(dead_code)]
     pub async fn wait_for_server_ready(&self, server_name: &str, timeout: Duration) -> bool {
-        let Some(async_managed_client) = self.clients.get(server_name) else {
+        let Some(async_managed_client) = self.async_client(server_name) else {
             return false;
         };
 
@@ -682,8 +683,9 @@ impl McpConnectionManager {
 
     /// Returns a non-blocking snapshot of every configured client's startup state.
     pub async fn server_startup_statuses(&self) -> HashMap<String, McpStartupStatus> {
-        let mut statuses = HashMap::with_capacity(self.clients.len());
-        for (server_name, client) in &self.clients {
+        let clients = self.clients_snapshot();
+        let mut statuses = HashMap::with_capacity(clients.len());
+        for (server_name, client) in clients {
             let status = if !client
                 .startup_complete
                 .load(std::sync::atomic::Ordering::Acquire)
@@ -705,7 +707,7 @@ impl McpConnectionManager {
 
     pub async fn server_capabilities(&self) -> HashMap<String, serde_json::Value> {
         let mut capabilities = HashMap::new();
-        for (server_name, client) in &self.clients {
+        for (server_name, client) in self.clients_snapshot() {
             if !client
                 .startup_complete
                 .load(std::sync::atomic::Ordering::Acquire)
@@ -725,7 +727,7 @@ impl McpConnectionManager {
     /// Returns implementation versions without waiting for starting servers.
     pub async fn server_versions(&self) -> HashMap<String, String> {
         let mut versions = HashMap::new();
-        for (server_name, client) in &self.clients {
+        for (server_name, client) in self.clients_snapshot() {
             if !client
                 .startup_complete
                 .load(std::sync::atomic::Ordering::Acquire)
@@ -748,7 +750,7 @@ impl McpConnectionManager {
     ) -> Vec<McpStartupFailure> {
         let mut failures = Vec::new();
         for server_name in required_servers {
-            let Some(async_managed_client) = self.clients.get(server_name).cloned() else {
+            let Some(async_managed_client) = self.async_client(server_name) else {
                 failures.push(McpStartupFailure {
                     server: server_name.clone(),
                     error: format!("required MCP server `{server_name}` was not initialized"),
@@ -772,7 +774,7 @@ impl McpConnectionManager {
     #[instrument(level = "trace", skip_all)]
     pub async fn list_all_tools(&self) -> HashMap<String, ToolInfo> {
         let mut tools = HashMap::new();
-        for managed_client in self.clients.values() {
+        for managed_client in self.clients_snapshot().into_values() {
             let Some(server_tools) = managed_client.listed_tools().await else {
                 continue;
             };
@@ -783,7 +785,7 @@ impl McpConnectionManager {
 
     /// Rehydrate drivers which negotiated durable goals before each sample.
     pub async fn refresh_goal_tools(&self) {
-        for (name, client) in &self.clients {
+        for (name, client) in self.clients_snapshot() {
             let Ok(client) = client.client().await else {
                 continue;
             };
@@ -793,7 +795,7 @@ impl McpConnectionManager {
             {
                 continue;
             }
-            if let Err(error) = client.refresh_listed_tools(name).await {
+            if let Err(error) = client.refresh_listed_tools(&name).await {
                 // Never keep stale mutable goal routes after a failed refresh.
                 filter::store_managed_tools(&client.tool_filter, &client.tools, Vec::new());
                 warn!(%error, server = name, "goal capability refresh failed");
@@ -807,11 +809,7 @@ impl McpConnectionManager {
     /// Results are sorted by configured server name so model instructions are
     /// stable across requests despite the manager's `HashMap` storage.
     pub async fn server_instructions(&self) -> Vec<McpServerInstructions> {
-        let mut clients: Vec<_> = self
-            .clients
-            .iter()
-            .map(|(server_name, client)| (server_name.clone(), client.clone()))
-            .collect();
+        let mut clients: Vec<_> = self.clients_snapshot().into_iter().collect();
         clients.sort_by(|(left, _), (right, _)| left.cmp(right));
 
         let mut instructions = Vec::new();
@@ -834,10 +832,9 @@ impl McpConnectionManager {
     pub async fn list_all_resources(&self) -> HashMap<String, Vec<ResourceInfo>> {
         let mut join_set = JoinSet::new();
 
-        let clients_snapshot = &self.clients;
+        let clients_snapshot = self.clients_snapshot();
 
         for (server_name, async_managed_client) in clients_snapshot {
-            let server_name = server_name.clone();
             let Ok(managed_client) = async_managed_client.client().await else {
                 continue;
             };
@@ -851,23 +848,7 @@ impl McpConnectionManager {
             });
         }
 
-        let mut aggregated: HashMap<String, Vec<ResourceInfo>> = HashMap::new();
-
-        while let Some(join_res) = join_set.join_next().await {
-            match join_res {
-                Ok((server_name, Ok(resources))) => {
-                    aggregated.insert(server_name, resources);
-                }
-                Ok((server_name, Err(err))) => {
-                    warn!("Failed to list resources for MCP server '{server_name}': {err:#}");
-                }
-                Err(err) => {
-                    warn!("Task panic when listing resources for MCP server: {err:#}");
-                }
-            }
-        }
-
-        aggregated
+        requests::collect_server_results(join_set, "list resources").await
     }
 
     /// Returns a single map that contains all resource templates. Each key is the
@@ -875,10 +856,9 @@ impl McpConnectionManager {
     pub async fn list_all_resource_templates(&self) -> HashMap<String, Vec<ResourceTemplateInfo>> {
         let mut join_set = JoinSet::new();
 
-        let clients_snapshot = &self.clients;
+        let clients_snapshot = self.clients_snapshot();
 
         for (server_name, async_managed_client) in clients_snapshot {
-            let server_name_cloned = server_name.clone();
             let Ok(managed_client) = async_managed_client.client().await else {
                 continue;
             };
@@ -886,31 +866,13 @@ impl McpConnectionManager {
 
             join_set.spawn(async move {
                 match session.list_resource_templates().await {
-                    Ok(templates) => (server_name_cloned, Ok(templates)),
-                    Err(err) => (server_name_cloned, Err(anyhow!("{err}"))),
+                    Ok(templates) => (server_name, Ok(templates)),
+                    Err(err) => (server_name, Err(anyhow!("{err}"))),
                 }
             });
         }
 
-        let mut aggregated: HashMap<String, Vec<ResourceTemplateInfo>> = HashMap::new();
-
-        while let Some(join_res) = join_set.join_next().await {
-            match join_res {
-                Ok((server_name, Ok(templates))) => {
-                    aggregated.insert(server_name, templates);
-                }
-                Ok((server_name, Err(err))) => {
-                    warn!(
-                        "Failed to list resource templates for MCP server '{server_name}': {err:#}"
-                    );
-                }
-                Err(err) => {
-                    warn!("Task panic when listing resource templates for MCP server: {err:#}");
-                }
-            }
-        }
-
-        aggregated
+        requests::collect_server_results(join_set, "list resource templates").await
     }
 
     /// Invoke the tool indicated by the (server, tool) pair.
@@ -978,16 +940,7 @@ impl McpConnectionManager {
         // Convert arguments Value to Map<String, Value> for mcp-guest.
         // Non-object shapes are rejected — silently dropping them would turn
         // a caller bug into misleading server behaviour.
-        let arguments_map = match arguments {
-            None => None,
-            Some(serde_json::Value::Object(map)) => Some(map),
-            Some(other) => {
-                return Err(anyhow!(
-                    "tool call arguments must be a JSON object, got {}",
-                    other.to_string().chars().take(80).collect::<String>()
-                ));
-            }
-        };
+        let arguments_map = requests::tool_arguments(arguments, "tool call")?;
 
         let params = mcp_guest::protocol::CallToolRequestParams {
             name: tool.to_string(),
@@ -1051,18 +1004,7 @@ impl McpConnectionManager {
         server: &str,
         params: Option<PaginatedRequestParams>,
     ) -> Result<ListResourcesResult> {
-        let managed = self.client_by_name(server).await?;
-
-        let guest_params = params.unwrap_or(PaginatedRequestParams { cursor: None });
-
-        let result: ListResourcesResult = managed
-            .session
-            .request("resources/list", &guest_params)
-            .await
-            .map_err(anyhow::Error::from)
-            .with_context(|| format!("resources/list failed for `{server}`"))?;
-
-        Ok(result)
+        self.list_page(server, "resources/list", params).await
     }
 
     /// List resource templates from the specified server.
@@ -1071,18 +1013,8 @@ impl McpConnectionManager {
         server: &str,
         params: Option<PaginatedRequestParams>,
     ) -> Result<ListResourceTemplatesResult> {
-        let managed = self.client_by_name(server).await?;
-
-        let guest_params = params.unwrap_or(PaginatedRequestParams { cursor: None });
-
-        let result: ListResourceTemplatesResult = managed
-            .session
-            .request("resources/templates/list", &guest_params)
+        self.list_page(server, "resources/templates/list", params)
             .await
-            .map_err(anyhow::Error::from)
-            .with_context(|| format!("resources/templates/list failed for `{server}`"))?;
-
-        Ok(result)
     }
 
     /// Read a resource from the specified server.
@@ -1171,16 +1103,7 @@ impl McpConnectionManager {
             }
         }
 
-        let arguments_map = match arguments {
-            None => None,
-            Some(serde_json::Value::Object(map)) => Some(map),
-            Some(other) => {
-                return Err(anyhow!(
-                    "async tool call arguments must be a JSON object, got {}",
-                    other.to_string().chars().take(80).collect::<String>()
-                ));
-            }
-        };
+        let arguments_map = requests::tool_arguments(arguments, "async tool call")?;
 
         let params = mcp_guest::protocol::CallToolRequestParams {
             name: tool.to_string(),
@@ -1274,24 +1197,13 @@ impl McpConnectionManager {
     pub async fn notify_roots_changed(&self, new_cwd: &Path) -> Result<()> {
         let mut join_set = JoinSet::new();
 
-        for async_managed_client in self.clients.values() {
+        for async_managed_client in self.clients_snapshot().into_values() {
             let new_cwd = new_cwd.to_path_buf();
-            let async_managed_client = async_managed_client.clone();
             join_set
                 .spawn(async move { async_managed_client.notify_roots_changed(&new_cwd).await });
         }
 
-        while let Some(join_res) = join_set.join_next().await {
-            match join_res {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => {
-                    warn!("Failed to notify roots change to MCP server: {err:#}");
-                }
-                Err(err) => {
-                    warn!("Task panic when notifying roots change to MCP server: {err:#}");
-                }
-            }
-        }
+        requests::finish_notifications(join_set, "roots change").await;
 
         Ok(())
     }
@@ -1299,8 +1211,7 @@ impl McpConnectionManager {
     /// Notifies one MCP server that the workspace root has changed.
     pub async fn notify_server_roots_changed(&self, server: &str, new_cwd: &Path) -> Result<()> {
         let managed = self
-            .clients
-            .get(server)
+            .async_client(server)
             .ok_or_else(|| anyhow!("unknown MCP server '{server}'"))?;
         managed.notify_roots_changed(new_cwd).await
     }
@@ -1308,9 +1219,8 @@ impl McpConnectionManager {
     pub async fn notify_sandbox_state_change(&self, sandbox_state: &SandboxState) -> Result<()> {
         let mut join_set = JoinSet::new();
 
-        for async_managed_client in self.clients.values() {
+        for async_managed_client in self.clients_snapshot().into_values() {
             let sandbox_state = sandbox_state.clone();
-            let async_managed_client = async_managed_client.clone();
             join_set.spawn(async move {
                 async_managed_client
                     .notify_sandbox_state_change(&sandbox_state)
@@ -1318,17 +1228,7 @@ impl McpConnectionManager {
             });
         }
 
-        while let Some(join_res) = join_set.join_next().await {
-            match join_res {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => {
-                    warn!("Failed to notify sandbox state change to MCP server: {err:#}");
-                }
-                Err(err) => {
-                    warn!("Task panic when notifying sandbox state change to MCP server: {err:#}");
-                }
-            }
-        }
+        requests::finish_notifications(join_set, "sandbox state change").await;
 
         Ok(())
     }
@@ -1340,8 +1240,7 @@ impl McpConnectionManager {
         sandbox_state: &SandboxState,
     ) -> Result<()> {
         let managed = self
-            .clients
-            .get(server)
+            .async_client(server)
             .ok_or_else(|| anyhow!("unknown MCP server '{server}'"))?;
         managed.notify_sandbox_state_change(sandbox_state).await
     }

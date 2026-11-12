@@ -104,6 +104,16 @@ impl ToolHandler for CatalogModuleHandler {
                         .reload_project_mcp_layer_and_refresh(turn.as_ref())
                         .await;
                 }
+                CatalogToolEffect::ResetMcpServer { name } => {
+                    session
+                        .reset_mcp_server(turn.as_ref(), name)
+                        .await
+                        .map_err(|error| {
+                            FunctionCallError::RespondToModel(format!(
+                                "failed to reset MCP server `{name}`: {error:#}"
+                            ))
+                        })?;
+                }
             }
         }
 

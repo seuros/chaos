@@ -71,17 +71,35 @@ impl CatalogToolDriver for McpManageToolDriver {
     fn call_tool(&self, request: CatalogToolRequest) -> CatalogToolDriverFuture<'_> {
         Box::pin(async move {
             let dot_mcp_path = request.project_root.join(DOT_MCP_JSON);
-            let output = match request.tool_name.as_str() {
+            let (output, effect) = match request.tool_name.as_str() {
                 "mcp_add_server" => {
                     let params: McpAddServerParams = serde_json::from_value(request.arguments)
                         .map_err(|e| format!("invalid arguments: {e}"))?;
-                    mcp_add_server::execute_add_server(&dot_mcp_path, params)?
+                    (
+                        mcp_add_server::execute_add_server(&dot_mcp_path, params)?,
+                        CatalogToolEffect::ReloadProjectMcp,
+                    )
                 }
                 "mcp_server" => {
                     let params: McpServerActionParams =
                         serde_json::from_value(request.arguments)
                             .map_err(|e| format!("invalid arguments: {e}"))?;
-                    mcp_server::execute_server_action(&dot_mcp_path, params)?
+                    if params.action == "reset" {
+                        (
+                            serde_json::json!({
+                                "status": "reset",
+                                "action": "reset",
+                                "server": params.name,
+                                "scope": "session",
+                            }),
+                            CatalogToolEffect::ResetMcpServer { name: params.name },
+                        )
+                    } else {
+                        (
+                            mcp_server::execute_server_action(&dot_mcp_path, params)?,
+                            CatalogToolEffect::ReloadProjectMcp,
+                        )
+                    }
                 }
                 other => return Err(format!("unknown MCP management tool: {other}")),
             };
@@ -91,7 +109,7 @@ impl CatalogToolDriver for McpManageToolDriver {
                     format!("invalid structured MCP management output: {error}")
                 })?,
                 success: Some(true),
-                effects: vec![CatalogToolEffect::ReloadProjectMcp],
+                effects: vec![effect],
             })
         })
     }

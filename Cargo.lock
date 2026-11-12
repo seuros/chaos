@@ -2173,6 +2173,7 @@ name = "chaos-recall"
 version = "47.14.8"
 dependencies = [
  "anyhow",
+ "chaos-proc",
  "chaos-synopsis",
  "chaos-vfs",
  "model2vec-rs",

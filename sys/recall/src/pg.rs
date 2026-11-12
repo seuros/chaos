@@ -58,8 +58,10 @@ impl PgRecallStore {
     }
 
     pub async fn migrate(&self) -> anyhow::Result<()> {
-        MIGRATOR.run(&self.pool).await?;
-        Ok(())
+        // Never on `self.pool`: a failed or cancelled run would return a pooled
+        // connection still holding the database's migration lock, blocking every
+        // other process that opens this database for as long as this one lives.
+        chaos_proc::run_postgres_migrator_isolated(&self.pool.connect_options(), &MIGRATOR).await
     }
 
     pub async fn bind_model(&self, fingerprint: &str) -> Result<(), RecallError> {

@@ -33,9 +33,13 @@ fn request(method: &str, token: Option<&str>, body: Body) -> Request {
 }
 
 fn post(session: Option<&str>, value: Value) -> Request {
+    post_as("test-token", session, value)
+}
+
+fn post_as(token: &str, session: Option<&str>, value: Value) -> Request {
     let mut request = request(
         "POST",
-        Some("test-token"),
+        Some(token),
         Body::from(serde_json::to_string(&value).unwrap()),
     );
     let headers = request.headers_mut();
@@ -49,6 +53,32 @@ fn post(session: Option<&str>, value: Value) -> Request {
         headers.insert("mcp-protocol-version", "2025-11-25".parse().unwrap());
     }
     request
+}
+
+async fn open_session<S>(service: &S, token: &str) -> String
+where
+    S: Service<Request, Output = Response>,
+    S::Error: std::fmt::Debug,
+{
+    let response = service
+        .serve(post_as(token, None, initialize()))
+        .await
+        .unwrap();
+    let session = response.headers()["mcp-session-id"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    answer(response).await;
+    let response = service
+        .serve(post_as(
+            token,
+            Some(&session),
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    session
 }
 
 fn initialize() -> Value {
@@ -90,7 +120,13 @@ async fn mount() -> (tempfile::TempDir, Arc<crate::ServerState>) {
     Arc::get_mut(&mut state).unwrap().mcp = Some(
         McpEndpoint::new(
             kernel,
-            &cli(&["--mcp", "--body-limit", "4096"]),
+            &cli(&[
+                "--mcp",
+                "--body-limit",
+                "4096",
+                "--operator-token",
+                "operator-token",
+            ]),
             "test-token",
             home.path(),
         )
@@ -101,8 +137,8 @@ async fn mount() -> (tempfile::TempDir, Arc<crate::ServerState>) {
 
 #[test]
 fn plain_mcp_runs_the_control_plane_environment_check() {
-    // The --mcp bearer is the operator credential for project trust, so plain
-    // --mcp gets the same startup check as --sessions.
+    // Plain --mcp serves agents behind the bearer and may carry the operator
+    // token, so it gets the same startup check as --sessions.
     assert!(crate::checks_control_plane_environment(&cli(&["--mcp"])));
     assert!(crate::checks_control_plane_environment(&cli(&[
         "--sessions"
@@ -130,6 +166,16 @@ fn flags_default_off_repeat_origins_and_refuse_recovery_only() {
     );
     assert!(validate_cli(&enabled).is_ok());
     assert!(validate_cli(&cli(&["--mcp", "--session-recovery-only"])).is_err());
+    assert!(validate_cli(&cli(&["--operator-token", "operator-token"])).is_err());
+    for clash in [
+        &["--bearer-token", "same"][..],
+        &["--recovery-token", "same"][..],
+    ] {
+        let mut args = vec!["--mcp", "--operator-token", "same"];
+        args.extend_from_slice(clash);
+        assert!(validate_cli(&cli(&args)).is_err(), "{args:?}");
+    }
+    assert!(validate_cli(&cli(&["--mcp", "--operator-token", " "])).is_err());
     assert!(validate_cli(&cli(&["--mcp-allowed-origin", "https://one.example"])).is_err());
     for invalid in ["*", "null", "file:///tmp", "https://one.example/path"] {
         assert!(validate_cli(&cli(&["--mcp", "--mcp-allowed-origin", invalid])).is_err());
@@ -428,8 +474,8 @@ async fn authenticated_factory_lists_tools_resources_tasks_and_independent_sessi
     }
     assert_ne!(ids[0], ids[1]);
 
-    // The operator trust tools are listed here, and the bearer's principal
-    // reaches them through the real transport.
+    // The operator trust tools are listed, but only the operator token's
+    // principal reaches them through the real transport.
     let response = service
         .serve(post(
             Some(&ids[0]),
@@ -463,6 +509,18 @@ async fn authenticated_factory_lists_tools_resources_tasks_and_independent_sessi
         ))
         .await
         .unwrap();
+    let refused = answer(response).await;
+    assert_eq!(refused["result"]["isError"], true, "{refused}");
+    let operator = open_session(&service, "operator-token").await;
+    let response = service
+        .serve(post_as(
+            "operator-token",
+            Some(&operator),
+            json!({"jsonrpc":"2.0","id":5,"method":"tools/call",
+                   "params":{"name":"trust_list","arguments":{}}}),
+        ))
+        .await
+        .unwrap();
     let listed = answer(response).await;
     assert!(listed.get("error").is_none(), "{listed}");
     assert_ne!(listed["result"]["isError"], true, "{listed}");
@@ -473,10 +531,14 @@ async fn authenticated_factory_lists_tools_resources_tasks_and_independent_sessi
 
     let endpoint = state.mcp.as_ref().unwrap();
     let sessions = endpoint.sessions.clone();
-    assert_eq!(sessions.session_count(), 2);
-    for session in sessions.sessions() {
-        assert_eq!(session.owner.unwrap().subject, "chaos-operator");
-    }
+    assert_eq!(sessions.session_count(), 3);
+    let mut owners: Vec<_> = sessions
+        .sessions()
+        .into_iter()
+        .map(|session| session.owner.unwrap().subject)
+        .collect();
+    owners.sort();
+    assert_eq!(owners, ["chaos-client", "chaos-client", "chaos-operator"]);
     let mut delete = request("DELETE", Some("test-token"), Body::empty());
     delete
         .headers_mut()
@@ -485,7 +547,7 @@ async fn authenticated_factory_lists_tools_resources_tasks_and_independent_sessi
         service.serve(delete).await.unwrap().status(),
         StatusCode::NO_CONTENT
     );
-    assert_eq!(sessions.session_count(), 1);
+    assert_eq!(sessions.session_count(), 2);
     let response = service
         .serve(post(
             Some(&ids[1]),
@@ -610,4 +672,38 @@ async fn sdk_bounds_sessions_and_streams_without_treating_disconnect_as_delete()
     assert_eq!(service.session_handle().session_count(), 1);
     let reconnected = service.handle(get()).await;
     assert_eq!(reconnected.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn trust_tools_are_absent_without_an_operator_token() {
+    let (home, mut state) = server_state(4096, false).await;
+    let kernel = chaos_mcpd::build_server(
+        state.config.clone(),
+        Arg0DispatchPaths {
+            alcatraz_exe: std::path::PathBuf::from("/unused-test-alcatraz"),
+        },
+    )
+    .await
+    .unwrap();
+    Arc::get_mut(&mut state).unwrap().mcp =
+        Some(McpEndpoint::new(kernel, &cli(&["--mcp"]), "test-token", home.path()).unwrap());
+    let service = crate::api::http_service(state.clone());
+    let session = open_session(&service, "test-token").await;
+    let response = service
+        .serve(post(
+            Some(&session),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        ))
+        .await
+        .unwrap();
+    let tools = answer(response).await["result"]["tools"].clone();
+    assert!(
+        !tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["name"].as_str().unwrap().starts_with("trust_")),
+        "{tools}"
+    );
+    state.shutdown_sessions().await;
 }

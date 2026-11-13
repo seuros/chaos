@@ -10,7 +10,8 @@ use std::time::Duration;
 use anyhow::{Context, bail};
 use chaos_mcpd::McpServerHandle;
 use mcp_host::transport::http::{
-    HttpBearerAuthConfig, HttpTransportConfig, HttpTransportSessionHandle, McpHttpService,
+    HttpBearerAuthConfig, HttpBearerAuthSet, HttpTransportConfig, HttpTransportSessionHandle,
+    McpHttpService,
 };
 use rama::http::headers::{AccessControlExposeHeaders, AccessControlMaxAge};
 use rama::http::layer::catch_panic::CatchPanicLayer;
@@ -24,6 +25,9 @@ use tokio::sync::Mutex;
 
 use crate::ServeCli;
 
+/// The principal the shared serve bearer authenticates as on /mcp.
+const BEARER_PRINCIPAL: &str = "chaos-client";
+
 pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
     if cli.mcp && cli.session_recovery_only {
         bail!("--mcp cannot be used with --session-recovery-only");
@@ -34,8 +38,23 @@ pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
     if cli.mcp
         && let Some(token) = &cli.bearer_token
     {
+        HttpBearerAuthConfig::new(token.clone(), BEARER_PRINCIPAL)
+            .context("invalid MCP bearer credential")?;
+    }
+    if let Some(token) = &cli.operator_token {
+        if !cli.mcp {
+            bail!("--operator-token requires --mcp");
+        }
+        if token.trim().is_empty()
+            || Some(token) == cli.bearer_token.as_ref()
+            || Some(token) == cli.recovery_token.as_ref()
+        {
+            bail!(
+                "operator token must be nonempty and different from the bearer and recovery tokens"
+            );
+        }
         HttpBearerAuthConfig::new(token.clone(), chaos_mcpd::OPERATOR_PRINCIPAL)
-            .context("invalid MCP operator bearer credential")?;
+            .context("invalid MCP operator credential")?;
     }
     for origin in &cli.mcp_allowed_origin {
         let url = url::Url::parse(origin).context("invalid --mcp-allowed-origin")?;
@@ -50,8 +69,18 @@ pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
 }
 
 fn transport_config(cli: &ServeCli, token: &str) -> anyhow::Result<HttpTransportConfig> {
-    let credential = HttpBearerAuthConfig::new(token, chaos_mcpd::OPERATOR_PRINCIPAL)
-        .context("invalid MCP operator bearer credential")?;
+    let mut credentials = vec![
+        HttpBearerAuthConfig::new(token, BEARER_PRINCIPAL)
+            .context("invalid MCP bearer credential")?,
+    ];
+    if let Some(operator) = &cli.operator_token {
+        credentials.push(
+            HttpBearerAuthConfig::new(operator.as_str(), chaos_mcpd::OPERATOR_PRINCIPAL)
+                .context("invalid MCP operator credential")?,
+        );
+    }
+    let credentials =
+        HttpBearerAuthSet::new(credentials).context("invalid MCP bearer credentials")?;
     Ok(HttpTransportConfig {
         endpoint: "/mcp".to_owned(),
         localhost_only: cli
@@ -60,7 +89,7 @@ fn transport_config(cli: &ServeCli, token: &str) -> anyhow::Result<HttpTransport
             .context("invalid bind address")?
             .is_loopback(),
         allowed_origins: cli.mcp_allowed_origin.clone(),
-        bearer_auth: Some(credential.into()),
+        bearer_auth: Some(credentials),
         max_request_body_size: cli.body_limit,
         request_timeout: Duration::from_secs(cli.timeout),
         session_timeout: Duration::from_secs(cli.session_ttl),
@@ -86,9 +115,11 @@ impl McpEndpoint {
         chaos_home: &std::path::Path,
     ) -> anyhow::Result<Self> {
         let config = transport_config(cli, token)?;
-        // Trust administration exists only on this endpoint, behind the
-        // operator bearer; the stdio server never registers it.
-        chaos_mcpd::register_operator_trust_tools(&kernel, chaos_home)?;
+        // Trust administration exists only on this endpoint, behind its own
+        // operator credential; the stdio server never registers it.
+        if cli.operator_token.is_some() {
+            chaos_mcpd::register_operator_trust_tools(&kernel, chaos_home)?;
+        }
         let service = McpHttpService::new(Arc::clone(&kernel.server), config.clone())?;
         let sessions = service.session_handle();
         Ok(Self {

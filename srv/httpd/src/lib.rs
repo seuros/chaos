@@ -217,6 +217,7 @@ pub async fn run_main(
     config.clamp_env_remove = vec![
         "CHAOS_BEARER_TOKEN".into(),
         "CHAOS_RECOVERY_TOKEN".into(),
+        "CHAOS_OPERATOR_TOKEN".into(),
         serve_cli.session_webhook_secret_env.clone(),
     ];
     if serve_cli.session_scope.is_some() && config.ephemeral {
@@ -232,6 +233,7 @@ pub async fn run_main(
             &[
                 "CHAOS_BEARER_TOKEN",
                 "CHAOS_RECOVERY_TOKEN",
+                "CHAOS_OPERATOR_TOKEN",
                 serve_cli.session_webhook_secret_env.as_str(),
             ],
         )?;

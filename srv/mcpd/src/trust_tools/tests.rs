@@ -56,7 +56,7 @@ async fn every_trust_tool_refuses_without_the_operator_principal() {
     let project = tempfile::tempdir().unwrap();
     let callers = [
         None,
-        // The right subject from another source is not the operator bearer.
+        // The right subject from another source is not the operator token.
         Some(AuthenticatedPrincipal::new("api-key", OPERATOR_PRINCIPAL)),
         Some(AuthenticatedPrincipal::new(
             HTTP_BEARER_PRINCIPAL_SOURCE,
@@ -84,7 +84,7 @@ async fn every_trust_tool_refuses_without_the_operator_principal() {
                 .await
                 .unwrap_err();
             assert!(
-                err.contains("requires the operator bearer"),
+                err.contains("requires the operator token"),
                 "{caller:?}: {err}"
             );
         }

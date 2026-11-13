@@ -25,10 +25,11 @@ account is a separate home). A manifest's installation identity is checked
 against the home applying it, which keeps a manifest from crossing homes; it
 does not isolate homes that share a database.
 
-The tools are served by `chaos serve --mcp` at `/mcp`, and only there:
+The tools are served by `chaos serve --mcp` at `/mcp`, only there, and only
+when serve has an operator token:
 
 ```sh
-CHAOS_BEARER_TOKEN=… chaos serve --mcp --bind 127.0.0.1 --port 4000
+CHAOS_BEARER_TOKEN=… CHAOS_OPERATOR_TOKEN=… chaos serve --mcp --bind 127.0.0.1 --port 4000
 ```
 
 | Tool           | Does                                                        |
@@ -128,15 +129,16 @@ separate step (chaos-hooks(7)).
 ## AUTHORITY
 
 The tools exist only on the HTTP endpoint, never on the stdio server
-(`chaos mcp`), and every call must come from the principal the operator bearer
-authenticates. Serve refuses to start if its shell environment policy would
-pass `CHAOS_BEARER_TOKEN` to the commands or MCP servers it starts; the default
-`*TOKEN*` exclude keeps it out. That does not hide the credential from a
-process that can read serve's own environment or arguments, so pass it in the
-environment rather than with `--bearer-token`, and sandbox agents so they
-cannot inspect serve. The same bearer authorizes triggers and live monitoring:
-any client holding it can also change trust. Each
-change is audited with the operator and the MCP session as actor. As with
+(`chaos mcp`), and every call must come from the principal the operator token
+authenticates. That token is separate from the bearer that authorizes
+triggers, live monitoring and ordinary MCP sessions: a bearer client sees the
+tools but every call is refused. Serve refuses to start if the two tokens (or
+the recovery token) are equal, or if its shell environment policy would pass
+`CHAOS_OPERATOR_TOKEN` or `CHAOS_BEARER_TOKEN` to the commands or MCP servers
+it starts; the default `*TOKEN*` exclude keeps them out. That does not hide
+the credentials from a process that can read serve's own environment or
+arguments, so pass them in the environment rather than as flags, and sandbox
+agents so they cannot inspect serve. Each change is audited with the operator and the MCP session as actor. As with
 hooks, a process with direct shell and database access is not contained by
 this interface; separate homes and OS permissions must enforce stronger
 separation.

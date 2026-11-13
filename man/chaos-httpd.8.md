@@ -43,6 +43,7 @@ the stdio server never lists; see chaos-trust(7).
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
+| `--operator-token` | env `CHAOS_OPERATOR_TOKEN` | Serve the project trust tools on `/mcp` (chaos-trust(7)). Requires `--mcp` and a nonempty token different from the bearer and recovery tokens; without it the tools are absent. |
 | `--recovery-token` | env `CHAOS_RECOVERY_TOKEN` | Enable operator recovery mutations. Requires `--session-scope` and a nonempty token different from the ordinary bearer. |
 | `--session-recovery-only` | `false` | Drain legacy/changed-policy history without execution. Requires `--session-scope` and `--recovery-token`; every protected route also requires the operator header. |
 | `--session-webhook-url` | unset | Deliver durable terminal events to a trusted server-owned HTTPS URL (literal loopback HTTP allowed for development). Requires `--session-scope`. |
@@ -455,6 +456,7 @@ environments. No model credentials or infrastructure cookies accompany callbacks
 ## FILES
 
 - `CHAOS_BEARER_TOKEN` - bearer token environment variable
+- `CHAOS_OPERATOR_TOKEN` - operator token for project trust over `/mcp`
 - `CHAOS_SESSION_WEBHOOK_SECRET` - default webhook signing-key variable
 - `~/.chaos/log/` - runtime logs for diagnosing server failures
 

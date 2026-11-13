@@ -1,9 +1,10 @@
 //! Project trust administration for the operator: list, show, set, plan and
 //! apply over `chaos serve --mcp`. These tools are registered only on the
-//! authenticated HTTP endpoint, never on stdio, and each call also requires the
-//! principal that the operator bearer establishes. An agent never holds that
-//! credential (serve strips it from child environments), so an agent cannot
-//! change which projects are trusted. The core lives in `chaos_kern::trust_admin`.
+//! authenticated HTTP endpoint, and only when serve has an operator token, never
+//! on stdio; each call also requires the principal that token establishes. The
+//! shared serve bearer cannot reach them, and an agent never holds the operator
+//! token (serve strips it from child environments), so neither a trigger client
+//! nor an agent can change which projects are trusted. The core lives in `chaos_kern::trust_admin`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +17,7 @@ use serde_json::{Value, json};
 
 use crate::McpServerHandle;
 
-/// The principal the `chaos serve --mcp` bearer credential authenticates as.
+/// The principal the `chaos serve --operator-token` credential authenticates as.
 pub const OPERATOR_PRINCIPAL: &str = "chaos-operator";
 
 pub(crate) struct TrustOperator {
@@ -24,7 +25,7 @@ pub(crate) struct TrustOperator {
 }
 
 /// Register the operator trust tools on an HTTP MCP server. Call this only for
-/// a server behind the operator bearer.
+/// a server behind the operator credential.
 pub fn register_operator_trust_tools(
     handle: &McpServerHandle,
     chaos_home: &Path,
@@ -53,7 +54,7 @@ fn operator_actor(ctx: &ExecutionContext<'_>) -> Result<String, ToolError> {
             ))
         }
         _ => Err(ToolError::Execution(
-            "project trust is an operator decision: this endpoint requires the operator bearer"
+            "project trust is an operator decision: this endpoint requires the operator token"
                 .to_string(),
         )),
     }

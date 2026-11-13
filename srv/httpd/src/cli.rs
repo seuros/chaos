@@ -11,8 +11,8 @@ pub struct ServeCli {
     #[usage(long = "port", default = "4000")]
     pub port: u16,
 
-    /// Bearer token for triggers and live monitoring. Falls back to `CHAOS_BEARER_TOKEN` env
-    /// var. Empty tokens are rejected.
+    /// Bearer token for triggers, live monitoring and MCP. Falls back to `CHAOS_BEARER_TOKEN`
+    /// env var. Empty tokens are rejected.
     #[usage(long = "bearer-token", env = "CHAOS_BEARER_TOKEN")]
     pub bearer_token: Option<String>,
 
@@ -38,6 +38,13 @@ pub struct ServeCli {
     #[cfg(feature = "mcpd")]
     #[usage(long = "mcp")]
     pub mcp: bool,
+
+    /// Operator token for project trust administration over MCP. Requires --mcp and must
+    /// differ from the bearer and recovery tokens; without it the trust tools are not served.
+    /// Falls back to `CHAOS_OPERATOR_TOKEN` env var.
+    #[cfg(feature = "mcpd")]
+    #[usage(long = "operator-token", env = "CHAOS_OPERATOR_TOKEN")]
+    pub operator_token: Option<String>,
 
     /// Allow this browser Origin for MCP (repeatable).
     #[cfg(feature = "mcpd")]

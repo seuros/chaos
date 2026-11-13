@@ -19,18 +19,16 @@ fn failed_or_unpublished_warning_level_is_not_normal() {
 
 #[test]
 fn pressure_can_establish_a_warning_but_nominal_cannot_establish_support() {
-    for pressure in [0, -1, 4, isize::MAX] {
+    for pressure in [0, 1, -1, 4, isize::MAX] {
         assert_eq!(
             with_pressure(ThermalState::Unknown, pressure),
             ThermalState::Unknown
         );
     }
-    for pressure in [1, 2] {
-        assert_eq!(
-            with_pressure(ThermalState::Unknown, pressure),
-            ThermalState::Warning
-        );
-    }
+    assert_eq!(
+        with_pressure(ThermalState::Unknown, 2),
+        ThermalState::Warning
+    );
     assert_eq!(
         with_pressure(ThermalState::Unknown, 3),
         ThermalState::Critical
@@ -40,6 +38,7 @@ fn pressure_can_establish_a_warning_but_nominal_cannot_establish_support() {
 #[test]
 fn pressure_never_downgrades_a_known_warning() {
     assert_eq!(with_pressure(ThermalState::Normal, 0), ThermalState::Normal);
+    assert_eq!(with_pressure(ThermalState::Normal, 1), ThermalState::Normal);
     assert_eq!(
         with_pressure(ThermalState::Normal, 2),
         ThermalState::Warning

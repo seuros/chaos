@@ -62,6 +62,10 @@ should. There is no patch level; the build timestamp is the patch.
   drops its `cached_input_tokens` duplicate. Upgrading rewrites stored session
   history once; stop old writers first.
 
+### Fixed
+- macOS's "fair" thermal state no longer counts as a machine warning, so
+  ordinary build load stops parking agents. Warnings start at "serious".
+
 ## [47.14.8] - 2026-11-04
 
 ### Changed

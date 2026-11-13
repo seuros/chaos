@@ -44,11 +44,12 @@ fn warning_state(result: i32, level: u32) -> ThermalState {
 
 fn with_pressure(warning: ThermalState, pressure: isize) -> ThermalState {
     // NSProcessInfo reports Nominal (0) even when unsupported. It can establish
-    // elevated pressure, but zero alone cannot establish Normal. Preserve the
-    // strongest recognized warning from either OS API.
+    // elevated pressure, but zero alone cannot establish Normal. Fair (1) is
+    // ordinary load, which Apple says needs no corrective action, so it
+    // establishes nothing either. Preserve the strongest recognized warning.
     match (warning, pressure) {
         (ThermalState::Critical, _) | (_, 3) => ThermalState::Critical,
-        (ThermalState::Warning, _) | (_, 1 | 2) => ThermalState::Warning,
+        (ThermalState::Warning, _) | (_, 2) => ThermalState::Warning,
         _ => warning,
     }
 }

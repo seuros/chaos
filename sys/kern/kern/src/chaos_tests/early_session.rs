@@ -298,7 +298,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
         total_token_usage: TokenUsage {
             input_tokens: 10,
             cache_creation_input_tokens: 2,
-            cached_input_tokens: 0,
+            cache_read_input_tokens: 0,
             output_tokens: 20,
             reasoning_output_tokens: 0,
             total_tokens: 30,
@@ -307,7 +307,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
         last_token_usage: TokenUsage {
             input_tokens: 3,
             cache_creation_input_tokens: 1,
-            cached_input_tokens: 0,
+            cache_read_input_tokens: 0,
             output_tokens: 4,
             reasoning_output_tokens: 0,
             total_tokens: 7,
@@ -319,7 +319,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
         total_token_usage: TokenUsage {
             input_tokens: 100,
             cache_creation_input_tokens: 20,
-            cached_input_tokens: 50,
+            cache_read_input_tokens: 50,
             output_tokens: 200,
             reasoning_output_tokens: 25,
             total_tokens: 375,
@@ -328,7 +328,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
         last_token_usage: TokenUsage {
             input_tokens: 10,
             cache_creation_input_tokens: 3,
-            cached_input_tokens: 0,
+            cache_read_input_tokens: 0,
             output_tokens: 20,
             reasoning_output_tokens: 5,
             total_tokens: 35,
@@ -383,7 +383,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
             Some(&TokenUsage {
                 input_tokens: 25,
                 cache_creation_input_tokens: 5,
-                cached_input_tokens: 15,
+                cache_read_input_tokens: 15,
                 output_tokens: 7,
                 reasoning_output_tokens: 2,
                 total_tokens: 32,
@@ -405,7 +405,10 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
             .cache_creation_input_tokens,
         25
     );
-    assert_eq!(after_resumed_turn.total_token_usage.cached_input_tokens, 65);
+    assert_eq!(
+        after_resumed_turn.total_token_usage.cache_read_input_tokens,
+        65
+    );
     assert_eq!(after_resumed_turn.total_token_usage.output_tokens, 207);
     assert_eq!(
         after_resumed_turn.total_token_usage.reasoning_output_tokens,

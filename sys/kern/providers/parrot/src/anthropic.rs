@@ -507,7 +507,7 @@ impl UsageAccumulator {
         }
         // Anthropic reports uncached, cache-write, and cache-read input as
         // separate counters. Chaos's TokenUsage expects input_tokens to be
-        // the full prompt count, with cached_input_tokens as a subset.
+        // the full prompt count, with cache_read_input_tokens as a subset.
         let prompt_tokens = self
             .input_tokens
             .saturating_add(self.cache_creation_input_tokens)
@@ -515,7 +515,7 @@ impl UsageAccumulator {
         Some(TokenUsage {
             input_tokens: prompt_tokens as i64,
             cache_creation_input_tokens: self.cache_creation_input_tokens as i64,
-            cached_input_tokens: self.cache_read_input_tokens as i64,
+            cache_read_input_tokens: self.cache_read_input_tokens as i64,
             output_tokens: self.output_tokens as i64,
             total_tokens: prompt_tokens.saturating_add(self.output_tokens) as i64,
             ..Default::default()

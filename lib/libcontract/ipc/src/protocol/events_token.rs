@@ -9,12 +9,9 @@ use serde::Serialize;
 pub struct TokenUsage {
     pub input_tokens: i64,
     /// Input tokens written into the provider prompt cache.
-    ///
-    /// This is separate from [`Self::cached_input_tokens`], which is the
-    /// compatibility name for cache-read input tokens.
     #[serde(default)]
     pub cache_creation_input_tokens: i64,
-    pub cached_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
     pub output_tokens: i64,
     pub reasoning_output_tokens: i64,
     pub total_tokens: i64,
@@ -31,13 +28,8 @@ impl TokenUsage {
         self.total_tokens == 0
     }
 
-    pub fn cached_input(&self) -> i64 {
-        self.cached_input_tokens.max(0)
-    }
-
-    /// Compatibility-safe name for cache-read input.
     pub fn cache_read_input(&self) -> i64 {
-        self.cached_input()
+        self.cache_read_input_tokens.max(0)
     }
 
     pub fn cache_creation_input(&self) -> i64 {
@@ -46,14 +38,14 @@ impl TokenUsage {
 
     /// Ordinary provider input, excluding cache writes and cache reads.
     pub fn uncached_input(&self) -> i64 {
-        (self.input_tokens - self.cache_creation_input() - self.cached_input()).max(0)
+        (self.input_tokens - self.cache_creation_input() - self.cache_read_input()).max(0)
     }
 
     /// Compatibility helper: input excluding cache reads, but including cache
     /// creation. Prefer [`Self::uncached_input`] for a provider billing
     /// breakdown.
     pub fn non_cached_input(&self) -> i64 {
-        (self.input_tokens - self.cached_input()).max(0)
+        (self.input_tokens - self.cache_read_input()).max(0)
     }
 
     /// Primary count for display as a single absolute value: non-cached input + output.
@@ -102,7 +94,7 @@ impl TokenUsage {
     pub fn add_assign(&mut self, other: &TokenUsage) {
         self.input_tokens += other.input_tokens;
         self.cache_creation_input_tokens += other.cache_creation_input_tokens;
-        self.cached_input_tokens += other.cached_input_tokens;
+        self.cache_read_input_tokens += other.cache_read_input_tokens;
         self.output_tokens += other.output_tokens;
         self.reasoning_output_tokens += other.reasoning_output_tokens;
         self.total_tokens += other.total_tokens;
@@ -125,7 +117,10 @@ impl TokenUsage {
                 self.cache_creation_input_tokens,
                 baseline.cache_creation_input_tokens,
             ),
-            cached_input_tokens: delta(self.cached_input_tokens, baseline.cached_input_tokens),
+            cache_read_input_tokens: delta(
+                self.cache_read_input_tokens,
+                baseline.cache_read_input_tokens,
+            ),
             output_tokens: delta(self.output_tokens, baseline.output_tokens),
             reasoning_output_tokens: delta(
                 self.reasoning_output_tokens,
@@ -272,10 +267,10 @@ impl fmt::Display for FinalOutput {
             "Token usage: total={} input={}{} output={}{}",
             format_with_separators(token_usage.blended_total()),
             format_with_separators(token_usage.non_cached_input()),
-            if token_usage.cached_input() > 0 {
+            if token_usage.cache_read_input() > 0 {
                 format!(
                     " (+ {} cached)",
-                    format_with_separators(token_usage.cached_input())
+                    format_with_separators(token_usage.cache_read_input())
                 )
             } else {
                 String::new()

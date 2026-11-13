@@ -309,7 +309,7 @@ pub(super) async fn try_run_sampling_request(
                         model = model_name,
                         response_id = %response_id,
                         input_tokens = usage.input_tokens,
-                        cached_input_tokens = usage.cached_input_tokens,
+                        cache_read_input_tokens = usage.cache_read_input_tokens,
                         output_tokens = usage.output_tokens,
                         reasoning_output_tokens = usage.reasoning_output_tokens,
                         total_tokens = usage.total_tokens,

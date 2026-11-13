@@ -104,8 +104,8 @@ Content-Type: application/json
   "process_id": "uuid",
   "result": "Agent output text",
   "usage": {
-    "total_token_usage": { "input_tokens": 1200, "cached_input_tokens": 300, "output_tokens": 450, "reasoning_output_tokens": 0, "total_tokens": 1650 },
-    "last_token_usage": { "input_tokens": 1200, "cached_input_tokens": 300, "output_tokens": 450, "reasoning_output_tokens": 0, "total_tokens": 1650 },
+    "total_token_usage": { "input_tokens": 1200, "cache_read_input_tokens": 300, "output_tokens": 450, "reasoning_output_tokens": 0, "total_tokens": 1650 },
+    "last_token_usage": { "input_tokens": 1200, "cache_read_input_tokens": 300, "output_tokens": 450, "reasoning_output_tokens": 0, "total_tokens": 1650 },
     "model_context_window": 200000
   }
 }

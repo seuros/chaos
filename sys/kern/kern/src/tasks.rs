@@ -386,8 +386,8 @@ impl Session {
                 cache_creation_input_tokens: (total_token_usage.cache_creation_input_tokens
                     - token_usage_at_turn_start.cache_creation_input_tokens)
                     .max(0),
-                cached_input_tokens: (total_token_usage.cached_input_tokens
-                    - token_usage_at_turn_start.cached_input_tokens)
+                cache_read_input_tokens: (total_token_usage.cache_read_input_tokens
+                    - token_usage_at_turn_start.cache_read_input_tokens)
                     .max(0),
                 output_tokens: (total_token_usage.output_tokens
                     - token_usage_at_turn_start.output_tokens)
@@ -414,7 +414,7 @@ impl Session {
             );
             self.services.session_telemetry.histogram(
                 TURN_TOKEN_USAGE_METRIC,
-                turn_token_usage.cached_input(),
+                turn_token_usage.cache_read_input(),
                 &[("token_type", "cached_input"), tmp_mem],
             );
             self.services.session_telemetry.histogram(

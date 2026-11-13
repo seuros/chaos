@@ -88,7 +88,7 @@ async fn receipts_survive_takeover_and_compaction_without_cumulative_delta_billi
     let usage = InvocationTokenUsage {
         input_tokens: 41,
         cache_creation_input_tokens: 13,
-        cached_input_tokens: 17,
+        cache_read_input_tokens: 17,
         output_tokens: 19,
         reasoning_output_tokens: 3,
         total_tokens: 60,
@@ -139,7 +139,7 @@ async fn receipts_survive_takeover_and_compaction_without_cumulative_delta_billi
         (
             known.input_tokens,
             known.cache_creation_input_tokens,
-            known.cached_input_tokens
+            known.cache_read_input_tokens
         ),
         (82, 26, 34)
     );

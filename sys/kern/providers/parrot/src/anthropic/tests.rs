@@ -241,7 +241,7 @@ fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() 
     assert_eq!(response_id, "msg-usage-receipt");
     assert_eq!(usage.input_tokens, 41);
     assert_eq!(usage.cache_creation_input_tokens, 13);
-    assert_eq!(usage.cached_input_tokens, 17);
+    assert_eq!(usage.cache_read_input_tokens, 17);
     assert_eq!(usage.output_tokens, 19);
     assert_eq!(usage.total_tokens, 60);
 }

@@ -108,7 +108,7 @@ fn antigravity_usage_preserves_reasoning_and_cache_tokens() {
     });
 
     assert_eq!(usage.input_tokens, 11);
-    assert_eq!(usage.cached_input_tokens, 19);
+    assert_eq!(usage.cache_read_input_tokens, 19);
     assert_eq!(usage.output_tokens, 13);
     assert_eq!(usage.reasoning_output_tokens, 17);
     assert_eq!(usage.total_tokens, 60);
@@ -134,7 +134,7 @@ fn clamp_usage_uses_aggregate_counters_and_last_call_context() {
 
     assert_eq!(usage.input_tokens, 181_755);
     assert_eq!(usage.cache_creation_input_tokens, 45_558);
-    assert_eq!(usage.cached_input_tokens, 136_189);
+    assert_eq!(usage.cache_read_input_tokens, 136_189);
     assert_eq!(usage.output_tokens, 233);
     assert_eq!(usage.reasoning_output_tokens, 0);
     assert_eq!(usage.total_tokens, 45_750);
@@ -153,7 +153,7 @@ fn clamp_usage_saturates_on_overflow() {
 
     assert_eq!(usage.input_tokens, i64::MAX);
     assert_eq!(usage.cache_creation_input_tokens, i64::MAX);
-    assert_eq!(usage.cached_input_tokens, i64::MAX);
+    assert_eq!(usage.cache_read_input_tokens, i64::MAX);
     assert_eq!(usage.output_tokens, i64::MAX);
     assert_eq!(usage.reasoning_output_tokens, 0);
     assert_eq!(usage.total_tokens, i64::MAX);

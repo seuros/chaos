@@ -51,7 +51,7 @@ pub(super) fn completed_event_from_usage(response_id: &str, usage: &Value) -> Tu
             Some(TokenUsage {
                 input_tokens,
                 output_tokens,
-                cached_input_tokens: usage
+                cache_read_input_tokens: usage
                     .pointer("/prompt_tokens_details/cached_tokens")
                     .and_then(Value::as_i64)
                     .unwrap_or(0),

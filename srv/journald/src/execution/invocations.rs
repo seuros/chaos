@@ -28,7 +28,7 @@ pub struct InvocationStart {
 pub struct InvocationTokenUsage {
     pub input_tokens: i64,
     pub cache_creation_input_tokens: i64,
-    pub cached_input_tokens: i64,
+    pub cache_read_input_tokens: i64,
     pub output_tokens: i64,
     pub reasoning_output_tokens: i64,
     pub total_tokens: i64,
@@ -39,7 +39,7 @@ impl From<&chaos_ipc::protocol::TokenUsage> for InvocationTokenUsage {
         Self {
             input_tokens: usage.input_tokens,
             cache_creation_input_tokens: usage.cache_creation_input_tokens,
-            cached_input_tokens: usage.cached_input_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens,
             output_tokens: usage.output_tokens,
             reasoning_output_tokens: usage.reasoning_output_tokens,
             total_tokens: usage.total_tokens,
@@ -51,13 +51,13 @@ impl InvocationTokenUsage {
     pub(super) fn validate(&self) -> Result<(), JournalError> {
         if self.input_tokens < 0
             || self.cache_creation_input_tokens < 0
-            || self.cached_input_tokens < 0
+            || self.cache_read_input_tokens < 0
             || self.output_tokens < 0
             || self.reasoning_output_tokens < 0
             || self.total_tokens < 0
             || self
                 .cache_creation_input_tokens
-                .checked_add(self.cached_input_tokens)
+                .checked_add(self.cache_read_input_tokens)
                 .is_none_or(|cached| cached > self.input_tokens)
             || self.reasoning_output_tokens > self.output_tokens
         {
@@ -72,9 +72,9 @@ impl InvocationTokenUsage {
             cache_creation_input_tokens: self
                 .cache_creation_input_tokens
                 .checked_add(usage.cache_creation_input_tokens)?,
-            cached_input_tokens: self
-                .cached_input_tokens
-                .checked_add(usage.cached_input_tokens)?,
+            cache_read_input_tokens: self
+                .cache_read_input_tokens
+                .checked_add(usage.cache_read_input_tokens)?,
             output_tokens: self.output_tokens.checked_add(usage.output_tokens)?,
             reasoning_output_tokens: self
                 .reasoning_output_tokens

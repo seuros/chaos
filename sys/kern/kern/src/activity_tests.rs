@@ -129,7 +129,7 @@ async fn model_requests_end_with_their_usage_or_as_failed() {
     let process_id = ProcessId::new();
     ModelRequest::start(process_id, 1, "model-a").finish(Some(&chaos_ipc::protocol::TokenUsage {
         input_tokens: 100,
-        cached_input_tokens: 60,
+        cache_read_input_tokens: 60,
         cache_creation_input_tokens: 10,
         output_tokens: 7,
         reasoning_output_tokens: 3,

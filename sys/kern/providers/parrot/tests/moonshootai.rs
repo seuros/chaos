@@ -186,7 +186,7 @@ async fn kimi_discovery_and_reasoning_tool_round_trip_use_the_selected_endpoint(
         std::assert_matches!(events.last(),
             Some(TurnEvent::Completed { token_usage: Some(usage), .. })
                 if usage.total_tokens == 37 && usage.reasoning_output_tokens == 8
-                    && usage.cached_input_tokens == 10
+                    && usage.cache_read_input_tokens == 10
         );
         let mut history: Vec<ResponseItem> = events
             .into_iter()

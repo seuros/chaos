@@ -155,7 +155,7 @@ impl From<ResponseCompletedUsage> for TokenUsage {
             // The Responses API currently exposes cache reads but not a
             // separate cache-write category.
             cache_creation_input_tokens: 0,
-            cached_input_tokens: val
+            cache_read_input_tokens: val
                 .input_tokens_details
                 .map(|d| d.cached_tokens)
                 .unwrap_or(0),

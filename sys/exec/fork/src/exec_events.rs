@@ -77,8 +77,6 @@ pub struct Usage {
     pub cache_creation_input_tokens: i64,
     #[serde(default)]
     pub cache_read_input_tokens: i64,
-    /// Compatibility alias for `cache_read_input_tokens`.
-    pub cached_input_tokens: i64,
     pub output_tokens: i64,
     #[serde(default)]
     pub reasoning_output_tokens: Option<i64>,

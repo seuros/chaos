@@ -421,13 +421,6 @@ async fn plan(
             .decision
             .target()
             .with_context(|| format!("manifest entry {}", entry.project_path))?;
-        if Path::new(&entry.project_path).parent().is_none() {
-            held.push(HeldEntry {
-                project_path: entry.project_path,
-                reason: "the filesystem root is never written".to_string(),
-            });
-            continue;
-        }
         if entry.decision == Decision::Trusted
             && let Err(err) = grant_guard(&entry.project_path, home)
         {
@@ -474,7 +467,7 @@ async fn plan(
         checks.iter().map(|c| c.project_path.clone()).collect();
     let revoked: Vec<PathBuf> = checks
         .iter()
-        .filter(|c| c.desired == TrustLevel::Untrusted)
+        .filter(|c| c.desired == TrustLevel::Untrusted && c.project_path.parent().is_some())
         .map(|c| c.project_path.clone())
         .collect();
     for (path, level) in &current {

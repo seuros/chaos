@@ -98,6 +98,7 @@ pub(crate) fn page_response() -> Response {
 
 pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
     let mut rx = state.monitor.subscribe();
+    let mut activity = chaos_kern::activity::subscribe();
     let snapshot = render_snapshot(&state);
 
     let stream = stream_fn(async move |mut yielder| {
@@ -105,19 +106,26 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
         yielder.yield_item(log_line("monitor connected")).await;
 
         loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    yielder.yield_item(summary(&render_snapshot(&state))).await;
-                    yielder.yield_item(log_line(&render_event(&event))).await;
-                }
-                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                    yielder
-                        .yield_item(log_line(&format!(
-                            "monitor lagged; skipped {skipped} events"
-                        )))
-                        .await;
-                }
-                Err(broadcast::error::RecvError::Closed) => break,
+            tokio::select! {
+                event = rx.recv() => match event {
+                    Ok(event) => {
+                        yielder.yield_item(summary(&render_snapshot(&state))).await;
+                        yielder.yield_item(log_line(&render_event(&event))).await;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        yielder.yield_item(lagged(skipped)).await;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                },
+                event = activity.recv() => match event {
+                    Ok(event) => {
+                        yielder.yield_item(activity_line(&event)).await;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        yielder.yield_item(lagged(skipped)).await;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                },
             }
         }
     });
@@ -180,6 +188,14 @@ fn log_line(message: &str) -> Patch {
         .try_into_sse_event()?)
 }
 
+fn lagged(skipped: u64) -> Patch {
+    log_line(&format!("monitor lagged; skipped {skipped} events"))
+}
+
+fn activity_line(event: &chaos_kern::activity::ActivityEvent) -> Patch {
+    log_line(&serde_json::to_string(event)?)
+}
+
 fn escape_html(input: impl AsRef<str>) -> String {
     input
         .as_ref()
@@ -230,3 +246,6 @@ const MONITOR_HTML: &str = r#"<!doctype html>
 </body>
 </html>
 "#;
+
+#[cfg(test)]
+mod tests;

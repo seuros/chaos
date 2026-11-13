@@ -12,6 +12,7 @@
 extern crate chaos_arsenal;
 extern crate chaos_cron;
 
+pub mod activity;
 pub mod api_bridge;
 mod apply_patch;
 mod arc_monitor;

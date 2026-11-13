@@ -65,7 +65,13 @@ The guards restrict grants only. A grant needs an existing directory outside
 normalised path, so a grant on a directory that contains `CHAOS_HOME` (such as
 `~`) or on a directory that has since been deleted can still be revoked; a
 path that no longer resolves is revoked by its exact stored key, and only if a
-decision is stored there. The filesystem root is always refused.
+decision is stored there. The filesystem root is always refused, and held on
+apply.
+
+Revoking a directory also revokes every grant stored below it, in the same
+transaction, and the receipt lists each one: the configuration loader reads an
+exact-directory decision before its root's, so a grant left on a subdirectory
+would otherwise outlive the revocation.
 
 `revoke` stores `untrusted`; it does not delete the decision. A manifest
 exported before the revocation therefore finds a denial where it expects
@@ -82,7 +88,8 @@ installation identity; a home without one has nothing of its own to export.
 
 ## MANIFESTS AND MIGRATION
 
-`trust_export` returns `{manifest, digest}`. `trust_plan` and `trust_apply`
+`trust_export` returns `{manifest, digest}`, and refuses an installation with
+more than 10,000 decisions, the most a manifest can carry. `trust_plan` and `trust_apply`
 take the manifest exactly as reviewed and that digest.
 
 A manifest names one installation and lists decisions, denied ones included.
@@ -93,15 +100,16 @@ an entry applies only where nothing is stored or the stored decision already
 matches.
 
 A grant that fails the grant guards (its directory is missing, it is not its
-project's root, or it contains or sits inside `CHAOS_HOME`) is *held*: it is
+project's root, it contains or sits inside `CHAOS_HOME`, or `CHAOS_HOME` does
+not resolve) is *held*, and so is any entry for the filesystem root: it is
 not written, not compared and not rechecked, and the plan and the receipt list
 it under `held` with the reason. Every other entry is the committing set. That
 set is all or nothing: one conflict in it refuses the batch, and each of its
 entries, the ones that change nothing included, is checked again inside the
 committing transaction, so a receipt never reports one as it was reviewed if
 it moved before the commit. A receipt with held entries records a partial
-apply. `trust_apply` refuses a manifest with any held grant unless the call
-passes `allow_held: true`; a migration that must carry every grant should
+apply. `trust_apply` refuses a manifest with any held entry unless the call
+passes `allow_held: true`; a migration that must carry every decision should
 never pass it, and should run `trust_plan` before stopping the resident.
 Re-applying the same manifest is a no-op.
 

@@ -983,3 +983,110 @@ async fn postgres_trust_scenarios() -> anyhow::Result<()> {
     postgres_unchanged_entry_is_locked_against_concurrent_change().await?;
     postgres_onboarding_audits_the_decision_it_replaced().await
 }
+
+#[tokio::test]
+async fn stored_filesystem_root_is_held_not_fatal() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let project = tempfile::tempdir()?;
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: crate::user_settings::installation_id(home.path())?,
+        entries: vec![
+            ManifestEntry {
+                project_path: "/".to_string(),
+                decision: Decision::Untrusted,
+                expect: None,
+            },
+            ManifestEntry {
+                project_path: key(&project),
+                decision: Decision::Trusted,
+                expect: None,
+            },
+        ],
+    };
+    let json = serde_json::to_string(&manifest)?;
+    let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
+        .await?
+        .commit("test-operator")
+        .await?;
+    assert_eq!(receipt.held.len(), 1);
+    assert_eq!(receipt.held[0].project_path, "/");
+    assert_eq!(stored(home.path(), "/").await, Decision::None);
+    assert_eq!(stored(home.path(), &key(&project)).await, Decision::Trusted);
+    Ok(())
+}
+
+#[tokio::test]
+async fn export_refuses_what_apply_would_refuse() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let installation_id = crate::user_settings::installation_id(home.path())?;
+    let changes: Vec<_> = (0..=MAX_MANIFEST_ENTRIES)
+        .map(|i| ProjectTrustChange {
+            project_path: PathBuf::from(format!("/gone/{i}")),
+            expected: None,
+            desired: TrustLevel::Untrusted,
+        })
+        .collect();
+    crate::user_settings::open(home.path())
+        .await?
+        .apply_project_trust_changes(
+            &changes,
+            &ProjectTrustAudit {
+                installation_id,
+                actor: "test-operator".to_string(),
+                manifest_digest: None,
+            },
+        )
+        .await?;
+    assert!(export(home.path()).await.is_err());
+    Ok(())
+}
+
+#[test]
+fn grant_guard_fails_closed_when_home_does_not_resolve() {
+    let project = tempfile::tempdir().unwrap();
+    let home = project.path().join("missing-home");
+    assert!(grant_guard(&key(&project), &home).is_err());
+}
+
+#[tokio::test]
+async fn revoking_a_root_revokes_grants_stored_below_it() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let parent = tempfile::tempdir()?;
+    let sub = parent.path().join("sub");
+    std::fs::create_dir_all(&sub)?;
+    prepare_set(home.path(), &sub, Decision::Trusted, Decision::None)
+        .await?
+        .commit("test-operator")
+        .await?;
+    prepare_set(
+        home.path(),
+        parent.path(),
+        Decision::Trusted,
+        Decision::None,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    let sub_key = normalize_project_path(&sub)?.to_string_lossy().to_string();
+    let root_key = key(&parent);
+
+    let receipt = prepare_set(
+        home.path(),
+        parent.path(),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    let revoked: Vec<_> = receipt
+        .changes
+        .iter()
+        .map(|c| c.project_path.as_str())
+        .collect();
+    assert_eq!(revoked, vec![root_key.as_str(), sub_key.as_str()]);
+    assert_eq!(stored(home.path(), &root_key).await, Decision::Untrusted);
+    assert_eq!(stored(home.path(), &sub_key).await, Decision::Untrusted);
+    Ok(())
+}

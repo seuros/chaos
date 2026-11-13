@@ -263,3 +263,25 @@ fn parse_shell_lc_single_command_prefix_rejects_heredoc_command_with_word_expans
     ];
     assert_eq!(parse_shell_lc_single_command_prefix(&command), None);
 }
+
+#[test]
+fn every_command_words_reaches_into_substitutions_and_redirections() {
+    let words = every_command_words(
+        "cd /repo && FOO=1 cargo test 2>&1 | tail -n 5; echo \"$(curl -s https://x)\" `gh pr list`",
+    );
+    assert_eq!(
+        words,
+        vec![
+            vec!["cd", "/repo"],
+            vec!["cargo", "test"],
+            vec!["tail", "-n", "5"],
+            vec!["echo"],
+            vec!["curl", "-s", "https://x"],
+            vec!["gh", "pr", "list"],
+        ]
+        .into_iter()
+        .map(|cmd| cmd.into_iter().map(str::to_string).collect::<Vec<_>>())
+        .collect::<Vec<_>>()
+    );
+    assert!(every_command_words("$CMD --flag").is_empty());
+}

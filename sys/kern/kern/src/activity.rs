@@ -6,17 +6,17 @@
 //! prompts, arguments, command lines past the program name, output or file
 //! contents. Publishing costs nothing while nobody subscribes.
 
-use std::path::Path;
 use std::sync::LazyLock;
 
 use chaos_ipc::ProcessId;
-use chaos_ipc::parse_command::ParsedCommand;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandStatus;
 use chaos_ipc::protocol::HookRunStatus;
 use chaos_ipc::protocol::PatchApplyStatus;
 use serde::Serialize;
 use tokio::sync::broadcast;
+
+mod command;
 
 const CAPACITY: usize = 1024;
 
@@ -33,13 +33,31 @@ pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
     if BUS.receiver_count() == 0 {
         return;
     }
-    if let Some(activity) = Activity::from_event(msg) {
-        let _ = BUS.send(ActivityEvent {
-            process_id,
-            at_ms: jiff::Timestamp::now().as_millisecond(),
-            activity,
-        });
+    for activity in Activity::from_event(msg) {
+        send(process_id, activity);
     }
+}
+
+/// A `needs_you` ask was answered. An ask whose turn ends unanswered is
+/// closed by that `turn_ended`, not by this.
+pub(crate) fn resolved(process_id: ProcessId, ask_id: String) {
+    if BUS.receiver_count() > 0 {
+        send(process_id, Activity::Resolved { ask_id });
+    }
+}
+
+/// The ask id of an MCP server's elicitation, as `needs_you` reports it.
+pub(crate) fn elicitation_ask_id(server_name: &str, id: &chaos_ipc::mcp::RequestId) -> String {
+    let id = serde_json::to_string(id).unwrap_or_default();
+    format!("{server_name}/{id}")
+}
+
+fn send(process_id: ProcessId, activity: Activity) {
+    let _ = BUS.send(ActivityEvent {
+        process_id,
+        at_ms: jiff::Timestamp::now().as_millisecond(),
+        activity,
+    });
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,15 +91,33 @@ pub enum Activity {
         used_tokens: i64,
         window: Option<i64>,
     },
+    Compacted,
+    Limits {
+        windows: Vec<LimitWindow>,
+    },
     NeedsYou {
+        ask_id: String,
         reason: Attention,
+    },
+    Resolved {
+        ask_id: String,
     },
     AgentSpawned {
         child: ProcessId,
         nickname: Option<String>,
         role: Option<String>,
     },
+    AgentEnded {
+        child: ProcessId,
+    },
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LimitWindow {
+    pub used_percent: u8,
+    pub window_minutes: Option<i64>,
+    pub resets_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -122,8 +158,8 @@ pub enum Attention {
 }
 
 impl Activity {
-    fn from_event(msg: &EventMsg) -> Option<Self> {
-        Some(match msg {
+    fn from_event(msg: &EventMsg) -> Vec<Self> {
+        let activity = match msg {
             EventMsg::TurnStarted(_) => Self::TurnStarted,
             EventMsg::TurnComplete(_) => Self::TurnEnded {
                 outcome: TurnOutcome::Completed,
@@ -132,7 +168,7 @@ impl Activity {
                 outcome: TurnOutcome::Aborted,
             },
             EventMsg::ExecCommandBegin(ev) => {
-                let (station, label) = command(&ev.command, &ev.parsed_cmd);
+                let (station, label) = command::classify(&ev.command);
                 Self::CallStarted {
                     call_id: ev.call_id.clone(),
                     station,
@@ -140,7 +176,7 @@ impl Activity {
                 }
             }
             EventMsg::ExecCommandEnd(ev) => {
-                let (station, label) = command(&ev.command, &ev.parsed_cmd);
+                let (station, label) = command::classify(&ev.command);
                 Self::CallEnded {
                     call_id: ev.call_id.clone(),
                     station,
@@ -212,104 +248,44 @@ impl Activity {
                 },
                 duration_ms: ev.run.duration_ms.and_then(|ms| u64::try_from(ms).ok()),
             },
-            EventMsg::TokenCount(ev) => {
-                let info = ev.info.as_ref()?;
-                Self::Context {
-                    used_tokens: info.last_token_usage.tokens_in_context_window(),
-                    window: info.model_context_window,
-                }
-            }
-            EventMsg::ExecApprovalRequest(_) => Self::NeedsYou {
+            EventMsg::TokenCount(ev) => return token_count(ev),
+            EventMsg::ContextCompacted(_) => Self::Compacted,
+            EventMsg::ExecApprovalRequest(ev) => Self::NeedsYou {
+                ask_id: ev.approval_id.clone().unwrap_or_else(|| ev.call_id.clone()),
                 reason: Attention::CommandApproval,
             },
-            EventMsg::ApplyPatchApprovalRequest(_) => Self::NeedsYou {
+            EventMsg::ApplyPatchApprovalRequest(ev) => Self::NeedsYou {
+                ask_id: ev.call_id.clone(),
                 reason: Attention::PatchApproval,
             },
-            EventMsg::RequestPermissions(_) => Self::NeedsYou {
+            EventMsg::RequestPermissions(ev) => Self::NeedsYou {
+                ask_id: ev.call_id.clone(),
                 reason: Attention::Permissions,
             },
-            EventMsg::RequestUserInput(_) => Self::NeedsYou {
+            EventMsg::RequestUserInput(ev) => Self::NeedsYou {
+                ask_id: ev.call_id.clone(),
                 reason: Attention::UserInput,
             },
-            EventMsg::ElicitationRequest(_) => Self::NeedsYou {
+            EventMsg::ElicitationRequest(ev) => Self::NeedsYou {
+                ask_id: elicitation_ask_id(&ev.server_name, &ev.id),
                 reason: Attention::Elicitation,
             },
-            EventMsg::CollabAgentSpawnEnd(ev) => Self::AgentSpawned {
-                child: ev.new_process_id?,
-                nickname: ev.new_agent_nickname.clone(),
-                role: ev.new_agent_role.clone(),
+            EventMsg::CollabAgentSpawnEnd(ev) => match ev.new_process_id {
+                Some(child) => Self::AgentSpawned {
+                    child,
+                    nickname: ev.new_agent_nickname.clone(),
+                    role: ev.new_agent_role.clone(),
+                },
+                None => return Vec::new(),
+            },
+            EventMsg::CollabCloseEnd(ev) => Self::AgentEnded {
+                child: ev.receiver_process_id,
             },
             EventMsg::Error(_) => Self::Failed,
-            _ => return None,
-        })
+            _ => return Vec::new(),
+        };
+        vec![activity]
     }
-}
-
-const SHELLS: &[&str] = &["sh", "bash", "zsh", "dash", "fish"];
-const NETWORK: &[&str] = &[
-    "curl", "wget", "gh", "ssh", "scp", "sftp", "rsync", "nc", "http", "xh",
-];
-const GIT_NETWORK: &[&str] = &["push", "pull", "fetch", "clone", "ls-remote"];
-
-/// The station and the program name; nothing past it.
-fn command(argv: &[String], parsed: &[ParsedCommand]) -> (Station, String) {
-    let words = run_words(argv, parsed);
-    let program = words
-        .first()
-        .map(|word| program_name(word))
-        .unwrap_or("command");
-    let files_only = !parsed.is_empty()
-        && parsed
-            .iter()
-            .all(|cmd| !matches!(cmd, ParsedCommand::Unknown { .. }));
-    let station = if files_only {
-        Station::Files
-    } else if NETWORK.contains(&program)
-        || (program == "git"
-            && words
-                .get(1)
-                .is_some_and(|sub| GIT_NETWORK.contains(&sub.as_str())))
-    {
-        Station::Network
-    } else {
-        Station::Shell
-    };
-    (station, program.to_string())
-}
-
-/// The words of the command actually run: a `sh -c` wrapper is looked
-/// through to the first command of its script.
-fn run_words(argv: &[String], parsed: &[ParsedCommand]) -> Vec<String> {
-    let wrapped = argv
-        .first()
-        .is_some_and(|first| SHELLS.contains(&program_name(first)))
-        && argv
-            .iter()
-            .any(|arg| arg.starts_with('-') && arg.contains('c'));
-    if !wrapped {
-        return argv.iter().take(2).cloned().collect();
-    }
-    let script = match parsed.first() {
-        Some(
-            ParsedCommand::Read { cmd, .. }
-            | ParsedCommand::ListFiles { cmd, .. }
-            | ParsedCommand::Search { cmd, .. }
-            | ParsedCommand::Unknown { cmd },
-        ) => cmd.as_str(),
-        None => argv.last().map_or("", String::as_str),
-    };
-    script
-        .split_whitespace()
-        .take(2)
-        .map(str::to_string)
-        .collect()
-}
-
-fn program_name(word: &str) -> &str {
-    Path::new(word)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(word)
 }
 
 fn mcp_label(server: Option<&str>, tool: &str) -> String {
@@ -331,6 +307,31 @@ fn hook_label(event: chaos_ipc::protocol::HookEventName) -> String {
         .ok()
         .and_then(|value| value.as_str().map(str::to_string))
         .unwrap_or_else(|| "hook".to_string())
+}
+
+fn token_count(ev: &chaos_ipc::protocol::TokenCountEvent) -> Vec<Activity> {
+    let mut activity = Vec::new();
+    if let Some(info) = &ev.info {
+        activity.push(Activity::Context {
+            used_tokens: info.last_token_usage.tokens_in_context_window(),
+            window: info.model_context_window,
+        });
+    }
+    if let Some(limits) = &ev.rate_limits {
+        let windows: Vec<LimitWindow> = [&limits.primary, &limits.secondary]
+            .into_iter()
+            .flatten()
+            .map(|window| LimitWindow {
+                used_percent: window.used_percent.clamp(0.0, 100.0).round() as u8,
+                window_minutes: window.window_minutes,
+                resets_at: window.resets_at,
+            })
+            .collect();
+        if !windows.is_empty() {
+            activity.push(Activity::Limits { windows });
+        }
+    }
+    activity
 }
 
 fn millis(duration: std::time::Duration) -> u64 {

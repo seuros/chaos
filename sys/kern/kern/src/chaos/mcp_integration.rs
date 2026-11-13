@@ -464,6 +464,7 @@ impl Session {
                 None => chaos_ipc::mcp::RequestId::String(value.to_string()),
             },
         };
+        let ask_id = crate::activity::elicitation_ask_id(&server_name, &id);
         let event = EventMsg::ElicitationRequest(ElicitationRequestEvent {
             turn_id: params.turn_id,
             server_name,
@@ -471,7 +472,9 @@ impl Session {
             request,
         });
         self.send_event(turn_context, event).await;
-        rx_response.await.ok()
+        let response = rx_response.await.ok();
+        crate::activity::resolved(self.conversation_id, ask_id);
+        response
     }
 
     pub async fn resolve_elicitation(

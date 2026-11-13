@@ -147,7 +147,15 @@ impl Session {
                         Instant::now(),
                         SystemTime::now(),
                     );
-                    previous != state.machine_recovery.phase()
+                    let phase = state.machine_recovery.phase();
+                    if previous != phase {
+                        crate::activity::machine(
+                            self.conversation_id,
+                            phase,
+                            state.machine_recovery.causes(),
+                        );
+                    }
+                    previous != phase
                 };
                 if changed {
                     self.send_event_raw(Event {
@@ -246,6 +254,9 @@ impl Session {
                 Phase::Warning => "Machine warning active. Recovery pending.",
                 Phase::Healthy => "Machine monitoring active.",
             });
+            if notice.is_some() {
+                crate::activity::machine(self.conversation_id, recovery.phase(), recovery.causes());
+            }
             let wake = recovery
                 .parked()
                 .then(|| recovery.wait_id().map(str::to_owned))

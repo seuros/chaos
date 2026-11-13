@@ -56,13 +56,13 @@ impl Activity {
             EventMsg::McpToolCallBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
-                station: Station::Mcp,
+                station: mcp_station(&ev.invocation),
                 label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
             },
             EventMsg::McpToolCallEnd(ev) => Self::CallEnded {
                 check: None,
                 call_id: ev.call_id.clone(),
-                station: Station::Mcp,
+                station: mcp_station(&ev.invocation),
                 label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
                 outcome: match &ev.result {
                     Ok(result) if result.is_error != Some(true) => CallOutcome::Ok,
@@ -157,6 +157,13 @@ impl Activity {
             _ => return Vec::new(),
         };
         vec![activity]
+    }
+}
+
+fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Station {
+    match invocation.server {
+        Some(_) => Station::Mcp,
+        None => Station::Kernel,
     }
 }
 

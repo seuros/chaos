@@ -6,7 +6,9 @@
 //! prompts, arguments, command lines past the program name, output or file
 //! contents. Publishing costs nothing while nobody subscribes.
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
+use std::sync::Mutex;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::EventMsg;
@@ -24,6 +26,16 @@ const CAPACITY: usize = 1024;
 static BUS: LazyLock<broadcast::Sender<ActivityEvent>> =
     LazyLock::new(|| broadcast::channel(CAPACITY).0);
 
+/// The last `context` and `limits` each turn reported, so a token count that
+/// changes neither stays off the bus. Forgotten when the turn ends.
+static LAST: LazyLock<Mutex<HashMap<ProcessId, Gauges>>> = LazyLock::new(Default::default);
+
+#[derive(Default)]
+struct Gauges {
+    context: Option<Activity>,
+    limits: Option<Activity>,
+}
+
 /// Every session's activity from now on. A slow subscriber lags rather than
 /// slowing a session.
 pub fn subscribe() -> broadcast::Receiver<ActivityEvent> {
@@ -35,7 +47,46 @@ pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
         return;
     }
     for activity in Activity::from_event(msg) {
-        send(process_id, activity);
+        if changed(process_id, &activity) {
+            send(process_id, activity);
+        }
+    }
+}
+
+fn changed(process_id: ProcessId, activity: &Activity) -> bool {
+    let Ok(mut last) = LAST.lock() else {
+        return true;
+    };
+    let slot = match activity {
+        Activity::Context { .. } => &mut last.entry(process_id).or_default().context,
+        Activity::Limits { .. } => &mut last.entry(process_id).or_default().limits,
+        Activity::TurnEnded { .. } => {
+            last.remove(&process_id);
+            return true;
+        }
+        _ => return true,
+    };
+    if slot.as_ref() == Some(activity) {
+        return false;
+    }
+    *slot = Some(activity.clone());
+    true
+}
+
+/// The machine's recovery phase changed for this session.
+pub(crate) fn machine(
+    process_id: ProcessId,
+    phase: crate::machine_recovery::Phase,
+    causes: Vec<&'static str>,
+) {
+    if BUS.receiver_count() > 0 {
+        send(
+            process_id,
+            Activity::Machine {
+                phase: phase.into(),
+                causes: causes.into_iter().filter_map(MachineCause::named).collect(),
+            },
+        );
     }
 }
 
@@ -188,7 +239,57 @@ pub enum Activity {
     AgentEnded {
         child: ProcessId,
     },
+    /// The host's health as this session's recovery sees it; agents pause
+    /// while it is anything but healthy or recovered.
+    Machine {
+        phase: MachinePhase,
+        causes: Vec<MachineCause>,
+    },
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MachinePhase {
+    Healthy,
+    Warning,
+    Stabilizing,
+    Recovered,
+    Unavailable,
+    Blocked,
+}
+
+impl From<crate::machine_recovery::Phase> for MachinePhase {
+    fn from(phase: crate::machine_recovery::Phase) -> Self {
+        use crate::machine_recovery::Phase;
+        match phase {
+            Phase::Healthy => Self::Healthy,
+            Phase::Warning => Self::Warning,
+            Phase::Stabilizing => Self::Stabilizing,
+            Phase::Recovered => Self::Recovered,
+            Phase::Unavailable => Self::Unavailable,
+            Phase::Blocked => Self::Blocked,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MachineCause {
+    Power,
+    Thermal,
+    Disk,
+}
+
+impl MachineCause {
+    fn named(cause: &str) -> Option<Self> {
+        match cause {
+            "power" => Some(Self::Power),
+            "thermal" => Some(Self::Thermal),
+            "disk" => Some(Self::Disk),
+            _ => None,
+        }
+    }
 }
 
 /// A check that ran: its kind and, when the runner printed them, its counts.
@@ -230,6 +331,8 @@ pub struct LimitWindow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Station {
+    /// Chaos's own tools: checkpoints, recovery, tool loading.
+    Kernel,
     Shell,
     Files,
     Network,

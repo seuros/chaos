@@ -223,3 +223,129 @@ fn a_piped_test_run_reports_failures_its_exit_status_hid() {
         "{json}"
     );
 }
+
+#[test]
+fn chaos_tools_are_kernel_work_and_server_tools_are_mcp() {
+    let call = |server: Option<&str>| {
+        EventMsg::McpToolCallBegin(chaos_ipc::protocol::McpToolCallBeginEvent {
+            call_id: "call-3".to_string(),
+            invocation: chaos_ipc::protocol::McpInvocation {
+                server: server.map(str::to_string),
+                tool: "save_recovery_checkpoint".to_string(),
+                arguments: None,
+            },
+        })
+    };
+    let station = |msg: &EventMsg| match Activity::from_event(msg).as_slice() {
+        [Activity::CallStarted { station, .. }] => *station,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(station(&call(None)), Station::Kernel);
+    assert_eq!(station(&call(Some("docs"))), Station::Mcp);
+}
+
+fn token_count(used: i64, percent: f64) -> EventMsg {
+    let usage = chaos_ipc::protocol::TokenUsage {
+        total_tokens: used,
+        ..Default::default()
+    };
+    EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+        info: Some(chaos_ipc::protocol::TokenUsageInfo {
+            total_token_usage: usage.clone(),
+            last_token_usage: usage,
+            model_context_window: Some(1000),
+        }),
+        rate_limits: Some(chaos_ipc::protocol::RateLimitSnapshot {
+            primary: Some(chaos_ipc::protocol::RateLimitWindow {
+                used_percent: percent,
+                window_minutes: Some(60),
+                resets_at: None,
+            }),
+            limit_id: None,
+            limit_name: None,
+            secondary: None,
+            credits: None,
+            plan_type: None,
+        }),
+        provider_request_started: false,
+    })
+}
+
+async fn ours(
+    rx: &mut broadcast::Receiver<ActivityEvent>,
+    process_id: ProcessId,
+    n: usize,
+) -> Vec<Activity> {
+    let collect = async {
+        let mut seen = Vec::new();
+        while seen.len() < n {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == process_id {
+                seen.push(event.activity);
+            }
+        }
+        seen
+    };
+    tokio::time::timeout(Duration::from_secs(5), collect)
+        .await
+        .expect("activity never reached the bus")
+}
+
+#[tokio::test]
+async fn gauges_reach_the_bus_only_when_they_change() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    publish(process_id, &token_count(10, 5.0));
+    publish(process_id, &token_count(10, 5.0));
+    publish(process_id, &token_count(20, 5.0));
+    publish(
+        process_id,
+        &EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
+            turn_id: "turn-1".to_string(),
+            last_agent_message: None,
+        }),
+    );
+    publish(process_id, &token_count(20, 5.0));
+    let context = |used_tokens| Activity::Context {
+        used_tokens,
+        window: Some(1000),
+    };
+    let limits = Activity::Limits {
+        windows: vec![LimitWindow {
+            used_percent: 5,
+            window_minutes: Some(60),
+            resets_at: None,
+        }],
+    };
+    assert_eq!(
+        ours(&mut rx, process_id, 6).await,
+        vec![
+            context(10),
+            limits.clone(),
+            context(20),
+            Activity::TurnEnded {
+                outcome: TurnOutcome::Completed,
+            },
+            context(20),
+            limits,
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_machine_phase_names_its_causes() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    machine(
+        process_id,
+        crate::machine_recovery::Phase::Warning,
+        vec!["disk", "thermal"],
+    );
+    assert_eq!(
+        ours(&mut rx, process_id, 1).await,
+        vec![Activity::Machine {
+            phase: MachinePhase::Warning,
+            causes: vec![MachineCause::Disk, MachineCause::Thermal],
+        }]
+    );
+}

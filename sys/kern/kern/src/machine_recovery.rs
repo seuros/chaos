@@ -86,6 +86,20 @@ impl Recovery {
         self.wait.park(turn)
     }
 
+    /// What the outstanding warnings are about, in a fixed vocabulary.
+    pub fn causes(&self) -> Vec<&'static str> {
+        let mut causes: Vec<_> = self
+            .observation
+            .data()
+            .outstanding
+            .iter()
+            .map(cause)
+            .collect();
+        causes.sort_unstable();
+        causes.dedup();
+        causes
+    }
+
     pub fn unresolved(&self) -> bool {
         !self.observation.data().outstanding.is_empty() && self.phase() != Phase::Recovered
     }

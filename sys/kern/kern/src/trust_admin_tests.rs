@@ -985,16 +985,14 @@ async fn postgres_trust_scenarios() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-async fn stored_filesystem_root_is_held_not_fatal() -> anyhow::Result<()> {
+async fn filesystem_root_grants_are_held_and_denials_carried() -> anyhow::Result<()> {
     let home = sqlite_home().await;
     let project = tempfile::tempdir()?;
-    let manifest = Manifest {
-        format: MANIFEST_FORMAT.to_string(),
-        installation_id: crate::user_settings::installation_id(home.path())?,
-        entries: vec![
+    let entries = |decision| {
+        vec![
             ManifestEntry {
                 project_path: "/".to_string(),
-                decision: Decision::Untrusted,
+                decision,
                 expect: None,
             },
             ManifestEntry {
@@ -1002,7 +1000,13 @@ async fn stored_filesystem_root_is_held_not_fatal() -> anyhow::Result<()> {
                 decision: Decision::Trusted,
                 expect: None,
             },
-        ],
+        ]
+    };
+    let installation_id = crate::user_settings::installation_id(home.path())?;
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id: installation_id.clone(),
+        entries: entries(Decision::Trusted),
     };
     let json = serde_json::to_string(&manifest)?;
     let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
@@ -1012,6 +1016,85 @@ async fn stored_filesystem_root_is_held_not_fatal() -> anyhow::Result<()> {
     assert_eq!(receipt.held.len(), 1);
     assert_eq!(receipt.held[0].project_path, "/");
     assert_eq!(stored(home.path(), "/").await, Decision::None);
+    assert_eq!(stored(home.path(), &key(&project)).await, Decision::Trusted);
+
+    let manifest = Manifest {
+        format: MANIFEST_FORMAT.to_string(),
+        installation_id,
+        entries: entries(Decision::Untrusted),
+    };
+    let json = serde_json::to_string(&manifest)?;
+    let receipt = prepare_apply(home.path(), &json, &manifest.digest()?)
+        .await?
+        .commit("test-operator")
+        .await?;
+    assert!(receipt.held.is_empty());
+    assert_eq!(stored(home.path(), "/").await, Decision::Untrusted);
+    assert_eq!(stored(home.path(), &key(&project)).await, Decision::Trusted);
+    Ok(())
+}
+
+/// A root grant stored by onboarding is revocable in place and the revocation
+/// does not sweep every grant on the machine.
+#[tokio::test]
+async fn stored_filesystem_root_grant_is_revocable() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let project = tempfile::tempdir()?;
+    assert!(
+        prepare_set(
+            home.path(),
+            Path::new("/"),
+            Decision::Untrusted,
+            Decision::None
+        )
+        .await
+        .is_err()
+    );
+    prepare_set(
+        home.path(),
+        project.path(),
+        Decision::Trusted,
+        Decision::None,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    crate::user_settings::open(home.path())
+        .await?
+        .apply_project_trust_changes(
+            &[ProjectTrustChange {
+                project_path: PathBuf::from("/"),
+                expected: None,
+                desired: TrustLevel::Trusted,
+            }],
+            &ProjectTrustAudit {
+                installation_id: crate::user_settings::installation_id(home.path())?,
+                actor: "onboarding".to_string(),
+                manifest_digest: None,
+            },
+        )
+        .await?;
+    assert!(
+        prepare_set(
+            home.path(),
+            Path::new("/"),
+            Decision::Trusted,
+            Decision::Trusted
+        )
+        .await
+        .is_err()
+    );
+    let receipt = prepare_set(
+        home.path(),
+        Path::new("/"),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    assert_eq!(receipt.changes.len(), 1);
+    assert_eq!(stored(home.path(), "/").await, Decision::Untrusted);
     assert_eq!(stored(home.path(), &key(&project)).await, Decision::Trusted);
     Ok(())
 }

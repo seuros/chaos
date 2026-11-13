@@ -65,10 +65,10 @@ The guards restrict grants only. A grant needs an existing directory outside
 normalised path, so a grant on a directory that contains `CHAOS_HOME` (such as
 `~`) or on a directory that has since been deleted can still be revoked; a
 path that no longer resolves is revoked by its exact stored key, and only if a
-decision is stored there. The filesystem root is always refused, and held on
-apply.
+decision is stored there. A grant on the filesystem root is always refused;
+a decision stored there can be revoked, and only on that exact key.
 
-Revoking a directory also revokes every grant stored below it, in the same
+Revoking any other directory also revokes every grant stored below it, in the same
 transaction, and the receipt lists each one: the configuration loader reads an
 exact-directory decision before its root's, so a grant left on a subdirectory
 would otherwise outlive the revocation.
@@ -101,7 +101,7 @@ matches.
 
 A grant that fails the grant guards (its directory is missing, it is not its
 project's root, it contains or sits inside `CHAOS_HOME`, or `CHAOS_HOME` does
-not resolve) is *held*, and so is any entry for the filesystem root: it is
+not resolve, or it is the filesystem root) is *held*: it is
 not written, not compared and not rechecked, and the plan and the receipt list
 it under `held` with the reason. Every other entry is the committing set. That
 set is all or nothing: one conflict in it refuses the batch, and each of its

@@ -1,0 +1,8 @@
+.station-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--space-2); }
+.station { position: relative; display: grid; gap: 2px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-top: 3px solid var(--station-color); border-radius: 8px; background: var(--surface-2); opacity: .7; transition: opacity .3s ease; }
+.station[data-active="true"] { opacity: 1; box-shadow: 0 0 0 1px var(--station-color) inset; }
+.station[data-active="true"]::after { content: ""; position: absolute; top: var(--space-2); right: var(--space-2); width: .5em; height: .5em; border-radius: 50%; background: var(--station-color); animation: pulse 1.2s ease-in-out infinite; }
+.station-name { color: var(--station-color); font-weight: 600; }
+.station-active { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.station-tally { color: var(--muted); font-size: .8em; }
+.station-tally em { color: var(--bad); font-style: normal; }

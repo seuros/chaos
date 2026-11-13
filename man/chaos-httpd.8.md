@@ -137,9 +137,17 @@ requires the same `Authorization: Bearer <token>` header as triggers; URL tokens
 and cookies are not accepted. The page does not persist the token in browser
 storage or send it in query parameters. Reload the page to disconnect.
 
-The authenticated SSE stream includes process/conversation IDs and diagnostic
-details. Neither the page nor live responses may be cached. Treat the token as
-a full-access credential: it also permits triggering agent runs.
+Once connected, the page shows the resident: its sessions and what each is
+doing, the stations their tool calls run on (kernel, shell, files, network,
+MCP, web, edit, hooks), check results with their counts, context and token
+use, questions waiting on you, rate limits, and whether a machine warning is
+pausing agents. It shows what happened since serve started, not history from
+the journal, and never prompts, arguments, output or file contents.
+
+The authenticated SSE stream includes process IDs. Neither the page nor live
+responses may be cached; `/monitor/app.css` is the same for every resident of
+a build and is cached by its version. Treat the token as a full-access
+credential: it also permits triggering agent runs.
 
 ### Experimental retained sessions (`--sessions`)
 

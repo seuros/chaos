@@ -40,6 +40,8 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     for (method, path, bearer, expected) in [
         ("GET", "/api/health", None, StatusCode::OK),
         ("GET", "/monitor", None, StatusCode::OK),
+        ("GET", "/monitor/app.css", None, StatusCode::OK),
+        ("POST", "/monitor/app.css", None, StatusCode::METHOD_NOT_ALLOWED),
         ("GET", "/monitor/events", None, StatusCode::UNAUTHORIZED),
         (
             "GET",
@@ -90,7 +92,7 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
                 "{frame}"
             );
             assert!(
-                frame.contains("data: elements <section id=\"monitor-summary\">"),
+                frame.contains("data: elements <main id=\"dashboard\""),
                 "{frame}"
             );
         }

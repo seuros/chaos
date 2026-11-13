@@ -1,0 +1,112 @@
+use super::*;
+use crate::monitor::board::Board;
+use crate::monitor::widgets::{Dashboard, Feed, Limits, Machine, Sessions, Stations, Summary};
+use chaos_ipc::ProcessId;
+use chaos_kern::activity::{Activity, ActivityEvent, Station};
+
+fn busy_board() -> (Board, ProcessId) {
+    let mut board = Board::default();
+    let id = ProcessId::new();
+    for activity in [
+        Activity::TurnStarted,
+        Activity::ModelStarted {
+            request: 1,
+            model: "model-a".into(),
+        },
+        Activity::CallStarted {
+            call_id: "call-1".into(),
+            station: Station::Network,
+            label: "<curl>".into(),
+            check: None,
+        },
+    ] {
+        board.apply(&ActivityEvent {
+            process_id: id,
+            at_ms: 1,
+            activity,
+        });
+    }
+    (board, id)
+}
+
+fn summary() -> Summary {
+    Summary {
+        connected: true,
+        version: "47.0.0",
+        uptime: "5s".into(),
+        triggers: 1,
+        max_triggers: 4,
+        sessions: 1,
+        working: 1,
+        waiting: 0,
+    }
+}
+
+#[test]
+fn every_template_parses() {
+    for (name, _) in TEMPLATES {
+        ENV.get_template(name)
+            .unwrap_or_else(|error| panic!("{name}: {error:#}"));
+    }
+}
+
+#[test]
+fn the_dashboard_composes_every_widget_under_its_id() {
+    let (board, id) = busy_board();
+    let html = Dashboard {
+        summary: summary(),
+        machine: Machine::from(&board),
+        limits: Limits::from(&board),
+        stations: Stations::from(&board),
+        sessions: Sessions::from(&board),
+        feed: Feed::from(&board),
+    }
+    .render()
+    .unwrap();
+    for anchor in [
+        r#"id="dashboard""#,
+        r#"id="w-summary""#,
+        r#"id="w-machine""#,
+        r#"id="w-limits""#,
+        r#"id="w-stations""#,
+        r#"id="w-sessions""#,
+        r#"id="w-feed""#,
+        &format!(r#"id="s-{id}""#),
+    ] {
+        assert!(html.contains(anchor), "{anchor} missing:\n{html}");
+    }
+    assert!(html.contains(r#"data-state="working""#), "{html}");
+    assert!(html.contains(r#"data-station="network""#), "{html}");
+    assert!(
+        html.contains(r#"data-station="network" data-active="true""#),
+        "the call in flight lights its station:\n{html}"
+    );
+    assert!(html.contains("no warnings"), "{html}");
+}
+
+#[test]
+fn labels_are_escaped() {
+    let (board, _) = busy_board();
+    let html = Sessions::from(&board).render().unwrap();
+    assert!(html.contains("&lt;curl&gt;"), "{html}");
+    assert!(!html.contains("<curl>"), "{html}");
+}
+
+#[test]
+fn the_page_links_the_stylesheet_of_this_build() {
+    let html = page().unwrap();
+    assert!(
+        html.contains(&format!("/monitor/app.css?v={}", STYLESHEET.version)),
+        "{html}"
+    );
+    assert!(html.contains(r#"id="dashboard""#), "{html}");
+}
+
+#[test]
+fn the_stylesheet_carries_tokens_before_widgets() {
+    let css = &STYLESHEET.css;
+    let tokens = css.find("--station-kernel").unwrap();
+    let session = css.find(".session-grid").unwrap();
+    assert!(tokens < session);
+    assert_eq!(STYLESHEET.version.len(), 12);
+}

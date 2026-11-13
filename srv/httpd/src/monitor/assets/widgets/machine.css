@@ -1,0 +1,2 @@
+.machine p { margin: 0 0 var(--space-2); }
+.machine[data-pausing="true"] { border-color: var(--bad); }

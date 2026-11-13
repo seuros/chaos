@@ -31,6 +31,7 @@ dedup-machines = { workspace = true }
 hmac = { workspace = true }
 jiff = { workspace = true }
 lease-machines = { workspace = true }
+minijinja = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 toml = { workspace = true }

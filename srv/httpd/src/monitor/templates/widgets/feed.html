@@ -1,0 +1,8 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-feed" class="widget feed">
+  <h2 class="widget-title">Activity</h2>
+  <ol id="w-feed-list" class="feed-list" reversed>
+    {% for entry in feed.entries %}{% include "widgets/entry.html" %}{% endfor %}
+  </ol>
+  {% if not feed.entries %}{{ ui.empty("Nothing has happened yet.") }}{% endif %}
+</section>

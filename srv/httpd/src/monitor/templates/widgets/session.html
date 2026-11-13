@@ -1,0 +1,29 @@
+{% import "partials/ui.html" as ui %}
+<article id="s-{{ session.id }}" class="session" data-state="{{ session.state }}">
+  <header class="session-head">
+    <span class="session-id" title="{{ session.id }}">…{{ session.short }}</span>
+    {{ ui.badge(session.state, session.tone) }}
+    {% if session.model %}<span class="session-model" data-thinking="{{ session.thinking | flag }}">{{ session.model }}</span>{% endif %}
+  </header>
+  {% if session.context_percent is not none %}{{ ui.meter("context", session.context_percent) }}{% endif %}
+  {% if session.asks %}
+  <p class="session-asks">Needs you: {{ session.asks | join(", ") }}</p>
+  {% endif %}
+  {% if session.calls %}
+  <div class="session-calls">
+    {% for call in session.calls %}{{ ui.chip(call.station, call.label, call.check) }}{% endfor %}
+  </div>
+  {% endif %}
+  {% if session.check %}
+  <p class="session-check" data-ok="{{ session.check.ok | flag }}">
+    last {{ session.check.kind }}
+    {% if session.check.passed is not none %}· {{ session.check.passed }} passed · {{ session.check.failed }} failed{% if session.check.skipped %} · {{ session.check.skipped }} skipped{% endif %}{% endif %}
+  </p>
+  {% endif %}
+  <footer class="session-foot">
+    <span>{{ session.turns }} turn{{ "" if session.turns == 1 else "s" }}</span>
+    <span>in {{ session.tokens_in }}{% if session.cache_percent is not none %} ({{ session.cache_percent }}% cached){% endif %}</span>
+    <span>out {{ session.tokens_out }}</span>
+    {% if session.agents %}<span>{{ session.agents }} agent{{ "" if session.agents == 1 else "s" }}</span>{% endif %}
+  </footer>
+</article>

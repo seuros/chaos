@@ -1,0 +1,11 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-summary" class="widget summary">
+  <h2 class="widget-title">Resident {{ ui.badge("online", "good") }}</h2>
+  <div class="stats">
+    {{ ui.stat("sessions", summary.sessions) }}
+    {{ ui.stat("working", summary.working) }}
+    {{ ui.stat("waiting on you", summary.waiting) }}
+    {{ ui.stat("triggers", summary.triggers ~ "/" ~ summary.max_triggers) }}
+  </div>
+  <p class="widget-foot">v{{ summary.version }} · up {{ summary.uptime }}</p>
+</section>

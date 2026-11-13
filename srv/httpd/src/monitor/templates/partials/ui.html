@@ -1,0 +1,27 @@
+{% macro badge(text, tone) -%}
+<span class="badge" data-tone="{{ tone }}">{{ text }}</span>
+{%- endmacro %}
+
+{% macro meter(label, percent) -%}
+<div class="meter" data-level="{{ 'high' if percent >= 85 else 'mid' if percent >= 60 else 'low' }}">
+  <span class="meter-label">{{ label }}</span>
+  <span class="meter-track"><span class="meter-fill" style="width: {{ percent }}%"></span></span>
+  <span class="meter-value">{{ percent }}%</span>
+</div>
+{%- endmacro %}
+
+{% macro chip(station, label, check=none) -%}
+<span class="chip" data-station="{{ station }}">
+  <span class="chip-station">{{ station }}</span>
+  <span class="chip-label">{{ label }}</span>
+  {%- if check %}<span class="chip-check">{{ check }}</span>{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro stat(label, value) -%}
+<div class="stat"><span class="stat-value">{{ value }}</span><span class="stat-label">{{ label }}</span></div>
+{%- endmacro %}
+
+{% macro empty(text) -%}
+<p class="empty">{{ text }}</p>
+{%- endmacro %}

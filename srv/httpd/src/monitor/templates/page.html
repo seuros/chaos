@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+{% block body %}
+<header class="masthead">
+  <h1>Chaos monitor</h1>
+  <form class="connect" data-on:submit__prevent="@get('/monitor/events', {
+    headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value},
+    filterSignals: {include: /^$/}, retry: 'never'
+  })">
+    <label class="connect-field">
+      <span>Bearer token</span>
+      <input type="password" id="monitor-token" autocomplete="off" required>
+    </label>
+    <button type="submit">Connect</button>
+  </form>
+</header>
+<p class="hint">The token stays in this page, not in URLs or browser storage. Reload to disconnect.</p>
+<main id="dashboard" class="dashboard is-offline">
+  <p class="empty">Disconnected. Enter the server token to watch this resident.</p>
+</main>
+{% endblock %}

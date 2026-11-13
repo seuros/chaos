@@ -1,0 +1,11 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-sessions" class="widget sessions">
+  <h2 class="widget-title">Sessions</h2>
+  <div class="session-grid">
+    {% for session in sessions.items %}
+    {% include "widgets/session.html" %}
+    {% else %}
+    {{ ui.empty("No session has run since this monitor connected to the resident.") }}
+    {% endfor %}
+  </div>
+</section>

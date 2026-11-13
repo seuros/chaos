@@ -1,0 +1,12 @@
+<section id="w-stations" class="widget stations">
+  <h2 class="widget-title">Stations</h2>
+  <div class="station-map">
+    {% for station in stations.items %}
+    <div class="station" data-station="{{ station.name }}" data-active="{{ (station.active > 0) | flag }}">
+      <span class="station-name">{{ station.name }}</span>
+      <span class="station-active">{{ station.active }}</span>
+      <span class="station-tally">{{ station.done }} done{% if station.failed %} · <em>{{ station.failed }} failed</em>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>

@@ -1,0 +1,9 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-limits" class="widget limits">
+  <h2 class="widget-title">Limits</h2>
+  {% for window in limits.windows %}
+  {{ ui.meter(window.label, window.used_percent) }}
+  {% else %}
+  {{ ui.empty("No limits reported yet.") }}
+  {% endfor %}
+</section>

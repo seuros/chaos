@@ -225,23 +225,36 @@ fn a_piped_test_run_reports_failures_its_exit_status_hid() {
 }
 
 #[test]
-fn chaos_tools_are_kernel_work_and_server_tools_are_mcp() {
-    let call = |server: Option<&str>| {
+fn internal_tools_are_filed_by_what_they_do_and_reported_once() {
+    let call = |server: Option<&str>, tool: &str| {
         EventMsg::McpToolCallBegin(chaos_ipc::protocol::McpToolCallBeginEvent {
             call_id: "call-3".to_string(),
             invocation: chaos_ipc::protocol::McpInvocation {
                 server: server.map(str::to_string),
-                tool: "save_recovery_checkpoint".to_string(),
+                tool: tool.to_string(),
                 arguments: None,
             },
         })
     };
     let station = |msg: &EventMsg| match Activity::from_event(msg).as_slice() {
-        [Activity::CallStarted { station, .. }] => *station,
+        [Activity::CallStarted { station, .. }] => Some(*station),
+        [] => None,
         other => panic!("{other:?}"),
     };
-    assert_eq!(station(&call(None)), Station::Kernel);
-    assert_eq!(station(&call(Some("docs"))), Station::Mcp);
+    assert_eq!(
+        station(&call(None, "save_recovery_checkpoint")),
+        Some(Station::Kernel)
+    );
+    assert_eq!(station(&call(None, "read_file")), Some(Station::Files));
+    assert_eq!(
+        station(&call(None, "exec_command")),
+        None,
+        "the exec events report it"
+    );
+    assert_eq!(
+        station(&call(Some("docs"), "read_file")),
+        Some(Station::Mcp)
+    );
 }
 
 fn token_count(used: i64, percent: f64) -> EventMsg {

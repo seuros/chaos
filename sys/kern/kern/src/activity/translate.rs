@@ -56,20 +56,32 @@ impl Activity {
             EventMsg::McpToolCallBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
-                station: mcp_station(&ev.invocation),
+                station: match mcp_station(&ev.invocation) {
+                    Some(station) => station,
+                    None => return Vec::new(),
+                },
                 label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
             },
-            EventMsg::McpToolCallEnd(ev) => Self::CallEnded {
-                check: None,
-                call_id: ev.call_id.clone(),
-                station: mcp_station(&ev.invocation),
-                label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
-                outcome: match &ev.result {
+            EventMsg::McpToolCallEnd(ev) => {
+                let outcome = match &ev.result {
                     Ok(result) if result.is_error != Some(true) => CallOutcome::Ok,
                     _ => CallOutcome::Failed,
-                },
-                duration_ms: Some(millis(ev.duration)),
-            },
+                };
+                let station = match mcp_station(&ev.invocation) {
+                    Some(station) => station,
+                    // A command that never started has no exec events of its own.
+                    None if outcome == CallOutcome::Failed => Station::Shell,
+                    None => return Vec::new(),
+                };
+                Self::CallEnded {
+                    check: None,
+                    call_id: ev.call_id.clone(),
+                    station,
+                    label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
+                    outcome,
+                    duration_ms: Some(millis(ev.duration)),
+                }
+            }
             EventMsg::WebSearchBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
@@ -160,10 +172,18 @@ impl Activity {
     }
 }
 
-fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Station {
-    match invocation.server {
-        Some(_) => Station::Mcp,
-        None => Station::Kernel,
+/// Where a tool call belongs. Internal tools that already report through
+/// their own events (commands, patches, searches) are not reported twice.
+fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Option<Station> {
+    if invocation.server.is_some() {
+        return Some(Station::Mcp);
+    }
+    match invocation.tool.as_str() {
+        "exec_command" | "write_stdin" | "shell" | "local_shell" | "apply_patch" | "web_search" => {
+            None
+        }
+        "read_file" | "list_dir" | "grep_files" | "view_image" => Some(Station::Files),
+        _ => Some(Station::Kernel),
     }
 }
 

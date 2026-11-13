@@ -1,14 +1,18 @@
-use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use rama::error::BoxError;
 use rama::futures::async_stream::stream_fn;
 use rama::http::Body;
 use rama::http::HeaderValue;
 use rama::http::Response;
 use rama::http::header::CACHE_CONTROL;
 use rama::http::header::CONTENT_TYPE;
-use rama::http::service::web::response::{DatastarScript, IntoResponse};
+use rama::http::service::web::response::{DatastarScript, IntoResponse, Sse};
+use rama::http::sse::Event;
+use rama::http::sse::datastar::{ElementPatchMode, PatchElements};
+use rama::utils::str::NonEmptyStr;
+use rama::utils::str::non_empty_str;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
@@ -97,29 +101,20 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
     let snapshot = render_snapshot(&state);
 
     let stream = stream_fn(async move |mut yielder| {
-        yielder
-            .yield_item(sse_patch("monitor-summary", &snapshot))
-            .await;
-        yielder
-            .yield_item(sse_append_log("monitor-log", "monitor connected"))
-            .await;
+        yielder.yield_item(summary(&snapshot)).await;
+        yielder.yield_item(log_line("monitor connected")).await;
 
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    yielder
-                        .yield_item(sse_patch("monitor-summary", &render_snapshot(&state)))
-                        .await;
-                    yielder
-                        .yield_item(sse_append_log("monitor-log", &render_event(&event)))
-                        .await;
+                    yielder.yield_item(summary(&render_snapshot(&state))).await;
+                    yielder.yield_item(log_line(&render_event(&event))).await;
                 }
                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                     yielder
-                        .yield_item(sse_append_log(
-                            "monitor-log",
-                            &format!("monitor lagged; skipped {skipped} events"),
-                        ))
+                        .yield_item(log_line(&format!(
+                            "monitor lagged; skipped {skipped} events"
+                        )))
                         .await;
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -127,11 +122,7 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
         }
     });
 
-    let mut response = Response::new(Body::from_stream(stream));
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("text/event-stream; charset=utf-8"),
-    );
+    let mut response = Sse::new(stream).into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -175,25 +166,18 @@ fn render_event(event: &MonitorEvent) -> String {
     parts.join(" ")
 }
 
-fn sse_patch(selector_id: &str, html: &str) -> Result<String, Infallible> {
-    Ok(format!(
-        "event: datastar-patch-elements\n\
-         data: selector #{selector_id}\ndata: mode outer\ndata: elements {}\n\n",
-        one_line_html(html),
-    ))
+type Patch = Result<Event<PatchElements>, BoxError>;
+
+fn summary(html: &str) -> Patch {
+    Ok(PatchElements::new(NonEmptyStr::try_from(html)?).try_into_sse_event()?)
 }
 
-fn sse_append_log(selector_id: &str, message: &str) -> Result<String, Infallible> {
-    let html = format!("<li><time>{}</time> {}</li>", "now", escape_html(message));
-    Ok(format!(
-        "event: datastar-patch-elements\n\
-         data: selector #{selector_id}\ndata: mode append\ndata: elements {}\n\n",
-        one_line_html(&html),
-    ))
-}
-
-fn one_line_html(input: &str) -> String {
-    input.lines().map(str::trim).collect()
+fn log_line(message: &str) -> Patch {
+    let html = format!("<li>{}</li>", escape_html(message));
+    Ok(PatchElements::new(NonEmptyStr::try_from(html)?)
+        .with_selector(non_empty_str!("#monitor-log"))
+        .with_mode(ElementPatchMode::Append)
+        .try_into_sse_event()?)
 }
 
 fn escape_html(input: impl AsRef<str>) -> String {

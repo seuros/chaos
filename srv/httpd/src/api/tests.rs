@@ -84,7 +84,15 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
         } else if path == "/monitor/events" && expected == StatusCode::OK {
             assert_eq!(response.headers()["cache-control"], "no-store");
             let frame = response.into_body().frame().await.unwrap().unwrap();
-            assert!(String::from_utf8_lossy(frame.data_ref().unwrap()).contains("monitor-summary"));
+            let frame = String::from_utf8_lossy(frame.data_ref().unwrap()).into_owned();
+            assert!(
+                frame.starts_with("event: datastar-patch-elements\n"),
+                "{frame}"
+            );
+            assert!(
+                frame.contains("data: elements <section id=\"monitor-summary\">"),
+                "{frame}"
+            );
         }
     }
 

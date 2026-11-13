@@ -100,7 +100,7 @@ fn partial_usage_is_not_a_zero_receipt_and_cache_reasoning_categories_survive() 
     });
     std::assert_matches!(parse_completion(&json).unwrap().last(),
         Some(TurnEvent::Completed { token_usage: Some(usage), .. })
-            if usage.cached_input_tokens == 7 && usage.reasoning_output_tokens == 2);
+            if usage.cache_read_input_tokens == 7 && usage.reasoning_output_tokens == 2);
     for usage in [
         serde_json::json!({}),
         serde_json::json!({"prompt_tokens": 0}),

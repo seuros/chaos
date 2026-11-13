@@ -119,7 +119,9 @@ pub(crate) async fn execute(
                         usage = Some(TokenUsageResponse {
                             total_token_usage: TokenUsageEntry {
                                 input_tokens: info.total_token_usage.input_tokens,
-                                cached_input_tokens: info.total_token_usage.cached_input_tokens,
+                                cache_read_input_tokens: info
+                                    .total_token_usage
+                                    .cache_read_input_tokens,
                                 output_tokens: info.total_token_usage.output_tokens,
                                 reasoning_output_tokens: info
                                     .total_token_usage
@@ -128,7 +130,9 @@ pub(crate) async fn execute(
                             },
                             last_token_usage: TokenUsageEntry {
                                 input_tokens: info.last_token_usage.input_tokens,
-                                cached_input_tokens: info.last_token_usage.cached_input_tokens,
+                                cache_read_input_tokens: info
+                                    .last_token_usage
+                                    .cache_read_input_tokens,
                                 output_tokens: info.last_token_usage.output_tokens,
                                 reasoning_output_tokens: info
                                     .last_token_usage

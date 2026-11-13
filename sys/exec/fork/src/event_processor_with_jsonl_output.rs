@@ -816,8 +816,7 @@ fn usage_from_tokens(
         input_tokens: tokens.input_tokens,
         uncached_input_tokens: tokens.uncached_input(),
         cache_creation_input_tokens: tokens.cache_creation_input_tokens,
-        cache_read_input_tokens: tokens.cached_input_tokens,
-        cached_input_tokens: tokens.cached_input_tokens,
+        cache_read_input_tokens: tokens.cache_read_input_tokens,
         output_tokens: tokens.output_tokens,
         reasoning_output_tokens: (tokens.reasoning_output_tokens > 0)
             .then_some(tokens.reasoning_output_tokens),

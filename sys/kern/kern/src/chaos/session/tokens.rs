@@ -362,7 +362,7 @@ impl Session {
             info.last_token_usage = TokenUsage {
                 input_tokens: 0,
                 cache_creation_input_tokens: 0,
-                cached_input_tokens: 0,
+                cache_read_input_tokens: 0,
                 output_tokens: 0,
                 reasoning_output_tokens: 0,
                 total_tokens: estimated_total_tokens.max(0),

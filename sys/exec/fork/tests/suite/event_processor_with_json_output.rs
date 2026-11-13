@@ -1378,7 +1378,7 @@ fn task_complete_produces_turn_completed_with_usage() {
     let usage = chaos_ipc::protocol::TokenUsage {
         input_tokens: 1200,
         cache_creation_input_tokens: 300,
-        cached_input_tokens: 200,
+        cache_read_input_tokens: 200,
         output_tokens: 345,
         reasoning_output_tokens: 20,
         total_tokens: 1565,
@@ -1417,7 +1417,6 @@ fn task_complete_produces_turn_completed_with_usage() {
                 uncached_input_tokens: 700,
                 cache_creation_input_tokens: 300,
                 cache_read_input_tokens: 200,
-                cached_input_tokens: 200,
                 output_tokens: 345,
                 reasoning_output_tokens: Some(20),
                 provider_request_count: 3,
@@ -1429,7 +1428,6 @@ fn task_complete_produces_turn_completed_with_usage() {
                 uncached_input_tokens: 700,
                 cache_creation_input_tokens: 300,
                 cache_read_input_tokens: 200,
-                cached_input_tokens: 200,
                 output_tokens: 345,
                 reasoning_output_tokens: Some(20),
                 provider_request_count: 3,
@@ -1454,7 +1452,7 @@ fn resumed_exec_reports_invocation_delta_and_process_cumulative_usage() {
     let baseline = chaos_ipc::protocol::TokenUsage {
         input_tokens: 49_500,
         cache_creation_input_tokens: 1_950,
-        cached_input_tokens: 39_600,
+        cache_read_input_tokens: 39_600,
         output_tokens: 4_975,
         reasoning_output_tokens: 500,
         total_tokens: 54_475,
@@ -1476,7 +1474,7 @@ fn resumed_exec_reports_invocation_delta_and_process_cumulative_usage() {
     let cumulative = chaos_ipc::protocol::TokenUsage {
         input_tokens: 50_000,
         cache_creation_input_tokens: 2_000,
-        cached_input_tokens: 40_000,
+        cache_read_input_tokens: 40_000,
         output_tokens: 5_000,
         reasoning_output_tokens: 500,
         total_tokens: 55_000,
@@ -1490,7 +1488,7 @@ fn resumed_exec_reports_invocation_delta_and_process_cumulative_usage() {
                 last_token_usage: chaos_ipc::protocol::TokenUsage {
                     input_tokens: 500,
                     cache_creation_input_tokens: 50,
-                    cached_input_tokens: 400,
+                    cache_read_input_tokens: 400,
                     output_tokens: 25,
                     reasoning_output_tokens: 0,
                     total_tokens: 525,
@@ -1539,7 +1537,7 @@ fn usage_without_provider_start_marker_preserves_cumulative_counters_as_incomple
     let usage = chaos_ipc::protocol::TokenUsage {
         input_tokens: 1_200,
         cache_creation_input_tokens: 300,
-        cached_input_tokens: 200,
+        cache_read_input_tokens: 200,
         output_tokens: 345,
         reasoning_output_tokens: 20,
         total_tokens: 1_565,
@@ -1583,7 +1581,7 @@ fn usage_deserializes_legacy_turn_completed_shape_with_safe_defaults() {
         "type": "turn.completed",
         "usage": {
             "input_tokens": 1200,
-            "cached_input_tokens": 200,
+            "cache_read_input_tokens": 200,
             "output_tokens": 345
         }
     }))
@@ -1595,7 +1593,7 @@ fn usage_deserializes_legacy_turn_completed_shape_with_safe_defaults() {
             telemetry_schema_version: 0,
             usage: Usage {
                 input_tokens: 1200,
-                cached_input_tokens: 200,
+                cache_read_input_tokens: 200,
                 output_tokens: 345,
                 ..Usage::default()
             },

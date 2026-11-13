@@ -536,7 +536,7 @@ fn token_usage_info_new_or_append_updates_or_preserves_context_window() {
     let last = Some(TokenUsage {
         input_tokens: 10,
         cache_creation_input_tokens: 0,
-        cached_input_tokens: 0,
+        cache_read_input_tokens: 0,
         output_tokens: 0,
         reasoning_output_tokens: 0,
         total_tokens: 10,
@@ -555,7 +555,7 @@ fn token_usage_add_assign_sums_cache_creation_and_provider_requests() {
     let mut total = TokenUsage {
         input_tokens: 100,
         cache_creation_input_tokens: 20,
-        cached_input_tokens: 30,
+        cache_read_input_tokens: 30,
         output_tokens: 10,
         reasoning_output_tokens: 2,
         total_tokens: 110,
@@ -564,7 +564,7 @@ fn token_usage_add_assign_sums_cache_creation_and_provider_requests() {
     total.add_assign(&TokenUsage {
         input_tokens: 200,
         cache_creation_input_tokens: 40,
-        cached_input_tokens: 50,
+        cache_read_input_tokens: 50,
         output_tokens: 20,
         reasoning_output_tokens: 3,
         total_tokens: 220,
@@ -576,7 +576,7 @@ fn token_usage_add_assign_sums_cache_creation_and_provider_requests() {
         TokenUsage {
             input_tokens: 300,
             cache_creation_input_tokens: 60,
-            cached_input_tokens: 80,
+            cache_read_input_tokens: 80,
             output_tokens: 30,
             reasoning_output_tokens: 5,
             total_tokens: 330,
@@ -592,7 +592,7 @@ fn token_usage_difference_since_handles_process_resume_and_counter_resets() {
     let baseline = TokenUsage {
         input_tokens: 1_000,
         cache_creation_input_tokens: 200,
-        cached_input_tokens: 700,
+        cache_read_input_tokens: 700,
         output_tokens: 100,
         reasoning_output_tokens: 10,
         total_tokens: 1_100,
@@ -601,7 +601,7 @@ fn token_usage_difference_since_handles_process_resume_and_counter_resets() {
     let cumulative = TokenUsage {
         input_tokens: 1_100,
         cache_creation_input_tokens: 220,
-        cached_input_tokens: 770,
+        cache_read_input_tokens: 770,
         output_tokens: 110,
         reasoning_output_tokens: 12,
         total_tokens: 1_210,
@@ -613,7 +613,7 @@ fn token_usage_difference_since_handles_process_resume_and_counter_resets() {
         TokenUsage {
             input_tokens: 100,
             cache_creation_input_tokens: 20,
-            cached_input_tokens: 70,
+            cache_read_input_tokens: 70,
             output_tokens: 10,
             reasoning_output_tokens: 2,
             total_tokens: 110,
@@ -624,7 +624,7 @@ fn token_usage_difference_since_handles_process_resume_and_counter_resets() {
     let reset = TokenUsage {
         input_tokens: 50,
         cache_creation_input_tokens: 10,
-        cached_input_tokens: 30,
+        cache_read_input_tokens: 30,
         output_tokens: 5,
         reasoning_output_tokens: 0,
         total_tokens: 55,
@@ -638,7 +638,7 @@ fn token_usage_serialization_is_additive_and_legacy_defaults_are_safe() -> Resul
     let usage = TokenUsage {
         input_tokens: 100,
         cache_creation_input_tokens: 20,
-        cached_input_tokens: 30,
+        cache_read_input_tokens: 30,
         output_tokens: 10,
         reasoning_output_tokens: 2,
         total_tokens: 110,
@@ -646,11 +646,12 @@ fn token_usage_serialization_is_additive_and_legacy_defaults_are_safe() -> Resul
     };
     let value = serde_json::to_value(&usage)?;
     assert_eq!(value["cache_creation_input_tokens"], 20);
+    assert_eq!(value["cache_read_input_tokens"], 30);
     assert_eq!(value["provider_request_count"], 3);
 
     let legacy: TokenUsage = serde_json::from_value(json!({
         "input_tokens": 100,
-        "cached_input_tokens": 30,
+        "cache_read_input_tokens": 30,
         "output_tokens": 10,
         "reasoning_output_tokens": 2,
         "total_tokens": 110
@@ -685,7 +686,7 @@ fn fill_to_context_window_preserves_process_usage_counters() {
     let cumulative = TokenUsage {
         input_tokens: 1_000,
         cache_creation_input_tokens: 200,
-        cached_input_tokens: 700,
+        cache_read_input_tokens: 700,
         output_tokens: 100,
         reasoning_output_tokens: 10,
         total_tokens: 1_100,

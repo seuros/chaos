@@ -102,7 +102,7 @@ fn clamp_usage_to_token_usage(
     TokenUsage {
         input_tokens: saturating_i64(input_tokens),
         cache_creation_input_tokens: saturating_i64(aggregate_usage.cache_creation_input_tokens),
-        cached_input_tokens: saturating_i64(aggregate_usage.cache_read_input_tokens),
+        cache_read_input_tokens: saturating_i64(aggregate_usage.cache_read_input_tokens),
         output_tokens: saturating_i64(aggregate_usage.output_tokens),
         reasoning_output_tokens: 0,
         total_tokens: saturating_i64(total_tokens),
@@ -118,7 +118,7 @@ fn antigravity_usage_to_token_usage(usage: chaos_clamp::AntigravityUsage) -> Tok
     TokenUsage {
         input_tokens: saturating_i64(usage.input_tokens),
         cache_creation_input_tokens: 0,
-        cached_input_tokens: saturating_i64(usage.cache_read_tokens),
+        cache_read_input_tokens: saturating_i64(usage.cache_read_tokens),
         output_tokens: saturating_i64(usage.output_tokens),
         reasoning_output_tokens: saturating_i64(usage.thinking_tokens),
         total_tokens: saturating_i64(usage.total_tokens),
@@ -238,7 +238,7 @@ where
                         session_telemetry.sse_event_completed(
                             usage.input_tokens,
                             usage.output_tokens,
-                            Some(usage.cached_input_tokens),
+                            Some(usage.cache_read_input_tokens),
                             Some(usage.reasoning_output_tokens),
                             usage.total_tokens,
                         );

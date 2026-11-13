@@ -141,14 +141,16 @@ impl ExecutionPriceSchedule {
         usage.validate()?;
         let buckets = [
             (
-                usage.input_tokens - usage.cache_creation_input_tokens - usage.cached_input_tokens,
+                usage.input_tokens
+                    - usage.cache_creation_input_tokens
+                    - usage.cache_read_input_tokens,
                 self.prices.uncached_input,
             ),
             (
                 usage.cache_creation_input_tokens,
                 self.prices.cache_creation_input,
             ),
-            (usage.cached_input_tokens, self.prices.cached_input),
+            (usage.cache_read_input_tokens, self.prices.cached_input),
             (
                 usage.output_tokens - usage.reasoning_output_tokens,
                 self.prices.ordinary_output,

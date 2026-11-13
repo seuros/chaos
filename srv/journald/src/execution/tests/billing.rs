@@ -154,7 +154,7 @@ fn usage() -> InvocationTokenUsage {
     InvocationTokenUsage {
         input_tokens: 3,
         cache_creation_input_tokens: 1,
-        cached_input_tokens: 1,
+        cache_read_input_tokens: 1,
         output_tokens: 2,
         reasoning_output_tokens: 1,
         // Provider totals are evidence, not a sixth priced bucket.
@@ -267,7 +267,7 @@ async fn assert_price_evidence<S: JournalStore>(store: &S) {
         match invalid {
             0 => record.usage = None,
             1 => record.usage.as_mut().unwrap().input_tokens = -1,
-            2 => record.usage.as_mut().unwrap().cached_input_tokens = 4,
+            2 => record.usage.as_mut().unwrap().cache_read_input_tokens = 4,
             3 => record.usage.as_mut().unwrap().reasoning_output_tokens = 3,
             4 => {
                 record.charged = Some(ExecutionMoney {

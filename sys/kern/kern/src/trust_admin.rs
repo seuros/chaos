@@ -468,6 +468,36 @@ async fn plan(
             });
         }
     }
+    // The loader reads an exact-directory row before the root's, so a grant
+    // stored below a revoked root would keep that subdirectory trusted.
+    let committing: std::collections::BTreeSet<PathBuf> =
+        checks.iter().map(|c| c.project_path.clone()).collect();
+    let revoked: Vec<PathBuf> = checks
+        .iter()
+        .filter(|c| c.desired == TrustLevel::Untrusted)
+        .map(|c| c.project_path.clone())
+        .collect();
+    for (path, level) in &current {
+        let stored = PathBuf::from(path);
+        if *level != TrustLevel::Trusted
+            || committing.contains(&stored)
+            || !revoked
+                .iter()
+                .any(|root| stored != *root && stored.starts_with(root))
+        {
+            continue;
+        }
+        checks.push(ProjectTrustChange {
+            project_path: stored,
+            expected: Decision::Trusted.level(),
+            desired: TrustLevel::Untrusted,
+        });
+        changes.push(PlannedChange {
+            project_path: path.clone(),
+            before: Decision::Trusted,
+            after: Decision::Untrusted,
+        });
+    }
     ensure!(
         conflicts.is_empty(),
         "refusing: {} stored decision(s) differ from what was reviewed; nothing was changed:\n{}",

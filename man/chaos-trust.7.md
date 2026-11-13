@@ -67,6 +67,11 @@ path that no longer resolves is revoked by its exact stored key, and only if a
 decision is stored there. The filesystem root is always refused, and held on
 apply.
 
+Revoking a directory also revokes every grant stored below it, in the same
+transaction, and the receipt lists each one: the configuration loader reads an
+exact-directory decision before its root's, so a grant left on a subdirectory
+would otherwise outlive the revocation.
+
 `revoke` stores `untrusted`; it does not delete the decision. A manifest
 exported before the revocation therefore finds a denial where it expects
 nothing or its own grant, and is refused instead of restoring trust.

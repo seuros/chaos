@@ -1048,3 +1048,45 @@ fn grant_guard_fails_closed_when_home_does_not_resolve() {
     let home = project.path().join("missing-home");
     assert!(grant_guard(&key(&project), &home).is_err());
 }
+
+#[tokio::test]
+async fn revoking_a_root_revokes_grants_stored_below_it() -> anyhow::Result<()> {
+    let home = sqlite_home().await;
+    let parent = tempfile::tempdir()?;
+    let sub = parent.path().join("sub");
+    std::fs::create_dir_all(&sub)?;
+    prepare_set(home.path(), &sub, Decision::Trusted, Decision::None)
+        .await?
+        .commit("test-operator")
+        .await?;
+    prepare_set(
+        home.path(),
+        parent.path(),
+        Decision::Trusted,
+        Decision::None,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    let sub_key = normalize_project_path(&sub)?.to_string_lossy().to_string();
+    let root_key = key(&parent);
+
+    let receipt = prepare_set(
+        home.path(),
+        parent.path(),
+        Decision::Untrusted,
+        Decision::Trusted,
+    )
+    .await?
+    .commit("test-operator")
+    .await?;
+    let revoked: Vec<_> = receipt
+        .changes
+        .iter()
+        .map(|c| c.project_path.as_str())
+        .collect();
+    assert_eq!(revoked, vec![root_key.as_str(), sub_key.as_str()]);
+    assert_eq!(stored(home.path(), &root_key).await, Decision::Untrusted);
+    assert_eq!(stored(home.path(), &sub_key).await, Decision::Untrusted);
+    Ok(())
+}

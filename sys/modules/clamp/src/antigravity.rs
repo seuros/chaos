@@ -1094,7 +1094,7 @@ static CONTEXTUAL_REDACTIONS: std::sync::LazyLock<Vec<(regex_lite::Regex, &'stat
 /// and basic credentials, values of secret-named keys (whole, quoted or
 /// not), known key shapes, URL query strings, then any long opaque run.
 /// Control characters collapse to spaces.
-fn sanitise_diagnostic(text: &str) -> String {
+pub(crate) fn sanitise_diagnostic(text: &str) -> String {
     let mut text = text.to_string();
     for (pattern, replacement) in CONTEXTUAL_REDACTIONS.iter() {
         text = pattern.replace_all(&text, *replacement).into_owned();

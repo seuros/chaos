@@ -179,11 +179,16 @@ pub enum Message {
     /// The turn completed.
     #[serde(rename = "result")]
     Result {
+        #[serde(default)]
         result: Value,
         #[serde(default)]
         subtype: Option<String>,
         #[serde(default)]
         is_error: bool,
+        /// Error-subtype results (`error_during_execution`, ...) can carry
+        /// their reasons here instead of in `result`.
+        #[serde(default)]
+        errors: Vec<Value>,
         #[serde(default)]
         total_cost_usd: Option<f64>,
         #[serde(default)]

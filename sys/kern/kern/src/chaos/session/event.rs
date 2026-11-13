@@ -71,6 +71,7 @@ impl Session {
     }
 
     pub(crate) async fn deliver_client_event(&self, event: Event) {
+        crate::activity::publish(self.conversation_id, &event.msg);
         if let Err(e) = self.tx_event.send(event).await {
             debug!("dropping event because channel is closed: {e}");
         }

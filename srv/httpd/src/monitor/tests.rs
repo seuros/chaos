@@ -13,6 +13,7 @@ fn activity_reaches_the_log_as_its_redacted_contract() {
             label: "<curl>".to_string(),
             outcome: CallOutcome::Failed,
             duration_ms: Some(42),
+            check: None,
         },
     };
     let mut frame = Vec::new();

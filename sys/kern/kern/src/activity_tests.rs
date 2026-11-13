@@ -1,6 +1,7 @@
 use super::*;
 use chaos_ipc::protocol::ExecCommandEndEvent;
 use chaos_ipc::protocol::ExecCommandSource;
+use chaos_ipc::protocol::ExecCommandStatus;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 
@@ -36,6 +37,7 @@ fn a_finished_command_carries_no_arguments_or_output() {
             label: "curl".to_string(),
             outcome: CallOutcome::Failed,
             duration_ms: Some(42),
+            check: None,
         }
     );
     let json = serde_json::to_string(&activity).unwrap();
@@ -175,5 +177,49 @@ async fn model_requests_end_with_their_usage_or_as_failed() {
             ),
             (2, CallOutcome::Failed, None),
         ]
+    );
+}
+
+#[test]
+fn a_piped_test_run_reports_failures_its_exit_status_hid() {
+    let msg = EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+        call_id: "call-2".to_string(),
+        process_id: None,
+        turn_id: "turn-1".to_string(),
+        command: argv(&["bash", "-lc", "cargo test 2>&1 | tail -n 3"]),
+        cwd: "/home/someone/private".into(),
+        parsed_cmd: Vec::new(),
+        source: ExecCommandSource::Agent,
+        interaction_input: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        aggregated_output: "thread 'secret_test' panicked: hunter2\n\
+            test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured"
+            .to_string(),
+        exit_code: 0,
+        duration: Duration::from_millis(900),
+        formatted_output: String::new(),
+        status: ExecCommandStatus::Completed,
+    });
+    let [activity] = Activity::from_event(&msg).try_into().unwrap();
+    let Activity::CallEnded { outcome, check, .. } = &activity else {
+        panic!("{activity:?}");
+    };
+    assert_eq!(*outcome, CallOutcome::Ok);
+    assert_eq!(
+        *check,
+        Some(Check {
+            kind: CheckKind::Test,
+            counts: Some(CheckCounts {
+                passed: 9,
+                failed: 1,
+                skipped: 0,
+            }),
+        })
+    );
+    let json = serde_json::to_string(&activity).unwrap();
+    assert!(
+        !json.contains("hunter2") && !json.contains("secret_test"),
+        "{json}"
     );
 }

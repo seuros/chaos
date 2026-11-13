@@ -2,7 +2,8 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 fn classify_script(script: &str) -> (Station, String) {
-    classify(&["bash".to_string(), "-lc".to_string(), script.to_string()])
+    let command = classify(&["bash".to_string(), "-lc".to_string(), script.to_string()]);
+    (command.station, command.label)
 }
 
 #[test]
@@ -69,5 +70,9 @@ fn shell_scripts_are_judged_by_every_program_they_run() {
 #[test]
 fn direct_commands_are_named_without_their_path() {
     let argv = ["/usr/bin/CURL.EXE", "-H", "Authorization: x"].map(str::to_string);
-    assert_eq!(classify(&argv), (Station::Network, "curl".to_string()));
+    let command = classify(&argv);
+    assert_eq!(
+        (command.station, command.label),
+        (Station::Network, "curl".to_string())
+    );
 }

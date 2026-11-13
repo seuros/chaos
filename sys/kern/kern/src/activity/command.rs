@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use super::Station;
+use super::check::{self, CheckKind};
 
 const NEUTRAL: &[&str] = &[
     "echo", "printf", "cd", "pushd", "popd", "export", "true", "false", "set", "pwd", "sleep",
@@ -72,15 +73,31 @@ const WRAPPERS: &[(&str, &[&str])] = &[
 ];
 const MAX_WRAPPERS: usize = 6;
 
-/// The station and the name of the program that matters; nothing past it.
-pub(super) fn classify(argv: &[String]) -> (Station, String) {
+/// What a command line is, as the bus may tell it.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Command {
+    pub station: Station,
+    pub label: String,
+    pub check: Option<CheckKind>,
+}
+
+/// The station, the name of the program that matters and the check it runs;
+/// nothing past them.
+pub(crate) fn classify(argv: &[String]) -> Command {
     let commands = match chaos_sh::bash::extract_bash_command(argv) {
         Some((_, script)) => chaos_sh::bash::every_command_words(script),
         None => vec![argv.to_vec()],
     };
-    let programs: Vec<(String, Option<Station>)> = commands
+    let runs: Vec<Vec<String>> = commands
         .iter()
         .flat_map(|words| run_commands(words))
+        .collect();
+    let check = runs
+        .iter()
+        .filter_map(|words| check::kind(&program_name(&words[0]), &words[1..]))
+        .max();
+    let programs: Vec<(String, Option<Station>)> = runs
+        .iter()
         .map(|words| {
             let program = program_name(&words[0]);
             let station = station(&program, &words[1..]);
@@ -111,7 +128,11 @@ pub(super) fn classify(argv: &[String]) -> (Station, String) {
         .or_else(|| programs.first().map(|(program, _)| program))
         .cloned()
         .unwrap_or_else(|| "command".to_string());
-    (station, label)
+    Command {
+        station,
+        label,
+        check,
+    }
 }
 
 /// The commands a command line actually runs: wrappers and leading
@@ -132,6 +153,10 @@ fn run_commands(words: &[String]) -> Vec<Vec<String>> {
                 .is_some_and(|flag| matches!(flag.as_str(), "-v" | "-V"))
         {
             break;
+        }
+        if let Some(inner) = runner_exec(&program, &rest[1..]) {
+            rest = inner;
+            continue;
         }
         let Some((_, value_flags)) = WRAPPERS.iter().find(|(name, _)| *name == program) else {
             break;
@@ -158,6 +183,18 @@ fn run_commands(words: &[String]) -> Vec<Vec<String>> {
         commands.extend(run_commands(&inner));
     }
     commands
+}
+
+/// `bundle exec cmd` and `mise exec -- cmd` run `cmd`.
+fn runner_exec<'a>(program: &str, args: &'a [String]) -> Option<&'a [String]> {
+    match (program, args.first().map(String::as_str)) {
+        ("bundle", Some("exec")) => Some(&args[1..]),
+        ("mise", Some("exec" | "x")) => {
+            let at = args.iter().position(|arg| arg == "--")?;
+            Some(&args[at + 1..])
+        }
+        _ => None,
+    }
 }
 
 fn skip_options<'a>(mut words: &'a [String], value_flags: &[&str]) -> &'a [String] {

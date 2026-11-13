@@ -328,7 +328,7 @@ pub struct LimitWindow {
     pub resets_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Station {
     /// Chaos's own tools: checkpoints, recovery, tool loading.

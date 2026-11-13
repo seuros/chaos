@@ -184,9 +184,9 @@ pub fn normalize_project_path(path: &Path) -> anyhow::Result<PathBuf> {
     Ok(normalized)
 }
 
-/// Checks every entry must pass: an absolute, lexically normal path that is not
-/// the filesystem root. Denials need nothing more, so a grant on `~` or on a
-/// directory that no longer exists can always be revoked.
+/// Checks every entry must pass: an absolute, lexically normal path. Denials
+/// need nothing more, so a grant on `~` or on a directory that no longer exists
+/// can always be revoked.
 fn lexical_project_path(raw: &str) -> anyhow::Result<PathBuf> {
     use std::path::Component;
     let path = PathBuf::from(raw);
@@ -199,10 +199,6 @@ fn lexical_project_path(raw: &str) -> anyhow::Result<PathBuf> {
             Component::RootDir | Component::Prefix(_) | Component::Normal(_)
         )) && path.components().collect::<PathBuf>().to_string_lossy() == raw,
         "project path {raw:?} is not normalized"
-    );
-    ensure!(
-        path.parent().is_some(),
-        "refusing to change trust for the filesystem root"
     );
     Ok(path)
 }
@@ -225,12 +221,12 @@ fn grant_guard(raw: &str, home: &Path) -> anyhow::Result<()> {
         "trust for {raw} is decided at its project root {}; grant that path instead",
         root.display()
     );
-    if let Ok(home) = std::fs::canonicalize(home) {
-        ensure!(
-            !home.starts_with(&normalized) && !normalized.starts_with(&home),
-            "refusing to trust a path that contains or is inside CHAOS_HOME: {raw}"
-        );
-    }
+    let home = std::fs::canonicalize(home)
+        .with_context(|| format!("cannot resolve CHAOS_HOME {}", home.display()))?;
+    ensure!(
+        !home.starts_with(&normalized) && !normalized.starts_with(&home),
+        "refusing to trust a path that contains or is inside CHAOS_HOME: {raw}"
+    );
     Ok(())
 }
 
@@ -277,6 +273,11 @@ pub async fn export(home: &Path) -> anyhow::Result<Manifest> {
     let installation_id = listing.installation_id.context(
         "this home has no installation identity, so it has no decisions of its own to export",
     )?;
+    ensure!(
+        listing.entries.len() <= MAX_MANIFEST_ENTRIES,
+        "{} stored decisions exceed the {MAX_MANIFEST_ENTRIES} a manifest can carry",
+        listing.entries.len()
+    );
     Ok(Manifest {
         format: MANIFEST_FORMAT.to_string(),
         installation_id,
@@ -420,6 +421,13 @@ async fn plan(
             .decision
             .target()
             .with_context(|| format!("manifest entry {}", entry.project_path))?;
+        if Path::new(&entry.project_path).parent().is_none() {
+            held.push(HeldEntry {
+                project_path: entry.project_path,
+                reason: "the filesystem root is never written".to_string(),
+            });
+            continue;
+        }
         if entry.decision == Decision::Trusted
             && let Err(err) = grant_guard(&entry.project_path, home)
         {

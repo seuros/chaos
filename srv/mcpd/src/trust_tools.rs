@@ -266,7 +266,7 @@ fn manifest_schema(apply: bool) -> Value {
     if apply {
         properties["allow_held"] = json!({
             "type": "boolean",
-            "description": "Commit even if some grants are held (a partial apply). Default false: any held grant refuses the apply."
+            "description": "Commit even if some entries are held (a partial apply). Default false: any held entry refuses the apply."
         });
     }
     object(properties, &["manifest", "digest"])
@@ -278,8 +278,8 @@ fn plan_info() -> ToolInfo {
         None,
         Some(
             "Check a reviewed manifest against this installation without writing: the changes, \
-             the unchanged entries, and any grants that would be held with the reason. Run it \
-             before stopping a resident for a migration; a held grant means the cutover \
+             the unchanged entries, and any entries that would be held with the reason. Run it \
+             before stopping a resident for a migration; a held entry means the cutover \
              cannot carry every decision."
                 .to_string(),
         ),
@@ -310,7 +310,7 @@ fn apply_info() -> ToolInfo {
             "Apply a reviewed manifest to this installation. Refuses a manifest for another \
              installation, a digest that is not the reviewed one, and any entry whose stored \
              decision differs from what the manifest expects; every committed entry is checked \
-             again at commit. Refuses if any grant would be held unless allow_held is true. \
+             again at commit. Refuses if any entry would be held unless allow_held is true. \
              Returns a receipt; each change is audited with the operator as actor."
                 .to_string(),
         ),
@@ -330,7 +330,7 @@ fn apply_handler<'a>(server: &'a TrustOperator, ctx: ExecutionContext<'a>) -> Fu
             .map_err(failed)?;
         if !prepared.held.is_empty() && !params.allow_held {
             return Err(ToolError::Execution(format!(
-                "refusing: {} grant(s) would be held and not carried; nothing was changed. \
+                "refusing: {} entries would be held and not carried; nothing was changed. \
                  Run trust_plan for the reasons, or pass allow_held for a partial apply:\n{}",
                 prepared.held.len(),
                 prepared

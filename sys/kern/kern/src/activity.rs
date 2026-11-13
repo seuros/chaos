@@ -52,6 +52,66 @@ pub(crate) fn elicitation_ask_id(server_name: &str, id: &chaos_ipc::mcp::Request
     format!("{server_name}/{id}")
 }
 
+/// One model request in flight. `finish` reports its usage; dropping it
+/// unfinished (an error, a cancelled turn) reports it failed.
+#[must_use = "a model request reports its end when finished or dropped"]
+pub(crate) struct ModelRequest {
+    process_id: ProcessId,
+    request: i64,
+    model: String,
+    started: std::time::Instant,
+    finished: bool,
+}
+
+impl ModelRequest {
+    pub(crate) fn start(process_id: ProcessId, request: i64, model: &str) -> Self {
+        if BUS.receiver_count() > 0 {
+            send(
+                process_id,
+                Activity::ModelStarted {
+                    request,
+                    model: model.to_string(),
+                },
+            );
+        }
+        Self {
+            process_id,
+            request,
+            model: model.to_string(),
+            started: std::time::Instant::now(),
+            finished: false,
+        }
+    }
+
+    pub(crate) fn finish(mut self, usage: Option<&chaos_ipc::protocol::TokenUsage>) {
+        self.finished = true;
+        self.end(CallOutcome::Ok, usage.map(ModelUsage::from));
+    }
+
+    fn end(&self, outcome: CallOutcome, usage: Option<ModelUsage>) {
+        if BUS.receiver_count() > 0 {
+            send(
+                self.process_id,
+                Activity::ModelEnded {
+                    request: self.request,
+                    model: self.model.clone(),
+                    outcome,
+                    duration_ms: millis(self.started.elapsed()),
+                    usage,
+                },
+            );
+        }
+    }
+}
+
+impl Drop for ModelRequest {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.end(CallOutcome::Failed, None);
+        }
+    }
+}
+
 fn send(process_id: ProcessId, activity: Activity) {
     let _ = BUS.send(ActivityEvent {
         process_id,
@@ -91,6 +151,19 @@ pub enum Activity {
         used_tokens: i64,
         window: Option<i64>,
     },
+    /// `request` numbers a session's model requests; it pairs the start
+    /// with its end even when a workflow samples beside a turn.
+    ModelStarted {
+        request: i64,
+        model: String,
+    },
+    ModelEnded {
+        request: i64,
+        model: String,
+        outcome: CallOutcome,
+        duration_ms: u64,
+        usage: Option<ModelUsage>,
+    },
     Compacted,
     Limits {
         windows: Vec<LimitWindow>,
@@ -111,6 +184,27 @@ pub enum Activity {
         child: ProcessId,
     },
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ModelUsage {
+    pub input: i64,
+    pub cache_read: i64,
+    pub cache_write: i64,
+    pub output: i64,
+    pub reasoning: i64,
+}
+
+impl From<&chaos_ipc::protocol::TokenUsage> for ModelUsage {
+    fn from(usage: &chaos_ipc::protocol::TokenUsage) -> Self {
+        Self {
+            input: usage.input_tokens,
+            cache_read: usage.cache_read_input(),
+            cache_write: usage.cache_creation_input_tokens,
+            output: usage.output_tokens,
+            reasoning: usage.reasoning_output_tokens,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

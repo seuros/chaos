@@ -162,7 +162,7 @@ pub(super) async fn sample(
         return Err("tool-free workflow sampling is unsupported on clamped transports".into());
     }
     let run = async {
-        session.record_provider_request_started(&turn).await;
+        let model_request = session.record_provider_request_started(&turn).await;
         let metadata = turn.turn_metadata_state.current_header_value();
         let stream = client
             .stream_accounted(
@@ -179,6 +179,7 @@ pub(super) async fn sample(
             .await
             .map_err(|error| error.to_string())?;
         let output = output::collect(stream).await?;
+        model_request.finish(output.usage.as_ref());
         session
             .record_auxiliary_token_usage(&turn, output.usage.as_ref())
             .await;

@@ -82,7 +82,7 @@ pub(super) async fn try_run_sampling_request(
         effort = turn_context.reasoning_effort,
         auth_mode = sess.services.auth_manager.auth_mode(),
     );
-    sess.record_provider_request_started(&turn_context).await;
+    let mut model_request = Some(sess.record_provider_request_started(&turn_context).await);
     let mut stream = client_session
         .stream_accounted(
             &turn_context.sub_id,
@@ -323,6 +323,9 @@ pub(super) async fn try_run_sampling_request(
                     &mut assistant_message_stream_parsers,
                 )
                 .await;
+                if let Some(request) = model_request.take() {
+                    request.finish(token_usage.as_ref());
+                }
                 sess.update_token_usage_info(&turn_context, token_usage.as_ref())
                     .await;
                 should_emit_turn_diff = true;

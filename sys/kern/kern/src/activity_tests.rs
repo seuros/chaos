@@ -120,3 +120,60 @@ async fn an_answered_ask_is_resolved_under_the_id_it_was_raised_with() {
         ]
     );
 }
+
+#[tokio::test]
+async fn model_requests_end_with_their_usage_or_as_failed() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    ModelRequest::start(process_id, 1, "model-a").finish(Some(&chaos_ipc::protocol::TokenUsage {
+        input_tokens: 100,
+        cached_input_tokens: 60,
+        cache_creation_input_tokens: 10,
+        output_tokens: 7,
+        reasoning_output_tokens: 3,
+        ..Default::default()
+    }));
+    drop(ModelRequest::start(process_id, 2, "model-a"));
+    let ours = async {
+        let mut seen = Vec::new();
+        while seen.len() < 4 {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == process_id {
+                seen.push(event.activity);
+            }
+        }
+        seen
+    };
+    let seen = tokio::time::timeout(Duration::from_secs(5), ours)
+        .await
+        .expect("model requests never reached the bus");
+    let ends: Vec<_> = seen
+        .into_iter()
+        .filter_map(|activity| match activity {
+            Activity::ModelEnded {
+                request,
+                outcome,
+                usage,
+                ..
+            } => Some((request, outcome, usage)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        ends,
+        vec![
+            (
+                1,
+                CallOutcome::Ok,
+                Some(ModelUsage {
+                    input: 100,
+                    cache_read: 60,
+                    cache_write: 10,
+                    output: 7,
+                    reasoning: 3,
+                })
+            ),
+            (2, CallOutcome::Failed, None),
+        ]
+    );
+}

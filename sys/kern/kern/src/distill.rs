@@ -238,7 +238,7 @@ async fn drain_to_completed(
     turn_metadata_header: Option<&str>,
     prompt: &Prompt,
 ) -> ChaosResult<()> {
-    sess.record_provider_request_started(turn_context).await;
+    let model_request = sess.record_provider_request_started(turn_context).await;
     let mut stream = client_session
         .stream_accounted(
             &turn_context.sub_id,
@@ -272,6 +272,7 @@ async fn drain_to_completed(
                 sess.update_rate_limits(turn_context, snapshot).await;
             }
             Ok(ResponseEvent::Completed { token_usage, .. }) => {
+                model_request.finish(token_usage.as_ref());
                 sess.update_token_usage_info(turn_context, token_usage.as_ref())
                     .await;
                 return Ok(());

@@ -376,7 +376,7 @@ async fn resumed_history_restores_process_cumulative_usage_and_continues_accumul
     let actual = session.state.lock().await.token_info();
     assert_eq!(actual, Some(info2.clone()));
 
-    session.record_provider_request_started(&turn_context).await;
+    let _model_request = session.record_provider_request_started(&turn_context).await;
     session
         .update_token_usage_info(
             &turn_context,

@@ -123,6 +123,52 @@ fn failed_results_carry_what_claude_code_said() {
 }
 
 #[test]
+fn failed_results_classify_from_the_same_reason_as_their_detail() {
+    // An errors-only login failure is still a missing login.
+    assert!(matches!(
+        classify_failed_result(
+            &serde_json::Value::Null,
+            Some("error_during_execution"),
+            &[serde_json::json!("Not logged in. Please run /login")],
+            false,
+        ),
+        ClampError::AuthenticationUnavailable
+    ));
+    // A Cloudflare challenge, in result or errors, is a failed turn that says so.
+    let challenge = "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare";
+    for (result, errors) in [
+        (serde_json::json!(challenge), vec![]),
+        (serde_json::Value::Null, vec![serde_json::json!(challenge)]),
+    ] {
+        let ClampError::TurnFailed { detail, .. } =
+            classify_failed_result(&result, Some("error_during_execution"), &errors, false)
+        else {
+            panic!("a Cloudflare challenge is not a missing login");
+        };
+        assert_eq!(detail.as_deref(), Some(challenge));
+    }
+    // Auth wording on stderr still wins.
+    assert!(matches!(
+        classify_failed_result(&serde_json::json!(challenge), None, &[], true),
+        ClampError::AuthenticationUnavailable
+    ));
+}
+
+#[test]
+fn failed_result_detail_redacts_a_whole_cookie_header() {
+    let detail = failed_result_detail(
+        &serde_json::json!(
+            "request failed\nCookie: session=abc; remember_me=hunter2\nAPI Error: 500"
+        ),
+        &[],
+    )
+    .expect("detail");
+    assert!(!detail.contains("abc"), "{detail}");
+    assert!(!detail.contains("hunter2"), "{detail}");
+    assert!(detail.contains("API Error: 500"), "{detail}");
+}
+
+#[test]
 fn failed_result_detail_falls_back_to_errors_and_strips_pages() {
     assert_eq!(
         failed_result_detail(

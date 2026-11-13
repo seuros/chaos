@@ -696,18 +696,12 @@ impl ClampTransport {
         subtype: Option<&str>,
         errors: &[Value],
     ) -> ClampError {
-        let text = result
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| result.to_string());
-        if text_indicates_auth_failure(&text) || stderr_indicates_auth_failure(&self.stderr_tail) {
-            ClampError::AuthenticationUnavailable
-        } else {
-            ClampError::TurnFailed {
-                subtype: subtype.map(str::to_owned),
-                detail: failed_result_detail(result, errors),
-            }
-        }
+        classify_failed_result(
+            result,
+            subtype,
+            errors,
+            stderr_indicates_auth_failure(&self.stderr_tail),
+        )
     }
 
     async fn write_json(&mut self, value: &Value) -> Result<(), ClampError> {
@@ -947,16 +941,36 @@ fn failed_result_suffix(subtype: Option<&str>, detail: Option<&str>) -> String {
     }
 }
 
-/// What Claude Code said about a failed turn, made safe to log and to hand
-/// to a host: markup stripped (an HTML error page keeps its words), runs of
-/// whitespace collapsed, credential shapes redacted, length bounded.
-fn failed_result_detail(result: &Value, errors: &[Value]) -> Option<String> {
+/// A failed result as an error. Classification and the carried detail read
+/// one reason source (`failed_result_reason`), so a login failure reported
+/// only in `errors` is still `AuthenticationUnavailable`; a Cloudflare 403
+/// matches no auth marker and stays a `TurnFailed` that names itself.
+fn classify_failed_result(
+    result: &Value,
+    subtype: Option<&str>,
+    errors: &[Value],
+    stderr_says_auth: bool,
+) -> ClampError {
+    let reason = failed_result_reason(result, errors).unwrap_or_default();
+    if stderr_says_auth || text_indicates_auth_failure(&reason) {
+        ClampError::AuthenticationUnavailable
+    } else {
+        ClampError::TurnFailed {
+            subtype: subtype.map(str::to_owned),
+            detail: failed_result_detail(result, errors),
+        }
+    }
+}
+
+/// What Claude Code said about a failed turn, raw: the result text, or the
+/// errors list joined when the result is empty.
+fn failed_result_reason(result: &Value, errors: &[Value]) -> Option<String> {
     let value_text = |value: &Value| match value {
         Value::Null => None,
         Value::String(text) => Some(text.clone()),
         other => Some(other.to_string()),
     };
-    let raw = value_text(result)
+    value_text(result)
         .filter(|text| !text.trim().is_empty())
         .or_else(|| {
             let joined = errors
@@ -965,7 +979,14 @@ fn failed_result_detail(result: &Value, errors: &[Value]) -> Option<String> {
                 .collect::<Vec<_>>()
                 .join("; ");
             (!joined.trim().is_empty()).then_some(joined)
-        })?;
+        })
+}
+
+/// What Claude Code said about a failed turn, made safe to log and to hand
+/// to a host: markup stripped (an HTML error page keeps its words), runs of
+/// whitespace collapsed, credential shapes redacted, length bounded.
+fn failed_result_detail(result: &Value, errors: &[Value]) -> Option<String> {
+    let raw = failed_result_reason(result, errors)?;
     let text = crate::antigravity::sanitise_diagnostic(&strip_markup(&raw));
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {

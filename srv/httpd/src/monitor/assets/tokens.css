@@ -1,29 +1,41 @@
 :root {
-  color-scheme: light dark;
-  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --space-1: .25rem; --space-2: .5rem; --space-3: .75rem; --space-4: 1rem; --space-6: 1.5rem;
-  --radius: 10px;
-  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --line: #dde2e8;
-  --text: #17202a; --muted: #5d6b79;
-  --good: #1f8a4c; --bad: #c2362f; --ask: #b7791f; --busy: #2f6fd6; --quiet: #6b7785;
-  --station-kernel: #7c5cd6; --station-shell: #2f6fd6; --station-files: #1f8a8a;
-  --station-network: #c46a1f; --station-mcp: #8a4fb8; --station-web: #d14b8f;
-  --station-edit: #1f8a4c; --station-hooks: #8a7a1f;
-  --hue-0: #2f6fd6; --hue-1: #c46a1f; --hue-2: #1f8a8a; --hue-3: #d14b8f;
-  --hue-4: #6a52c9; --hue-5: #4f8a1f; --hue-6: #b8432f; --hue-7: #8a6a1f;
-  --map-ground: var(--surface);
+  color-scheme: dark light;
+  --font: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 28px;
+  --radius: 4px;
+  --track: .14em;
+
+  --ground: #080b10;
+  --grid: rgba(120, 150, 190, .045);
+  --panel: rgba(14, 19, 26, .82);
+  --panel-2: #111823;
+  --line: #1b2430;
+  --line-2: #263242;
+  --text: #d6dde6;
+  --muted: #6d7a8a;
+  --faint: #3a4656;
+
+  /* One warm accent for work in motion; meaning colours stay sparing. */
+  --accent: #e8a95b;
+  --accent-soft: rgba(232, 169, 91, .16);
+  --ok: #5cc8b0;
+  --bad: #ef6b8a;
+  --ask: #e9c85a;
+  --info: #7aa7ff;
+
+  --hue-0: #e8a95b; --hue-1: #7aa7ff; --hue-2: #5cc8b0; --hue-3: #c792ea;
+  --hue-4: #ef6b8a; --hue-5: #9fd36a; --hue-6: #e9c85a; --hue-7: #6fd0e8;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #0f1318; --surface: #161b22; --surface-2: #1d242d; --line: #2a333e;
-    --text: #e3e8ee; --muted: #8b98a7;
-    --good: #4cc27c; --bad: #f0706a; --ask: #e5a94a; --busy: #6ea2ff; --quiet: #8b98a7;
-    --station-kernel: #a58cff; --station-shell: #6ea2ff; --station-files: #4fc4c4;
-    --station-network: #f09a50; --station-mcp: #c08af0; --station-web: #f080b8;
-    --station-edit: #4cc27c; --station-hooks: #d6c35a;
-    --hue-0: #6ea2ff; --hue-1: #f09a50; --hue-2: #4fc4c4; --hue-3: #f080b8;
-    --hue-4: #a58cff; --hue-5: #9ad65a; --hue-6: #f0806a; --hue-7: #e0c060;
+    --ground: #f3f1ec; --grid: rgba(40, 50, 70, .05);
+    --panel: rgba(255, 255, 255, .86); --panel-2: #f7f5f0;
+    --line: #e2ddd3; --line-2: #d3ccbf;
+    --text: #1d232b; --muted: #6b6f76; --faint: #b9b3a8;
+    --accent: #c47a1e; --accent-soft: rgba(196, 122, 30, .14);
+    --ok: #1f8a75; --bad: #c43d5e; --ask: #a77d0c; --info: #2f63c9;
+    --hue-0: #c47a1e; --hue-1: #2f63c9; --hue-2: #1f8a75; --hue-3: #8a4fb8;
+    --hue-4: #c43d5e; --hue-5: #4f8a1f; --hue-6: #a77d0c; --hue-7: #1f7f99;
   }
 }
 [data-hue="0"] { --hue: var(--hue-0); } [data-hue="1"] { --hue: var(--hue-1); }

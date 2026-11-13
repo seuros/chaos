@@ -25,6 +25,7 @@ const TEMPLATES: &[(&str, &str)] = sources![
     "layout.html",
     "page.html",
     "partials/ui.html",
+    "partials/icons.html",
     "widgets/dashboard.html",
     "widgets/summary.html",
     "widgets/machine.html",

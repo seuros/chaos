@@ -1,2 +1,4 @@
-.machine p { margin: 0 0 var(--space-2); }
-.machine[data-pausing="true"] { border-color: var(--bad); }
+.machine p { margin-bottom: var(--space-2); }
+.machine-causes { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.machine[data-pausing="true"] { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
+.machine[data-pausing="true"]::before { border-color: var(--bad); }

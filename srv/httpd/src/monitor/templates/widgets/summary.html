@@ -1,6 +1,9 @@
 {% import "partials/ui.html" as ui %}
 <section id="w-summary" class="widget summary">
-  <h2 class="widget-title">Resident {{ ui.badge("online", "good") }}</h2>
+  <header class="widget-head">
+    <h2 class="widget-title">Resident</h2>
+    {{ ui.badge("online", "good") }}
+  </header>
   <div class="stats">
     {{ ui.stat("sessions", summary.sessions) }}
     {{ ui.stat("working", summary.working) }}

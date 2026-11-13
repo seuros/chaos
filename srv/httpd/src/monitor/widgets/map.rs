@@ -11,15 +11,15 @@ use serde::Serialize;
 use super::super::board::{Board, STATIONS};
 use super::super::view::{Widget, name};
 
-const WIDTH: f64 = 760.0;
-const HEIGHT: f64 = 470.0;
+const WIDTH: f64 = 720.0;
+const HEIGHT: f64 = 520.0;
 const CX: f64 = WIDTH / 2.0;
 /// Above centre: labels hang below each node, so the bottom needs the room.
-const CY: f64 = 222.0;
-const RX: f64 = 300.0;
-const RY: f64 = 165.0;
-const NODE_R: f64 = 30.0;
-const CORE_R: f64 = 54.0;
+const CY: f64 = 248.0;
+const RX: f64 = 270.0;
+const RY: f64 = 196.0;
+const NODE_R: f64 = 26.0;
+const CORE_R: f64 = 58.0;
 const PACKET_S: f64 = 1.6;
 const GLITCH_S: f64 = 4.0;
 const SHOCK_S: f64 = 2.4;
@@ -35,6 +35,8 @@ pub(in crate::monitor) struct Map {
     pub rings: Vec<(f64, f64)>,
     /// Phase of the shared breathing loop, so every redraw stays in step.
     pub breath: String,
+    /// The stations most recently visited, oldest first.
+    pub route: Vec<String>,
     pub core: Core,
     pub nodes: Vec<Node>,
     pub packets: Vec<Packet>,
@@ -48,6 +50,13 @@ pub(in crate::monitor) struct Core {
     pub r: f64,
     pub working: usize,
     pub sessions: usize,
+    /// The model a working session last asked, if any.
+    pub model: Option<String>,
+    /// The fullest session's context, drawn as the ring around the core.
+    pub context: Option<u8>,
+    pub ring_r: f64,
+    pub ring_track: String,
+    pub ring_fill: String,
     /// Seconds into the turn-end shockwave, while it is still playing.
     pub shock: Option<Phase>,
 }
@@ -86,7 +95,15 @@ pub(in crate::monitor) struct Packet {
     pub path: String,
     pub hue: usize,
     pub dur: f64,
+    /// The packet and the sparks trailing it, each a little behind.
+    pub trail: Vec<Spark>,
+}
+
+#[derive(Serialize)]
+pub(in crate::monitor) struct Spark {
     pub begin: String,
+    pub r: f64,
+    pub opacity: f64,
 }
 
 #[derive(Serialize)]
@@ -173,7 +190,16 @@ impl Map {
                         path: path.clone(),
                         hue,
                         dur: PACKET_S,
-                        begin: format!("-{:.2}s", elapsed % PACKET_S),
+                        trail: (0..4)
+                            .map(|spark| {
+                                let lag = f64::from(spark) * 0.05;
+                                Spark {
+                                    begin: format!("-{:.2}s", (elapsed - lag).rem_euclid(PACKET_S)),
+                                    r: 3.6 - f64::from(spark) * 0.7,
+                                    opacity: 1.0 - f64::from(spark) * 0.24,
+                                }
+                            })
+                            .collect(),
                     });
                 }
             }
@@ -182,7 +208,7 @@ impl Map {
                 x,
                 y,
                 r: NODE_R,
-                label_y: y + NODE_R + 16.0,
+                label_y: y + NODE_R + 18.0,
                 spoke: path,
                 active,
                 done: tally.done,
@@ -212,20 +238,49 @@ impl Map {
             })
             .collect();
         let working = board.sessions.values().filter(|s| s.working).count();
+        let model = board
+            .sessions
+            .values()
+            .filter(|s| s.working)
+            .max_by_key(|s| s.last_at_ms)
+            .or_else(|| board.sessions.values().max_by_key(|s| s.last_at_ms))
+            .and_then(|s| s.model.clone());
+        let context = board
+            .sessions
+            .values()
+            .filter_map(|s| {
+                let (used, window) = s.context?;
+                let window = window.filter(|w| *w > 0)?;
+                Some(((used.max(0) * 100) / window).min(100) as u8)
+            })
+            .max();
+        let ring_r = CORE_R + 9.0;
+        let circumference = std::f64::consts::TAU * ring_r;
+        let filled = circumference * f64::from(context.unwrap_or(0)) / 100.0;
         Self {
             width: WIDTH,
             height: HEIGHT,
-            rings: [0.38, 0.69, 1.0]
+            rings: [0.42, 0.71, 1.0, 1.12]
                 .iter()
                 .map(|scale| (RX * scale, RY * scale))
                 .collect(),
             breath: format!("-{:.2}s", (now_ms.rem_euclid(BREATH_MS)) as f64 / 1_000.0),
+            route: board
+                .route
+                .iter()
+                .map(|(station, _)| name(station))
+                .collect(),
             core: Core {
                 x: CX,
                 y: CY,
                 r: CORE_R,
                 working,
                 sessions: board.sessions.len(),
+                model,
+                context,
+                ring_r,
+                ring_track: format!("{circumference:.1}"),
+                ring_fill: format!("{filled:.1} {circumference:.1}"),
                 shock: board.turn_ended.and_then(|(at, outcome)| {
                     one_shot(now_ms, at, SHOCK_S).map(|delay| Phase {
                         delay,

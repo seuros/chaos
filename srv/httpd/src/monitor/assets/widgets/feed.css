@@ -1,11 +1,12 @@
-.feed-list { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; display: grid; gap: 2px; }
-.entry { display: grid; grid-template-columns: auto auto auto 1fr; gap: var(--space-2); align-items: baseline; padding: 2px var(--space-1); border-left: 3px solid transparent; font-size: .85em; }
-.entry[data-station] { border-left-color: var(--station-color); }
-.entry-time, .entry-session { color: var(--muted); font-family: var(--font-mono); }
-.entry-station { color: var(--station-color, var(--muted)); font-weight: 600; }
-.entry-text { font-family: var(--font-mono); overflow-wrap: anywhere; }
+.feed-list { list-style: none; margin: 0; padding: 0; max-height: 64vh; overflow: auto; display: grid; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+.entry { display: grid; grid-template-columns: 8ch 8ch 8ch 1fr; gap: var(--space-2); align-items: baseline; padding: 3px 0; font-size: 11.5px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.entry-time { color: var(--faint); }
+.entry-session { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
+.entry-session::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--hue, var(--muted)); }
+.entry-station { color: var(--muted); }
+.entry-text { color: var(--text); overflow-wrap: anywhere; }
 .entry[data-tone="bad"] .entry-text { color: var(--bad); }
-.entry[data-tone="good"] .entry-text { color: var(--good); }
-.entry[data-tone="ask"] .entry-text { color: var(--ask); font-weight: 600; }
-.entry:not([data-station]) { grid-template-columns: auto auto 1fr; }
-.entry-session::before { content: ""; display: inline-block; width: .5em; height: .5em; margin-right: 3px; border-radius: 50%; background: var(--hue, var(--quiet)); }
+.entry[data-tone="good"] .entry-text { color: var(--ok); }
+.entry[data-tone="ask"] .entry-text { color: var(--ask); }
+.entry[data-tone="quiet"] .entry-text { color: color-mix(in srgb, var(--text) 82%, var(--muted)); }
+.entry:not([data-station]) .entry-text { grid-column: 3 / -1; }

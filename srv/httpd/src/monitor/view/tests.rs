@@ -113,7 +113,7 @@ fn the_page_links_the_stylesheet_of_this_build() {
 #[test]
 fn the_stylesheet_carries_tokens_before_widgets() {
     let css = &STYLESHEET.css;
-    let tokens = css.find("--station-kernel").unwrap();
+    let tokens = css.find("--accent:").unwrap();
     let session = css.find(".session-grid").unwrap();
     assert!(tokens < session);
     assert_eq!(STYLESHEET.version.len(), 12);

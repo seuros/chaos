@@ -1,6 +1,9 @@
 {% import "partials/ui.html" as ui %}
 <section id="w-attention" class="widget attention">
-  <h2 class="widget-title">Needs attention{% if attention.items %} {{ ui.badge(attention.items | length, "bad" if attention.items[0].tone == "bad" else "ask") }}{% endif %}</h2>
+  <header class="widget-head">
+    <h2 class="widget-title">Needs attention</h2>
+    {% if attention.items %}<span class="widget-meta">{{ attention.items | length }} open</span>{% endif %}
+  </header>
   {% if attention.items %}
   <ul class="attention-list">
     {% for item in attention.items %}

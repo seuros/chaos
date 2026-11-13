@@ -1,0 +1,36 @@
+<section id="w-map" class="widget map" style="--breath: {{ map.breath }}">
+  <h2 class="widget-title">Stations</h2>
+  <svg class="map-svg" viewBox="0 0 {{ map.width }} {{ map.height }}" role="img" aria-label="Where the resident's tool calls are running">
+    <g class="map-rings">
+      {% for ring in map.rings %}<ellipse cx="{{ map.core.x }}" cy="{{ map.core.y }}" rx="{{ ring[0] }}" ry="{{ ring[1] }}"/>{% endfor %}
+    </g>
+    {% for node in map.nodes %}
+    <path class="spoke" data-station="{{ node.station }}" data-active="{{ (node.active > 0) | flag }}" d="{{ node.spoke }}"/>
+    {% endfor %}
+    {% for leg in map.legs %}
+    <path class="leg{% if leg.newest %} is-newest{% endif %}" d="{{ leg.path }}" style="opacity: {{ leg.opacity }}"/>
+    {% endfor %}
+    {% for packet in map.packets %}
+    <circle class="packet" r="4.5" data-hue="{{ packet.hue }}">
+      <animateMotion dur="{{ packet.dur }}s" begin="{{ packet.begin }}" repeatCount="indefinite" path="{{ packet.path }}"/>
+    </circle>
+    {% endfor %}
+    <g class="core" data-working="{{ (map.core.working > 0) | flag }}">
+      {% if map.core.shock %}<circle class="shock" data-tone="{{ map.core.shock.tone }}" cx="{{ map.core.x }}" cy="{{ map.core.y }}" r="{{ map.core.r }}" style="animation-delay: {{ map.core.shock.delay }}"/>{% endif %}
+      <circle class="core-halo" cx="{{ map.core.x }}" cy="{{ map.core.y }}" r="{{ map.core.r + 8 }}"/>
+      <circle class="core-body" cx="{{ map.core.x }}" cy="{{ map.core.y }}" r="{{ map.core.r }}"/>
+      <text class="core-count" x="{{ map.core.x }}" y="{{ map.core.y + 4 }}">{{ map.core.working }}</text>
+      <text class="core-label" x="{{ map.core.x }}" y="{{ map.core.y + 22 }}">working of {{ map.core.sessions }}</text>
+    </g>
+    {% for node in map.nodes %}
+    <g class="node{% if node.glitch %} is-glitching{% endif %}" data-station="{{ node.station }}" data-active="{{ (node.active > 0) | flag }}"{% if node.glitch %} style="--glitch: {{ node.glitch.delay }}"{% endif %}>
+      <circle class="node-glow" cx="{{ node.x }}" cy="{{ node.y }}" r="{{ node.r + 6 }}"/>
+      <circle class="node-body" cx="{{ node.x }}" cy="{{ node.y }}" r="{{ node.r }}"/>
+      <text class="node-count" x="{{ node.x }}" y="{{ node.y + 6 }}">{{ node.active }}</text>
+      <text class="node-label" x="{{ node.x }}" y="{{ node.label_y }}">{{ node.station }}</text>
+      <text class="node-tally" x="{{ node.x }}" y="{{ node.label_y + 13 }}">{{ node.done }}{% if node.failed %} · <tspan class="node-failed">{{ node.failed }}✕</tspan>{% endif %}</text>
+      {% for pip in node.pips %}<circle class="pip" data-hue="{{ pip.hue }}" cx="{{ pip.x }}" cy="{{ pip.y }}" r="4"/>{% endfor %}
+    </g>
+    {% endfor %}
+  </svg>
+</section>

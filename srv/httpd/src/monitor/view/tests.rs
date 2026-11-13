@@ -1,6 +1,8 @@
 use super::*;
 use crate::monitor::board::Board;
-use crate::monitor::widgets::{Dashboard, Feed, Limits, Machine, Sessions, Stations, Summary};
+use crate::monitor::widgets::{
+    Attention, Dashboard, Feed, Instruments, Machine, Map, Sessions, Summary,
+};
 use chaos_ipc::ProcessId;
 use chaos_kern::activity::{Activity, ActivityEvent, Station};
 
@@ -56,8 +58,9 @@ fn the_dashboard_composes_every_widget_under_its_id() {
     let html = Dashboard {
         summary: summary(),
         machine: Machine::from(&board),
-        limits: Limits::from(&board),
-        stations: Stations::from(&board),
+        instruments: Instruments::from(&board, 2_000),
+        map: Map::from(&board, 2_000),
+        attention: Attention::from(&board, 2_000),
         sessions: Sessions::from(&board),
         feed: Feed::from(&board),
     }
@@ -67,8 +70,9 @@ fn the_dashboard_composes_every_widget_under_its_id() {
         r#"id="dashboard""#,
         r#"id="w-summary""#,
         r#"id="w-machine""#,
-        r#"id="w-limits""#,
-        r#"id="w-stations""#,
+        r#"id="w-instruments""#,
+        r#"id="w-map""#,
+        r#"id="w-attention""#,
         r#"id="w-sessions""#,
         r#"id="w-feed""#,
         &format!(r#"id="s-{id}""#),
@@ -78,8 +82,12 @@ fn the_dashboard_composes_every_widget_under_its_id() {
     assert!(html.contains(r#"data-state="working""#), "{html}");
     assert!(html.contains(r#"data-station="network""#), "{html}");
     assert!(
-        html.contains(r#"data-station="network" data-active="true""#),
+        html.contains(r#"class="node" data-station="network" data-active="true""#),
         "the call in flight lights its station:\n{html}"
+    );
+    assert!(
+        html.contains(r#"begin="-0.40s""#),
+        "a packet picks up where the clock says it is:\n{html}"
     );
     assert!(html.contains("no warnings"), "{html}");
 }

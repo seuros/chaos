@@ -10,7 +10,9 @@ button { background: var(--surface-2); border: 1px solid var(--line); border-rad
 .connect-field { display: flex; gap: var(--space-2); align-items: center; }
 .hint, .widget-foot { color: var(--muted); font-size: .85em; }
 .dashboard { display: grid; gap: var(--space-4); }
-.dashboard-top { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.band { display: grid; gap: var(--space-4); grid-template-columns: minmax(220px, 1fr) minmax(360px, 2fr) minmax(200px, 1fr); }
+.stage { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); align-items: start; }
+@media (max-width: 1100px) { .band, .stage { grid-template-columns: 1fr; } }
 .dashboard-body { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; }
 @media (max-width: 900px) { .dashboard-body { grid-template-columns: 1fr; } }
 .widget { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-4); }

@@ -25,3 +25,25 @@
 {% macro empty(text) -%}
 <p class="empty">{{ text }}</p>
 {%- endmacro %}
+
+{% macro dial(d) -%}
+<figure class="dial" data-level="{{ d.level }}">
+  <svg viewBox="0 0 90 90" aria-hidden="true">
+    <circle class="dial-track" cx="45" cy="45" r="34" stroke-dasharray="{{ d.track }}"/>
+    {% if d.value %}<circle class="dial-fill" cx="45" cy="45" r="34" stroke-dasharray="{{ d.fill }}"/>{% endif %}
+  </svg>
+  <span class="dial-value">{% if d.value is not none %}{{ d.value }}%{% else %}—{% endif %}</span>
+  <figcaption><span class="dial-label">{{ d.label }}</span>{% if d.note %}<span class="dial-note">{{ d.note }}</span>{% endif %}</figcaption>
+</figure>
+{%- endmacro %}
+
+{% macro gauge(g) -%}
+<div class="gauge" data-ahead="{{ g.ahead | flag }}">
+  <span class="gauge-label">{{ g.label }}</span>
+  <span class="gauge-track">
+    <span class="gauge-fill" style="width: {{ g.used }}%"></span>
+    {% if g.pace is not none %}<span class="gauge-pace" style="left: {{ g.pace }}%" title="pace: {{ g.pace }}% of the window has passed"></span>{% endif %}
+  </span>
+  <span class="gauge-value">{{ g.used }}%{% if g.ahead %} ahead{% endif %}</span>
+</div>
+{%- endmacro %}

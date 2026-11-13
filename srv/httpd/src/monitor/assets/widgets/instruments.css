@@ -1,0 +1,26 @@
+.instruments-row { display: grid; grid-template-columns: auto auto 1fr; gap: var(--space-4); align-items: center; }
+.dial { position: relative; margin: 0; width: 96px; display: grid; justify-items: center; }
+.dial svg { width: 90px; height: 90px; transform: rotate(135deg); }
+.dial-track, .dial-fill { fill: none; stroke-width: 8; stroke-linecap: round; }
+.dial-track { stroke: var(--surface-2); }
+.dial-fill { stroke: var(--good); transition: stroke-dasharray .5s ease; }
+.dial[data-level="mid"] .dial-fill { stroke: var(--ask); }
+.dial[data-level="high"] .dial-fill { stroke: var(--bad); }
+.dial-value { position: absolute; top: 30px; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dial figcaption { display: grid; justify-items: center; margin-top: -10px; }
+.dial-label { font-size: .8em; color: var(--muted); }
+.dial-note { font-size: .7em; color: var(--muted); }
+.split { display: grid; gap: var(--space-1); }
+.split-label { font-size: .8em; color: var(--muted); }
+.split-bar { height: 8px; border-radius: 999px; background: var(--station-network); overflow: hidden; }
+.split-in { display: block; height: 100%; background: var(--busy); }
+.split-legend { display: flex; justify-content: space-between; font-size: .8em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gauges { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+.gauge { display: grid; grid-template-columns: 4rem 1fr 5rem; align-items: center; gap: var(--space-2); font-size: .85em; }
+.gauge-label, .gauge-value { color: var(--muted); font-variant-numeric: tabular-nums; }
+.gauge-value { text-align: right; }
+.gauge-track { position: relative; height: 8px; background: var(--surface-2); border-radius: 999px; }
+.gauge-fill { display: block; height: 100%; border-radius: 999px; background: var(--good); }
+.gauge[data-ahead="true"] .gauge-fill { background: var(--ask); }
+.gauge[data-ahead="true"] .gauge-value { color: var(--ask); font-weight: 600; }
+.gauge-pace { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }

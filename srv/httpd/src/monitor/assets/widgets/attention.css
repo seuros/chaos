@@ -1,0 +1,8 @@
+.attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.attention-item { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-2); padding: var(--space-2) var(--space-3); border-radius: 8px; border-left: 4px solid var(--quiet); background: var(--surface-2); }
+.attention-item[data-tone="bad"] { border-left-color: var(--bad); }
+.attention-item[data-tone="ask"] { border-left-color: var(--ask); }
+.attention-title { font-weight: 600; }
+.attention-session { font-family: var(--font-mono); color: var(--muted); font-size: .85em; }
+.attention-detail { grid-column: 1 / -1; color: var(--muted); font-size: .85em; }
+.attention-clear { margin: 0; color: var(--good); font-weight: 600; }

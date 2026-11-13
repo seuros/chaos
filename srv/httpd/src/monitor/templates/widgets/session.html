@@ -1,5 +1,5 @@
 {% import "partials/ui.html" as ui %}
-<article id="s-{{ session.id }}" class="session" data-state="{{ session.state }}">
+<article id="s-{{ session.id }}" class="session" data-state="{{ session.state }}" data-hue="{{ session.hue }}">
   <header class="session-head">
     <span class="session-id" title="{{ session.id }}">…{{ session.short }}</span>
     {{ ui.badge(session.state, session.tone) }}

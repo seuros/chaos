@@ -23,6 +23,7 @@ pub(super) const STATIONS: [Station; 8] = [
     Station::Hooks,
 ];
 const SESSIONS_LEN: usize = 64;
+const ROUTE_LEN: usize = 7;
 
 #[derive(Debug, Default)]
 pub(super) struct Board {
@@ -31,12 +32,16 @@ pub(super) struct Board {
     pub limits: Vec<LimitWindow>,
     pub stations: HashMap<Station, Tally>,
     pub feed: VecDeque<Entry>,
+    /// The last stations visited, oldest first, repeats collapsed.
+    pub route: VecDeque<(Station, i64)>,
+    pub turn_ended: Option<(i64, TurnOutcome)>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) struct Tally {
     pub done: u64,
     pub failed: u64,
+    pub failed_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +58,10 @@ pub(super) struct Session {
     pub usage: ModelUsage,
     pub agents: u64,
     pub last_at_ms: i64,
+    /// Calls that failed one after another, reset by one that succeeds.
+    pub failing: u32,
+    /// A check kind whose last run failed, until a run of that kind passes.
+    pub failed_check: Option<CheckKind>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +69,7 @@ pub(super) struct Call {
     pub station: Station,
     pub label: String,
     pub check: Option<CheckKind>,
+    pub started_ms: i64,
 }
 
 /// One line of the feed: something finished, failed, or needs attention.
@@ -87,7 +97,7 @@ pub(super) enum Change {
     SessionAdded,
     Machine,
     Limits,
-    Stations,
+    Map,
     Feed,
 }
 
@@ -112,6 +122,8 @@ impl Session {
             },
             agents: 0,
             last_at_ms: at_ms,
+            failing: 0,
+            failed_check: None,
         }
     }
 }
@@ -139,14 +151,22 @@ impl Board {
             .entry(id)
             .or_insert_with(|| Session::new(event.at_ms));
         session.last_at_ms = event.at_ms;
-        let entry = fold(session, &event.activity);
+        let entry = fold(session, &event.activity, event.at_ms);
         let mut changes = vec![if added {
             Change::SessionAdded
         } else {
             Change::Session(id)
         }];
         match &event.activity {
-            Activity::CallStarted { .. } => changes.push(Change::Stations),
+            Activity::CallStarted { station, .. } => {
+                if self.route.back().map(|(last, _)| last) != Some(station) {
+                    self.route.push_back((*station, event.at_ms));
+                    while self.route.len() > ROUTE_LEN {
+                        self.route.pop_front();
+                    }
+                }
+                changes.push(Change::Map);
+            }
             Activity::CallEnded {
                 station, outcome, ..
             } => {
@@ -155,8 +175,13 @@ impl Board {
                     tally.done += 1;
                 } else {
                     tally.failed += 1;
+                    tally.failed_at_ms = Some(event.at_ms);
                 }
-                changes.push(Change::Stations);
+                changes.push(Change::Map);
+            }
+            Activity::TurnEnded { outcome } => {
+                self.turn_ended = Some((event.at_ms, *outcome));
+                changes.push(Change::Map);
             }
             _ => {}
         }
@@ -195,11 +220,12 @@ impl Board {
 
 type Line = (Option<Station>, String, Tone);
 
-fn fold(session: &mut Session, activity: &Activity) -> Option<Line> {
+fn fold(session: &mut Session, activity: &Activity, at_ms: i64) -> Option<Line> {
     match activity {
         Activity::TurnStarted => {
             session.working = true;
             session.failed = false;
+            session.failing = 0;
             session.turns += 1;
             None
         }
@@ -225,6 +251,7 @@ fn fold(session: &mut Session, activity: &Activity) -> Option<Line> {
                     station: *station,
                     label: label.clone(),
                     check: *check,
+                    started_ms: at_ms,
                 },
             );
             None
@@ -245,6 +272,14 @@ fn fold(session: &mut Session, activity: &Activity) -> Option<Line> {
                 || check
                     .and_then(|check| check.counts)
                     .is_some_and(|counts| counts.failed > 0);
+            session.failing = if failed { session.failing + 1 } else { 0 };
+            if let Some(check) = check {
+                if failed {
+                    session.failed_check = Some(check.kind);
+                } else if session.failed_check == Some(check.kind) {
+                    session.failed_check = None;
+                }
+            }
             let mut text = label.clone();
             if *outcome == CallOutcome::Declined {
                 text.push_str(" declined");

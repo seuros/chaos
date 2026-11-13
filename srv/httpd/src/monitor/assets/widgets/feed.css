@@ -8,3 +8,4 @@
 .entry[data-tone="good"] .entry-text { color: var(--good); }
 .entry[data-tone="ask"] .entry-text { color: var(--ask); font-weight: 600; }
 .entry:not([data-station]) { grid-template-columns: auto auto 1fr; }
+.entry-session::before { content: ""; display: inline-block; width: .5em; height: .5em; margin-right: 3px; border-radius: 50%; background: var(--hue, var(--quiet)); }

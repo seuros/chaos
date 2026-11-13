@@ -137,11 +137,13 @@ requires the same `Authorization: Bearer <token>` header as triggers; URL tokens
 and cookies are not accepted. The page does not persist the token in browser
 storage or send it in query parameters. Reload the page to disconnect.
 
-Once connected, the page shows the resident: its sessions and what each is
-doing, the stations their tool calls run on (kernel, shell, files, network,
-MCP, web, edit, hooks), check results with their counts, context and token
-use, questions waiting on you, rate limits, and whether a machine warning is
-pausing agents. It shows what happened since serve started, not history from
+Once connected, the page shows the resident: a map of the stations tool calls
+run on (kernel, shell, files, network, MCP, web, edit, hooks) with each call in
+flight and the recent route between them; dials for the fullest context, cache
+hit and token split; rate limits against the pace of their window; a
+needs-attention list (machine warnings pausing agents, questions waiting on
+you, failing checks, repeated failures, slow calls, full context, low cache
+hit); each session with its last check; and an activity feed. It shows what happened since serve started, not history from
 the journal, and never prompts, arguments, output or file contents.
 
 The authenticated SSE stream includes process IDs. Neither the page nor live

@@ -14,7 +14,9 @@ use tokio::sync::broadcast;
 use crate::ServerState;
 use board::{Board, Change};
 use view::{Patch, prepend, replace};
-use widgets::{Dashboard, Entry, Feed, Limits, Machine, Session, Sessions, Stations, Summary};
+use widgets::{
+    Attention, Dashboard, Entry, Feed, Instruments, Machine, Map, Session, Sessions, Summary,
+};
 
 mod board;
 mod view;
@@ -22,6 +24,7 @@ mod widgets;
 
 const MONITOR_EVENT_CAPACITY: usize = 256;
 const CHANGE_CAPACITY: usize = 1024;
+const TICK: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct MonitorEvent {
@@ -183,8 +186,12 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
 
     let stream = stream_fn(async move |mut yielder| {
         yielder.yield_item(dashboard(&state)).await;
+        let mut clock = tokio::time::interval(TICK);
+        clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        clock.tick().await;
         loop {
             let patches = tokio::select! {
+                _ = clock.tick() => tick(&state),
                 event = monitor.recv() => match event {
                     Ok(_) => vec![replace(&summary(&state))],
                     Err(broadcast::error::RecvError::Lagged(_)) => vec![dashboard(&state)],
@@ -224,14 +231,20 @@ fn board(state: &ServerState) -> Result<std::sync::MutexGuard<'_, Board>, rama::
         .map_err(|_| "monitor board poisoned".into())
 }
 
+fn now_ms() -> i64 {
+    jiff::Timestamp::now().as_millisecond()
+}
+
 fn dashboard(state: &ServerState) -> Patch {
+    let now = now_ms();
     let widget = {
         let board = board(state)?;
         Dashboard {
             summary: summary_from(state, &board),
             machine: Machine::from(&board),
-            limits: Limits::from(&board),
-            stations: Stations::from(&board),
+            instruments: Instruments::from(&board, now),
+            map: Map::from(&board, now),
+            attention: Attention::from(&board, now),
             sessions: Sessions::from(&board),
             feed: Feed::from(&board),
         }
@@ -272,18 +285,27 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
         Ok(board) => board,
         Err(error) => return vec![Err(error)],
     };
+    let now = now_ms();
     match change {
-        Change::Session(id) => vec![match board.sessions.get(id) {
-            Some(session) => replace(&Session::from(*id, session)),
-            None => replace(&Sessions::from(&board)),
-        }],
+        Change::Session(id) => vec![
+            match board.sessions.get(id) {
+                Some(session) => replace(&Session::from(*id, session)),
+                None => replace(&Sessions::from(&board)),
+            },
+            replace(&Instruments::from(&board, now)),
+            replace(&Attention::from(&board, now)),
+        ],
         Change::SessionAdded => vec![
             replace(&summary_from(state, &board)),
             replace(&Sessions::from(&board)),
+            replace(&Map::from(&board, now)),
         ],
-        Change::Machine => vec![replace(&Machine::from(&board))],
-        Change::Limits => vec![replace(&Limits::from(&board))],
-        Change::Stations => vec![replace(&Stations::from(&board))],
+        Change::Machine => vec![
+            replace(&Machine::from(&board)),
+            replace(&Attention::from(&board, now)),
+        ],
+        Change::Limits => vec![replace(&Instruments::from(&board, now))],
+        Change::Map => vec![replace(&Map::from(&board, now))],
         Change::Feed => vec![match board.feed.back() {
             Some(entry) if board.feed.len() > 1 && board.feed.len() < board::FEED_LEN => {
                 prepend("#w-feed-list", &Entry::from(entry))
@@ -291,6 +313,20 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
             _ => replace(&Feed::from(&board)),
         }],
     }
+}
+
+/// Clocks move without events: uptime, slow calls, gauge pace.
+fn tick(state: &ServerState) -> Vec<Patch> {
+    let board = match board(state) {
+        Ok(board) => board,
+        Err(error) => return vec![Err(error)],
+    };
+    let now = now_ms();
+    vec![
+        replace(&summary_from(state, &board)),
+        replace(&Attention::from(&board, now)),
+        replace(&Instruments::from(&board, now)),
+    ]
 }
 
 #[cfg(test)]

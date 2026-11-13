@@ -1,10 +1,13 @@
 <main id="dashboard" class="dashboard">
-  <div class="dashboard-top">
+  <div class="band">
     {% with summary = dashboard.summary %}{% include "widgets/summary.html" %}{% endwith %}
+    {% with instruments = dashboard.instruments %}{% include "widgets/instruments.html" %}{% endwith %}
     {% with machine = dashboard.machine %}{% include "widgets/machine.html" %}{% endwith %}
-    {% with limits = dashboard.limits %}{% include "widgets/limits.html" %}{% endwith %}
   </div>
-  {% with stations = dashboard.stations %}{% include "widgets/stations.html" %}{% endwith %}
+  <div class="stage">
+    {% with map = dashboard.map %}{% include "widgets/map.html" %}{% endwith %}
+    {% with attention = dashboard.attention %}{% include "widgets/attention.html" %}{% endwith %}
+  </div>
   <div class="dashboard-body">
     {% with sessions = dashboard.sessions %}{% include "widgets/sessions.html" %}{% endwith %}
     {% with feed = dashboard.feed %}{% include "widgets/feed.html" %}{% endwith %}

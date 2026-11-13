@@ -41,7 +41,12 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
         ("GET", "/api/health", None, StatusCode::OK),
         ("GET", "/monitor", None, StatusCode::OK),
         ("GET", "/monitor/app.css", None, StatusCode::OK),
-        ("POST", "/monitor/app.css", None, StatusCode::METHOD_NOT_ALLOWED),
+        (
+            "POST",
+            "/monitor/app.css",
+            None,
+            StatusCode::METHOD_NOT_ALLOWED,
+        ),
         ("GET", "/monitor/events", None, StatusCode::UNAUTHORIZED),
         (
             "GET",

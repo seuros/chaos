@@ -5,6 +5,7 @@
 .session[data-state="failed"] { border-left-color: var(--bad); }
 .session-head { display: flex; align-items: center; gap: var(--space-2); }
 .session-id { font-family: var(--font-mono); font-weight: 600; }
+.session-id::before { content: ""; display: inline-block; width: .6em; height: .6em; margin-right: var(--space-1); border-radius: 50%; background: var(--hue, var(--quiet)); }
 .session-model { margin-left: auto; color: var(--muted); font-size: .85em; }
 .session-model[data-thinking="true"]::before { content: ""; display: inline-block; width: .5em; height: .5em; margin-right: var(--space-1); border-radius: 50%; background: var(--busy); animation: pulse 1.2s ease-in-out infinite; }
 .session-calls { display: flex; flex-wrap: wrap; gap: var(--space-1); }

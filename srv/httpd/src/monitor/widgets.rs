@@ -7,6 +7,14 @@ use serde::Serialize;
 use super::board::{self, Board, Entry as BoardEntry, Session as BoardSession, Tone};
 use super::view::{Widget, name};
 
+mod attention;
+mod instruments;
+mod map;
+
+pub(super) use attention::Attention;
+pub(super) use instruments::Instruments;
+pub(super) use map::Map;
+
 #[derive(Serialize)]
 pub(super) struct Summary {
     pub connected: bool,
@@ -59,89 +67,6 @@ impl Machine {
 }
 
 #[derive(Serialize)]
-pub(super) struct Stations {
-    pub items: Vec<StationTile>,
-}
-
-#[derive(Serialize)]
-pub(super) struct StationTile {
-    pub name: String,
-    pub active: usize,
-    pub done: u64,
-    pub failed: u64,
-}
-
-impl Widget for Stations {
-    const NAME: &'static str = "stations";
-}
-
-impl Stations {
-    pub(super) fn from(board: &Board) -> Self {
-        let items = board::STATIONS
-            .iter()
-            .map(|station| {
-                let tally = board.stations.get(station).copied().unwrap_or_default();
-                StationTile {
-                    name: name(station),
-                    active: board
-                        .sessions
-                        .values()
-                        .flat_map(|session| session.calls.values())
-                        .filter(|call| call.station == *station)
-                        .count(),
-                    done: tally.done,
-                    failed: tally.failed,
-                }
-            })
-            .collect();
-        Self { items }
-    }
-}
-
-#[derive(Serialize)]
-pub(super) struct Limits {
-    pub windows: Vec<Window>,
-}
-
-#[derive(Serialize)]
-pub(super) struct Window {
-    pub label: String,
-    pub used_percent: u8,
-    pub resets_at: Option<i64>,
-}
-
-impl Widget for Limits {
-    const NAME: &'static str = "limits";
-}
-
-impl Limits {
-    pub(super) fn from(board: &Board) -> Self {
-        Self {
-            windows: board
-                .limits
-                .iter()
-                .map(|window| Window {
-                    label: window
-                        .window_minutes
-                        .map_or_else(|| "window".into(), window_label),
-                    used_percent: window.used_percent,
-                    resets_at: window.resets_at,
-                })
-                .collect(),
-        }
-    }
-}
-
-fn window_label(minutes: i64) -> String {
-    match minutes {
-        10_080 => "week".into(),
-        1_440 => "day".into(),
-        m if m % 60 == 0 => format!("{}h", m / 60),
-        m => format!("{m}m"),
-    }
-}
-
-#[derive(Serialize)]
 pub(super) struct Sessions {
     pub items: Vec<Session>,
 }
@@ -168,6 +93,7 @@ pub(super) struct Session {
     pub short: String,
     pub state: &'static str,
     pub tone: &'static str,
+    pub hue: usize,
     #[serde(skip)]
     pub rank: u8,
     pub last_at_ms: i64,
@@ -205,8 +131,8 @@ impl Widget for Session {
 }
 
 impl Session {
-    pub(super) fn from(id: ProcessId, session: &BoardSession) -> Self {
-        let id = id.to_string();
+    pub(super) fn from(process_id: ProcessId, session: &BoardSession) -> Self {
+        let id = process_id.to_string();
         let (state, tone, rank) = if !session.asks.is_empty() {
             ("waiting", "ask", 0)
         } else if session.working {
@@ -223,6 +149,7 @@ impl Session {
             id,
             state,
             tone,
+            hue: map::hue(&process_id),
             rank,
             last_at_ms: session.last_at_ms,
             turns: session.turns,
@@ -286,6 +213,7 @@ impl Feed {
 pub(super) struct Entry {
     pub time: String,
     pub session: String,
+    pub hue: usize,
     pub station: Option<String>,
     pub text: String,
     pub tone: &'static str,
@@ -303,6 +231,7 @@ impl From<&BoardEntry> for Entry {
                 .map(|at| at.strftime("%H:%M:%S").to_string())
                 .unwrap_or_default(),
             session: short(&id),
+            hue: map::hue(&entry.process_id),
             station: entry.station.as_ref().map(name),
             text: entry.text.clone(),
             tone: match entry.tone {
@@ -319,8 +248,9 @@ impl From<&BoardEntry> for Entry {
 pub(super) struct Dashboard {
     pub summary: Summary,
     pub machine: Machine,
-    pub limits: Limits,
-    pub stations: Stations,
+    pub instruments: Instruments,
+    pub map: Map,
+    pub attention: Attention,
     pub sessions: Sessions,
     pub feed: Feed,
 }
@@ -330,12 +260,12 @@ impl Widget for Dashboard {
 }
 
 /// The last four characters: enough to tell live sessions apart.
-fn short(id: &str) -> String {
+pub(super) fn short(id: &str) -> String {
     let start = id.char_indices().rev().nth(3).map_or(0, |(at, _)| at);
     id[start..].to_string()
 }
 
-fn compact(count: i64) -> String {
+pub(super) fn compact(count: i64) -> String {
     match count {
         ..1_000 => count.to_string(),
         1_000..1_000_000 => format!("{:.1}k", count as f64 / 1_000.0),

@@ -10,9 +10,9 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
-- `chaos serve`'s `/monitor` shows the resident live: sessions, the stations
-  their tool calls run on, check results, context and token use, questions
-  waiting on you, rate limits, and machine warnings that pause agents.
+- `chaos serve`'s `/monitor` shows the resident live: a station map with each
+  tool call moving to where it runs, dials for context, cache and limits
+  (with pace), a needs-attention list, session lanes and an activity feed.
 - `CHAOS_AUTH_HOME` moves provider credentials into their own directory while
   sessions, history, settings, trust and hooks stay in `$CHAOS_HOME`, so one
   home can serve both API-key and subscription runs for the same provider. An

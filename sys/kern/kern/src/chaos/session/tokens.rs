@@ -427,7 +427,10 @@ impl Session {
     /// Call this immediately before invoking the provider client. It therefore
     /// counts tool continuations, lifecycle-hook continuations, and dispatched
     /// requests that fail while opening or consuming the response stream.
-    pub(crate) async fn record_provider_request_started(&self, turn_context: &TurnContext) {
+    pub(crate) async fn record_provider_request_started(
+        &self,
+        turn_context: &TurnContext,
+    ) -> crate::activity::ModelRequest {
         let provider_request_count = {
             let mut state = self.state.lock().await;
             let mut info = state.token_info().unwrap_or(TokenUsageInfo {
@@ -457,6 +460,11 @@ impl Session {
             provider_request_started: true,
         });
         self.send_event(turn_context, event).await;
+        crate::activity::ModelRequest::start(
+            self.conversation_id,
+            provider_request_count,
+            &turn_context.model_info.slug,
+        )
     }
 
     pub(crate) async fn set_total_tokens_full(&self, turn_context: &TurnContext) {

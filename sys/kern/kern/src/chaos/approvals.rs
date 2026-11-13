@@ -314,7 +314,9 @@ impl Session {
             parsed_cmd,
         });
         self.send_event(turn_context, event).await;
-        rx_approve.await.unwrap_or(ReviewDecision::Abort)
+        let decision = rx_approve.await.unwrap_or(ReviewDecision::Abort);
+        crate::activity::resolved(self.conversation_id, effective_approval_id);
+        decision
     }
 
     pub async fn request_patch_approval(
@@ -402,13 +404,15 @@ impl Session {
         }
 
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
-            call_id,
+            call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
             reason: args.reason,
             permissions: args.permissions,
         });
         self.send_event(turn_context, event).await;
-        rx_response.await.ok()
+        let response = rx_response.await.ok();
+        crate::activity::resolved(self.conversation_id, call_id);
+        response
     }
 
     pub async fn notify_user_input_response(
@@ -530,6 +534,11 @@ impl Session {
         match entry {
             Some(tx_approve) => {
                 tx_approve.send(decision).ok();
+                // Command approvals resolve where they are awaited; a patch
+                // approval hands its receiver to the caller instead.
+                if kind == ApprovalKind::Patch {
+                    crate::activity::resolved(self.conversation_id, approval_id.to_string());
+                }
             }
             None => {
                 warn!("No pending approval found for kind: {kind:?} call_id: {approval_id}");
@@ -591,12 +600,14 @@ impl Session {
         };
 
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
-            call_id,
+            call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
             questions: args.questions,
         });
         self.send_event(turn_context, event).await;
-        (&mut pending.receiver).await.ok()
+        let response = (&mut pending.receiver).await.ok();
+        crate::activity::resolved(self.conversation_id, call_id);
+        response
     }
 }
 

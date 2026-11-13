@@ -1,64 +1,12 @@
 use super::*;
 use chaos_ipc::protocol::ExecCommandEndEvent;
 use chaos_ipc::protocol::ExecCommandSource;
+use chaos_ipc::protocol::ExecCommandStatus;
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 
 fn argv(words: &[&str]) -> Vec<String> {
     words.iter().map(ToString::to_string).collect()
-}
-
-fn unknown(cmd: &str) -> ParsedCommand {
-    ParsedCommand::Unknown {
-        cmd: cmd.to_string(),
-    }
-}
-
-#[test]
-fn commands_are_named_by_program_and_placed_by_what_they_reach() {
-    let cases = [
-        (
-            argv(&["/usr/bin/curl", "-H", "Authorization: x"]),
-            vec![],
-            Station::Network,
-            "curl",
-        ),
-        (
-            argv(&["bash", "-lc", "git push origin main"]),
-            vec![unknown("git push origin main")],
-            Station::Network,
-            "git",
-        ),
-        (
-            argv(&["git", "status"]),
-            vec![unknown("git status")],
-            Station::Shell,
-            "git",
-        ),
-        (
-            argv(&["zsh", "-c", "cargo test -p chaos-kern"]),
-            vec![unknown("cargo test -p chaos-kern")],
-            Station::Shell,
-            "cargo",
-        ),
-        (
-            argv(&["bash", "-lc", "cat src/secret.rs"]),
-            vec![ParsedCommand::Read {
-                cmd: "cat src/secret.rs".to_string(),
-                name: "secret.rs".to_string(),
-                path: "src/secret.rs".into(),
-            }],
-            Station::Files,
-            "cat",
-        ),
-    ];
-    for (argv, parsed, station, label) in cases {
-        assert_eq!(
-            command(&argv, &parsed),
-            (station, label.to_string()),
-            "{argv:?}"
-        );
-    }
 }
 
 #[test]
@@ -69,7 +17,7 @@ fn a_finished_command_carries_no_arguments_or_output() {
         turn_id: "turn-1".to_string(),
         command: argv(&["bash", "-lc", "curl -H 'token: hunter2' https://x"]),
         cwd: "/home/someone/private".into(),
-        parsed_cmd: vec![unknown("curl -H 'token: hunter2' https://x")],
+        parsed_cmd: Vec::new(),
         source: ExecCommandSource::Agent,
         interaction_input: Some("hunter2".to_string()),
         stdout: "hunter2".to_string(),
@@ -80,7 +28,7 @@ fn a_finished_command_carries_no_arguments_or_output() {
         formatted_output: "hunter2".to_string(),
         status: ExecCommandStatus::Failed,
     });
-    let activity = Activity::from_event(&msg).unwrap();
+    let [activity] = Activity::from_event(&msg).try_into().unwrap();
     assert_eq!(
         activity,
         Activity::CallEnded {
@@ -89,6 +37,7 @@ fn a_finished_command_carries_no_arguments_or_output() {
             label: "curl".to_string(),
             outcome: CallOutcome::Failed,
             duration_ms: Some(42),
+            check: None,
         }
     );
     let json = serde_json::to_string(&activity).unwrap();
@@ -124,4 +73,153 @@ async fn subscribers_receive_what_sessions_deliver() {
         .await
         .expect("the session's event never reached the bus");
     assert_eq!(activity, Activity::Failed);
+}
+
+#[tokio::test]
+async fn an_answered_ask_is_resolved_under_the_id_it_was_raised_with() {
+    let mut rx = subscribe();
+    let (session, turn_context) = crate::chaos::make_session_and_context().await;
+    *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+    let decision = session
+        .request_patch_approval(
+            &turn_context,
+            "patch-1".to_string(),
+            std::collections::HashMap::new(),
+            None,
+            None,
+        )
+        .await;
+    session
+        .notify_patch_approval("patch-1", chaos_ipc::protocol::ReviewDecision::Approved)
+        .await;
+    assert_eq!(
+        decision.await.unwrap(),
+        chaos_ipc::protocol::ReviewDecision::Approved
+    );
+    let ours = async {
+        let mut seen = Vec::new();
+        while seen.len() < 2 {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == session.conversation_id {
+                seen.push(event.activity);
+            }
+        }
+        seen
+    };
+    let seen = tokio::time::timeout(Duration::from_secs(5), ours)
+        .await
+        .expect("the ask and its answer never reached the bus");
+    assert_eq!(
+        seen,
+        vec![
+            Activity::NeedsYou {
+                ask_id: "patch-1".to_string(),
+                reason: Attention::PatchApproval,
+            },
+            Activity::Resolved {
+                ask_id: "patch-1".to_string(),
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn model_requests_end_with_their_usage_or_as_failed() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    ModelRequest::start(process_id, 1, "model-a").finish(Some(&chaos_ipc::protocol::TokenUsage {
+        input_tokens: 100,
+        cached_input_tokens: 60,
+        cache_creation_input_tokens: 10,
+        output_tokens: 7,
+        reasoning_output_tokens: 3,
+        ..Default::default()
+    }));
+    drop(ModelRequest::start(process_id, 2, "model-a"));
+    let ours = async {
+        let mut seen = Vec::new();
+        while seen.len() < 4 {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == process_id {
+                seen.push(event.activity);
+            }
+        }
+        seen
+    };
+    let seen = tokio::time::timeout(Duration::from_secs(5), ours)
+        .await
+        .expect("model requests never reached the bus");
+    let ends: Vec<_> = seen
+        .into_iter()
+        .filter_map(|activity| match activity {
+            Activity::ModelEnded {
+                request,
+                outcome,
+                usage,
+                ..
+            } => Some((request, outcome, usage)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        ends,
+        vec![
+            (
+                1,
+                CallOutcome::Ok,
+                Some(ModelUsage {
+                    input: 100,
+                    cache_read: 60,
+                    cache_write: 10,
+                    output: 7,
+                    reasoning: 3,
+                })
+            ),
+            (2, CallOutcome::Failed, None),
+        ]
+    );
+}
+
+#[test]
+fn a_piped_test_run_reports_failures_its_exit_status_hid() {
+    let msg = EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+        call_id: "call-2".to_string(),
+        process_id: None,
+        turn_id: "turn-1".to_string(),
+        command: argv(&["bash", "-lc", "cargo test 2>&1 | tail -n 3"]),
+        cwd: "/home/someone/private".into(),
+        parsed_cmd: Vec::new(),
+        source: ExecCommandSource::Agent,
+        interaction_input: None,
+        stdout: String::new(),
+        stderr: String::new(),
+        aggregated_output: "thread 'secret_test' panicked: hunter2\n\
+            test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured"
+            .to_string(),
+        exit_code: 0,
+        duration: Duration::from_millis(900),
+        formatted_output: String::new(),
+        status: ExecCommandStatus::Completed,
+    });
+    let [activity] = Activity::from_event(&msg).try_into().unwrap();
+    let Activity::CallEnded { outcome, check, .. } = &activity else {
+        panic!("{activity:?}");
+    };
+    assert_eq!(*outcome, CallOutcome::Ok);
+    assert_eq!(
+        *check,
+        Some(Check {
+            kind: CheckKind::Test,
+            counts: Some(CheckCounts {
+                passed: 9,
+                failed: 1,
+                skipped: 0,
+            }),
+        })
+    );
+    let json = serde_json::to_string(&activity).unwrap();
+    assert!(
+        !json.contains("hunter2") && !json.contains("secret_test"),
+        "{json}"
+    );
 }

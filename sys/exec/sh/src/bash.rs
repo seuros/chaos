@@ -89,6 +89,56 @@ pub fn try_parse_word_only_commands_sequence(tree: &Tree, src: &str) -> Option<V
     Some(commands)
 }
 
+/// The literal words of every command in a script, in source order, wherever
+/// it sits: inside pipelines, lists, subshells, `$(…)` and backticks, or behind
+/// redirections. Words that are not literal (expansions, assignments,
+/// redirects) are left out, so this describes what a script runs but cannot
+/// prove a script safe; use [`try_parse_word_only_commands_sequence`] for that.
+pub fn every_command_words(script: &str) -> Vec<Vec<String>> {
+    let Some(tree) = try_parse_shell(script) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    let mut command_nodes = Vec::new();
+    while let Some(node) = stack.pop() {
+        if node.kind() == "command" {
+            command_nodes.push(node);
+        }
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    command_nodes.sort_by_key(Node::start_byte);
+    command_nodes
+        .into_iter()
+        .filter_map(|node| {
+            let mut words = Vec::new();
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                let word = match child.kind() {
+                    "command_name" => child
+                        .named_child(0)
+                        .filter(|name| name.kind() == "word")
+                        .and_then(|name| name.utf8_text(script.as_bytes()).ok())
+                        .map(str::to_owned),
+                    "word" | "number" => child.utf8_text(script.as_bytes()).ok().map(str::to_owned),
+                    "string" => parse_double_quoted_string(child, script),
+                    "raw_string" => parse_raw_string(child, script),
+                    _ => None,
+                };
+                if let Some(word) = word {
+                    words.push(word);
+                } else if child.kind() == "command_name" {
+                    return None;
+                }
+            }
+            (!words.is_empty()).then_some(words)
+        })
+        .collect()
+}
+
 pub fn extract_bash_command(command: &[String]) -> Option<(&str, &str)> {
     let [shell, flag, script] = command else {
         return None;

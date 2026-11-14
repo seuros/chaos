@@ -90,6 +90,134 @@ fn failed_result_detection_preserves_legacy_success_messages() {
 }
 
 #[test]
+fn failed_results_carry_what_claude_code_said() {
+    let detail = failed_result_detail(
+        &serde_json::json!(
+            "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare"
+        ),
+        &[],
+    );
+    assert_eq!(
+        detail.as_deref(),
+        Some("Failed to authenticate. API Error: 403 Attention Required! | Cloudflare")
+    );
+    // A Cloudflare 403 is an upstream challenge, not a missing login: it
+    // must stay a failed turn that says so, not become auth-unavailable.
+    assert!(!text_indicates_auth_failure(
+        detail.as_deref().unwrap_or_default()
+    ));
+
+    let error = ClampError::TurnFailed {
+        subtype: Some("error_during_execution".into()),
+        detail: Some("overloaded_error".into()),
+    };
+    assert_eq!(
+        error.to_string(),
+        "Claude Code reported a failed result (error_during_execution): overloaded_error"
+    );
+    let bare = ClampError::TurnFailed {
+        subtype: None,
+        detail: None,
+    };
+    assert_eq!(bare.to_string(), "Claude Code reported a failed result");
+}
+
+#[test]
+fn failed_results_classify_from_the_same_reason_as_their_detail() {
+    // An errors-only login failure is still a missing login.
+    assert!(matches!(
+        classify_failed_result(
+            &serde_json::Value::Null,
+            Some("error_during_execution"),
+            &[serde_json::json!("Not logged in. Please run /login")],
+            false,
+        ),
+        ClampError::AuthenticationUnavailable
+    ));
+    // A Cloudflare challenge, in result or errors, is a failed turn that says so.
+    let challenge = "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare";
+    for (result, errors) in [
+        (serde_json::json!(challenge), vec![]),
+        (serde_json::Value::Null, vec![serde_json::json!(challenge)]),
+    ] {
+        let ClampError::TurnFailed { detail, .. } =
+            classify_failed_result(&result, Some("error_during_execution"), &errors, false)
+        else {
+            panic!("a Cloudflare challenge is not a missing login");
+        };
+        assert_eq!(detail.as_deref(), Some(challenge));
+    }
+    // Auth wording on stderr still wins.
+    assert!(matches!(
+        classify_failed_result(&serde_json::json!(challenge), None, &[], true),
+        ClampError::AuthenticationUnavailable
+    ));
+}
+
+#[test]
+fn failed_result_detail_redacts_a_whole_cookie_header() {
+    let detail = failed_result_detail(
+        &serde_json::json!(
+            "request failed\nCookie: session=abc; remember_me=hunter2\nAPI Error: 500"
+        ),
+        &[],
+    )
+    .expect("detail");
+    assert!(!detail.contains("abc"), "{detail}");
+    assert!(!detail.contains("hunter2"), "{detail}");
+    assert!(detail.contains("API Error: 500"), "{detail}");
+}
+
+#[test]
+fn failed_result_detail_falls_back_to_errors_and_strips_pages() {
+    assert_eq!(
+        failed_result_detail(
+            &serde_json::Value::Null,
+            &[
+                serde_json::json!("API Error: 529 overloaded"),
+                serde_json::json!("retry later")
+            ]
+        )
+        .as_deref(),
+        Some("API Error: 529 overloaded; retry later")
+    );
+    let page = "API Error: 403 <!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title>\
+        <style>body{color:red}</style><script>var x=1;</script></head>\
+        <body><h1>Sorry, you have been blocked</h1></body></html>";
+    assert_eq!(
+        failed_result_detail(&serde_json::json!(page), &[]).as_deref(),
+        Some("API Error: 403 Attention Required! | Cloudflare Sorry, you have been blocked")
+    );
+    assert_eq!(failed_result_detail(&serde_json::json!("   "), &[]), None);
+}
+
+#[test]
+fn failed_result_detail_redacts_and_bounds() {
+    // The adapter's own redactor (antigravity::sanitise_diagnostic): a
+    // secret-named key loses its whole value, to the end of the line.
+    let detail = failed_result_detail(
+        &serde_json::json!(
+            "Authorization: Bearer abcdefgh12345678\nkey sk-ant-api03-SECRETSECRET\n\
+             at https://api.example.com/v1?key=hunter2"
+        ),
+        &[],
+    )
+    .expect("detail");
+    assert!(!detail.contains("abcdefgh12345678"), "{detail}");
+    assert!(!detail.contains("SECRETSECRET"), "{detail}");
+    assert!(!detail.contains("hunter2"), "{detail}");
+    assert!(
+        detail.contains("https://api.example.com/v1?[redacted]"),
+        "{detail}"
+    );
+
+    let long = "word ".repeat(400);
+    let detail = failed_result_detail(&serde_json::json!(long), &[]).expect("detail");
+    assert_eq!(detail.chars().count(), FAILED_RESULT_DETAIL_LIMIT);
+    assert!(detail.ends_with('…'));
+}
+
+#[test]
 fn default_tool_permission_responses_preserve_input_or_explain_denial() {
     let input = serde_json::json!({"command": "ls"});
     for (allow, message, expected) in [

@@ -356,9 +356,14 @@ impl Widget for Dashboard {
     const NAME: &'static str = "dashboard";
 }
 
-/// `console 4242`: what kind of process, and which one.
+/// `console 4242`, and `@ silica` when it runs on another machine.
 pub(super) fn origin_label(origin: &board::Origin) -> String {
-    format!("{} {}", name(&origin.kind), origin.pid)
+    let label = format!("{} {}", name(&origin.kind), origin.pid);
+    if origin.host == chaos_kern::activity::fleet::local_host() {
+        label
+    } else {
+        format!("{label} @ {}", origin.host)
+    }
 }
 
 /// The last four characters: enough to tell live sessions apart.

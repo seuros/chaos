@@ -35,16 +35,31 @@ impl MonitorState {
         });
     }
 
-    /// Also watch every other Chaos process of this home that forwards its
-    /// activity: consoles, `chaos exec`, MCP and ACP servers, taskd.
-    pub(crate) async fn follow_fleet(&self, chaos_home: &std::path::Path) {
-        let (listening, mut events) = match fleet::listen(chaos_home).await {
-            Ok(listening) => listening,
+    /// Also watch other Chaos processes: those of this home over its sockets,
+    /// and, when storage is Postgres, every process on any machine sharing
+    /// the database.
+    pub(crate) async fn follow_fleet(&self, chaos_home: &std::path::Path, storage_url: &str) {
+        match fleet::listen(chaos_home).await {
+            Ok((listening, events)) => self.fold_fleet(events, Some(listening)),
             Err(err) => {
-                chaos_snitch::tracing::warn!(%err, "monitor cannot hear other Chaos processes");
-                return;
+                chaos_snitch::tracing::warn!(%err, "monitor cannot hear this home's processes");
             }
-        };
+        }
+        if fleet::database::shared(storage_url) {
+            match fleet::database::listen(storage_url).await {
+                Ok(events) => self.fold_fleet(events, None),
+                Err(err) => {
+                    chaos_snitch::tracing::warn!(%err, "monitor cannot hear the database's fleet");
+                }
+            }
+        }
+    }
+
+    fn fold_fleet(
+        &self,
+        mut events: tokio::sync::mpsc::Receiver<FleetEvent>,
+        listening: Option<fleet::Listening>,
+    ) {
         let board = self.board.clone();
         let changes = self.changes.clone();
         tokio::spawn(async move {
@@ -52,13 +67,13 @@ impl MonitorState {
             let _listening = listening;
             while let Some(event) = events.recv().await {
                 let applied = match board.lock() {
-                    Ok(mut board) => match &event {
-                        FleetEvent::Joined(origin) => board.joined(*origin),
+                    Ok(mut board) => match event {
+                        FleetEvent::Joined(origin) => board.joined(origin),
                         FleetEvent::Activity(origin, activity) => {
-                            board.apply_remote(*origin, activity)
+                            board.apply_remote(origin, &activity)
                         }
                         FleetEvent::Left(origin) => {
-                            board.left(*origin, jiff::Timestamp::now().as_millisecond())
+                            board.left(origin, jiff::Timestamp::now().as_millisecond())
                         }
                     },
                     Err(_) => break,

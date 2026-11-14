@@ -41,7 +41,7 @@ fn summary() -> Summary {
         sessions: 1,
         working: 1,
         waiting: 0,
-        elsewhere: vec!["console 4242".into()],
+        elsewhere: vec!["console 4242 @ silica".into()],
     }
 }
 
@@ -130,7 +130,7 @@ fn a_minion_card_names_its_parent_and_orbits_the_core() {
 fn the_resident_names_the_other_processes_it_watches() {
     let html = summary().render().unwrap();
     assert!(html.contains("also watching"), "{html}");
-    assert!(html.contains(">console 4242<"), "{html}");
+    assert!(html.contains(">console 4242 @ silica<"), "{html}");
 }
 
 #[test]
@@ -158,4 +158,24 @@ fn the_stylesheet_carries_tokens_before_widgets() {
     let session = css.find(".session-grid").unwrap();
     assert!(tokens < session);
     assert_eq!(STYLESHEET.version.len(), 12);
+}
+
+#[test]
+fn another_machine_is_named_and_this_one_is_not() {
+    use crate::monitor::board::Origin;
+    use chaos_kern::activity::fleet::{OriginKind, local_host};
+    let here = Origin {
+        kind: OriginKind::Exec,
+        pid: 1,
+        host: local_host().to_string(),
+    };
+    let there = Origin {
+        host: "silica".into(),
+        ..here.clone()
+    };
+    assert_eq!(crate::monitor::widgets::origin_label(&here), "exec 1");
+    assert_eq!(
+        crate::monitor::widgets::origin_label(&there),
+        "exec 1 @ silica"
+    );
 }

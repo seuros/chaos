@@ -264,7 +264,7 @@ impl Board {
     pub(super) fn left(&mut self, origin: Origin, now_ms: i64) -> Vec<Change> {
         self.elsewhere.retain(|o| *o != origin);
         for session in self.sessions.values_mut() {
-            if session.origin == Some(origin) && session.exited_at_ms.is_none() {
+            if session.origin.as_ref() == Some(&origin) && session.exited_at_ms.is_none() {
                 session.exited_at_ms = Some(now_ms);
                 session.working = false;
                 session.thinking = false;

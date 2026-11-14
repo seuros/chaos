@@ -1,0 +1,146 @@
+//! The fleet bus over Postgres, for processes on any machine that share a
+//! database: each NOTIFYs its activity, and residents LISTEN.
+//!
+//! A notification carries the origin and one event, or none as a heartbeat;
+//! a resident that hears nothing from an origin for `SILENCE` takes it as
+//! gone. A process notifies only while some resident listens, so a fleet
+//! nobody watches costs the database nothing.
+
+use std::collections::HashMap;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+use sqlx::postgres::PgListener;
+use tokio::sync::{broadcast, mpsc};
+use tokio::time::Instant;
+
+use super::{FleetEvent, Origin};
+use crate::activity::ActivityEvent;
+
+const CHANNEL: &str = "chaos_activity";
+const HEARTBEAT: Duration = Duration::from_secs(10);
+const SILENCE: Duration = Duration::from_secs(30);
+/// Postgres refuses payloads of 8000 bytes or more.
+const MAX_PAYLOAD: usize = 7900;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Notice {
+    origin: Origin,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    event: Option<ActivityEvent>,
+}
+
+/// Whether `storage_url` names a Postgres database, so residents can listen.
+pub fn shared(storage_url: &str) -> bool {
+    storage_url.starts_with("postgres://") || storage_url.starts_with("postgresql://")
+}
+
+/// Whether any session on this database is listening for activity. Postgres
+/// shows only what the role may see, so a failure to tell counts as yes.
+async fn watched(pool: &PgPool) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+         WHERE datname = current_database() AND query ILIKE 'LISTEN %chaos_activity%')",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(true)
+}
+
+async fn notify(pool: &PgPool, notice: &Notice) {
+    let Ok(payload) = serde_json::to_string(notice) else {
+        return;
+    };
+    if payload.len() < MAX_PAYLOAD {
+        let _ = sqlx::query("SELECT pg_notify($1, $2)")
+            .bind(CHANNEL)
+            .bind(payload)
+            .execute(pool)
+            .await;
+    }
+}
+
+pub(super) async fn forward(pool: PgPool, origin: Origin) {
+    let mut bus: Option<broadcast::Receiver<ActivityEvent>> = None;
+    let mut beat = tokio::time::interval(HEARTBEAT);
+    loop {
+        tokio::select! {
+            _ = beat.tick() => {
+                match (watched(&pool).await, bus.is_some()) {
+                    (true, false) => bus = Some(crate::activity::subscribe()),
+                    (false, true) => bus = None,
+                    _ => {}
+                }
+                if bus.is_some() {
+                    notify(&pool, &Notice { origin: origin.clone(), event: None }).await;
+                }
+            }
+            event = async { bus.as_mut()?.recv().await.ok() }, if bus.is_some() => {
+                if let Some(event) = event {
+                    notify(&pool, &Notice { origin: origin.clone(), event: Some(event) }).await;
+                }
+            }
+        }
+    }
+}
+
+/// Listen for every process notifying this database. Its own connection, so
+/// the shared pool keeps all of its slots.
+pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sqlx::Error> {
+    let mut listener = PgListener::connect(storage_url).await?;
+    listener.listen(CHANNEL).await?;
+    let (tx, rx) = mpsc::channel(1024);
+    tokio::spawn(async move {
+        let mut seen: HashMap<Origin, Instant> = HashMap::new();
+        let mut sweep = tokio::time::interval(HEARTBEAT);
+        loop {
+            let heard = tokio::select! {
+                notification = listener.recv() => match notification {
+                    Ok(notification) => serde_json::from_str::<Notice>(notification.payload()).ok(),
+                    // PgListener reconnects on the next recv.
+                    Err(_) => {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        None
+                    }
+                },
+                _ = sweep.tick() => {
+                    let now = Instant::now();
+                    let gone: Vec<Origin> = seen
+                        .iter()
+                        .filter(|(_, at)| now.duration_since(**at) > SILENCE)
+                        .map(|(origin, _)| origin.clone())
+                        .collect();
+                    for origin in gone {
+                        seen.remove(&origin);
+                        if tx.send(FleetEvent::Left(origin)).await.is_err() {
+                            return;
+                        }
+                    }
+                    None
+                }
+            };
+            let Some(notice) = heard else { continue };
+            if seen.insert(notice.origin.clone(), Instant::now()).is_none()
+                && tx
+                    .send(FleetEvent::Joined(notice.origin.clone()))
+                    .await
+                    .is_err()
+            {
+                return;
+            }
+            if let Some(event) = notice.event
+                && tx
+                    .send(FleetEvent::Activity(notice.origin, event))
+                    .await
+                    .is_err()
+            {
+                return;
+            }
+        }
+    });
+    Ok(rx)
+}
+
+#[cfg(test)]
+mod tests;

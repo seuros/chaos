@@ -262,14 +262,15 @@ fn another_process_s_sessions_carry_its_origin_and_go_when_it_leaves() {
     let console = Origin {
         kind: OriginKind::Console,
         pid: 4242,
+        host: "silica".into(),
     };
     let local = ProcessId::new();
     let remote = ProcessId::new();
     board.apply(&event(local, 1, Activity::TurnStarted));
-    assert_eq!(board.joined(console), vec![Change::Fleet]);
-    board.apply_remote(console, &event(remote, 2, Activity::TurnStarted));
-    assert_eq!(board.elsewhere, vec![console]);
-    assert_eq!(board.sessions[&remote].origin, Some(console));
+    assert_eq!(board.joined(console.clone()), vec![Change::Fleet]);
+    board.apply_remote(console.clone(), &event(remote, 2, Activity::TurnStarted));
+    assert_eq!(board.elsewhere, vec![console.clone()]);
+    assert_eq!(board.sessions[&remote].origin, Some(console.clone()));
     assert_eq!(board.sessions[&local].origin, None);
 
     let changes = board.left(console, 1_000);

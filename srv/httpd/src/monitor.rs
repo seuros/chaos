@@ -400,16 +400,21 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
 
 /// Clocks move without events: uptime, slow calls, gauge pace.
 fn tick(state: &ServerState) -> Vec<Patch> {
-    let board = match board(state) {
+    let mut board = match board(state) {
         Ok(board) => board,
         Err(error) => return vec![Err(error)],
     };
     let now = now_ms();
-    vec![
+    let mut patches = vec![
         replace(&summary_from(state, &board)),
         replace(&Attention::from(&board, now)),
         replace(&Instruments::from(&board, now)),
-    ]
+    ];
+    // Exited sessions age off the board.
+    if board.prune(now) {
+        patches.push(replace(&Sessions::from(&board)));
+    }
+    patches
 }
 
 #[cfg(test)]

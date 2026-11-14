@@ -18,7 +18,7 @@
 .session-foot { display: flex; flex-wrap: wrap; gap: var(--space-3); color: var(--muted); font-size: 10.5px; padding-top: var(--space-2); border-top: 1px solid var(--line); }
 .session.is-minion { border-style: dashed; }
 .session[data-state="delegating"] { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
-.session[data-state="closed"] { opacity: .55; }
+.session[data-state="closed"], .session[data-state="exited"] { opacity: .55; }
 .session-lineage { font-size: 11px; color: var(--muted); }
 .lineage-arrow { color: var(--faint); margin-right: 6px; }
 .lineage-parent { color: var(--text); }

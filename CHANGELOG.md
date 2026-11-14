@@ -73,6 +73,10 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- The monitor keeps an exited process's sessions for ten minutes, so a short
+  `chaos exec` run is still there when you look.
+- Clamped sessions report the model Claude Code actually ran, not the configured
+  slug, without warning that the request was rerouted.
 - `chaos serve` refuses `-c clamp=…` instead of starting unclamped; a
   `clamp = true` meant for the console is still ignored there.
 - The monitor files tools a clamped CLI calls by what they do, not as an MCP

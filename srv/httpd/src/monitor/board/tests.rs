@@ -272,10 +272,19 @@ fn another_process_s_sessions_carry_its_origin_and_go_when_it_leaves() {
     assert_eq!(board.sessions[&remote].origin, Some(console));
     assert_eq!(board.sessions[&local].origin, None);
 
-    let changes = board.left(console);
+    let changes = board.left(console, 1_000);
     assert!(changes.contains(&Change::SessionAdded), "{changes:?}");
     assert!(board.elsewhere.is_empty());
-    assert!(!board.sessions.contains_key(&remote));
+    let exited = &board.sessions[&remote];
+    assert_eq!(
+        exited.exited_at_ms,
+        Some(1_000),
+        "a finished run stays readable"
+    );
+    assert!(!exited.working);
+    assert!(!board.prune(1_000 + 9 * 60_000));
+    assert!(board.prune(1_000 + 10 * 60_000));
+    assert!(!board.sessions.contains_key(&remote), "then ages off");
     assert!(
         board.sessions.contains_key(&local),
         "this resident's own stay"

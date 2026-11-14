@@ -25,6 +25,7 @@ const GLITCH_S: f64 = 4.0;
 const SHOCK_S: f64 = 2.4;
 const BREATH_MS: i64 = 2_400;
 const ORBIT_MS: i64 = 14_000;
+const ROUTE_STOPS: usize = 7;
 /// Session colours; a session keeps its colour for as long as it lives.
 const HUES: usize = 8;
 
@@ -167,6 +168,18 @@ fn one_shot(now_ms: i64, at_ms: i64, length: f64) -> Option<String> {
     (age < length).then(|| format!("-{age:.2}s"))
 }
 
+/// The last distinct stops, oldest first, whichever machines made them.
+fn recent_stops(board: &Board) -> Vec<Station> {
+    let mut stops: Vec<Station> = Vec::new();
+    for (_, station, _) in &board.route {
+        if stops.last() != Some(station) {
+            stops.push(*station);
+        }
+    }
+    let skip = stops.len().saturating_sub(ROUTE_STOPS);
+    stops.split_off(skip)
+}
+
 impl Map {
     pub(in crate::monitor) fn from(board: &Board, now_ms: i64) -> Self {
         let mut nodes = Vec::with_capacity(STATIONS.len());
@@ -174,7 +187,17 @@ impl Map {
         for (index, station) in STATIONS.iter().enumerate() {
             let (x, y) = position(index);
             let path = spoke(x, y);
-            let tally = board.stations.get(station).copied().unwrap_or_default();
+            let tally = board
+                .stations
+                .iter()
+                .filter(|((_, s), _)| s == station)
+                .fold(super::super::board::Tally::default(), |sum, (_, t)| {
+                    super::super::board::Tally {
+                        done: sum.done + t.done,
+                        failed: sum.failed + t.failed,
+                        failed_at_ms: sum.failed_at_ms.max(t.failed_at_ms),
+                    }
+                });
             let mut pips = Vec::new();
             let mut active = 0;
             for (id, session) in &board.sessions {
@@ -237,7 +260,8 @@ impl Map {
                 .position(|candidate| candidate == station)
                 .map(position)
         };
-        let stops: Vec<_> = board.route.iter().filter_map(|(s, _)| at(s)).collect();
+        let route = recent_stops(board);
+        let stops: Vec<_> = route.iter().filter_map(at).collect();
         let count = stops.len().saturating_sub(1);
         let legs = stops
             .windows(2)
@@ -298,11 +322,7 @@ impl Map {
                 .map(|scale| (RX * scale, RY * scale))
                 .collect(),
             breath: format!("-{:.2}s", (now_ms.rem_euclid(BREATH_MS)) as f64 / 1_000.0),
-            route: board
-                .route
-                .iter()
-                .map(|(station, _)| name(station))
-                .collect(),
+            route: route.iter().map(name).collect(),
             core: Core {
                 x: CX,
                 y: CY,

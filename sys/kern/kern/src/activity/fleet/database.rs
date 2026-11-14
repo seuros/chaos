@@ -74,6 +74,10 @@ pub(super) async fn forward(pool: PgPool, origin: Origin) {
                 }
                 if bus.is_some() {
                     notify(&pool, &Notice { origin: origin.clone(), event: None }).await;
+                    // A resident may have started since the last beat.
+                    for event in crate::activity::open_sessions() {
+                        notify(&pool, &Notice { origin: origin.clone(), event: Some(event) }).await;
+                    }
                 }
             }
             event = async { bus.as_mut()?.recv().await.ok() }, if bus.is_some() => {

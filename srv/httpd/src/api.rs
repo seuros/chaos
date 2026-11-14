@@ -116,9 +116,10 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     }
 
     match (method.clone(), path) {
-        (Method::GET, "/monitor") => {
-            monitor::page_response(monitor::admission(&state, &request) == monitor::Admission::Open)
-        }
+        (Method::GET, "/monitor") => monitor::page_response(
+            monitor::admission(&state, &request) == monitor::Admission::Open,
+            monitor::host_param(&request),
+        ),
         (Method::GET, monitor::STYLESHEET_PATH) => {
             monitor::stylesheet_response(request.headers().get(monitor::IF_NONE_MATCH_HEADER))
         }

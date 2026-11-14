@@ -13,13 +13,12 @@ use tokio::sync::broadcast;
 
 use crate::ServerState;
 use board::{Board, Change};
-use view::{Patch, prepend, replace};
-use widgets::{
-    Attention, Dashboard, Entry, Feed, Instruments, Machine, Map, Session, Sessions, Summary,
-};
+use stream::{dashboard, patch, summary_from, tick, view};
+use view::replace;
 
 mod board;
 mod follow;
+mod stream;
 mod view;
 mod widgets;
 
@@ -156,7 +155,7 @@ pub(crate) fn events(state: Arc<ServerState>, request: &rama::http::Request) -> 
         response
     };
     match admission(&state, request) {
-        Admission::Open => events_response(state),
+        Admission::Open => events_response(state, host_param(request)),
         Admission::NeedsToken => {
             let mut response = refuse(StatusCode::UNAUTHORIZED, "monitor token required");
             response
@@ -208,8 +207,8 @@ fn loopback_host(host: &str) -> bool {
     matches!(name, "127.0.0.1" | "localhost" | "::1")
 }
 
-pub(crate) fn page_response(open: bool) -> Response {
-    match view::page(open) {
+pub(crate) fn page_response(open: bool, host: Option<String>) -> Response {
+    match view::page(open, host.as_deref()) {
         Ok(html) => html_response(html),
         Err(error) => {
             chaos_snitch::tracing::error!(%error, "monitor page does not render");
@@ -261,26 +260,29 @@ pub(crate) fn stylesheet_response(if_none_match: Option<&HeaderValue>) -> Respon
 pub(crate) const STYLESHEET_PATH: &str = "/monitor/app.css";
 pub(crate) const IF_NONE_MATCH_HEADER: rama::http::HeaderName = IF_NONE_MATCH;
 
-pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
+pub(crate) fn events_response(state: Arc<ServerState>, host: Option<String>) -> Response {
     let mut monitor = state.monitor.subscribe();
     let mut changes = state.monitor.changes.subscribe();
 
     let stream = stream_fn(async move |mut yielder| {
-        yielder.yield_item(dashboard(&state)).await;
+        yielder.yield_item(dashboard(&state, &host)).await;
         let mut clock = tokio::time::interval(TICK);
         clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         clock.tick().await;
         loop {
             let patches = tokio::select! {
-                _ = clock.tick() => tick(&state),
+                _ = clock.tick() => tick(&state, &host),
                 event = monitor.recv() => match event {
-                    Ok(_) => vec![replace(&summary(&state))],
-                    Err(broadcast::error::RecvError::Lagged(_)) => vec![dashboard(&state)],
+                    Ok(_) => match view(&state, &host) {
+                        Ok(board) => vec![replace(&summary_from(&state, &board, &host))],
+                        Err(error) => vec![Err(error)],
+                    },
+                    Err(broadcast::error::RecvError::Lagged(_)) => vec![dashboard(&state, &host)],
                     Err(broadcast::error::RecvError::Closed) => break,
                 },
                 change = changes.recv() => match change {
-                    Ok(change) => patch(&state, &change),
-                    Err(broadcast::error::RecvError::Lagged(_)) => vec![dashboard(&state)],
+                    Ok(change) => patch(&state, &change, &host),
+                    Err(broadcast::error::RecvError::Lagged(_)) => vec![dashboard(&state, &host)],
                     Err(broadcast::error::RecvError::Closed) => break,
                 },
             };
@@ -300,6 +302,21 @@ pub(crate) fn events_response(state: Arc<ServerState>) -> Response {
     response
 }
 
+/// `?host=` from a request, when it names a machine plainly enough to put in
+/// a page: letters, digits, `.`, `-` and `_`, at most 64 of them.
+pub(crate) fn host_param(request: &rama::http::Request) -> Option<String> {
+    let query = request.uri().query()?.as_encoded_str();
+    let value = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("host="))?;
+    let plain = !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'));
+    plain.then(|| value.to_string())
+}
+
 pub(crate) fn datastar_script_response() -> Response {
     DatastarScript::default().into_response()
 }
@@ -314,107 +331,6 @@ fn board(state: &ServerState) -> Result<std::sync::MutexGuard<'_, Board>, rama::
 
 fn now_ms() -> i64 {
     jiff::Timestamp::now().as_millisecond()
-}
-
-fn dashboard(state: &ServerState) -> Patch {
-    let now = now_ms();
-    let widget = {
-        let board = board(state)?;
-        Dashboard {
-            summary: summary_from(state, &board),
-            machine: Machine::from(&board),
-            instruments: Instruments::from(&board, now),
-            map: Map::from(&board, now),
-            attention: Attention::from(&board, now),
-            sessions: Sessions::from(&board),
-            feed: Feed::from(&board),
-        }
-    };
-    replace(&widget)
-}
-
-fn summary(state: &ServerState) -> Summary {
-    match board(state) {
-        Ok(board) => summary_from(state, &board),
-        Err(_) => summary_from(state, &Board::default()),
-    }
-}
-
-fn summary_from(state: &ServerState, board: &Board) -> Summary {
-    let max = state.max_concurrent;
-    let sessions: Vec<_> = board.sessions.values().collect();
-    Summary {
-        connected: true,
-        version: chaos_ipc::product::CHAOS_VERSION,
-        uptime: board::duration(
-            u64::try_from(state.monitor.uptime().as_millis()).unwrap_or(u64::MAX),
-        ),
-        triggers: max.saturating_sub(state.semaphore.available_permits()),
-        max_triggers: max,
-        sessions: sessions.len(),
-        working: sessions.iter().filter(|session| session.working).count(),
-        waiting: sessions
-            .iter()
-            .filter(|session| !session.asks.is_empty())
-            .count(),
-        elsewhere: board.elsewhere.iter().map(widgets::origin_label).collect(),
-    }
-}
-
-/// Re-render only what changed; a new session reshapes the grid.
-fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
-    let board = match board(state) {
-        Ok(board) => board,
-        Err(error) => return vec![Err(error)],
-    };
-    let now = now_ms();
-    match change {
-        Change::Session(id) => vec![
-            match board.sessions.get(id) {
-                Some(session) => replace(&Session::from(&board, *id, session)),
-                None => replace(&Sessions::from(&board)),
-            },
-            replace(&Instruments::from(&board, now)),
-            replace(&Attention::from(&board, now)),
-        ],
-        Change::SessionAdded => vec![
-            replace(&summary_from(state, &board)),
-            replace(&Sessions::from(&board)),
-            replace(&Map::from(&board, now)),
-        ],
-        Change::Machine => vec![
-            replace(&Machine::from(&board)),
-            replace(&Attention::from(&board, now)),
-        ],
-        Change::Limits => vec![replace(&Instruments::from(&board, now))],
-        Change::Fleet => vec![replace(&summary_from(state, &board))],
-        Change::Map => vec![replace(&Map::from(&board, now))],
-        Change::Feed => vec![match board.feed.back() {
-            Some(entry) if board.feed.len() > 1 && board.feed.len() < board::FEED_LEN => {
-                prepend("#w-feed-list", &Entry::from(&board, entry))
-            }
-            _ => replace(&Feed::from(&board)),
-        }],
-    }
-}
-
-/// Clocks move without events: uptime, slow calls, gauge pace.
-fn tick(state: &ServerState) -> Vec<Patch> {
-    let mut board = match board(state) {
-        Ok(board) => board,
-        Err(error) => return vec![Err(error)],
-    };
-    let now = now_ms();
-    let mut patches = vec![
-        replace(&summary_from(state, &board)),
-        replace(&Attention::from(&board, now)),
-        replace(&Instruments::from(&board, now)),
-    ];
-    // Exited sessions age off the board.
-    if board.prune(now) {
-        patches.push(replace(&Sessions::from(&board)));
-    }
-    patches
 }
 
 #[cfg(test)]

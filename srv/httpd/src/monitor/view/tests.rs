@@ -42,6 +42,7 @@ fn summary() -> Summary {
         working: 1,
         waiting: 0,
         elsewhere: vec!["console 4242 @ silica".into()],
+        elsewhere_heading: "also watching",
     }
 }
 
@@ -57,6 +58,7 @@ fn every_template_parses() {
 fn the_dashboard_composes_every_widget_under_its_id() {
     let (board, id) = busy_board();
     let html = Dashboard {
+        machines: crate::monitor::widgets::Machines::from(&board.hosts(), None),
         summary: summary(),
         machine: Machine::from(&board),
         instruments: Instruments::from(&board, 2_000),
@@ -143,10 +145,15 @@ fn labels_are_escaped() {
 
 #[test]
 fn the_page_links_the_stylesheet_of_this_build() {
-    let html = page(false).unwrap();
+    let html = page(false, None).unwrap();
     assert!(
         html.contains(&format!("/monitor/app.css?v={}", STYLESHEET.version)),
         "{html}"
+    );
+    let one = page(true, Some("silica")).unwrap();
+    assert!(
+        one.contains("&#x2f;monitor&#x2f;events?host=silica"),
+        "{one}"
     );
     assert!(html.contains(r#"id="dashboard""#), "{html}");
 }

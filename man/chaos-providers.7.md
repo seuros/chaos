@@ -210,7 +210,7 @@ Providers speak one of four wire formats:
 - **Responses API** — `/v1/responses`.
 - **Chat Completions** — `/v1/chat/completions`.
 - **Anthropic Messages** — `/v1/messages` on `api.anthropic.com`.
-- **LSD** — LSD's native `/inference` endpoint. Select `wire_api = "lsd"`.
+- **LSD** (LLM Service Daemon) — native `/inference` endpoint. Select `wire_api = "lsd"`.
 
 For HTTP providers, `wire_api = "auto"` tries Responses first and falls back
 to Chat Completions on 404/405/501. The winning format is cached for the

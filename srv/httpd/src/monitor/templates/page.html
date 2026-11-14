@@ -5,7 +5,7 @@
   {% if open %}
   <span class="local-open">read-only · open</span>
   {% else %}
-  <form class="connect" data-on:submit__prevent="@get('/monitor/events', {
+  <form class="connect" data-on:submit__prevent="@get('{{ events }}', {
     headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value},
     filterSignals: {include: /^$/}, retry: 'never'
   })">
@@ -19,7 +19,7 @@
 </header>
 {% if open %}
 <p class="hint">A read-only view of this resident. Set <code>--monitor-token</code> to require a token. Reload to reconnect.</p>
-<main id="dashboard" class="dashboard is-offline" data-init="@get('/monitor/events', {filterSignals: {include: /^$/}, retry: 'never'})">
+<main id="dashboard" class="dashboard is-offline" data-init="@get('{{ events }}', {filterSignals: {include: /^$/}, retry: 'never'})">
   <p class="empty">Connecting…</p>
 </main>
 {% else %}

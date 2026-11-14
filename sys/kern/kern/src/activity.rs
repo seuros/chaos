@@ -43,7 +43,12 @@ pub fn subscribe() -> broadcast::Receiver<ActivityEvent> {
     BUS.subscribe()
 }
 
+/// Sessions open in this process, so a resident that connects late can be
+/// told about the idle ones too.
+static OPEN: LazyLock<Mutex<HashMap<ProcessId, (String, i64)>>> = LazyLock::new(Default::default);
+
 pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
+    track_open(process_id, msg);
     if BUS.receiver_count() == 0 {
         return;
     }
@@ -52,6 +57,38 @@ pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
             send(process_id, activity);
         }
     }
+}
+
+fn track_open(process_id: ProcessId, msg: &EventMsg) {
+    let Ok(mut open) = OPEN.lock() else { return };
+    match msg {
+        EventMsg::SessionConfigured(ev) => {
+            open.insert(
+                process_id,
+                (ev.model.clone(), jiff::Timestamp::now().as_millisecond()),
+            );
+        }
+        EventMsg::ShutdownComplete => {
+            open.remove(&process_id);
+        }
+        _ => {}
+    }
+}
+
+/// One `session_opened` per session still open, as when each began.
+pub fn open_sessions() -> Vec<ActivityEvent> {
+    let Ok(open) = OPEN.lock() else {
+        return Vec::new();
+    };
+    open.iter()
+        .map(|(process_id, (model, at_ms))| ActivityEvent {
+            process_id: *process_id,
+            at_ms: *at_ms,
+            activity: Activity::SessionOpened {
+                model: model.clone(),
+            },
+        })
+        .collect()
 }
 
 fn changed(process_id: ProcessId, activity: &Activity) -> bool {
@@ -191,6 +228,11 @@ pub struct ActivityEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Activity {
+    /// A session began, and the model it was set up with.
+    SessionOpened {
+        model: String,
+    },
+    SessionClosed,
     TurnStarted,
     TurnEnded {
         outcome: TurnOutcome,

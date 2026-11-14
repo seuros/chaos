@@ -1,3 +1,5 @@
+use super::view::{Patch, prepend};
+use super::widgets::Session;
 use super::*;
 use chaos_kern::activity::{Activity, ActivityEvent, Station};
 use rama::http::sse::EventDataWrite as _;
@@ -57,4 +59,25 @@ fn the_stylesheet_answers_a_matching_etag_with_not_modified() {
         stylesheet_response(Some(&etag)).status(),
         StatusCode::NOT_MODIFIED
     );
+}
+
+#[test]
+fn only_plain_machine_names_reach_the_page() {
+    let host = |uri: &str| {
+        host_param(
+            &rama::http::Request::builder()
+                .uri(uri)
+                .body(rama::http::Body::empty())
+                .unwrap(),
+        )
+    };
+    assert_eq!(host("/monitor?host=silica"), Some("silica".into()));
+    assert_eq!(
+        host("/monitor?x=1&host=mag-1.lan"),
+        Some("mag-1.lan".into())
+    );
+    assert_eq!(host("/monitor"), None);
+    assert_eq!(host("/monitor?host="), None);
+    assert_eq!(host("/monitor?host=a'b"), None);
+    assert_eq!(host("/monitor?host=%3Cscript%3E"), None);
 }

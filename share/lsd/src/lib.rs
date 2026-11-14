@@ -1,4 +1,4 @@
-//! chaos-lsd — Lark Schema Definitions
+//! chaos-lsd — LLM Service Daemon
 //!
 //! Vendor-specific tool extensions and schema definitions.
 //! Each vendor module exposes provider-only behaviours (CFG-constrained

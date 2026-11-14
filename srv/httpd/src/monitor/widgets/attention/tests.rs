@@ -91,3 +91,45 @@ fn the_worst_comes_first() {
         "a call is slow only after a minute"
     );
 }
+
+#[test]
+fn a_minion_failing_while_its_parent_waits_is_flagged() {
+    let mut board = Board::default();
+    let parent = ProcessId::new();
+    let child = ProcessId::new();
+    apply(
+        &mut board,
+        parent,
+        0,
+        Activity::AgentSpawned {
+            child,
+            nickname: Some("Ada".into()),
+            role: None,
+        },
+    );
+    apply(
+        &mut board,
+        parent,
+        1,
+        Activity::WaitingOnAgents {
+            children: vec![child],
+        },
+    );
+    apply(
+        &mut board,
+        parent,
+        2,
+        Activity::AgentState {
+            child,
+            state: chaos_kern::activity::AgentRun::Failed,
+        },
+    );
+    let items = Attention::from(&board, 3).items;
+    assert_eq!(items[0].title, "minion failed");
+    assert_eq!(items[0].detail, "Ada failed while its parent waits");
+    assert!(
+        titles(&board, 6 * 60_000).contains(&"long wait on minions".to_string()),
+        "{:?}",
+        titles(&board, 6 * 60_000)
+    );
+}

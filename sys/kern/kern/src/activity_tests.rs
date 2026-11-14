@@ -246,6 +246,7 @@ fn internal_tools_are_filed_by_what_they_do_and_reported_once() {
         Some(Station::Kernel)
     );
     assert_eq!(station(&call(None, "read_file")), Some(Station::Files));
+    assert_eq!(station(&call(None, "spawn_agent")), Some(Station::Agents));
     assert_eq!(
         station(&call(None, "exec_command")),
         None,
@@ -359,6 +360,39 @@ async fn a_machine_phase_names_its_causes() {
         vec![Activity::Machine {
             phase: MachinePhase::Warning,
             causes: vec![MachineCause::Disk, MachineCause::Thermal],
+        }]
+    );
+}
+
+#[test]
+fn minions_report_their_state_and_their_parent_waiting_on_them() {
+    let child = ProcessId::new();
+    let status =
+        EventMsg::CollabAgentStatusChanged(chaos_ipc::protocol::CollabAgentStatusChangedEvent {
+            parent_process_id: ProcessId::new(),
+            child_process_id: child,
+            agent_nickname: Some("Ada".to_string()),
+            agent_role: None,
+            model: None,
+            status: chaos_ipc::protocol::CollabAgentStatus::Errored,
+        });
+    assert_eq!(
+        Activity::from_event(&status),
+        vec![Activity::AgentState {
+            child,
+            state: AgentRun::Failed,
+        }]
+    );
+    let waiting = EventMsg::CollabWaitingBegin(chaos_ipc::protocol::CollabWaitingBeginEvent {
+        sender_process_id: ProcessId::new(),
+        receiver_process_ids: vec![child],
+        receiver_agents: Vec::new(),
+        call_id: "wait-1".to_string(),
+    });
+    assert_eq!(
+        Activity::from_event(&waiting),
+        vec![Activity::WaitingOnAgents {
+            children: vec![child],
         }]
     );
 }

@@ -6,6 +6,7 @@ use chaos_ipc::protocol::HookRunStatus;
 use chaos_ipc::protocol::PatchApplyStatus;
 
 use super::Activity;
+use super::AgentRun;
 use super::Attention;
 use super::CallOutcome;
 use super::Check;
@@ -165,6 +166,17 @@ impl Activity {
             EventMsg::CollabCloseEnd(ev) => Self::AgentEnded {
                 child: ev.receiver_process_id,
             },
+            EventMsg::CollabAgentStatusChanged(ev) => Self::AgentState {
+                child: ev.child_process_id,
+                state: agent_run(ev.status),
+            },
+            EventMsg::CollabAgentInteractionBegin(ev) => Self::AgentMessaged {
+                child: ev.receiver_process_id,
+            },
+            EventMsg::CollabWaitingBegin(ev) => Self::WaitingOnAgents {
+                children: ev.receiver_process_ids.clone(),
+            },
+            EventMsg::CollabWaitingEnd(_) => Self::DoneWaiting,
             EventMsg::Error(_) => Self::Failed,
             _ => return Vec::new(),
         };
@@ -183,7 +195,26 @@ fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Option<Statio
             None
         }
         "read_file" | "list_dir" | "grep_files" | "view_image" => Some(Station::Files),
+        "spawn_agent"
+        | "run_synopsis"
+        | "send_input"
+        | "resume_agent"
+        | "wait_agent"
+        | "close_agent"
+        | "spawn_minions_on_csv"
+        | "report_minion_job_result" => Some(Station::Agents),
         _ => Some(Station::Kernel),
+    }
+}
+
+fn agent_run(status: chaos_ipc::protocol::CollabAgentStatus) -> AgentRun {
+    use chaos_ipc::protocol::CollabAgentStatus as Status;
+    match status {
+        Status::PendingInit => AgentRun::Starting,
+        Status::Running => AgentRun::Running,
+        Status::Completed => AgentRun::Done,
+        Status::Errored => AgentRun::Failed,
+        Status::Interrupted | Status::Shutdown | Status::NotFound => AgentRun::Stopped,
     }
 }
 

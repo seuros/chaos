@@ -27,7 +27,7 @@ fn a_session_change_replaces_only_its_card() {
             check: None,
         },
     });
-    let frame = frame(replace(&Session::from(id, &board.sessions[&id])));
+    let frame = frame(replace(&Session::from(&board, id, &board.sessions[&id])));
     assert!(frame.contains(&format!(r#"id="s-{id}""#)), "{frame}");
     assert!(!frame.contains("selector"), "patched by id: {frame}");
     assert!(!frame.contains("w-sessions"), "{frame}");
@@ -41,7 +41,7 @@ fn a_new_feed_entry_goes_first() {
         at_ms: 1,
         activity: Activity::Compacted,
     });
-    let entry = widgets::Entry::from(board.feed.back().unwrap());
+    let entry = widgets::Entry::from(&board, board.feed.back().unwrap());
     let frame = frame(prepend("#w-feed-list", &entry));
     assert!(frame.contains("selector #w-feed-list"), "{frame}");
     assert!(frame.contains("mode prepend"), "{frame}");

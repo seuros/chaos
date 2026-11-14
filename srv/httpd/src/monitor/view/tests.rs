@@ -93,6 +93,39 @@ fn the_dashboard_composes_every_widget_under_its_id() {
 }
 
 #[test]
+fn a_minion_card_names_its_parent_and_orbits_the_core() {
+    let mut board = Board::default();
+    let parent = ProcessId::new();
+    let child = ProcessId::new();
+    for (process_id, activity) in [
+        (parent, Activity::TurnStarted),
+        (
+            parent,
+            Activity::AgentSpawned {
+                child,
+                nickname: Some("Ada".into()),
+                role: Some("reviewer".into()),
+            },
+        ),
+        (child, Activity::TurnStarted),
+    ] {
+        board.apply(&ActivityEvent {
+            process_id,
+            at_ms: 1,
+            activity,
+        });
+    }
+    let html = Sessions::from(&board).render().unwrap();
+    let parent_card = html.find(&format!(r#"id="s-{parent}""#)).unwrap();
+    let child_card = html.find(&format!(r#"id="s-{child}""#)).unwrap();
+    assert!(parent_card < child_card, "a minion follows its parent");
+    assert!(html.contains("reviewer minion of"), "{html}");
+    assert!(html.contains(r#"class="minion-chip""#), "{html}");
+    let map = Map::from(&board, 2_000).render().unwrap();
+    assert!(map.contains(r#"class="orbit""#), "{map}");
+}
+
+#[test]
 fn labels_are_escaped() {
     let (board, _) = busy_board();
     let html = Sessions::from(&board).render().unwrap();

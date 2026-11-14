@@ -1,7 +1,7 @@
 .feed-list { list-style: none; margin: 0; padding: 0; max-height: 64vh; overflow: auto; display: grid; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
-.entry { display: grid; grid-template-columns: 8ch 8ch 8ch 1fr; gap: var(--space-2); align-items: baseline; padding: 3px 0; font-size: 11.5px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
+.entry { display: grid; grid-template-columns: 8ch 11ch 8ch 1fr; gap: var(--space-2); align-items: baseline; padding: 3px 0; font-size: 11.5px; border-bottom: 1px dashed color-mix(in srgb, var(--line) 70%, transparent); }
 .entry-time { color: var(--faint); }
-.entry-session { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }
+.entry-session { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .entry-session::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--hue, var(--muted)); }
 .entry-station { color: var(--muted); }
 .entry-text { color: var(--text); overflow-wrap: anywhere; }

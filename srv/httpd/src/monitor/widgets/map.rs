@@ -24,6 +24,7 @@ const PACKET_S: f64 = 1.6;
 const GLITCH_S: f64 = 4.0;
 const SHOCK_S: f64 = 2.4;
 const BREATH_MS: i64 = 2_400;
+const ORBIT_MS: i64 = 14_000;
 /// Session colours; a session keeps its colour for as long as it lives.
 const HUES: usize = 8;
 
@@ -41,6 +42,16 @@ pub(in crate::monitor) struct Map {
     pub nodes: Vec<Node>,
     pub packets: Vec<Packet>,
     pub legs: Vec<Leg>,
+    /// Minions still at work, circling the core in their session's colour.
+    pub orbits: Vec<Orbit>,
+}
+
+#[derive(Serialize)]
+pub(in crate::monitor) struct Orbit {
+    pub hue: usize,
+    pub radius: f64,
+    pub delay: String,
+    pub name: String,
 }
 
 #[derive(Serialize)]
@@ -255,6 +266,28 @@ impl Map {
             })
             .max();
         let ring_r = CORE_R + 9.0;
+        let mut running: Vec<_> = board
+            .sessions
+            .iter()
+            .filter(|(_, s)| s.parent.is_some() && !s.closed && s.working)
+            .collect();
+        running.sort_by_key(|(_, s)| s.last_at_ms);
+        let count = running.len().max(1) as i64;
+        let orbits = running
+            .iter()
+            .enumerate()
+            .map(|(index, (id, session))| Orbit {
+                hue: hue(id),
+                radius: ring_r + 14.0 + (index % 2) as f64 * 9.0,
+                // Spread evenly, and keep turning from where the clock says.
+                delay: format!(
+                    "-{:.2}s",
+                    ((now_ms + index as i64 * ORBIT_MS / count).rem_euclid(ORBIT_MS)) as f64
+                        / 1_000.0
+                ),
+                name: session.nickname.clone().unwrap_or_default(),
+            })
+            .collect();
         let circumference = std::f64::consts::TAU * ring_r;
         let filled = circumference * f64::from(context.unwrap_or(0)) / 100.0;
         Self {
@@ -294,6 +327,7 @@ impl Map {
             nodes,
             packets,
             legs,
+            orbits,
         }
     }
 }

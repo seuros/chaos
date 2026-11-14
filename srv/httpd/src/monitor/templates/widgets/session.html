@@ -1,13 +1,22 @@
 {% import "partials/ui.html" as ui %}
-<article id="s-{{ session.id }}" class="session" data-state="{{ session.state }}" data-hue="{{ session.hue }}">
+<article id="s-{{ session.id }}" class="session{% if session.minion_of %} is-minion{% endif %}" data-state="{{ session.state }}" data-hue="{{ session.hue }}">
   <header class="session-head">
-    <span class="session-id" title="{{ session.id }}">…{{ session.short }}</span>
+    <span class="session-id" title="{{ session.id }}">{% if session.minion_of and session.minion_of.name %}{{ session.minion_of.name }}{% else %}…{{ session.short }}{% endif %}</span>
     {{ ui.badge(session.state, session.tone) }}
     {% if session.model %}<span class="session-model" data-thinking="{{ session.thinking | flag }}">{{ session.model }}</span>{% endif %}
   </header>
+  {% if session.minion_of %}
+  <p class="session-lineage"><span class="lineage-arrow">↳</span>{% if session.minion_of.role %}{{ session.minion_of.role }} {% endif %}minion of <span class="lineage-parent" data-hue="{{ session.minion_of.parent_hue }}">{{ session.minion_of.parent }}</span></p>
+  {% endif %}
   {% if session.context_percent is not none %}{{ ui.meter("context", session.context_percent) }}{% endif %}
   {% if session.asks %}
   <p class="session-asks">Needs you: {{ session.asks | join(", ") }}</p>
+  {% endif %}
+  {% if session.minions %}
+  <div class="session-minions">
+    {% if session.waiting_on %}<span class="minions-wait">waiting on {{ session.waiting_on }}{% if session.waiting_for %} · {{ session.waiting_for }}{% endif %}</span>{% endif %}
+    {% for minion in session.minions %}<span class="minion-chip" data-hue="{{ minion.hue }}" data-run="{{ minion.state }}">{{ minion.name }}{% if minion.role %} <em>{{ minion.role }}</em>{% endif %}</span>{% endfor %}
+  </div>
   {% endif %}
   {% if session.calls %}
   <div class="session-calls">

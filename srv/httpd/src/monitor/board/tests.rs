@@ -1,5 +1,5 @@
 use super::*;
-use chaos_kern::activity::CheckCounts;
+use chaos_kern::activity::{AgentRun, CheckCounts};
 
 fn event(process_id: ProcessId, at_ms: i64, activity: Activity) -> ActivityEvent {
     ActivityEvent {
@@ -204,4 +204,53 @@ fn the_route_collapses_repeat_visits_and_keeps_the_last_stops() {
     assert_eq!(route.len(), ROUTE_LEN);
     assert_eq!(route.first(), Some(&Station::Network));
     assert_eq!(route.last(), Some(&Station::Files));
+}
+
+#[test]
+fn a_minion_knows_its_parent_and_the_parent_tracks_it() {
+    let mut board = Board::default();
+    let parent = ProcessId::new();
+    let child = ProcessId::new();
+    board.apply(&event(parent, 1, Activity::TurnStarted));
+    let changes = board.apply(&event(
+        parent,
+        2,
+        Activity::AgentSpawned {
+            child,
+            nickname: Some("Ada".into()),
+            role: Some("reviewer".into()),
+        },
+    ));
+    assert!(changes.contains(&Change::SessionAdded), "{changes:?}");
+    assert_eq!(board.sessions[&child].parent, Some(parent));
+    assert_eq!(board.label(&child), "Ada");
+
+    board.apply(&event(
+        parent,
+        3,
+        Activity::WaitingOnAgents {
+            children: vec![child],
+        },
+    ));
+    board.apply(&event(
+        parent,
+        4,
+        Activity::AgentState {
+            child,
+            state: AgentRun::Failed,
+        },
+    ));
+    let minion = &board.sessions[&parent].minions[0];
+    assert_eq!(minion.state, AgentRun::Failed);
+    assert_eq!(board.sessions[&parent].waiting_on, vec![child]);
+
+    board.apply(&event(parent, 5, Activity::DoneWaiting));
+    board.apply(&event(parent, 6, Activity::AgentEnded { child }));
+    assert!(board.sessions[&parent].waiting_on.is_empty());
+    assert!(board.sessions[&child].closed);
+    assert_eq!(
+        board.sessions[&parent].minions[0].state,
+        AgentRun::Failed,
+        "closing keeps how it ended"
+    );
 }

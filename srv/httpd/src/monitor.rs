@@ -289,7 +289,7 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
     match change {
         Change::Session(id) => vec![
             match board.sessions.get(id) {
-                Some(session) => replace(&Session::from(*id, session)),
+                Some(session) => replace(&Session::from(&board, *id, session)),
                 None => replace(&Sessions::from(&board)),
             },
             replace(&Instruments::from(&board, now)),
@@ -308,7 +308,7 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
         Change::Map => vec![replace(&Map::from(&board, now))],
         Change::Feed => vec![match board.feed.back() {
             Some(entry) if board.feed.len() > 1 && board.feed.len() < board::FEED_LEN => {
-                prepend("#w-feed-list", &Entry::from(entry))
+                prepend("#w-feed-list", &Entry::from(&board, entry))
             }
             _ => replace(&Feed::from(&board)),
         }],

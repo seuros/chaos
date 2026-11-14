@@ -239,6 +239,20 @@ pub enum Activity {
     AgentEnded {
         child: ProcessId,
     },
+    /// How a minion this session dispatched is doing, as the minion reports it.
+    AgentState {
+        child: ProcessId,
+        state: AgentRun,
+    },
+    /// This session sent more work to one of its minions.
+    AgentMessaged {
+        child: ProcessId,
+    },
+    /// This session is blocked until its minions answer.
+    WaitingOnAgents {
+        children: Vec<ProcessId>,
+    },
+    DoneWaiting,
     /// The host's health as this session's recovery sees it; agents pause
     /// while it is anything but healthy or recovered.
     Machine {
@@ -246,6 +260,16 @@ pub enum Activity {
         causes: Vec<MachineCause>,
     },
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRun {
+    Starting,
+    Running,
+    Done,
+    Failed,
+    Stopped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -340,6 +364,8 @@ pub enum Station {
     Web,
     Edit,
     Hooks,
+    /// Dispatching, messaging, waiting on and closing minions.
+    Agents,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

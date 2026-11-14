@@ -68,7 +68,14 @@ impl Machine {
 
 #[derive(Serialize)]
 pub(super) struct Sessions {
-    pub items: Vec<Session>,
+    pub groups: Vec<Group>,
+}
+
+/// A top-level session and the minions it dispatched.
+#[derive(Serialize)]
+pub(super) struct Group {
+    pub root: Session,
+    pub minions: Vec<Session>,
 }
 
 impl Widget for Sessions {
@@ -77,18 +84,43 @@ impl Widget for Sessions {
 
 impl Sessions {
     pub(super) fn from(board: &Board) -> Self {
-        let mut items: Vec<_> = board
+        // Top-level sessions by urgency, each grouped with its minions.
+        let mut roots: Vec<_> = board
             .sessions
             .iter()
-            .map(|(id, session)| Session::from(*id, session))
+            .filter(|(_, session)| {
+                session
+                    .parent
+                    .is_none_or(|parent| !board.sessions.contains_key(&parent))
+            })
+            .map(|(id, session)| Session::from(board, *id, session))
             .collect();
-        items.sort_by_key(|session| (session.rank, std::cmp::Reverse(session.last_at_ms)));
-        Self { items }
+        roots.sort_by_key(|session| (session.rank, std::cmp::Reverse(session.last_at_ms)));
+        let groups = roots
+            .into_iter()
+            .map(|root| {
+                let minions = board
+                    .sessions
+                    .get(&root.process_id)
+                    .map(|session| session.minions.as_slice())
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|minion| {
+                        let session = board.sessions.get(&minion.id)?;
+                        Some(Session::from(board, minion.id, session))
+                    })
+                    .collect();
+                Group { root, minions }
+            })
+            .collect();
+        Self { groups }
     }
 }
 
 #[derive(Serialize)]
 pub(super) struct Session {
+    #[serde(skip)]
+    pub process_id: ProcessId,
     pub id: String,
     pub short: String,
     pub state: &'static str,
@@ -108,6 +140,27 @@ pub(super) struct Session {
     pub tokens_out: String,
     pub cache_percent: Option<u8>,
     pub agents: u64,
+    /// Set on a minion: what it is called and who dispatched it.
+    pub minion_of: Option<Parent>,
+    pub minions: Vec<MinionChip>,
+    pub waiting_on: usize,
+    pub waiting_for: Option<String>,
+}
+
+#[derive(Serialize)]
+pub(super) struct Parent {
+    pub name: Option<String>,
+    pub role: Option<String>,
+    pub parent: String,
+    pub parent_hue: usize,
+}
+
+#[derive(Serialize)]
+pub(super) struct MinionChip {
+    pub name: String,
+    pub role: Option<String>,
+    pub hue: usize,
+    pub state: String,
 }
 
 #[derive(Serialize)]
@@ -131,10 +184,14 @@ impl Widget for Session {
 }
 
 impl Session {
-    pub(super) fn from(process_id: ProcessId, session: &BoardSession) -> Self {
+    pub(super) fn from(board: &Board, process_id: ProcessId, session: &BoardSession) -> Self {
         let id = process_id.to_string();
         let (state, tone, rank) = if !session.asks.is_empty() {
             ("waiting", "ask", 0)
+        } else if !session.waiting_on.is_empty() {
+            ("delegating", "busy", 1)
+        } else if session.closed {
+            ("closed", "quiet", 4)
         } else if session.working {
             ("working", "busy", 1)
         } else if session.failed {
@@ -145,6 +202,7 @@ impl Session {
         let usage = &session.usage;
         let fed = usage.input.max(0);
         Self {
+            process_id,
             short: short(&id),
             id,
             state,
@@ -188,6 +246,29 @@ impl Session {
             cache_percent: (fed > 0)
                 .then(|| ((usage.cache_read.max(0) * 100) / fed).min(100) as u8),
             agents: session.agents,
+            minion_of: session.parent.map(|parent| Parent {
+                name: session.nickname.clone(),
+                role: session.role.clone().filter(|role| role != "default"),
+                parent: board.label(&parent),
+                parent_hue: map::hue(&parent),
+            }),
+            minions: session
+                .minions
+                .iter()
+                .map(|minion| MinionChip {
+                    name: minion
+                        .nickname
+                        .clone()
+                        .unwrap_or_else(|| board.label(&minion.id)),
+                    role: minion.role.clone().filter(|role| role != "default"),
+                    hue: map::hue(&minion.id),
+                    state: name(&minion.state),
+                })
+                .collect(),
+            waiting_on: session.waiting_on.len(),
+            waiting_for: session.waiting_since_ms.map(|since| {
+                board::duration(u64::try_from(session.last_at_ms.max(since) - since).unwrap_or(0))
+            }),
         }
     }
 }
@@ -204,7 +285,12 @@ impl Widget for Feed {
 impl Feed {
     pub(super) fn from(board: &Board) -> Self {
         Self {
-            entries: board.feed.iter().rev().map(Entry::from).collect(),
+            entries: board
+                .feed
+                .iter()
+                .rev()
+                .map(|entry| Entry::from(board, entry))
+                .collect(),
         }
     }
 }
@@ -223,14 +309,18 @@ impl Widget for Entry {
     const NAME: &'static str = "entry";
 }
 
-impl From<&BoardEntry> for Entry {
-    fn from(entry: &BoardEntry) -> Self {
+impl Entry {
+    pub(super) fn from(board: &Board, entry: &BoardEntry) -> Self {
         let id = entry.process_id.to_string();
         Self {
             time: jiff::Timestamp::from_millisecond(entry.at_ms)
                 .map(|at| at.strftime("%H:%M:%S").to_string())
                 .unwrap_or_default(),
-            session: short(&id),
+            session: board
+                .sessions
+                .get(&entry.process_id)
+                .and_then(|session| session.nickname.clone())
+                .unwrap_or_else(|| format!("…{}", short(&id))),
             hue: map::hue(&entry.process_id),
             station: entry.station.as_ref().map(name),
             text: entry.text.clone(),

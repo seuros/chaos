@@ -1,6 +1,6 @@
 //! What deserves a look, worst first. Every rule reads only the board.
 
-use chaos_kern::activity::MachinePhase;
+use chaos_kern::activity::{AgentRun, MachinePhase};
 use serde::Serialize;
 
 use super::super::board::{self, Board};
@@ -12,6 +12,7 @@ const FAILING_IN_A_ROW: u32 = 3;
 const CONTEXT_HIGH: i64 = 80;
 const CACHE_LOW: i64 = 40;
 const CACHE_MIN_INPUT: i64 = 30_000;
+const LONG_WAIT_MS: i64 = 5 * 60_000;
 
 #[derive(Serialize)]
 pub(in crate::monitor) struct Attention {
@@ -73,6 +74,37 @@ impl Attention {
                     "bad",
                     format!("failing {}", name(&kind)),
                     "until a run of the same kind passes".into(),
+                    who.clone(),
+                );
+            }
+            for minion in &session.minions {
+                if minion.state == AgentRun::Failed && session.waiting_on.contains(&minion.id) {
+                    push(
+                        2,
+                        "bad",
+                        "minion failed".into(),
+                        format!("{} failed while its parent waits", board.label(&minion.id)),
+                        who.clone(),
+                    );
+                }
+            }
+            if let Some(since) = session.waiting_since_ms
+                && now_ms - since >= LONG_WAIT_MS
+            {
+                push(
+                    3,
+                    "ask",
+                    "long wait on minions".into(),
+                    format!(
+                        "{} minion{} for {}",
+                        session.waiting_on.len(),
+                        if session.waiting_on.len() == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                        board::duration(u64::try_from(now_ms - since).unwrap_or(0))
+                    ),
                     who.clone(),
                 );
             }

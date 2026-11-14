@@ -36,6 +36,12 @@
       <text class="core-name" x="{{ map.core.x }}" y="{{ map.core.y + 5 }}">CHAOS</text>
       <text class="core-model" x="{{ map.core.x }}" y="{{ map.core.y + 24 }}">{{ map.core.model or "idle" }}</text>
     </g>
+    {% for orbit in map.orbits %}
+    <g class="orbit" data-hue="{{ orbit.hue }}" style="transform-origin: {{ map.core.x }}px {{ map.core.y }}px; animation-delay: {{ orbit.delay }}">
+      <circle class="orbit-path" cx="{{ map.core.x }}" cy="{{ map.core.y }}" r="{{ orbit.radius }}"/>
+      <circle class="orbit-body" cx="{{ map.core.x + orbit.radius }}" cy="{{ map.core.y }}" r="5"><title>{{ orbit.name }}</title></circle>
+    </g>
+    {% endfor %}
     {% for node in map.nodes %}
     <g class="node{% if node.glitch %} is-glitching{% endif %}" data-station="{{ node.station }}" data-active="{{ (node.active > 0) | flag }}"{% if node.glitch %} style="--glitch: {{ node.glitch.delay }}"{% endif %}>
       <circle class="node-halo" cx="{{ node.x }}" cy="{{ node.y }}" r="{{ node.r + 10 }}" filter="url(#map-glow)"/>

@@ -2,6 +2,7 @@
 {% macro station(name, x, y) -%}
 <g class="icon" transform="translate({{ x - 9 }} {{ y - 9 }})">
 {%- if name == "kernel" %}<rect x="4" y="4" width="10" height="10" rx="1.5"/><path d="M7 1v3M11 1v3M7 14v3M11 14v3M1 7h3M1 11h3M14 7h3M14 11h3"/>
+{%- elif name == "agents" %}<circle cx="9" cy="4" r="2.5"/><circle cx="3.5" cy="14" r="2.5"/><circle cx="14.5" cy="14" r="2.5"/><path d="M9 6.5v3M9 9.5l-4 2.5M9 9.5l4 2.5"/>
 {%- elif name == "shell" %}<path d="M3 5l4 4-4 4M9 14h6"/>
 {%- elif name == "files" %}<path d="M4.5 1.5h6l3.5 3.5v11.5h-9.5zM10.5 1.5V5H14"/>
 {%- elif name == "network" %}<circle cx="9" cy="9" r="7.5"/><path d="M1.5 9h15M9 1.5c-3 2.4-3 12.6 0 15M9 1.5c3 2.4 3 12.6 0 15"/>

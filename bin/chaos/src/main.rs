@@ -466,6 +466,11 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             .push(format!("model_provider={p}"));
     }
 
+    // Let a resident of this home watch whatever this process runs.
+    if let Some(kind) = activity_origin(subcommand.as_ref()) {
+        forward_activity(kind);
+    }
+
     match subcommand {
         Some(Subcommand::Config(command)) => config_cmd::run(command).await?,
         Some(Subcommand::Hooks(command)) => hooks_cmd::run(command).await?,
@@ -722,3 +727,29 @@ fn print_completion(cmd: CompletionCommand) {
 
 #[cfg(test)]
 mod tests;
+
+/// Which processes run sessions worth watching; serve is the one listening.
+fn activity_origin(
+    subcommand: Option<&Subcommand>,
+) -> Option<chaos_kern::activity::fleet::OriginKind> {
+    use chaos_kern::activity::fleet::OriginKind;
+    match subcommand {
+        None | Some(Subcommand::Resume(_)) | Some(Subcommand::Fork(_)) => Some(OriginKind::Console),
+        Some(Subcommand::Exec(_)) | Some(Subcommand::Review(_)) => Some(OriginKind::Exec),
+        #[cfg(feature = "acp")]
+        Some(Subcommand::Acp) => Some(OriginKind::Acp),
+        #[cfg(feature = "mcpd")]
+        Some(Subcommand::Mcp(McpCli {
+            subcommand: crate::mcp_cmd::McpSubcommand::Serve,
+            ..
+        })) => Some(OriginKind::Mcp),
+        Some(Subcommand::Taskd(_)) => Some(OriginKind::Taskd),
+        _ => None,
+    }
+}
+
+fn forward_activity(kind: chaos_kern::activity::fleet::OriginKind) {
+    if let Ok(home) = chaos_pwd::find_chaos_home() {
+        chaos_kern::activity::fleet::forward(home.as_path(), kind);
+    }
+}

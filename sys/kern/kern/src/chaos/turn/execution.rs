@@ -264,6 +264,9 @@ pub(super) async fn try_run_sampling_request(
             }
             ResponseEvent::ServerModel(server_model) => {
                 *last_server_model = Some(server_model.clone());
+                if let Some(request) = model_request.as_mut() {
+                    request.served_by(&server_model);
+                }
                 if !*server_model_warning_emitted_for_turn
                     && sess
                         .maybe_warn_on_server_model_mismatch(&turn_context, server_model)

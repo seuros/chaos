@@ -254,3 +254,30 @@ fn a_minion_knows_its_parent_and_the_parent_tracks_it() {
         "closing keeps how it ended"
     );
 }
+
+#[test]
+fn another_process_s_sessions_carry_its_origin_and_go_when_it_leaves() {
+    use chaos_kern::activity::fleet::OriginKind;
+    let mut board = Board::default();
+    let console = Origin {
+        kind: OriginKind::Console,
+        pid: 4242,
+    };
+    let local = ProcessId::new();
+    let remote = ProcessId::new();
+    board.apply(&event(local, 1, Activity::TurnStarted));
+    assert_eq!(board.joined(console), vec![Change::Fleet]);
+    board.apply_remote(console, &event(remote, 2, Activity::TurnStarted));
+    assert_eq!(board.elsewhere, vec![console]);
+    assert_eq!(board.sessions[&remote].origin, Some(console));
+    assert_eq!(board.sessions[&local].origin, None);
+
+    let changes = board.left(console);
+    assert!(changes.contains(&Change::SessionAdded), "{changes:?}");
+    assert!(board.elsewhere.is_empty());
+    assert!(!board.sessions.contains_key(&remote));
+    assert!(
+        board.sessions.contains_key(&local),
+        "this resident's own stay"
+    );
+}

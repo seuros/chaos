@@ -11,4 +11,7 @@
     {{ ui.stat("triggers", summary.triggers ~ "/" ~ summary.max_triggers) }}
   </div>
   <p class="widget-foot">v{{ summary.version }} · up {{ summary.uptime }}</p>
+  {% if summary.elsewhere %}
+  <p class="summary-elsewhere"><span>also watching</span>{% for origin in summary.elsewhere %}<span class="origin">{{ origin }}</span>{% endfor %}</p>
+  {% endif %}
 </section>

@@ -101,8 +101,9 @@ pub(super) fn fold(session: &mut Session, activity: &Activity, at_ms: i64) -> Op
             session.thinking = true;
             None
         }
-        Activity::ModelEnded { usage, .. } => {
+        Activity::ModelEnded { model, usage, .. } => {
             session.thinking = false;
+            session.model = Some(model.clone());
             if let Some(usage) = usage {
                 session.usage.input += usage.input;
                 session.usage.cache_read += usage.cache_read;

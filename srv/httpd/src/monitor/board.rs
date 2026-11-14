@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use chaos_ipc::ProcessId;
+pub(super) use chaos_kern::activity::fleet::Origin;
 use chaos_kern::activity::{
     Activity, ActivityEvent, AgentRun, Attention, CallOutcome, Check, CheckKind, LimitWindow,
     MachineCause, MachinePhase, ModelUsage, Station, TurnOutcome,
@@ -36,6 +37,8 @@ pub(super) struct Board {
     /// The last stations visited, oldest first, repeats collapsed.
     pub route: VecDeque<(Station, i64)>,
     pub turn_ended: Option<(i64, TurnOutcome)>,
+    /// Other Chaos processes of this home forwarding their activity here.
+    pub elsewhere: Vec<Origin>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -74,6 +77,8 @@ pub(super) struct Session {
     pub waiting_since_ms: Option<i64>,
     /// Its parent closed it; it will do no more work.
     pub closed: bool,
+    /// The process it runs in, when that is not this resident.
+    pub origin: Option<Origin>,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +124,8 @@ pub(super) enum Change {
     Limits,
     Map,
     Feed,
+    /// A process of this home started or stopped forwarding.
+    Fleet,
 }
 
 impl Session {
@@ -151,6 +158,7 @@ impl Session {
             waiting_on: Vec::new(),
             waiting_since_ms: None,
             closed: false,
+            origin: None,
         }
     }
 }
@@ -228,6 +236,30 @@ impl Board {
             changes.push(Change::Feed);
         }
         changes
+    }
+
+    /// An event from another process of this home.
+    pub(super) fn apply_remote(&mut self, origin: Origin, event: &ActivityEvent) -> Vec<Change> {
+        let changes = self.apply(event);
+        if let Some(session) = self.sessions.get_mut(&event.process_id) {
+            session.origin = Some(origin);
+        }
+        changes
+    }
+
+    pub(super) fn joined(&mut self, origin: Origin) -> Vec<Change> {
+        if !self.elsewhere.contains(&origin) {
+            self.elsewhere.push(origin);
+        }
+        vec![Change::Fleet]
+    }
+
+    /// A process exited: its sessions can do no more work, so they go.
+    pub(super) fn left(&mut self, origin: Origin) -> Vec<Change> {
+        self.elsewhere.retain(|o| *o != origin);
+        self.sessions
+            .retain(|_, session| session.origin != Some(origin));
+        vec![Change::Fleet, Change::SessionAdded, Change::Map]
     }
 
     /// Events that tie a session to its minions touch both sides.

@@ -41,6 +41,7 @@ fn summary() -> Summary {
         sessions: 1,
         working: 1,
         waiting: 0,
+        elsewhere: vec!["console 4242".into()],
     }
 }
 
@@ -123,6 +124,13 @@ fn a_minion_card_names_its_parent_and_orbits_the_core() {
     assert!(html.contains(r#"class="minion-chip""#), "{html}");
     let map = Map::from(&board, 2_000).render().unwrap();
     assert!(map.contains(r#"class="orbit""#), "{map}");
+}
+
+#[test]
+fn the_resident_names_the_other_processes_it_watches() {
+    let html = summary().render().unwrap();
+    assert!(html.contains("also watching"), "{html}");
+    assert!(html.contains(">console 4242<"), "{html}");
 }
 
 #[test]

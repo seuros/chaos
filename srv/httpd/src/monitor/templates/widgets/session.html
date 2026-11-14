@@ -3,6 +3,7 @@
   <header class="session-head">
     <span class="session-id" title="{{ session.id }}">{% if session.minion_of and session.minion_of.name %}{{ session.minion_of.name }}{% else %}…{{ session.short }}{% endif %}</span>
     {{ ui.badge(session.state, session.tone) }}
+    {% if session.origin %}<span class="session-origin">{{ session.origin }}</span>{% endif %}
     {% if session.model %}<span class="session-model" data-thinking="{{ session.thinking | flag }}">{{ session.model }}</span>{% endif %}
   </header>
   {% if session.minion_of %}

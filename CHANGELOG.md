@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- `chaos serve`'s monitor also shows the console, `chaos exec`, MCP and ACP
+  processes of the same Chaos home.
 - `chaos serve`'s `/monitor` shows the resident live: a station map with each
   tool call moving to where it runs, dials for context, cache and limits
   (with pace), a needs-attention list, session lanes with each session's

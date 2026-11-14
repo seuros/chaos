@@ -32,3 +32,4 @@
 .minion-chip[data-run="done"] { border-color: color-mix(in srgb, var(--ok) 45%, var(--line-2)); }
 .minion-chip[data-run="failed"] { border-color: var(--bad); color: var(--bad); }
 .minion-chip[data-run="stopped"] { opacity: .5; }
+.session-origin { padding: 0 6px; border: 1px solid var(--line-2); border-radius: 2px; font-size: 10px; color: var(--muted); letter-spacing: .04em; }

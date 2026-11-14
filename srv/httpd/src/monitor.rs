@@ -19,6 +19,7 @@ use widgets::{
 };
 
 mod board;
+mod follow;
 mod view;
 mod widgets;
 
@@ -75,33 +76,6 @@ impl MonitorState {
             board: Arc::default(),
             changes,
         }
-    }
-
-    /// Fold every session's activity into the board from now on, so a
-    /// monitor that connects later still sees what is running.
-    pub(crate) fn follow_activity(&self) {
-        let board = self.board.clone();
-        let changes = self.changes.clone();
-        let mut activity = chaos_kern::activity::subscribe();
-        tokio::spawn(async move {
-            loop {
-                match activity.recv().await {
-                    Ok(event) => {
-                        let applied = match board.lock() {
-                            Ok(mut board) => board.apply(&event),
-                            Err(_) => break,
-                        };
-                        for change in applied {
-                            let _ = changes.send(change);
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        let _ = changes.send(Change::SessionAdded);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-        });
     }
 
     pub(crate) fn publish(
@@ -383,6 +357,7 @@ fn summary_from(state: &ServerState, board: &Board) -> Summary {
             .iter()
             .filter(|session| !session.asks.is_empty())
             .count(),
+        elsewhere: board.elsewhere.iter().map(widgets::origin_label).collect(),
     }
 }
 
@@ -412,6 +387,7 @@ fn patch(state: &ServerState, change: &Change) -> Vec<Patch> {
             replace(&Attention::from(&board, now)),
         ],
         Change::Limits => vec![replace(&Instruments::from(&board, now))],
+        Change::Fleet => vec![replace(&summary_from(state, &board))],
         Change::Map => vec![replace(&Map::from(&board, now))],
         Change::Feed => vec![match board.feed.back() {
             Some(entry) if board.feed.len() > 1 && board.feed.len() < board::FEED_LEN => {

@@ -12,11 +12,12 @@ use std::sync::Mutex;
 
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::EventMsg;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 mod check;
 mod command;
+pub mod fleet;
 mod translate;
 
 pub use check::{CheckCounts, CheckKind};
@@ -172,7 +173,7 @@ fn send(process_id: ProcessId, activity: Activity) {
     });
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivityEvent {
     pub process_id: ProcessId,
     pub at_ms: i64,
@@ -180,7 +181,7 @@ pub struct ActivityEvent {
     pub activity: Activity,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Activity {
     TurnStarted,
@@ -262,7 +263,7 @@ pub enum Activity {
     Failed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRun {
     Starting,
@@ -272,7 +273,7 @@ pub enum AgentRun {
     Stopped,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MachinePhase {
     Healthy,
@@ -297,7 +298,7 @@ impl From<crate::machine_recovery::Phase> for MachinePhase {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MachineCause {
     Power,
@@ -318,13 +319,13 @@ impl MachineCause {
 
 /// A check that ran: its kind and, when the runner printed them, its counts.
 /// Counts can disagree with the outcome when a pipe hid the exit status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub kind: CheckKind,
     pub counts: Option<CheckCounts>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelUsage {
     pub input: i64,
     pub cache_read: i64,
@@ -345,14 +346,14 @@ impl From<&chaos_ipc::protocol::TokenUsage> for ModelUsage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LimitWindow {
     pub used_percent: u8,
     pub window_minutes: Option<i64>,
     pub resets_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Station {
     /// Chaos's own tools: checkpoints, recovery, tool loading.
@@ -368,7 +369,7 @@ pub enum Station {
     Agents,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CallOutcome {
     Ok,
@@ -376,14 +377,14 @@ pub enum CallOutcome {
     Declined,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnOutcome {
     Completed,
     Aborted,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Attention {
     CommandApproval,

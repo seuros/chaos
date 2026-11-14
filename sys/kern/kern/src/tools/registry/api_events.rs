@@ -1,7 +1,8 @@
 //! Public, bounded tool previews for native API frontends.
 //!
 //! Reuse the invocation event vocabulary (server=None denotes an internal
-//! tool). Console/exec sessions retain their existing specialized rendering.
+//! tool). Console/exec sessions retain their existing specialized rendering,
+//! so for them the same calls reach only the activity bus, never the client.
 use std::time::Duration;
 
 use chaos_ipc::mcp::CallToolResult;
@@ -11,18 +12,21 @@ use chaos_ipc::protocol::{
 
 use crate::tools::context::{ToolInvocation, ToolPayload};
 
-pub(super) struct ToolEvents(McpInvocation);
+pub(super) struct ToolEvents {
+    invocation: McpInvocation,
+    /// API frontends render these calls; other sessions only report them.
+    to_client: bool,
+}
 
 impl ToolEvents {
     pub async fn start(invocation: &ToolInvocation, public_input: &str) -> Option<Self> {
-        if matches!(invocation.payload, ToolPayload::Mcp { .. })
-            || !matches!(
-                invocation.session.session_source().await,
-                SessionSource::Api | SessionSource::Acp
-            )
-        {
+        if matches!(invocation.payload, ToolPayload::Mcp { .. }) {
             return None;
         }
+        let to_client = matches!(
+            invocation.session.session_source().await,
+            SessionSource::Api | SessionSource::Acp
+        );
         let tool = McpInvocation {
             server: None,
             tool: match &invocation.tool_namespace {
@@ -34,17 +38,19 @@ impl ToolEvents {
                     .unwrap_or_else(|_| serde_json::Value::String(public_input.to_owned())),
             ),
         };
-        invocation
-            .session
-            .send_event(
-                &invocation.turn,
-                EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
-                    call_id: invocation.call_id.clone(),
-                    invocation: tool.clone(),
-                }),
-            )
-            .await;
-        Some(Self(tool))
+        let begin = EventMsg::McpToolCallBegin(McpToolCallBeginEvent {
+            call_id: invocation.call_id.clone(),
+            invocation: tool.clone(),
+        });
+        if to_client {
+            invocation.session.send_event(&invocation.turn, begin).await;
+        } else {
+            crate::activity::publish(invocation.session.conversation_id, &begin);
+        }
+        Some(Self {
+            invocation: tool,
+            to_client,
+        })
     }
 
     pub async fn finish(
@@ -63,17 +69,19 @@ impl ToolEvents {
             is_error: Some(!success),
             meta: None,
         };
-        invocation
-            .session
-            .send_event(
-                &invocation.turn,
-                EventMsg::McpToolCallEnd(McpToolCallEndEvent {
-                    call_id: invocation.call_id.clone(),
-                    invocation: self.0,
-                    duration,
-                    result: Ok(result),
-                }),
-            )
-            .await;
+        let end = EventMsg::McpToolCallEnd(McpToolCallEndEvent {
+            call_id: invocation.call_id.clone(),
+            invocation: self.invocation,
+            duration,
+            result: Ok(result),
+        });
+        if self.to_client {
+            invocation.session.send_event(&invocation.turn, end).await;
+        } else {
+            crate::activity::publish(invocation.session.conversation_id, &end);
+        }
     }
 }
+
+#[cfg(test)]
+mod tests;

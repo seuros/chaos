@@ -25,6 +25,8 @@ pub(super) struct Summary {
     pub sessions: usize,
     pub working: usize,
     pub waiting: usize,
+    /// Other processes of this home whose sessions this pane also shows.
+    pub elsewhere: Vec<String>,
 }
 
 impl Widget for Summary {
@@ -145,6 +147,8 @@ pub(super) struct Session {
     pub minions: Vec<MinionChip>,
     pub waiting_on: usize,
     pub waiting_for: Option<String>,
+    /// Where it runs, when that is not this resident.
+    pub origin: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -265,6 +269,7 @@ impl Session {
                     state: name(&minion.state),
                 })
                 .collect(),
+            origin: session.origin.as_ref().map(origin_label),
             waiting_on: session.waiting_on.len(),
             waiting_for: session.waiting_since_ms.map(|since| {
                 board::duration(u64::try_from(session.last_at_ms.max(since) - since).unwrap_or(0))
@@ -347,6 +352,11 @@ pub(super) struct Dashboard {
 
 impl Widget for Dashboard {
     const NAME: &'static str = "dashboard";
+}
+
+/// `console 4242`: what kind of process, and which one.
+pub(super) fn origin_label(origin: &board::Origin) -> String {
+    format!("{} {}", name(&origin.kind), origin.pid)
 }
 
 /// The last four characters: enough to tell live sessions apart.

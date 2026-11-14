@@ -25,9 +25,8 @@ with asynchronous turns, live steering and authenticated event replay/SSE.
 
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
-Serve's sessions never use a clamp transport; they talk to the configured
-provider. A `clamp = true` meant for the console is ignored, and asking for
-clamp with `-c clamp=…` on serve's command line refuses to start.
+Serve's sessions never clamp; `-c clamp=…` on its command line refuses to
+start.
 
 Builds with `mcpd` (the default) support authenticated MCP at `/mcp` through
 `--mcp`. Set permitted browser origins with `--mcp-allowed-origin`. The HTTP
@@ -47,7 +46,7 @@ the stdio server never lists; see chaos-trust(7).
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |
-| `--monitor-token` | env `CHAOS_MONITOR_TOKEN` | Require this token to watch `/monitor`; without it the read-only monitor is open. Must differ from the bearer, recovery and operator tokens. |
+| `--monitor-token` | env `CHAOS_MONITOR_TOKEN` | Viewer-only token for `/monitor`; unset, the monitor is open. Must differ from the other tokens. |
 | `--operator-token` | env `CHAOS_OPERATOR_TOKEN` | Serve the project trust tools on `/mcp` (chaos-trust(7)). Requires `--mcp` and a nonempty token different from the bearer and recovery tokens; without it the tools are absent. |
 | `--recovery-token` | env `CHAOS_RECOVERY_TOKEN` | Enable operator recovery mutations. Requires `--session-scope` and a nonempty token different from the ordinary bearer. |
 | `--session-recovery-only` | `false` | Drain legacy/changed-policy history without execution. Requires `--session-scope` and `--recovery-token`; every protected route also requires the operator header. |
@@ -136,35 +135,15 @@ All errors are JSON. `caller_session_id` and `conversation_id` are included when
 
 ### `GET /monitor` and `GET /monitor/events`
 
-`/monitor` serves a static page, not live server state. The monitor is
-read-only and redacted, so by default it needs no token: the page connects to
-`/monitor/events` on load. Bound to a loopback address (`127.0.0.1`, `::1`),
-serve answers only loopback `Host` names (`127.0.0.1`, `localhost`, `[::1]`), so a
-web page that rebinds its own name to 127.0.0.1 is refused with `403`.
+A live, read-only view of the resident: sessions and minions, tool calls by
+station, checks, token use, limits, and what needs attention. It also shows the
+console, `chaos exec`, MCP and ACP processes of the same Chaos home. Redacted:
+never prompts, arguments, output or file contents. No history before serve
+started.
 
-To share the monitor over an untrusted network, set `--monitor-token`
-(`CHAOS_MONITOR_TOKEN`). The page then asks for it and sends it as
-`Authorization: Bearer <token>`; the bearer token is accepted too. The page never
-stores the token or puts it in a URL. The monitor token opens nothing else:
-triggers, `/mcp` and sessions always require the bearer. Reload the page to
-disconnect.
-
-Once connected, the page shows the resident: a map of the stations tool calls
-run on (kernel, agents, shell, files, network, MCP, web, edit, hooks) with each
-call in flight, the recent route between them, and minions at work circling
-the core; dials for the fullest context, cache
-hit and token split; rate limits against the pace of their window; a
-needs-attention list (machine warnings pausing agents, questions waiting on
-you, failing checks, repeated failures, slow calls, full context, low cache
-hit, a minion failing while its parent waits, a long wait on minions); each
-session with its last check, minions grouped under the session that
-dispatched them; and an activity feed. It shows what happened since serve started, not history from
-the journal, and never prompts, arguments, output or file contents.
-
-The stream includes process IDs, program and tool names, models, token use and
-machine health; anyone who can reach an open monitor sees them. Neither the
-page nor live responses may be cached; `/monitor/app.css` is the same for every
-resident of a build and is cached by its version.
+- Open by default. `--monitor-token` requires a viewer-only token; it opens
+  nothing else.
+- On a loopback bind, only loopback `Host` names are served (`403` otherwise).
 
 ### Experimental retained sessions (`--sessions`)
 

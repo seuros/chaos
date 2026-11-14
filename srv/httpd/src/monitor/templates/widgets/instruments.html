@@ -1,0 +1,16 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-instruments" class="widget instruments">
+  <h2 class="widget-title">Instruments</h2>
+  <div class="instruments-row">
+    {{ ui.dial(instruments.context) }}
+    {{ ui.dial(instruments.cache) }}
+    <div class="split">
+      <span class="split-label">tokens</span>
+      <span class="split-bar"><span class="split-in" style="width: {{ instruments.in_share }}%"></span></span>
+      <span class="split-legend"><span>in {{ instruments.tokens_in }}</span><span>out {{ instruments.tokens_out }}</span></span>
+    </div>
+  </div>
+  <div class="gauges">
+    {% for gauge in instruments.limits %}{{ ui.gauge(gauge) }}{% else %}{{ ui.empty("No limits reported yet.") }}{% endfor %}
+  </div>
+</section>

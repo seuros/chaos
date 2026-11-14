@@ -116,13 +116,16 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     match (method.clone(), path) {
         (Method::GET, "/monitor") => monitor::page_response(),
+        (Method::GET, monitor::STYLESHEET_PATH) => {
+            monitor::stylesheet_response(request.headers().get(monitor::IF_NONE_MATCH_HEADER))
+        }
         (Method::GET, MONITOR_EVENTS_PATH) => monitor::events_response(state),
         (Method::GET, "/assets/datastar.js") => monitor::datastar_script_response(),
         (Method::GET, "/api/health") => handle_health(),
         (Method::POST, TRIGGER_PATH) => handle_trigger(state, request).await,
         // Known routes, wrong method.
         (_, "/monitor") | (_, MONITOR_EVENTS_PATH) => method_not_allowed("GET"),
-        (_, "/assets/datastar.js") => method_not_allowed("GET"),
+        (_, "/assets/datastar.js") | (_, monitor::STYLESHEET_PATH) => method_not_allowed("GET"),
         (_, "/api/health") => method_not_allowed("GET"),
         (_, TRIGGER_PATH) => method_not_allowed("POST"),
         // Unknown route.

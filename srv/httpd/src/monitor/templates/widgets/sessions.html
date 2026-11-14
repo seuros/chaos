@@ -1,0 +1,18 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-sessions" class="widget sessions">
+  <h2 class="widget-title">Sessions</h2>
+  <div class="session-grid">
+    {% for group in sessions.groups %}
+    <div class="session-group">
+      {% with session = group.root %}{% include "widgets/session.html" %}{% endwith %}
+      {% if group.minions %}
+      <div class="session-minion-list">
+        {% for session in group.minions %}{% include "widgets/session.html" %}{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    {{ ui.empty("No session has run since this monitor connected to the resident.") }}
+    {% endfor %}
+  </div>
+</section>

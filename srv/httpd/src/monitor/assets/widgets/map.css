@@ -1,0 +1,59 @@
+.map-svg { display: block; width: 100%; height: auto; max-height: 72vh; font-family: var(--font); }
+.map-rings .contour { fill: none; stroke: var(--line); stroke-dasharray: 2 7; }
+.map-rings .ticks { fill: none; stroke: var(--faint); stroke-width: 6; stroke-dasharray: 1 13; opacity: .55; }
+.spoke { fill: none; stroke: var(--line-2); stroke-width: 1; transition: stroke .3s ease; }
+.spoke[data-active="true"] { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 4 6; animation: flow 1s linear infinite; animation-delay: var(--breath); }
+.leg { fill: none; stroke: var(--text); stroke-width: 1; }
+.leg.is-newest { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw .6s ease-out forwards; }
+.packet circle { fill: var(--hue, var(--accent)); }
+
+.core-halo { fill: var(--accent); opacity: 0; }
+.core[data-working="true"] .core-halo { animation: breathe 2.4s ease-in-out infinite; animation-delay: var(--breath); }
+.core-ring { fill: none; stroke: var(--line-2); stroke-width: 3; }
+.core-context { fill: none; stroke: var(--text); stroke-width: 3; stroke-linecap: round; opacity: .75; }
+.core-body { fill: var(--panel-2); stroke: var(--accent); stroke-width: 1.5; }
+.core[data-working="false"] .core-body { stroke: var(--line-2); }
+.core-meta { text-anchor: middle; font-size: 10px; fill: var(--muted); }
+.core-name { text-anchor: middle; font-size: 17px; letter-spacing: .3em; fill: var(--text); }
+.core-model { text-anchor: middle; font-size: 10.5px; fill: var(--muted); }
+.shock { fill: none; stroke: var(--ok); stroke-width: 2; animation: shock 2.4s ease-out both; transform-box: fill-box; transform-origin: center; }
+.shock[data-tone="bad"] { stroke: var(--bad); }
+
+.node-halo { fill: var(--accent); opacity: 0; }
+.node[data-active="true"] .node-halo { animation: breathe 2.4s ease-in-out infinite; animation-delay: var(--breath); }
+.node-outer { fill: none; stroke: transparent; stroke-width: 1; }
+.node[data-active="true"] .node-outer { stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
+.node-body { fill: var(--panel-2); stroke: var(--line-2); stroke-width: 1.2; transition: stroke .3s ease; }
+.node[data-active="true"] .node-body { stroke: var(--accent); stroke-width: 1.6; }
+.icon { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.node[data-active="true"] .icon { stroke: var(--accent); }
+.node-badge circle { fill: var(--ground); stroke: var(--accent); stroke-width: 1.2; }
+.node-badge text { text-anchor: middle; font-size: 9.5px; fill: var(--accent); }
+.node-label, .node-tally { text-anchor: middle; paint-order: stroke; stroke: var(--ground); stroke-width: 5px; stroke-linejoin: round; }
+.node-label { font-size: 12px; fill: var(--muted); letter-spacing: .04em; }
+.node[data-active="true"] .node-label { fill: var(--text); }
+.node-tally { font-size: 10px; fill: var(--faint); }
+.node-failed { fill: var(--bad); }
+.node.is-glitching .node-body { animation: glitch 4s steps(1, end) both; animation-delay: var(--glitch); }
+.pip { fill: var(--hue); stroke: var(--ground); stroke-width: 1.5; }
+
+.route { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-top: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); font-size: 11px; }
+.route-label { color: var(--accent); letter-spacing: var(--track); text-transform: uppercase; font-size: 10px; margin-right: var(--space-1); }
+.route-stop { color: var(--text); }
+.route-stop:last-child { color: var(--accent); }
+.route-stop.is-empty { color: var(--faint); }
+.route-arrow { color: var(--faint); }
+
+/* Minions at work circle the core. */
+.orbit { animation: orbit 14s linear infinite; }
+.orbit-path { fill: none; stroke: color-mix(in srgb, var(--hue) 22%, transparent); stroke-width: 1; stroke-dasharray: 1 5; }
+.orbit-body { fill: var(--hue); filter: drop-shadow(0 0 5px var(--hue)); }
+@keyframes orbit { to { transform: rotate(360deg); } }
+@keyframes flow { to { stroke-dashoffset: -20; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes breathe { 0%, 100% { opacity: .05; } 50% { opacity: .3; } }
+@keyframes shock { from { transform: scale(1); opacity: .8; } to { transform: scale(2.4); opacity: 0; } }
+@keyframes glitch {
+  0%, 10%, 20% { stroke: var(--bad); fill: color-mix(in srgb, var(--bad) 22%, var(--panel-2)); }
+  5%, 15%, 100% { stroke: var(--line-2); fill: var(--panel-2); }
+}

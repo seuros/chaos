@@ -1677,6 +1677,7 @@ dependencies = [
  "jiff",
  "lease-machines",
  "mcp-host",
+ "minijinja",
  "rama",
  "serde",
  "serde_json",

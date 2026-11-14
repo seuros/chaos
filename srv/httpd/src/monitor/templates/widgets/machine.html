@@ -1,0 +1,9 @@
+{% import "partials/ui.html" as ui %}
+<section id="w-machine" class="widget machine" data-pausing="{{ machine.pausing | flag }}">
+  <h2 class="widget-title">Machine</h2>
+  <p class="machine-phase">{{ ui.badge(machine.phase, machine.tone) }}</p>
+  {% if machine.causes %}
+  <p class="machine-causes">{% for cause in machine.causes %}{{ ui.badge(cause, "bad") }} {% endfor %}</p>
+  <p class="widget-foot">Agents pause until it recovers.</p>
+  {% endif %}
+</section>

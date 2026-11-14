@@ -1,0 +1,26 @@
+.instruments-row { display: grid; grid-template-columns: auto auto 1fr; gap: var(--space-5); align-items: center; }
+.dial { position: relative; margin: 0; width: 88px; display: grid; justify-items: center; }
+.dial svg { width: 84px; height: 84px; transform: rotate(135deg); }
+.dial-track, .dial-fill { fill: none; stroke-width: 4; stroke-linecap: round; }
+.dial-track { stroke: var(--line); }
+.dial-fill { stroke: var(--ok); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ok) 60%, transparent)); transition: stroke-dasharray .5s ease; }
+.dial[data-level="mid"] .dial-fill { stroke: var(--ask); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--ask) 60%, transparent)); }
+.dial[data-level="high"] .dial-fill { stroke: var(--bad); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--bad) 60%, transparent)); }
+.dial-value { position: absolute; top: 30px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.dial figcaption { display: grid; justify-items: center; margin-top: -8px; }
+.dial-label { font-size: 10px; letter-spacing: var(--track); text-transform: uppercase; color: var(--muted); }
+.dial-note { font-size: 10px; color: var(--faint); }
+.split { display: grid; gap: 6px; }
+.split-label { font-size: 10px; letter-spacing: var(--track); text-transform: uppercase; color: var(--muted); }
+.split-bar { display: flex; height: 4px; border-radius: 2px; background: var(--accent); overflow: hidden; }
+.split-in { display: block; height: 100%; background: var(--info); }
+.split-legend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gauges { display: grid; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.gauge { display: grid; grid-template-columns: 7ch 1fr 10ch; align-items: center; gap: var(--space-3); font-size: 11px; }
+.gauge-label { color: var(--muted); letter-spacing: var(--track); text-transform: uppercase; font-size: 10px; }
+.gauge-value { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.gauge-track { position: relative; height: 4px; background: var(--line); border-radius: 2px; }
+.gauge-fill { display: block; height: 100%; border-radius: 2px; background: var(--ok); }
+.gauge[data-ahead="true"] .gauge-fill { background: var(--ask); box-shadow: 0 0 8px color-mix(in srgb, var(--ask) 50%, transparent); }
+.gauge[data-ahead="true"] .gauge-value { color: var(--ask); }
+.gauge-pace { position: absolute; top: -5px; bottom: -5px; width: 1px; background: var(--text); }

@@ -1,0 +1,6 @@
+<li class="entry" data-tone="{{ entry.tone }}"{% if entry.station %} data-station="{{ entry.station }}"{% endif %}>
+  <time class="entry-time">{{ entry.time }}</time>
+  <span class="entry-session" data-hue="{{ entry.hue }}">{{ entry.session }}</span>
+  {% if entry.station %}<span class="entry-station">{{ entry.station }}</span>{% endif %}
+  <span class="entry-text">{{ entry.text }}</span>
+</li>

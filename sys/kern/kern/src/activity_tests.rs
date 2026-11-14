@@ -223,3 +223,176 @@ fn a_piped_test_run_reports_failures_its_exit_status_hid() {
         "{json}"
     );
 }
+
+#[test]
+fn internal_tools_are_filed_by_what_they_do_and_reported_once() {
+    let call = |server: Option<&str>, tool: &str| {
+        EventMsg::McpToolCallBegin(chaos_ipc::protocol::McpToolCallBeginEvent {
+            call_id: "call-3".to_string(),
+            invocation: chaos_ipc::protocol::McpInvocation {
+                server: server.map(str::to_string),
+                tool: tool.to_string(),
+                arguments: None,
+            },
+        })
+    };
+    let station = |msg: &EventMsg| match Activity::from_event(msg).as_slice() {
+        [Activity::CallStarted { station, .. }] => Some(*station),
+        [] => None,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        station(&call(None, "save_recovery_checkpoint")),
+        Some(Station::Kernel)
+    );
+    assert_eq!(station(&call(None, "read_file")), Some(Station::Files));
+    assert_eq!(station(&call(None, "spawn_agent")), Some(Station::Agents));
+    assert_eq!(
+        station(&call(None, "exec_command")),
+        None,
+        "the exec events report it"
+    );
+    assert_eq!(
+        station(&call(Some("docs"), "read_file")),
+        Some(Station::Mcp)
+    );
+}
+
+fn token_count(used: i64, percent: f64) -> EventMsg {
+    let usage = chaos_ipc::protocol::TokenUsage {
+        total_tokens: used,
+        ..Default::default()
+    };
+    EventMsg::TokenCount(chaos_ipc::protocol::TokenCountEvent {
+        info: Some(chaos_ipc::protocol::TokenUsageInfo {
+            total_token_usage: usage.clone(),
+            last_token_usage: usage,
+            model_context_window: Some(1000),
+        }),
+        rate_limits: Some(chaos_ipc::protocol::RateLimitSnapshot {
+            primary: Some(chaos_ipc::protocol::RateLimitWindow {
+                used_percent: percent,
+                window_minutes: Some(60),
+                resets_at: None,
+            }),
+            limit_id: None,
+            limit_name: None,
+            secondary: None,
+            credits: None,
+            plan_type: None,
+        }),
+        provider_request_started: false,
+    })
+}
+
+async fn ours(
+    rx: &mut broadcast::Receiver<ActivityEvent>,
+    process_id: ProcessId,
+    n: usize,
+) -> Vec<Activity> {
+    let collect = async {
+        let mut seen = Vec::new();
+        while seen.len() < n {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == process_id {
+                seen.push(event.activity);
+            }
+        }
+        seen
+    };
+    tokio::time::timeout(Duration::from_secs(5), collect)
+        .await
+        .expect("activity never reached the bus")
+}
+
+#[tokio::test]
+async fn gauges_reach_the_bus_only_when_they_change() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    publish(process_id, &token_count(10, 5.0));
+    publish(process_id, &token_count(10, 5.0));
+    publish(process_id, &token_count(20, 5.0));
+    publish(
+        process_id,
+        &EventMsg::TurnComplete(chaos_ipc::protocol::TurnCompleteEvent {
+            turn_id: "turn-1".to_string(),
+            last_agent_message: None,
+        }),
+    );
+    publish(process_id, &token_count(20, 5.0));
+    let context = |used_tokens| Activity::Context {
+        used_tokens,
+        window: Some(1000),
+    };
+    let limits = Activity::Limits {
+        windows: vec![LimitWindow {
+            used_percent: 5,
+            window_minutes: Some(60),
+            resets_at: None,
+        }],
+    };
+    assert_eq!(
+        ours(&mut rx, process_id, 6).await,
+        vec![
+            context(10),
+            limits.clone(),
+            context(20),
+            Activity::TurnEnded {
+                outcome: TurnOutcome::Completed,
+            },
+            context(20),
+            limits,
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_machine_phase_names_its_causes() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    machine(
+        process_id,
+        crate::machine_recovery::Phase::Warning,
+        vec!["disk", "thermal"],
+    );
+    assert_eq!(
+        ours(&mut rx, process_id, 1).await,
+        vec![Activity::Machine {
+            phase: MachinePhase::Warning,
+            causes: vec![MachineCause::Disk, MachineCause::Thermal],
+        }]
+    );
+}
+
+#[test]
+fn minions_report_their_state_and_their_parent_waiting_on_them() {
+    let child = ProcessId::new();
+    let status =
+        EventMsg::CollabAgentStatusChanged(chaos_ipc::protocol::CollabAgentStatusChangedEvent {
+            parent_process_id: ProcessId::new(),
+            child_process_id: child,
+            agent_nickname: Some("Ada".to_string()),
+            agent_role: None,
+            model: None,
+            status: chaos_ipc::protocol::CollabAgentStatus::Errored,
+        });
+    assert_eq!(
+        Activity::from_event(&status),
+        vec![Activity::AgentState {
+            child,
+            state: AgentRun::Failed,
+        }]
+    );
+    let waiting = EventMsg::CollabWaitingBegin(chaos_ipc::protocol::CollabWaitingBeginEvent {
+        sender_process_id: ProcessId::new(),
+        receiver_process_ids: vec![child],
+        receiver_agents: Vec::new(),
+        call_id: "wait-1".to_string(),
+    });
+    assert_eq!(
+        Activity::from_event(&waiting),
+        vec![Activity::WaitingOnAgents {
+            children: vec![child],
+        }]
+    );
+}

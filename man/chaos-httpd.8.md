@@ -137,9 +137,22 @@ requires the same `Authorization: Bearer <token>` header as triggers; URL tokens
 and cookies are not accepted. The page does not persist the token in browser
 storage or send it in query parameters. Reload the page to disconnect.
 
-The authenticated SSE stream includes process/conversation IDs and diagnostic
-details. Neither the page nor live responses may be cached. Treat the token as
-a full-access credential: it also permits triggering agent runs.
+Once connected, the page shows the resident: a map of the stations tool calls
+run on (kernel, agents, shell, files, network, MCP, web, edit, hooks) with each
+call in flight, the recent route between them, and minions at work circling
+the core; dials for the fullest context, cache
+hit and token split; rate limits against the pace of their window; a
+needs-attention list (machine warnings pausing agents, questions waiting on
+you, failing checks, repeated failures, slow calls, full context, low cache
+hit, a minion failing while its parent waits, a long wait on minions); each
+session with its last check, minions grouped under the session that
+dispatched them; and an activity feed. It shows what happened since serve started, not history from
+the journal, and never prompts, arguments, output or file contents.
+
+The authenticated SSE stream includes process IDs. Neither the page nor live
+responses may be cached; `/monitor/app.css` is the same for every resident of
+a build and is cached by its version. Treat the token as a full-access
+credential: it also permits triggering agent runs.
 
 ### Experimental retained sessions (`--sessions`)
 

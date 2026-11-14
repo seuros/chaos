@@ -356,6 +356,7 @@ pub async fn run_main(
         #[cfg(feature = "mcpd")]
         mcp,
     });
+    state.monitor.follow_activity();
     for (session, commands, request) in recovered {
         let lazy = request.resume_process_id.is_some();
         sessions::runtime::spawn(state.clone(), session, commands, request, lazy);

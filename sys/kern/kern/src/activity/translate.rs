@@ -6,6 +6,7 @@ use chaos_ipc::protocol::HookRunStatus;
 use chaos_ipc::protocol::PatchApplyStatus;
 
 use super::Activity;
+use super::AgentRun;
 use super::Attention;
 use super::CallOutcome;
 use super::Check;
@@ -56,20 +57,32 @@ impl Activity {
             EventMsg::McpToolCallBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
-                station: Station::Mcp,
+                station: match mcp_station(&ev.invocation) {
+                    Some(station) => station,
+                    None => return Vec::new(),
+                },
                 label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
             },
-            EventMsg::McpToolCallEnd(ev) => Self::CallEnded {
-                check: None,
-                call_id: ev.call_id.clone(),
-                station: Station::Mcp,
-                label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
-                outcome: match &ev.result {
+            EventMsg::McpToolCallEnd(ev) => {
+                let outcome = match &ev.result {
                     Ok(result) if result.is_error != Some(true) => CallOutcome::Ok,
                     _ => CallOutcome::Failed,
-                },
-                duration_ms: Some(millis(ev.duration)),
-            },
+                };
+                let station = match mcp_station(&ev.invocation) {
+                    Some(station) => station,
+                    // A command that never started has no exec events of its own.
+                    None if outcome == CallOutcome::Failed => Station::Shell,
+                    None => return Vec::new(),
+                };
+                Self::CallEnded {
+                    check: None,
+                    call_id: ev.call_id.clone(),
+                    station,
+                    label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
+                    outcome,
+                    duration_ms: Some(millis(ev.duration)),
+                }
+            }
             EventMsg::WebSearchBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
@@ -153,10 +166,55 @@ impl Activity {
             EventMsg::CollabCloseEnd(ev) => Self::AgentEnded {
                 child: ev.receiver_process_id,
             },
+            EventMsg::CollabAgentStatusChanged(ev) => Self::AgentState {
+                child: ev.child_process_id,
+                state: agent_run(ev.status),
+            },
+            EventMsg::CollabAgentInteractionBegin(ev) => Self::AgentMessaged {
+                child: ev.receiver_process_id,
+            },
+            EventMsg::CollabWaitingBegin(ev) => Self::WaitingOnAgents {
+                children: ev.receiver_process_ids.clone(),
+            },
+            EventMsg::CollabWaitingEnd(_) => Self::DoneWaiting,
             EventMsg::Error(_) => Self::Failed,
             _ => return Vec::new(),
         };
         vec![activity]
+    }
+}
+
+/// Where a tool call belongs. Internal tools that already report through
+/// their own events (commands, patches, searches) are not reported twice.
+fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Option<Station> {
+    if invocation.server.is_some() {
+        return Some(Station::Mcp);
+    }
+    match invocation.tool.as_str() {
+        "exec_command" | "write_stdin" | "shell" | "local_shell" | "apply_patch" | "web_search" => {
+            None
+        }
+        "read_file" | "list_dir" | "grep_files" | "view_image" => Some(Station::Files),
+        "spawn_agent"
+        | "run_synopsis"
+        | "send_input"
+        | "resume_agent"
+        | "wait_agent"
+        | "close_agent"
+        | "spawn_minions_on_csv"
+        | "report_minion_job_result" => Some(Station::Agents),
+        _ => Some(Station::Kernel),
+    }
+}
+
+fn agent_run(status: chaos_ipc::protocol::CollabAgentStatus) -> AgentRun {
+    use chaos_ipc::protocol::CollabAgentStatus as Status;
+    match status {
+        Status::PendingInit => AgentRun::Starting,
+        Status::Running => AgentRun::Running,
+        Status::Completed => AgentRun::Done,
+        Status::Errored => AgentRun::Failed,
+        Status::Interrupted | Status::Shutdown | Status::NotFound => AgentRun::Stopped,
     }
 }
 

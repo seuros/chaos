@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{counting_body, server_state};
+use rama::extensions::ExtensionsRef as _;
 use rama::futures::stream;
 use rama::http::body::util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -178,4 +179,82 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     assert_eq!(body["status"], "timeout");
     assert_eq!(body["error"], "request body deadline exceeded");
     assert_eq!(state.semaphore.available_permits(), 1);
+}
+
+fn viewer(path: &str, peer: &str, host: &str) -> Request {
+    let request = Request::builder()
+        .uri(path)
+        .header("host", host)
+        .body(Body::empty())
+        .unwrap();
+    let peer: std::net::SocketAddr = peer.parse().unwrap();
+    request
+        .extensions()
+        .insert(rama::net::stream::SocketInfo::new(None, peer.into()));
+    request
+}
+
+#[tokio::test]
+async fn a_loopback_resident_lets_local_viewers_watch_without_a_token() {
+    let (_home, open) = crate::test_support::server_state_with(8, false, true).await;
+    let (_home2, closed) = crate::test_support::server_state(8, false).await;
+    for (state, peer, host, expected) in [
+        (&open, "127.0.0.1:50000", "127.0.0.1:4000", StatusCode::OK),
+        (&open, "[::1]:50000", "[::1]:4000", StatusCode::OK),
+        (&open, "127.0.0.1:50000", "localhost:4000", StatusCode::OK),
+        // A page that rebinds its own name to 127.0.0.1 keeps its Host.
+        (
+            &open,
+            "127.0.0.1:50000",
+            "evil.example:4000",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            &open,
+            "127.0.0.1:50000",
+            "localhost.evil.example",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            &open,
+            "192.168.1.5:50000",
+            "localhost:4000",
+            StatusCode::UNAUTHORIZED,
+        ),
+        // Bound anywhere but loopback, the token is always required.
+        (
+            &closed,
+            "127.0.0.1:50000",
+            "127.0.0.1:4000",
+            StatusCode::UNAUTHORIZED,
+        ),
+    ] {
+        let response = handle(state.clone(), viewer("/monitor/events", peer, host)).await;
+        assert_eq!(response.status(), expected, "{peer} {host}");
+    }
+
+    let mut post = viewer("/api/trigger", "127.0.0.1:50000", "localhost");
+    *post.method_mut() = rama::http::Method::POST;
+    assert_eq!(
+        handle(open.clone(), post).await.status(),
+        StatusCode::UNAUTHORIZED,
+        "running agents still needs the token"
+    );
+
+    let page = |state: &Arc<ServerState>, host: &str| {
+        let state = state.clone();
+        let request = viewer("/monitor", "127.0.0.1:50000", host);
+        async move {
+            let body = handle(state, request)
+                .await
+                .into_body()
+                .collect()
+                .await
+                .unwrap();
+            String::from_utf8(body.to_bytes().to_vec()).unwrap()
+        }
+    };
+    assert!(page(&open, "localhost:4000").await.contains("data-init="));
+    assert!(!page(&open, "evil.example").await.contains("data-init="));
+    assert!(!page(&closed, "localhost:4000").await.contains("data-init="));
 }

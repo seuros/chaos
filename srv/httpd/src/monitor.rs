@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use rama::extensions::ExtensionsRef;
 use rama::futures::async_stream::stream_fn;
 use rama::http::Body;
 use rama::http::HeaderValue;
@@ -51,6 +52,8 @@ pub(crate) enum MonitorEventKind {
 }
 
 pub(crate) struct MonitorState {
+    /// Serve is bound to loopback, so a viewer on this machine needs no token.
+    local_open: bool,
     started_at: Instant,
     tx: broadcast::Sender<MonitorEvent>,
     board: Arc<Mutex<Board>>,
@@ -64,10 +67,11 @@ impl std::fmt::Debug for MonitorState {
 }
 
 impl MonitorState {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(local_open: bool) -> Self {
         let (tx, _rx) = broadcast::channel(MONITOR_EVENT_CAPACITY);
         let (changes, _rx) = broadcast::channel(CHANGE_CAPACITY);
         Self {
+            local_open,
             started_at: Instant::now(),
             tx,
             board: Arc::default(),
@@ -127,8 +131,35 @@ impl MonitorState {
     }
 }
 
-pub(crate) fn page_response() -> Response {
-    match view::page() {
+/// A viewer on this machine watching a loopback-bound resident. The peer
+/// must be loopback and the Host a loopback name, so a web page that rebinds
+/// its own name to 127.0.0.1 cannot read the stream through the browser.
+pub(crate) fn local_viewer(state: &ServerState, request: &rama::http::Request) -> bool {
+    if !state.monitor.local_open {
+        return false;
+    }
+    let peer_is_local = request
+        .extensions()
+        .get_ref::<rama::net::stream::SocketInfo>()
+        .is_some_and(|info| info.peer_addr().ip_addr.is_loopback());
+    let host_is_local = request
+        .headers()
+        .get(rama::http::header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .is_some_and(loopback_host);
+    peer_is_local && host_is_local
+}
+
+fn loopback_host(host: &str) -> bool {
+    let name = match host.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+        None => host.rsplit_once(':').map_or(host, |(name, _)| name),
+    };
+    matches!(name, "127.0.0.1" | "localhost" | "::1")
+}
+
+pub(crate) fn page_response(open: bool) -> Response {
+    match view::page(open) {
         Ok(html) => html_response(html),
         Err(error) => {
             chaos_snitch::tracing::error!(%error, "monitor page does not render");

@@ -2,6 +2,9 @@
 {% block body %}
 <header class="masthead">
   <h1>Chaos monitor</h1>
+  {% if open %}
+  <span class="local-open">local · no token needed</span>
+  {% else %}
   <form class="connect" data-on:submit__prevent="@get('/monitor/events', {
     headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value},
     filterSignals: {include: /^$/}, retry: 'never'
@@ -12,9 +15,17 @@
     </label>
     <button type="submit">Connect</button>
   </form>
+  {% endif %}
 </header>
+{% if open %}
+<p class="hint">Watching this resident from this machine. Reload to reconnect.</p>
+<main id="dashboard" class="dashboard is-offline" data-init="@get('/monitor/events', {filterSignals: {include: /^$/}, retry: 'never'})">
+  <p class="empty">Connecting…</p>
+</main>
+{% else %}
 <p class="hint">The token stays in this page, not in URLs or browser storage. Reload to disconnect.</p>
 <main id="dashboard" class="dashboard is-offline">
   <p class="empty">Disconnected. Enter the server token to watch this resident.</p>
 </main>
+{% endif %}
 {% endblock %}

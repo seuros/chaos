@@ -135,11 +135,17 @@ All errors are JSON. `caller_session_id` and `conversation_id` are included when
 
 ### `GET /monitor` and `GET /monitor/events`
 
-`/monitor` serves a public static connection form, not live server state. Enter
-the server bearer token to subscribe to `/monitor/events`. The event endpoint
-requires the same `Authorization: Bearer <token>` header as triggers; URL tokens
-and cookies are not accepted. The page does not persist the token in browser
-storage or send it in query parameters. Reload the page to disconnect.
+`/monitor` serves a static page, not live server state. When serve is bound to
+a loopback address (`127.0.0.1`, `::1`) and the viewer is on the same machine,
+the page connects to `/monitor/events` on load with no token: the peer must be
+loopback and the `Host` header a loopback name (`127.0.0.1`, `localhost`,
+`[::1]`), so a web page that rebinds its own name to 127.0.0.1 is refused.
+Bound to any other address, or reached any other way, the page is a connection
+form: enter the server bearer token, which the event endpoint requires as the
+same `Authorization: Bearer <token>` header triggers use; URL tokens and cookies
+are not accepted, and the page never stores the token or puts it in a URL.
+Triggers, `/mcp` and sessions always require the token. Reload the page to
+disconnect.
 
 Once connected, the page shows the resident: a map of the stations tool calls
 run on (kernel, agents, shell, files, network, MCP, web, edit, hooks) with each

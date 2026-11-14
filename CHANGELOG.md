@@ -66,6 +66,10 @@ should. There is no patch level; the build timestamp is the patch.
   drops its `cached_input_tokens` duplicate. Upgrading rewrites stored session
   history once; stop old writers first.
 
+### Changed
+- A loopback-bound `chaos serve` shows `/monitor` to viewers on the same
+  machine without a token; any other bind still requires it.
+
 ### Fixed
 - `chaos serve` refuses `-c clamp=…` instead of starting unclamped; a
   `clamp = true` meant for the console is still ignored there.

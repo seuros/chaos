@@ -22,6 +22,8 @@ input { width: 22ch; background: transparent; border: 1px solid var(--line-2); b
 input:focus { outline: none; border-color: var(--accent); }
 button { background: transparent; border: 1px solid var(--line-2); border-radius: var(--radius); padding: 6px 14px; cursor: pointer; font-size: 11px; letter-spacing: var(--track); text-transform: uppercase; }
 button:hover { border-color: var(--accent); color: var(--accent); }
+.local-open { color: var(--ok); font-size: 11px; letter-spacing: var(--track); text-transform: uppercase; }
+.local-open::before { content: "● "; }
 .hint { color: var(--faint); font-size: 11px; margin-bottom: var(--space-5); }
 
 .dashboard { display: grid; gap: var(--space-4); }

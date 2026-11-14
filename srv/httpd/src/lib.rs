@@ -349,6 +349,12 @@ pub async fn run_main(
             .await?;
     }
 
+    // A resident only this machine can reach shows its monitor without a token.
+    let local_monitor = serve_cli
+        .bind
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback());
+
     // 11. Build server state.
     let state = Arc::new(ServerState {
         config,
@@ -360,7 +366,7 @@ pub async fn run_main(
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
-        monitor: monitor::MonitorState::new(),
+        monitor: monitor::MonitorState::new(local_monitor),
         sessions,
         #[cfg(feature = "mcpd")]
         mcp,

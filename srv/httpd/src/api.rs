@@ -66,7 +66,13 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     // The monitor page is a static login shell; only authenticated callers may
     // subscribe to live state. Authenticate before touching either request body.
-    if matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH)
+    let local_monitor = path == MONITOR_EVENTS_PATH
+        && monitor::local_viewer(&state, &request)
+        && !state
+            .sessions
+            .as_ref()
+            .is_some_and(|manager| manager.recovery_only());
+    if (matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH) && !local_monitor)
         || path == "/api/sessions"
         || path.starts_with("/api/sessions/")
     {
@@ -115,7 +121,9 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     }
 
     match (method.clone(), path) {
-        (Method::GET, "/monitor") => monitor::page_response(),
+        (Method::GET, "/monitor") => {
+            monitor::page_response(monitor::local_viewer(&state, &request))
+        }
         (Method::GET, monitor::STYLESHEET_PATH) => {
             monitor::stylesheet_response(request.headers().get(monitor::IF_NONE_MATCH_HEADER))
         }

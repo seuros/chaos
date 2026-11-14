@@ -91,9 +91,10 @@ pub(super) trait Widget: Serialize {
     }
 }
 
-pub(super) fn page() -> Result<String, minijinja::Error> {
+/// `open`: this viewer may watch without a token, so connect on load.
+pub(super) fn page(open: bool) -> Result<String, minijinja::Error> {
     ENV.get_template("page.html")?
-        .render(minijinja::context! { css_version => STYLESHEET.version.as_str() })
+        .render(minijinja::context! { css_version => STYLESHEET.version.as_str(), open })
 }
 
 pub(super) type Patch = Result<Event<PatchElements>, BoxError>;

@@ -136,6 +136,13 @@ impl ModelRequest {
         }
     }
 
+    /// The model that actually served the request, when the provider says so.
+    pub(crate) fn served_by(&mut self, model: &str) {
+        if !model.is_empty() {
+            self.model = model.to_string();
+        }
+    }
+
     pub(crate) fn finish(mut self, usage: Option<&chaos_ipc::protocol::TokenUsage>) {
         self.finished = true;
         self.end(CallOutcome::Ok, usage.map(ModelUsage::from));

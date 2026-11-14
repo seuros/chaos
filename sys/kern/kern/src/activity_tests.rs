@@ -422,3 +422,26 @@ fn a_clamped_cli_using_chaos_tools_is_chaos_work_not_an_mcp_server() {
         "the command reports itself through its exec events"
     );
 }
+
+#[tokio::test]
+async fn a_request_reports_the_model_that_served_it() {
+    let mut rx = subscribe();
+    let process_id = ProcessId::new();
+    let mut request = ModelRequest::start(process_id, 1, "configured-model");
+    request.served_by("claude-served");
+    request.finish(None);
+    let collect = async {
+        loop {
+            let event = rx.recv().await.unwrap();
+            if event.process_id == process_id
+                && let Activity::ModelEnded { model, .. } = event.activity
+            {
+                return model;
+            }
+        }
+    };
+    let model = tokio::time::timeout(Duration::from_secs(5), collect)
+        .await
+        .expect("the request never ended on the bus");
+    assert_eq!(model, "claude-served");
+}

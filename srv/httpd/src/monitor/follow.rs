@@ -57,7 +57,9 @@ impl MonitorState {
                         FleetEvent::Activity(origin, activity) => {
                             board.apply_remote(*origin, activity)
                         }
-                        FleetEvent::Left(origin) => board.left(*origin),
+                        FleetEvent::Left(origin) => {
+                            board.left(*origin, jiff::Timestamp::now().as_millisecond())
+                        }
                     },
                     Err(_) => break,
                 };

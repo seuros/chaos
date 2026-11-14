@@ -26,6 +26,8 @@ pub(super) const STATIONS: [Station; 9] = [
 ];
 const SESSIONS_LEN: usize = 64;
 const ROUTE_LEN: usize = 7;
+/// How long an exited process's sessions stay on the board.
+const EXITED_KEEP_MS: i64 = 10 * 60_000;
 
 #[derive(Debug, Default)]
 pub(super) struct Board {
@@ -79,6 +81,8 @@ pub(super) struct Session {
     pub closed: bool,
     /// The process it runs in, when that is not this resident.
     pub origin: Option<Origin>,
+    /// That process exited at this time; the session does no more work.
+    pub exited_at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +163,7 @@ impl Session {
             waiting_since_ms: None,
             closed: false,
             origin: None,
+            exited_at_ms: None,
         }
     }
 }
@@ -254,12 +259,33 @@ impl Board {
         vec![Change::Fleet]
     }
 
-    /// A process exited: its sessions can do no more work, so they go.
-    pub(super) fn left(&mut self, origin: Origin) -> Vec<Change> {
+    /// A process exited. Its sessions stay a while, marked exited, so a run
+    /// that finished before anyone looked can still be read.
+    pub(super) fn left(&mut self, origin: Origin, now_ms: i64) -> Vec<Change> {
         self.elsewhere.retain(|o| *o != origin);
-        self.sessions
-            .retain(|_, session| session.origin != Some(origin));
+        for session in self.sessions.values_mut() {
+            if session.origin == Some(origin) && session.exited_at_ms.is_none() {
+                session.exited_at_ms = Some(now_ms);
+                session.working = false;
+                session.thinking = false;
+                session.calls.clear();
+                session.asks.clear();
+                session.waiting_on.clear();
+            }
+        }
+        self.prune(now_ms);
         vec![Change::Fleet, Change::SessionAdded, Change::Map]
+    }
+
+    /// Forget sessions whose process exited long enough ago.
+    pub(super) fn prune(&mut self, now_ms: i64) -> bool {
+        let before = self.sessions.len();
+        self.sessions.retain(|_, session| {
+            session
+                .exited_at_ms
+                .is_none_or(|at| now_ms - at < EXITED_KEEP_MS)
+        });
+        self.sessions.len() != before
     }
 
     /// Events that tie a session to its minions touch both sides.

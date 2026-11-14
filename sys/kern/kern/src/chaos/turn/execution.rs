@@ -267,7 +267,10 @@ pub(super) async fn try_run_sampling_request(
                 if let Some(request) = model_request.as_mut() {
                     request.served_by(&server_model);
                 }
+                // A clamp transport always runs its own model, never the slug
+                // requested; that is not a vendor rerouting the request.
                 if !*server_model_warning_emitted_for_turn
+                    && !sess.services.model_client.is_clamped()
                     && sess
                         .maybe_warn_on_server_model_mismatch(&turn_context, server_model)
                         .await

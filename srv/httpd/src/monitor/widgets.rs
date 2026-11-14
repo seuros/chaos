@@ -194,6 +194,8 @@ impl Session {
             ("waiting", "ask", 0)
         } else if !session.waiting_on.is_empty() {
             ("delegating", "busy", 1)
+        } else if session.exited_at_ms.is_some() {
+            ("exited", "quiet", 5)
         } else if session.closed {
             ("closed", "quiet", 4)
         } else if session.working {

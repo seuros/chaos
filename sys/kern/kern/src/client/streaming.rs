@@ -429,7 +429,8 @@ impl ModelClientSession {
         } else {
             if self.client.state.model_verbosity.is_some() {
                 warn!(
-                    "model_verbosity is set but ignored as the model does not support verbosity: {}",
+                    "model_verbosity is set but ignored as the model does not support \
+                     verbosity: {}",
                     model_info.slug
                 );
             }
@@ -945,10 +946,14 @@ impl ModelClientSession {
             }
             let content = match continuation.as_ref() {
                 None => format!(
-                    "Use the Chaos MCP server as your sole action surface. Native Antigravity tools are unavailable. You may call multiple Chaos tools before answering. Tool results are authoritative. Return only the user-facing answer without checkpoint or timestamp boilerplate.\n\n{full_prompt_state}"
+                    "Use the Chaos MCP server as your sole action surface. Native Antigravity \
+                     tools are unavailable. You may call multiple Chaos tools before answering. \
+                     Tool results are authoritative. Return only the user-facing answer without \
+                     checkpoint or timestamp boilerplate.\n\n{full_prompt_state}"
                 ),
                 Some((_, delta)) => format!(
-                    "Continue using only the Chaos MCP server for actions. Return only the user-facing answer.\n\n{delta}"
+                    "Continue using only the Chaos MCP server for actions. Return only the \
+                     user-facing answer.\n\n{delta}"
                 ),
             };
 
@@ -1331,6 +1336,13 @@ impl ModelClientSession {
                             && let Some(model) =
                                 message.get("model").and_then(|model| model.as_str())
                         {
+                            // The slug Chaos asked for is not what Claude Code
+                            // ran; name the real model once it changes.
+                            if last_main_thread_model.as_deref() != Some(model) {
+                                let _ = tx_event
+                                    .send(Ok(ResponseEvent::ServerModel(model.to_string())))
+                                    .await;
+                            }
                             last_main_thread_model = Some(model.to_string());
                         }
                         if let Some(raw_usage) = message.get("usage").cloned() {

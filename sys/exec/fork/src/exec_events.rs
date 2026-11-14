@@ -22,6 +22,12 @@ pub enum ProcessEvent {
     /// A turn encompasses all events that happen while agent is processing the prompt.
     #[serde(rename = "turn.started")]
     TurnStarted(TurnStartedEvent),
+    /// Emitted when a lifecycle hook starts running. Identity and status only.
+    #[serde(rename = "hook.started")]
+    HookStarted(HookRunEvent),
+    /// Emitted when a lifecycle hook finishes. Identity and status only.
+    #[serde(rename = "hook.completed")]
+    HookCompleted(HookRunEvent),
     /// Emitted when a turn is completed. Typically right after the assistant's response.
     #[serde(rename = "turn.completed")]
     TurnCompleted(TurnCompletedEvent),
@@ -51,6 +57,35 @@ pub struct ProcessStartedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 
 pub struct TurnStartedEvent {}
+
+/// Identity and status of one hook run. Deliberately carries no hook output,
+/// status message, source path or command: JSONL consumers learn that a hook
+/// ran and how it ended, never what it printed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HookRunEvent {
+    pub turn_id: Option<String>,
+    /// For database hooks, `chaos://hooks/<hook id>`.
+    pub id: String,
+    pub event_name: chaos_ipc::protocol::HookEventName,
+    pub status: chaos_ipc::protocol::HookRunStatus,
+    pub started_at: i64,
+    pub completed_at: Option<i64>,
+    pub duration_ms: Option<i64>,
+}
+
+impl HookRunEvent {
+    pub fn from_run(turn_id: &Option<String>, run: &chaos_ipc::protocol::HookRunSummary) -> Self {
+        Self {
+            turn_id: turn_id.clone(),
+            id: run.id.clone(),
+            event_name: run.event_name,
+            status: run.status,
+            started_at: run.started_at,
+            completed_at: run.completed_at,
+            duration_ms: run.duration_ms,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TurnCompletedEvent {

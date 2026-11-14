@@ -1,11 +1,12 @@
-//! Activity from every Chaos process of one home, gathered by its residents.
+//! Activity from every Chaos process, gathered by the residents watching it.
 //!
-//! A resident (`chaos serve`) listens on `run/activity/<pid>.sock` under the
-//! Chaos home. Every other Chaos process forwards its bus to each resident it
-//! finds there, as JSON lines: one `Hello` naming the process, then events.
-//! The directory is private to the user, and only what the bus already
-//! carries ever leaves a process. A process with no resident to talk to does
-//! not subscribe to its bus at all.
+//! A process stored in Postgres notifies the database, so a resident on any
+//! machine sharing it hears the work (see `database`). Otherwise it talks to
+//! the residents of its own home over Unix sockets: a resident (`chaos serve`)
+//! listens on `run/activity/<pid>.sock`, and each process sends one `Hello`
+//! naming itself, then events, as JSON lines. Only what the bus already
+//! carries ever leaves a process, and a process nobody watches does not
+//! subscribe to its bus at all.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -36,10 +37,20 @@ pub enum OriginKind {
 }
 
 /// The process an event came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Origin {
     pub kind: OriginKind,
     pub pid: u32,
+    /// The machine it runs on.
+    pub host: String,
+}
+
+pub mod database;
+
+/// This machine's name, as origins carry it.
+pub fn local_host() -> &'static str {
+    static HOST: std::sync::LazyLock<String> = std::sync::LazyLock::new(chaos_sysinfo::hostname);
+    &HOST
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,15 +72,32 @@ pub fn runtime_dir(chaos_home: &Path) -> PathBuf {
     chaos_home.join("run").join("activity")
 }
 
-/// Forward this process's activity to every resident of `chaos_home`, for as
-/// long as the process lives.
+/// Forward this process's activity to whoever watches it, for as long as the
+/// process lives: through its Postgres database once storage is mounted there,
+/// else to the residents of `chaos_home`.
 pub fn forward(chaos_home: &Path, kind: OriginKind) {
     let dir = runtime_dir(chaos_home);
     let origin = Origin {
         kind,
         pid: std::process::id(),
+        host: local_host().to_string(),
     };
     tokio::spawn(async move {
+        let root = loop {
+            match chaos_vfs::root() {
+                Ok(root) => break root,
+                Err(_) => tokio::time::sleep(RESCAN).await,
+            }
+        };
+        match root.postgres_pool() {
+            Some(pool) => database::forward(pool, origin).await,
+            None => forward_to_sockets(dir, origin).await,
+        }
+    });
+}
+
+async fn forward_to_sockets(dir: PathBuf, origin: Origin) {
+    {
         let mut peers: HashMap<PathBuf, UnixStream> = HashMap::new();
         let mut bus: Option<broadcast::Receiver<ActivityEvent>> = None;
         let mut rescan = tokio::time::interval(RESCAN);
@@ -101,7 +129,7 @@ pub fn forward(chaos_home: &Path, kind: OriginKind) {
                 }
             }
         }
-    });
+    }
 }
 
 async fn connect_new(dir: &Path, origin: &Origin, peers: &mut HashMap<PathBuf, UnixStream>) {
@@ -126,7 +154,7 @@ async fn connect_new(dir: &Path, origin: &Origin, peers: &mut HashMap<PathBuf, U
         };
         let hello = Hello {
             protocol: PROTOCOL,
-            origin: *origin,
+            origin: origin.clone(),
         };
         let Ok(mut line) = serde_json::to_vec(&hello) else {
             continue;
@@ -191,14 +219,18 @@ async fn receive(stream: UnixStream, tx: mpsc::Sender<FleetEvent>) {
         return;
     };
     let origin = hello.origin;
-    if tx.send(FleetEvent::Joined(origin)).await.is_err() {
+    if tx.send(FleetEvent::Joined(origin.clone())).await.is_err() {
         return;
     }
     while let Some(line) = lines.next().await {
         let Ok(event) = serde_json::from_slice::<ActivityEvent>(&line) else {
             continue;
         };
-        if tx.send(FleetEvent::Activity(origin, event)).await.is_err() {
+        if tx
+            .send(FleetEvent::Activity(origin.clone(), event))
+            .await
+            .is_err()
+        {
             return;
         }
     }

@@ -17,6 +17,7 @@ async fn a_resident_hears_a_process_join_speak_and_leave() {
     let origin = Origin {
         kind: OriginKind::Console,
         pid: 4242,
+        host: "periscope".into(),
     };
     let mut stream = UnixStream::connect(&socket).await.unwrap();
     let event = ActivityEvent {
@@ -26,7 +27,7 @@ async fn a_resident_hears_a_process_join_speak_and_leave() {
     };
     let mut wire = serde_json::to_vec(&Hello {
         protocol: PROTOCOL,
-        origin,
+        origin: origin.clone(),
     })
     .unwrap();
     wire.push(b'\n');
@@ -56,7 +57,14 @@ async fn a_resident_hears_a_process_join_speak_and_leave() {
 #[tokio::test]
 async fn a_process_forwards_its_bus_once_a_resident_listens() {
     let home = tempfile::tempdir().unwrap();
-    forward(home.path(), OriginKind::Exec);
+    tokio::spawn(forward_to_sockets(
+        runtime_dir(home.path()),
+        Origin {
+            kind: OriginKind::Exec,
+            pid: std::process::id(),
+            host: local_host().to_string(),
+        },
+    ));
     let (_listening, mut rx) = listen(home.path()).await.unwrap();
     let process_id = ProcessId::new();
     let heard = async {
@@ -108,6 +116,7 @@ async fn an_oversized_line_ends_the_peer_instead_of_growing_the_buffer() {
         origin: Origin {
             kind: OriginKind::Mcp,
             pid: 1,
+            host: "periscope".into(),
         },
     })
     .unwrap();

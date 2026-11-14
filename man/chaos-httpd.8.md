@@ -137,7 +137,8 @@ All errors are JSON. `caller_session_id` and `conversation_id` are included when
 
 A live, read-only view of the resident: sessions and minions, tool calls by
 station, checks, token use, limits, and what needs attention. It also shows the
-console, `chaos exec`, MCP and ACP processes of the same Chaos home. Redacted:
+console, `chaos exec`, MCP and ACP processes of the same Chaos home, and, when
+storage is Postgres, those on any machine sharing the database (`@ host`). Redacted:
 never prompts, arguments, output or file contents. No history before serve
 started.
 

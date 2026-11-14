@@ -1,6 +1,5 @@
 use super::*;
 use crate::test_support::{counting_body, server_state};
-use rama::extensions::ExtensionsRef as _;
 use rama::futures::stream;
 use rama::http::body::util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,25 +47,8 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
             None,
             StatusCode::METHOD_NOT_ALLOWED,
         ),
-        ("GET", "/monitor/events", None, StatusCode::UNAUTHORIZED),
-        (
-            "GET",
-            "/monitor/events?token=test-token",
-            None,
-            StatusCode::UNAUTHORIZED,
-        ),
-        (
-            "GET",
-            "/monitor/events",
-            Some("Bearer wrong"),
-            StatusCode::UNAUTHORIZED,
-        ),
-        (
-            "GET",
-            "/monitor/events",
-            Some("Bearer test-token"),
-            StatusCode::OK,
-        ),
+        // Read-only and redacted: open unless a viewer token is set.
+        ("GET", "/monitor/events", None, StatusCode::OK),
         ("POST", "/api/trigger", None, StatusCode::UNAUTHORIZED),
         (
             "POST",
@@ -181,80 +163,88 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     assert_eq!(state.semaphore.available_permits(), 1);
 }
 
-fn viewer(path: &str, peer: &str, host: &str) -> Request {
-    let request = Request::builder()
-        .uri(path)
-        .header("host", host)
-        .body(Body::empty())
-        .unwrap();
-    let peer: std::net::SocketAddr = peer.parse().unwrap();
-    request
-        .extensions()
-        .insert(rama::net::stream::SocketInfo::new(None, peer.into()));
-    request
+fn viewer(path: &str, host: &str, bearer: Option<&str>) -> Request {
+    let mut request = Request::builder().uri(path).header("host", host);
+    if let Some(bearer) = bearer {
+        request = request.header("authorization", format!("Bearer {bearer}"));
+    }
+    request.body(Body::empty()).unwrap()
+}
+
+async fn page(state: &Arc<ServerState>, host: &str) -> String {
+    let response = handle(state.clone(), viewer("/monitor", host, None)).await;
+    let body = response.into_body().collect().await.unwrap();
+    String::from_utf8(body.to_bytes().to_vec()).unwrap()
 }
 
 #[tokio::test]
-async fn a_loopback_resident_lets_local_viewers_watch_without_a_token() {
-    let (_home, open) = crate::test_support::server_state_with(8, false, true).await;
-    let (_home2, closed) = crate::test_support::server_state(8, false).await;
-    for (state, peer, host, expected) in [
-        (&open, "127.0.0.1:50000", "127.0.0.1:4000", StatusCode::OK),
-        (&open, "[::1]:50000", "[::1]:4000", StatusCode::OK),
-        (&open, "127.0.0.1:50000", "localhost:4000", StatusCode::OK),
+async fn the_monitor_is_open_unless_a_viewer_token_is_set() {
+    use crate::monitor::Access;
+    let (_a, open) = crate::test_support::server_state(8, false).await;
+    let (_b, loopback) = crate::test_support::server_state_with(
+        8,
+        false,
+        Access {
+            token: None,
+            loopback_bind: true,
+        },
+    )
+    .await;
+    let (_c, shared) = crate::test_support::server_state_with(
+        8,
+        false,
+        Access {
+            token: Some(Arc::from("viewer-token")),
+            loopback_bind: false,
+        },
+    )
+    .await;
+    for (state, host, bearer, expected) in [
+        (&open, "10.0.0.7:4000", None, StatusCode::OK),
+        (&loopback, "127.0.0.1:4000", None, StatusCode::OK),
+        (&loopback, "[::1]:4000", None, StatusCode::OK),
+        (&loopback, "localhost:4000", None, StatusCode::OK),
         // A page that rebinds its own name to 127.0.0.1 keeps its Host.
+        (&loopback, "evil.example:4000", None, StatusCode::FORBIDDEN),
         (
-            &open,
-            "127.0.0.1:50000",
-            "evil.example:4000",
-            StatusCode::UNAUTHORIZED,
-        ),
-        (
-            &open,
-            "127.0.0.1:50000",
+            &loopback,
             "localhost.evil.example",
+            None,
+            StatusCode::FORBIDDEN,
+        ),
+        (&shared, "10.0.0.7:4000", None, StatusCode::UNAUTHORIZED),
+        (
+            &shared,
+            "10.0.0.7:4000",
+            Some("wrong"),
             StatusCode::UNAUTHORIZED,
         ),
         (
-            &open,
-            "192.168.1.5:50000",
-            "localhost:4000",
-            StatusCode::UNAUTHORIZED,
+            &shared,
+            "10.0.0.7:4000",
+            Some("viewer-token"),
+            StatusCode::OK,
         ),
-        // Bound anywhere but loopback, the token is always required.
-        (
-            &closed,
-            "127.0.0.1:50000",
-            "127.0.0.1:4000",
-            StatusCode::UNAUTHORIZED,
-        ),
+        (&shared, "10.0.0.7:4000", Some("test-token"), StatusCode::OK),
     ] {
-        let response = handle(state.clone(), viewer("/monitor/events", peer, host)).await;
-        assert_eq!(response.status(), expected, "{peer} {host}");
+        let response = handle(state.clone(), viewer("/monitor/events", host, bearer)).await;
+        assert_eq!(response.status(), expected, "{host} {bearer:?}");
     }
 
-    let mut post = viewer("/api/trigger", "127.0.0.1:50000", "localhost");
+    let mut post = viewer("/api/trigger", "10.0.0.7:4000", Some("viewer-token"));
     *post.method_mut() = rama::http::Method::POST;
     assert_eq!(
-        handle(open.clone(), post).await.status(),
+        handle(shared.clone(), post).await.status(),
         StatusCode::UNAUTHORIZED,
-        "running agents still needs the token"
+        "the viewer token never runs agents"
     );
 
-    let page = |state: &Arc<ServerState>, host: &str| {
-        let state = state.clone();
-        let request = viewer("/monitor", "127.0.0.1:50000", host);
-        async move {
-            let body = handle(state, request)
-                .await
-                .into_body()
-                .collect()
-                .await
-                .unwrap();
-            String::from_utf8(body.to_bytes().to_vec()).unwrap()
-        }
-    };
-    assert!(page(&open, "localhost:4000").await.contains("data-init="));
-    assert!(!page(&open, "evil.example").await.contains("data-init="));
-    assert!(!page(&closed, "localhost:4000").await.contains("data-init="));
+    assert!(page(&open, "10.0.0.7:4000").await.contains("data-init="));
+    assert!(
+        page(&loopback, "localhost:4000")
+            .await
+            .contains("data-init=")
+    );
+    assert!(!page(&loopback, "evil.example").await.contains("data-init="));
+    assert!(!page(&shared, "10.0.0.7:4000").await.contains("data-init="));
 }

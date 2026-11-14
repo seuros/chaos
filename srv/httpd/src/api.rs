@@ -66,16 +66,11 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     // The monitor page is a static login shell; only authenticated callers may
     // subscribe to live state. Authenticate before touching either request body.
-    let local_monitor = path == MONITOR_EVENTS_PATH
-        && monitor::local_viewer(&state, &request)
-        && !state
-            .sessions
-            .as_ref()
-            .is_some_and(|manager| manager.recovery_only());
-    if (matches!(path, TRIGGER_PATH | MONITOR_EVENTS_PATH) && !local_monitor)
-        || path == "/api/sessions"
-        || path.starts_with("/api/sessions/")
-    {
+    // The pane is read-only and redacted: open unless a viewer token is set.
+    if path == MONITOR_EVENTS_PATH && method == Method::GET {
+        return monitor::events(state, &request);
+    }
+    if path == TRIGGER_PATH || path == "/api/sessions" || path.starts_with("/api/sessions/") {
         let auth_header = request
             .headers()
             .get("authorization")
@@ -122,12 +117,11 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
 
     match (method.clone(), path) {
         (Method::GET, "/monitor") => {
-            monitor::page_response(monitor::local_viewer(&state, &request))
+            monitor::page_response(monitor::admission(&state, &request) == monitor::Admission::Open)
         }
         (Method::GET, monitor::STYLESHEET_PATH) => {
             monitor::stylesheet_response(request.headers().get(monitor::IF_NONE_MATCH_HEADER))
         }
-        (Method::GET, MONITOR_EVENTS_PATH) => monitor::events_response(state),
         (Method::GET, "/assets/datastar.js") => monitor::datastar_script_response(),
         (Method::GET, "/api/health") => handle_health(),
         (Method::POST, TRIGGER_PATH) => handle_trigger(state, request).await,

@@ -19,14 +19,13 @@ pub(crate) async fn server_state(
     body_limit: usize,
     retained_sessions: bool,
 ) -> (tempfile::TempDir, Arc<ServerState>) {
-    server_state_with(body_limit, retained_sessions, false).await
+    server_state_with(body_limit, retained_sessions, monitor::Access::default()).await
 }
 
-/// `local_monitor`: as if serve were bound to loopback.
 pub(crate) async fn server_state_with(
     body_limit: usize,
     retained_sessions: bool,
-    local_monitor: bool,
+    monitor_access: monitor::Access,
 ) -> (tempfile::TempDir, Arc<ServerState>) {
     let home = tempfile::tempdir().unwrap();
     chaos_kern::test_support::bootstrap_sqlite(home.path()).unwrap();
@@ -52,7 +51,7 @@ pub(crate) async fn server_state_with(
         max_concurrent: 1,
         timeout: Duration::from_secs(1),
         body_limit,
-        monitor: monitor::MonitorState::new(local_monitor),
+        monitor: monitor::MonitorState::new(monitor_access),
         sessions: retained_sessions
             .then(|| Arc::new(SessionManager::new(4, Duration::from_secs(60)))),
         #[cfg(feature = "mcpd")]

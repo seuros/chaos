@@ -3,14 +3,14 @@
 <header class="masthead">
   <h1>Chaos monitor</h1>
   {% if open %}
-  <span class="local-open">local · no token needed</span>
+  <span class="local-open">read-only · open</span>
   {% else %}
   <form class="connect" data-on:submit__prevent="@get('/monitor/events', {
     headers: {Authorization: 'Bearer ' + el.elements.namedItem('monitor-token').value},
     filterSignals: {include: /^$/}, retry: 'never'
   })">
     <label class="connect-field">
-      <span>Bearer token</span>
+      <span>Monitor token</span>
       <input type="password" id="monitor-token" autocomplete="off" required>
     </label>
     <button type="submit">Connect</button>
@@ -18,14 +18,14 @@
   {% endif %}
 </header>
 {% if open %}
-<p class="hint">Watching this resident from this machine. Reload to reconnect.</p>
+<p class="hint">A read-only view of this resident. Set <code>--monitor-token</code> to require a token. Reload to reconnect.</p>
 <main id="dashboard" class="dashboard is-offline" data-init="@get('/monitor/events', {filterSignals: {include: /^$/}, retry: 'never'})">
   <p class="empty">Connecting…</p>
 </main>
 {% else %}
-<p class="hint">The token stays in this page, not in URLs or browser storage. Reload to disconnect.</p>
+<p class="hint">This resident asks for its monitor token. It stays in this page, never in URLs or browser storage. Reload to disconnect.</p>
 <main id="dashboard" class="dashboard is-offline">
-  <p class="empty">Disconnected. Enter the server token to watch this resident.</p>
+  <p class="empty">Enter the monitor token to watch this resident.</p>
 </main>
 {% endif %}
 {% endblock %}

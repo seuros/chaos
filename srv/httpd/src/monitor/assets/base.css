@@ -24,6 +24,7 @@ button { background: transparent; border: 1px solid var(--line-2); border-radius
 button:hover { border-color: var(--accent); color: var(--accent); }
 .local-open { color: var(--ok); font-size: 11px; letter-spacing: var(--track); text-transform: uppercase; }
 .local-open::before { content: "● "; }
+.hint code { color: var(--muted); }
 .hint { color: var(--faint); font-size: 11px; margin-bottom: var(--space-5); }
 
 .dashboard { display: grid; gap: var(--space-4); }

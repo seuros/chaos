@@ -67,8 +67,8 @@ should. There is no patch level; the build timestamp is the patch.
   history once; stop old writers first.
 
 ### Changed
-- A loopback-bound `chaos serve` shows `/monitor` to viewers on the same
-  machine without a token; any other bind still requires it.
+- `chaos serve`'s `/monitor` needs no token; set `--monitor-token` to require
+  a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
 - `chaos serve` refuses `-c clamp=…` instead of starting unclamped; a

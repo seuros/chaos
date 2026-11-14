@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rama::extensions::ExtensionsRef;
 use rama::futures::async_stream::stream_fn;
 use rama::http::Body;
 use rama::http::HeaderValue;
@@ -52,8 +51,7 @@ pub(crate) enum MonitorEventKind {
 }
 
 pub(crate) struct MonitorState {
-    /// Serve is bound to loopback, so a viewer on this machine needs no token.
-    local_open: bool,
+    access: Access,
     started_at: Instant,
     tx: broadcast::Sender<MonitorEvent>,
     board: Arc<Mutex<Board>>,
@@ -67,11 +65,11 @@ impl std::fmt::Debug for MonitorState {
 }
 
 impl MonitorState {
-    pub(crate) fn new(local_open: bool) -> Self {
+    pub(crate) fn new(access: Access) -> Self {
         let (tx, _rx) = broadcast::channel(MONITOR_EVENT_CAPACITY);
         let (changes, _rx) = broadcast::channel(CHANGE_CAPACITY);
         Self {
-            local_open,
+            access,
             started_at: Instant::now(),
             tx,
             board: Arc::default(),
@@ -131,23 +129,101 @@ impl MonitorState {
     }
 }
 
-/// A viewer on this machine watching a loopback-bound resident. The peer
-/// must be loopback and the Host a loopback name, so a web page that rebinds
-/// its own name to 127.0.0.1 cannot read the stream through the browser.
-pub(crate) fn local_viewer(state: &ServerState, request: &rama::http::Request) -> bool {
-    if !state.monitor.local_open {
-        return false;
+/// Who may watch. The pane is read-only and redacted, so it is open unless
+/// the operator sets a viewer token to share it over an untrusted network.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Access {
+    pub token: Option<Arc<str>>,
+    /// Bound to loopback: only loopback Host names are served, so a web page
+    /// that rebinds its own name to 127.0.0.1 cannot read the pane.
+    pub loopback_bind: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Admission {
+    Open,
+    NeedsToken,
+    WrongHost,
+}
+
+/// The optional viewer token. Sharing it must never share more than the pane.
+pub(crate) fn viewer_token(
+    serve_cli: &crate::cli::ServeCli,
+    bearer: &str,
+    recovery: Option<&str>,
+) -> anyhow::Result<Option<Arc<str>>> {
+    let Some(token) = serve_cli.monitor_token.as_deref() else {
+        return Ok(None);
+    };
+    #[cfg(feature = "mcpd")]
+    let operator = serve_cli.operator_token.as_deref();
+    #[cfg(not(feature = "mcpd"))]
+    let operator: Option<&str> = None;
+    let reused = token == bearer || Some(token) == recovery || Some(token) == operator;
+    if token.trim().is_empty() || reused {
+        anyhow::bail!(
+            "monitor token must be nonempty and differ from the bearer, recovery and \
+             operator tokens"
+        );
     }
-    let peer_is_local = request
-        .extensions()
-        .get_ref::<rama::net::stream::SocketInfo>()
-        .is_some_and(|info| info.peer_addr().ip_addr.is_loopback());
-    let host_is_local = request
+    Ok(Some(Arc::from(token)))
+}
+
+/// The event stream, for whoever `admission` lets in.
+pub(crate) fn events(state: Arc<ServerState>, request: &rama::http::Request) -> Response {
+    let refuse = |status, message: &'static str| {
+        let mut response = Response::new(Body::from(
+            serde_json::json!({ "status": "error", "error": message }).to_string(),
+        ));
+        *response.status_mut() = status;
+        response
+            .headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        response
+    };
+    match admission(&state, request) {
+        Admission::Open => events_response(state),
+        Admission::NeedsToken => {
+            let mut response = refuse(StatusCode::UNAUTHORIZED, "monitor token required");
+            response
+                .headers_mut()
+                .insert("www-authenticate", HeaderValue::from_static("Bearer"));
+            response
+        }
+        Admission::WrongHost => refuse(
+            StatusCode::FORBIDDEN,
+            "a loopback resident serves its monitor to loopback names only",
+        ),
+    }
+}
+
+/// Whether this request may watch the pane.
+pub(crate) fn admission(state: &ServerState, request: &rama::http::Request) -> Admission {
+    let access = &state.monitor.access;
+    if access.loopback_bind
+        && !request
+            .headers()
+            .get(rama::http::header::HOST)
+            .and_then(|host| host.to_str().ok())
+            .is_some_and(loopback_host)
+    {
+        return Admission::WrongHost;
+    }
+    let Some(token) = &access.token else {
+        return Admission::Open;
+    };
+    let header = request
         .headers()
-        .get(rama::http::header::HOST)
-        .and_then(|host| host.to_str().ok())
-        .is_some_and(loopback_host);
-    peer_is_local && host_is_local
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    // The bearer can do everything the viewer token can.
+    let admitted = crate::auth::validate_bearer(header, token).is_ok()
+        || crate::auth::validate_bearer(header, &state.bearer_token).is_ok();
+    if admitted {
+        Admission::Open
+    } else {
+        Admission::NeedsToken
+    }
 }
 
 fn loopback_host(host: &str) -> bool {

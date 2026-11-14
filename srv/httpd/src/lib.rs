@@ -126,6 +126,8 @@ pub async fn run_main(
         }
         None => None,
     };
+    let monitor_token =
+        monitor::viewer_token(&serve_cli, &bearer_token, recovery_token.as_deref())?;
     if serve_cli.session_recovery_only
         && (serve_cli.session_scope.is_none() || recovery_token.is_none())
     {
@@ -227,6 +229,7 @@ pub async fn run_main(
         "CHAOS_BEARER_TOKEN".into(),
         "CHAOS_RECOVERY_TOKEN".into(),
         "CHAOS_OPERATOR_TOKEN".into(),
+        "CHAOS_MONITOR_TOKEN".into(),
         serve_cli.session_webhook_secret_env.clone(),
     ];
     if serve_cli.session_scope.is_some() && config.ephemeral {
@@ -243,6 +246,7 @@ pub async fn run_main(
                 "CHAOS_BEARER_TOKEN",
                 "CHAOS_RECOVERY_TOKEN",
                 "CHAOS_OPERATOR_TOKEN",
+                "CHAOS_MONITOR_TOKEN",
                 serve_cli.session_webhook_secret_env.as_str(),
             ],
         )?;
@@ -349,8 +353,7 @@ pub async fn run_main(
             .await?;
     }
 
-    // A resident only this machine can reach shows its monitor without a token.
-    let local_monitor = serve_cli
+    let loopback_bind = serve_cli
         .bind
         .parse::<std::net::IpAddr>()
         .is_ok_and(|ip| ip.is_loopback());
@@ -366,7 +369,10 @@ pub async fn run_main(
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
-        monitor: monitor::MonitorState::new(local_monitor),
+        monitor: monitor::MonitorState::new(monitor::Access {
+            token: monitor_token,
+            loopback_bind,
+        }),
         sessions,
         #[cfg(feature = "mcpd")]
         mcp,

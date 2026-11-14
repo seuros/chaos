@@ -170,6 +170,7 @@ pub async fn run_main(
     let cli_kv_overrides = cli_config_overrides
         .parse_overrides()
         .map_err(|e| anyhow::anyhow!("error parsing -c overrides: {e}"))?;
+    let clamp_on_command_line = clamp_requested(&cli_kv_overrides);
 
     // 3. Resolve cwd.
     let resolved_cwd = serve_cli.cd.clone();
@@ -213,6 +214,14 @@ pub async fn run_main(
         .await?;
     if serve_cli.sessions && config.clamp && !serve_cli.session_recovery_only {
         bail!("retained HTTP sessions do not yet support clamp transports");
+    }
+    // Serve's sessions never clamp. Asking on its own command line is a
+    // mistake worth stopping; a console default in config.toml is not.
+    if config.clamp && clamp_on_command_line {
+        bail!(
+            "chaos serve does not support clamp transports; \
+             its sessions use the configured provider"
+        );
     }
     config.clamp_env_remove = vec![
         "CHAOS_BEARER_TOKEN".into(),
@@ -436,4 +445,11 @@ pub async fn run_main(
         Ok(Err(err)) => Err(anyhow::anyhow!("chaos-httpd serve error: {err}")),
         Err(err) => Err(err).context("join chaos-httpd server task"),
     }
+}
+
+/// Whether `-c` asked for clamp, as opposed to a default from config.toml.
+fn clamp_requested(overrides: &[(String, toml::Value)]) -> bool {
+    overrides
+        .iter()
+        .any(|(key, _)| key == "clamp" || key == "clamp_backend")
 }

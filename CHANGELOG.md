@@ -67,6 +67,10 @@ should. There is no patch level; the build timestamp is the patch.
   history once; stop old writers first.
 
 ### Fixed
+- `chaos serve` refuses `-c clamp=…` instead of starting unclamped; a
+  `clamp = true` meant for the console is still ignored there.
+- The monitor files tools a clamped CLI calls by what they do, not as an MCP
+  server named `chaos`.
 - macOS's "fair" thermal state no longer counts as a machine warning, so
   ordinary build load stops parking agents. Warnings start at "serious".
 

@@ -25,6 +25,10 @@ with asynchronous turns, live steering and authenticated event replay/SSE.
 
 Requires a bearer token. Set via `--bearer-token` or `CHAOS_BEARER_TOKEN` env var.
 
+Serve's sessions never use a clamp transport; they talk to the configured
+provider. A `clamp = true` meant for the console is ignored, and asking for
+clamp with `-c clamp=…` on serve's command line refuses to start.
+
 Builds with `mcpd` (the default) support authenticated MCP at `/mcp` through
 `--mcp`. Set permitted browser origins with `--mcp-allowed-origin`. The HTTP
 endpoint also carries the operator's project trust tools (`trust_list`,
@@ -472,6 +476,11 @@ environments. No model credentials or infrastructure cookies accompany callbacks
 - `CHAOS_OPERATOR_TOKEN` - operator token for project trust over `/mcp`
 - `CHAOS_SESSION_WEBHOOK_SECRET` - default webhook signing-key variable
 - `~/.chaos/log/` - runtime logs for diagnosing server failures
+
+## ACKNOWLEDGEMENTS
+
+The monitor's station map and visual language were inspired by lot-map by
+Aleksei Volodin (https://github.com/alexeyw/lot-map). No code was copied.
 
 ## SEE ALSO
 

@@ -25,12 +25,48 @@ pub(super) struct Summary {
     pub sessions: usize,
     pub working: usize,
     pub waiting: usize,
-    /// Other processes of this home whose sessions this pane also shows.
+    /// Other processes whose sessions this pane also shows.
     pub elsewhere: Vec<String>,
+    pub elsewhere_heading: &'static str,
 }
 
 impl Widget for Summary {
     const NAME: &'static str = "summary";
+}
+
+/// The machines this pane can switch between, and which one it shows.
+#[derive(Serialize)]
+pub(super) struct Machines {
+    pub all: bool,
+    pub hosts: Vec<Tab>,
+}
+
+#[derive(Serialize)]
+pub(super) struct Tab {
+    pub name: String,
+    pub active: bool,
+    pub here: bool,
+}
+
+impl Widget for Machines {
+    const NAME: &'static str = "machines";
+}
+
+impl Machines {
+    pub(super) fn from(hosts: &[String], active: Option<&str>) -> Self {
+        let local = chaos_kern::activity::fleet::local_host();
+        Self {
+            all: active.is_none(),
+            hosts: hosts
+                .iter()
+                .map(|host| Tab {
+                    name: host.clone(),
+                    active: active == Some(host.as_str()),
+                    here: host == local,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -343,6 +379,7 @@ impl Entry {
 
 #[derive(Serialize)]
 pub(super) struct Dashboard {
+    pub machines: Machines,
     pub summary: Summary,
     pub machine: Machine,
     pub instruments: Instruments,
@@ -356,9 +393,14 @@ impl Widget for Dashboard {
     const NAME: &'static str = "dashboard";
 }
 
+/// `console 4242`: what kind of process, and which one.
+pub(super) fn process_label(origin: &board::Origin) -> String {
+    format!("{} {}", name(&origin.kind), origin.pid)
+}
+
 /// `console 4242`, and `@ silica` when it runs on another machine.
 pub(super) fn origin_label(origin: &board::Origin) -> String {
-    let label = format!("{} {}", name(&origin.kind), origin.pid);
+    let label = process_label(origin);
     if origin.host == chaos_kern::activity::fleet::local_host() {
         label
     } else {

@@ -1,4 +1,4 @@
-//! LSD native inference API adapter.
+//! LSD (LLM Service Daemon) native inference API adapter.
 //!
 //! Translates chaos-abi `TurnRequest` into LSD's native `/inference`
 //! wire format and streams `TurnEvent`s back from the SSE response.

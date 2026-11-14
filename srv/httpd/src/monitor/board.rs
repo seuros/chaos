@@ -29,15 +29,16 @@ const ROUTE_LEN: usize = 7;
 /// How long an exited process's sessions stay on the board.
 const EXITED_KEEP_MS: i64 = 10 * 60_000;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct Board {
     pub sessions: HashMap<ProcessId, Session>,
     pub machine: Option<(MachinePhase, Vec<MachineCause>)>,
     pub limits: Vec<LimitWindow>,
-    pub stations: HashMap<Station, Tally>,
+    /// Finished calls by machine and station.
+    pub stations: HashMap<(String, Station), Tally>,
     pub feed: VecDeque<Entry>,
-    /// The last stations visited, oldest first, repeats collapsed.
-    pub route: VecDeque<(Station, i64)>,
+    /// The last stations visited per machine, oldest first, repeats collapsed.
+    pub route: VecDeque<(String, Station, i64)>,
     pub turn_ended: Option<(i64, TurnOutcome)>,
     /// Other Chaos processes of this home forwarding their activity here.
     pub elsewhere: Vec<Origin>,
@@ -106,6 +107,7 @@ pub(super) struct Call {
 pub(super) struct Entry {
     pub at_ms: i64,
     pub process_id: ProcessId,
+    pub host: String,
     pub station: Option<Station>,
     pub text: String,
     pub tone: Tone,
@@ -133,6 +135,14 @@ pub(super) enum Change {
 }
 
 impl Session {
+    /// The machine it runs on.
+    pub(super) fn host(&self) -> &str {
+        match &self.origin {
+            Some(origin) => &origin.host,
+            None => chaos_kern::activity::fleet::local_host(),
+        }
+    }
+
     fn new(at_ms: i64) -> Self {
         Self {
             working: false,
@@ -191,6 +201,7 @@ impl Board {
             .entry(id)
             .or_insert_with(|| Session::new(event.at_ms));
         session.last_at_ms = event.at_ms;
+        let host = session.host().to_string();
         let entry = fold(session, &event.activity, event.at_ms);
         let mut changes = vec![if added {
             Change::SessionAdded
@@ -201,9 +212,11 @@ impl Board {
         changes.extend(self.relate(id, event));
         match &event.activity {
             Activity::CallStarted { station, .. } => {
-                if self.route.back().map(|(last, _)| last) != Some(station) {
-                    self.route.push_back((*station, event.at_ms));
-                    while self.route.len() > ROUTE_LEN {
+                let last = self.route.iter().rev().find(|(h, ..)| *h == host);
+                if last.map(|(_, last, _)| last) != Some(station) {
+                    self.route.push_back((host.clone(), *station, event.at_ms));
+                    // Enough for every machine to keep its own last stops.
+                    while self.route.len() > ROUTE_LEN * 8 {
                         self.route.pop_front();
                     }
                 }
@@ -212,7 +225,7 @@ impl Board {
             Activity::CallEnded {
                 station, outcome, ..
             } => {
-                let tally = self.stations.entry(*station).or_default();
+                let tally = self.stations.entry((host.clone(), *station)).or_default();
                 if *outcome == CallOutcome::Ok {
                     tally.done += 1;
                 } else {
@@ -231,6 +244,7 @@ impl Board {
             self.feed.push_back(Entry {
                 at_ms: event.at_ms,
                 process_id: id,
+                host,
                 station,
                 text,
                 tone,
@@ -241,51 +255,6 @@ impl Board {
             changes.push(Change::Feed);
         }
         changes
-    }
-
-    /// An event from another process of this home.
-    pub(super) fn apply_remote(&mut self, origin: Origin, event: &ActivityEvent) -> Vec<Change> {
-        let changes = self.apply(event);
-        if let Some(session) = self.sessions.get_mut(&event.process_id) {
-            session.origin = Some(origin);
-        }
-        changes
-    }
-
-    pub(super) fn joined(&mut self, origin: Origin) -> Vec<Change> {
-        if !self.elsewhere.contains(&origin) {
-            self.elsewhere.push(origin);
-        }
-        vec![Change::Fleet]
-    }
-
-    /// A process exited. Its sessions stay a while, marked exited, so a run
-    /// that finished before anyone looked can still be read.
-    pub(super) fn left(&mut self, origin: Origin, now_ms: i64) -> Vec<Change> {
-        self.elsewhere.retain(|o| *o != origin);
-        for session in self.sessions.values_mut() {
-            if session.origin.as_ref() == Some(&origin) && session.exited_at_ms.is_none() {
-                session.exited_at_ms = Some(now_ms);
-                session.working = false;
-                session.thinking = false;
-                session.calls.clear();
-                session.asks.clear();
-                session.waiting_on.clear();
-            }
-        }
-        self.prune(now_ms);
-        vec![Change::Fleet, Change::SessionAdded, Change::Map]
-    }
-
-    /// Forget sessions whose process exited long enough ago.
-    pub(super) fn prune(&mut self, now_ms: i64) -> bool {
-        let before = self.sessions.len();
-        self.sessions.retain(|_, session| {
-            session
-                .exited_at_ms
-                .is_none_or(|at| now_ms - at < EXITED_KEEP_MS)
-        });
-        self.sessions.len() != before
     }
 
     /// Events that tie a session to its minions touch both sides.
@@ -404,6 +373,7 @@ pub(super) fn duration(ms: u64) -> String {
     }
 }
 
+mod fleet;
 mod fold;
 use fold::fold;
 

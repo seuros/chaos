@@ -62,7 +62,14 @@ fn a_turn_works_through_its_calls_and_settles() {
         "failed tests behind exit 0 still read bad"
     );
     assert_eq!(board.sessions[&id].last_check, Some(check));
-    assert_eq!(board.stations[&Station::Shell].done, 1);
+    assert_eq!(
+        board.stations[&(
+            chaos_kern::activity::fleet::local_host().to_string(),
+            Station::Shell
+        )]
+            .done,
+        1
+    );
 
     board.apply(&event(
         id,
@@ -169,11 +176,18 @@ fn failures_in_a_row_and_failed_checks_clear_when_work_succeeds() {
     board.apply(&event(id, 5, call_ended(Some(passed), CallOutcome::Ok)));
     let session = &board.sessions[&id];
     assert_eq!((session.failing, session.failed_check), (0, None));
-    assert_eq!(board.stations[&Station::Shell].failed_at_ms, Some(3));
+    assert_eq!(
+        board.stations[&(
+            chaos_kern::activity::fleet::local_host().to_string(),
+            Station::Shell
+        )]
+            .failed_at_ms,
+        Some(3)
+    );
 }
 
 #[test]
-fn the_route_collapses_repeat_visits_and_keeps_the_last_stops() {
+fn the_route_collapses_repeat_visits() {
     let mut board = Board::default();
     let id = ProcessId::new();
     let stations = [
@@ -200,9 +214,9 @@ fn the_route_collapses_repeat_visits_and_keeps_the_last_stops() {
             },
         ));
     }
-    let route: Vec<_> = board.route.iter().map(|(station, _)| *station).collect();
-    assert_eq!(route.len(), ROUTE_LEN);
-    assert_eq!(route.first(), Some(&Station::Network));
+    let route: Vec<_> = board.route.iter().map(|(_, station, _)| *station).collect();
+    assert_eq!(route.len(), 9, "one repeat collapsed: {route:?}");
+    assert_eq!(route.first(), Some(&Station::Files));
     assert_eq!(route.last(), Some(&Station::Files));
 }
 
@@ -289,5 +303,69 @@ fn another_process_s_sessions_carry_its_origin_and_go_when_it_leaves() {
     assert!(
         board.sessions.contains_key(&local),
         "this resident's own stay"
+    );
+}
+
+#[test]
+fn an_idle_session_shows_up_and_one_view_holds_one_machine() {
+    use chaos_kern::activity::fleet::{OriginKind, local_host};
+    let mut board = Board::default();
+    let silica = Origin {
+        kind: OriginKind::Console,
+        pid: 7,
+        host: "silica".into(),
+    };
+    let here = ProcessId::new();
+    let there = ProcessId::new();
+    board.apply(&event(
+        here,
+        1,
+        Activity::SessionOpened {
+            model: "model-a".into(),
+        },
+    ));
+    board.apply_remote(
+        silica.clone(),
+        &event(
+            there,
+            2,
+            Activity::SessionOpened {
+                model: "model-b".into(),
+            },
+        ),
+    );
+    assert_eq!(board.sessions[&there].model.as_deref(), Some("model-b"));
+    assert!(
+        !board.sessions[&there].working,
+        "opened is idle, not working"
+    );
+    assert_eq!(
+        board.hosts(),
+        vec![local_host().to_string(), "silica".to_string()]
+    );
+
+    let only_silica = board.only("silica");
+    assert_eq!(only_silica.sessions.len(), 1);
+    assert!(only_silica.sessions.contains_key(&there));
+
+    board.apply_remote(silica, &event(there, 3, Activity::SessionClosed));
+    assert_eq!(board.sessions[&there].exited_at_ms, Some(3));
+}
+
+#[test]
+fn a_one_machine_view_lists_its_processes_without_repeating_the_machine() {
+    use chaos_kern::activity::fleet::OriginKind;
+    let origin = Origin {
+        kind: OriginKind::Console,
+        pid: 9064,
+        host: "magellan".into(),
+    };
+    assert_eq!(
+        crate::monitor::widgets::process_label(&origin),
+        "console 9064"
+    );
+    assert_eq!(
+        crate::monitor::widgets::origin_label(&origin),
+        "console 9064 @ magellan"
     );
 }

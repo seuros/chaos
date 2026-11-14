@@ -1,4 +1,5 @@
 <main id="dashboard" class="dashboard">
+  {% with machines = dashboard.machines %}{% include "widgets/machines.html" %}{% endwith %}
   <div class="band">
     {% with summary = dashboard.summary %}{% include "widgets/summary.html" %}{% endwith %}
     {% with instruments = dashboard.instruments %}{% include "widgets/instruments.html" %}{% endwith %}

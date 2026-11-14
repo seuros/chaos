@@ -160,6 +160,13 @@ async fn connect_new(dir: &Path, origin: &Origin, peers: &mut HashMap<PathBuf, U
             continue;
         };
         line.push(b'\n');
+        // Then the sessions already open, so idle ones show up too.
+        for event in super::open_sessions() {
+            if let Ok(event) = serde_json::to_vec(&event) {
+                line.extend(event);
+                line.push(b'\n');
+            }
+        }
         if stream.write_all(&line).await.is_ok() {
             peers.insert(path, stream);
         }

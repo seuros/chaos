@@ -1,0 +1,6 @@
+<nav id="w-machines" class="machines" aria-label="Machines">
+  <a class="tab" href="/monitor" data-active="{{ machines.all | flag }}">all</a>
+  {% for host in machines.hosts %}
+  <a class="tab" href="/monitor?host={{ host.name }}" data-active="{{ host.active | flag }}">{{ host.name }}{% if host.here %}<span class="tab-here">this machine</span>{% endif %}</a>
+  {% endfor %}
+</nav>

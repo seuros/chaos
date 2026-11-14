@@ -27,6 +27,7 @@ const TEMPLATES: &[(&str, &str)] = sources![
     "partials/ui.html",
     "partials/icons.html",
     "widgets/dashboard.html",
+    "widgets/machines.html",
     "widgets/summary.html",
     "widgets/machine.html",
     "widgets/instruments.html",
@@ -43,6 +44,7 @@ const STYLES: &[&str] = &[
     include_str!("assets/tokens.css"),
     include_str!("assets/base.css"),
     include_str!("assets/widgets/summary.css"),
+    include_str!("assets/widgets/machines.css"),
     include_str!("assets/widgets/machine.css"),
     include_str!("assets/widgets/instruments.css"),
     include_str!("assets/widgets/map.css"),
@@ -92,9 +94,16 @@ pub(super) trait Widget: Serialize {
 }
 
 /// `open`: this viewer may watch without a token, so connect on load.
-pub(super) fn page(open: bool) -> Result<String, minijinja::Error> {
-    ENV.get_template("page.html")?
-        .render(minijinja::context! { css_version => STYLESHEET.version.as_str(), open })
+/// `host`: the machine this page watches, already checked by `host_param`.
+pub(super) fn page(open: bool, host: Option<&str>) -> Result<String, minijinja::Error> {
+    ENV.get_template("page.html")?.render(minijinja::context! {
+        css_version => STYLESHEET.version.as_str(),
+        open,
+        events => match host {
+            Some(host) => format!("/monitor/events?host={host}"),
+            None => "/monitor/events".to_string(),
+        },
+    })
 }
 
 pub(super) type Patch = Result<Event<PatchElements>, BoxError>;

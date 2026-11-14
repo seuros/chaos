@@ -20,6 +20,10 @@ use super::elicitation_ask_id;
 impl Activity {
     pub(super) fn from_event(msg: &EventMsg) -> Vec<Self> {
         let activity = match msg {
+            EventMsg::SessionConfigured(ev) => Self::SessionOpened {
+                model: ev.model.clone(),
+            },
+            EventMsg::ShutdownComplete => Self::SessionClosed,
             EventMsg::TurnStarted(_) => Self::TurnStarted,
             EventMsg::TurnComplete(_) => Self::TurnEnded {
                 outcome: TurnOutcome::Completed,

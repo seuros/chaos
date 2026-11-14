@@ -8,6 +8,18 @@ type Line = (Option<Station>, String, Tone);
 
 pub(super) fn fold(session: &mut Session, activity: &Activity, at_ms: i64) -> Option<Line> {
     match activity {
+        Activity::SessionOpened { model } => {
+            session.model = Some(model.clone());
+            session.exited_at_ms = None;
+            None
+        }
+        Activity::SessionClosed => {
+            session.working = false;
+            session.thinking = false;
+            session.calls.clear();
+            session.exited_at_ms.get_or_insert(at_ms);
+            None
+        }
         Activity::TurnStarted => {
             session.working = true;
             session.failed = false;

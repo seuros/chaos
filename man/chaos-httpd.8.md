@@ -477,11 +477,6 @@ environments. No model credentials or infrastructure cookies accompany callbacks
 - `CHAOS_SESSION_WEBHOOK_SECRET` - default webhook signing-key variable
 - `~/.chaos/log/` - runtime logs for diagnosing server failures
 
-## ACKNOWLEDGEMENTS
-
-The monitor's station map and visual language were inspired by lot-map by
-Aleksei Volodin (https://github.com/alexeyw/lot-map). No code was copied.
-
 ## SEE ALSO
 
 - [chaos-mcp.7](./chaos-mcp.7.md)

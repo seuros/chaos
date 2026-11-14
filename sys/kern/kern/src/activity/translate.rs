@@ -57,18 +57,18 @@ impl Activity {
             EventMsg::McpToolCallBegin(ev) => Self::CallStarted {
                 check: None,
                 call_id: ev.call_id.clone(),
-                station: match mcp_station(&ev.invocation) {
+                station: match mcp_station(&ev.call_id, &ev.invocation) {
                     Some(station) => station,
                     None => return Vec::new(),
                 },
-                label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
+                label: mcp_label(&ev.call_id, &ev.invocation),
             },
             EventMsg::McpToolCallEnd(ev) => {
                 let outcome = match &ev.result {
                     Ok(result) if result.is_error != Some(true) => CallOutcome::Ok,
                     _ => CallOutcome::Failed,
                 };
-                let station = match mcp_station(&ev.invocation) {
+                let station = match mcp_station(&ev.call_id, &ev.invocation) {
                     Some(station) => station,
                     // A command that never started has no exec events of its own.
                     None if outcome == CallOutcome::Failed => Station::Shell,
@@ -78,7 +78,7 @@ impl Activity {
                     check: None,
                     call_id: ev.call_id.clone(),
                     station,
-                    label: mcp_label(ev.invocation.server.as_deref(), &ev.invocation.tool),
+                    label: mcp_label(&ev.call_id, &ev.invocation),
                     outcome,
                     duration_ms: Some(millis(ev.duration)),
                 }
@@ -186,8 +186,8 @@ impl Activity {
 
 /// Where a tool call belongs. Internal tools that already report through
 /// their own events (commands, patches, searches) are not reported twice.
-fn mcp_station(invocation: &chaos_ipc::protocol::McpInvocation) -> Option<Station> {
-    if invocation.server.is_some() {
+fn mcp_station(call_id: &str, invocation: &chaos_ipc::protocol::McpInvocation) -> Option<Station> {
+    if invocation.server.is_some() && !bridged(call_id) {
         return Some(Station::Mcp);
     }
     match invocation.tool.as_str() {
@@ -218,11 +218,17 @@ fn agent_run(status: chaos_ipc::protocol::CollabAgentStatus) -> AgentRun {
     }
 }
 
-fn mcp_label(server: Option<&str>, tool: &str) -> String {
-    match server {
-        Some(server) => format!("{server}.{tool}"),
-        None => tool.to_string(),
+fn mcp_label(call_id: &str, invocation: &chaos_ipc::protocol::McpInvocation) -> String {
+    match &invocation.server {
+        Some(server) if !bridged(call_id) => format!("{server}.{}", invocation.tool),
+        _ => invocation.tool.clone(),
     }
+}
+
+/// A clamped CLI reaches Chaos's own tools through an MCP bridge; those calls
+/// are Chaos's work, not an external server's.
+fn bridged(call_id: &str) -> bool {
+    call_id.starts_with(crate::client::CLAMP_MCP_CALL_PREFIX)
 }
 
 fn files_label(count: usize) -> String {

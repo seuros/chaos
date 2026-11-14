@@ -126,6 +126,8 @@ pub async fn run_main(
         }
         None => None,
     };
+    let monitor_token =
+        monitor::viewer_token(&serve_cli, &bearer_token, recovery_token.as_deref())?;
     if serve_cli.session_recovery_only
         && (serve_cli.session_scope.is_none() || recovery_token.is_none())
     {
@@ -170,6 +172,7 @@ pub async fn run_main(
     let cli_kv_overrides = cli_config_overrides
         .parse_overrides()
         .map_err(|e| anyhow::anyhow!("error parsing -c overrides: {e}"))?;
+    let clamp_on_command_line = clamp_requested(&cli_kv_overrides);
 
     // 3. Resolve cwd.
     let resolved_cwd = serve_cli.cd.clone();
@@ -214,10 +217,19 @@ pub async fn run_main(
     if serve_cli.sessions && config.clamp && !serve_cli.session_recovery_only {
         bail!("retained HTTP sessions do not yet support clamp transports");
     }
+    // Serve's sessions never clamp. Asking on its own command line is a
+    // mistake worth stopping; a console default in config.toml is not.
+    if config.clamp && clamp_on_command_line {
+        bail!(
+            "chaos serve does not support clamp transports; \
+             its sessions use the configured provider"
+        );
+    }
     config.clamp_env_remove = vec![
         "CHAOS_BEARER_TOKEN".into(),
         "CHAOS_RECOVERY_TOKEN".into(),
         "CHAOS_OPERATOR_TOKEN".into(),
+        "CHAOS_MONITOR_TOKEN".into(),
         serve_cli.session_webhook_secret_env.clone(),
     ];
     if serve_cli.session_scope.is_some() && config.ephemeral {
@@ -234,6 +246,7 @@ pub async fn run_main(
                 "CHAOS_BEARER_TOKEN",
                 "CHAOS_RECOVERY_TOKEN",
                 "CHAOS_OPERATOR_TOKEN",
+                "CHAOS_MONITOR_TOKEN",
                 serve_cli.session_webhook_secret_env.as_str(),
             ],
         )?;
@@ -340,6 +353,11 @@ pub async fn run_main(
             .await?;
     }
 
+    let loopback_bind = serve_cli
+        .bind
+        .parse::<std::net::IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback());
+
     // 11. Build server state.
     let state = Arc::new(ServerState {
         config,
@@ -351,7 +369,10 @@ pub async fn run_main(
         max_concurrent: serve_cli.max_concurrent,
         timeout: Duration::from_secs(serve_cli.timeout),
         body_limit: serve_cli.body_limit,
-        monitor: monitor::MonitorState::new(),
+        monitor: monitor::MonitorState::new(monitor::Access {
+            token: monitor_token,
+            loopback_bind,
+        }),
         sessions,
         #[cfg(feature = "mcpd")]
         mcp,
@@ -436,4 +457,11 @@ pub async fn run_main(
         Ok(Err(err)) => Err(anyhow::anyhow!("chaos-httpd serve error: {err}")),
         Err(err) => Err(err).context("join chaos-httpd server task"),
     }
+}
+
+/// Whether `-c` asked for clamp, as opposed to a default from config.toml.
+fn clamp_requested(overrides: &[(String, toml::Value)]) -> bool {
+    overrides
+        .iter()
+        .any(|(key, _)| key == "clamp" || key == "clamp_backend")
 }

@@ -135,7 +135,7 @@ fn labels_are_escaped() {
 
 #[test]
 fn the_page_links_the_stylesheet_of_this_build() {
-    let html = page().unwrap();
+    let html = page(false).unwrap();
     assert!(
         html.contains(&format!("/monitor/app.css?v={}", STYLESHEET.version)),
         "{html}"

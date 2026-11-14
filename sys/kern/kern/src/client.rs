@@ -20,6 +20,7 @@ pub(crate) mod state;
 pub(crate) mod streaming;
 pub(crate) mod tools;
 
+pub(crate) use tools::CLAMP_MCP_CALL_PREFIX;
 pub(crate) use tools::active_clamp_turn_context;
 
 #[cfg(test)]

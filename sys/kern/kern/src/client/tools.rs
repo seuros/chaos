@@ -27,6 +27,8 @@ use crate::exec_policy::ExecApprovalRequest;
 pub(crate) const CLAMP_NATIVE_PASSTHROUGH_TOOLS: &[&str] = &["WebSearch", "WebFetch"];
 pub(crate) const CLAMP_MCP_TOOL_PREFIX: &str = "mcp__chaos__";
 pub(crate) const CLAMP_MCP_ALLOWED_TOOL_RULE: &str = "mcp__chaos__*";
+/// Call ids of Chaos tools a clamped CLI invokes over the bridge.
+pub(crate) const CLAMP_MCP_CALL_PREFIX: &str = "clamp_mcp_";
 
 /// Forwarding wrapper so the streaming layer can keep its existing call shape
 /// while the canonical mapping lives in [`hook_permission_mode`]. Clamp and
@@ -205,7 +207,8 @@ pub(crate) fn clamp_tool_permission_decision(
 
     let Some(routing) = clamp_tool_routing(tool_name) else {
         return ClampToolPermissionDecision::Deny(format!(
-            "Claude Code built-in tool '{tool_name}' is not supported in clamp mode; use Chaos-managed tools instead."
+            "Claude Code built-in tool '{tool_name}' is not supported in clamp mode; \
+             use Chaos-managed tools instead."
         ));
     };
 
@@ -228,7 +231,8 @@ pub(crate) fn clamp_tool_permission_decision(
                         command.to_string(),
                     ],
                     reason: format!(
-                        "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests permission to run a shell command."
+                        "Claude Code {tool_name} routes through local tool '{local_tool_name}' \
+                         and requests permission to run a shell command."
                     ),
                 },
                 None => ClampToolPermissionDecision::Deny(format!(
@@ -246,7 +250,8 @@ pub(crate) fn clamp_tool_permission_decision(
             Some(path) => ClampToolPermissionDecision::AskPermissions {
                 permissions: clamp_read_permission(path),
                 reason: format!(
-                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem read access."
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' \
+                     and requests filesystem read access."
                 ),
             },
             None => ClampToolPermissionDecision::Deny(format!(
@@ -263,7 +268,8 @@ pub(crate) fn clamp_tool_permission_decision(
             Some(path) => ClampToolPermissionDecision::AskPermissions {
                 permissions: clamp_write_permission(path),
                 reason: format!(
-                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem write access."
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' \
+                     and requests filesystem write access."
                 ),
             },
             None => ClampToolPermissionDecision::Deny(format!(
@@ -280,7 +286,8 @@ pub(crate) fn clamp_tool_permission_decision(
             Some(path) => ClampToolPermissionDecision::AskPermissions {
                 permissions: clamp_read_permission(path),
                 reason: format!(
-                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' and requests filesystem read access."
+                    "Claude Code {tool_name} routes through local tool '{local_tool_name}' \
+                     and requests filesystem read access."
                 ),
             },
             None => ClampToolPermissionDecision::Allow,
@@ -322,7 +329,7 @@ pub(crate) async fn handle_clamp_mcp_message(
             let turn_context = active_clamp_turn_context(&session)
                 .await
                 .ok_or_else(|| "no active turn for clamp MCP tool call".to_string())?;
-            let call_id = format!("clamp_mcp_{}", uuid::Uuid::now_v7());
+            let call_id = format!("{CLAMP_MCP_CALL_PREFIX}{}", uuid::Uuid::now_v7());
             let result = crate::mcp_tool_call::handle_mcp_tool_call(
                 std::sync::Arc::clone(&session),
                 &turn_context,
@@ -477,7 +484,8 @@ pub(crate) async fn handle_clamp_hook_callback(
                 turn_context.as_ref(),
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Clamp received unexpected Claude hook callback '{}'{}; clamp sessions do not currently register callback hooks.",
+                        "Clamp received unexpected Claude hook callback '{}'{}; \
+                         clamp sessions do not currently register callback hooks.",
                         callback_id,
                         tool_use_id
                             .as_deref()
@@ -578,7 +586,8 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             namespace,
             ..
         } => Some(format!(
-            "<function_call name=\"{name}\" namespace=\"{}\" call_id=\"{call_id}\">\n{}\n</function_call>",
+            "<function_call name=\"{name}\" namespace=\"{}\" call_id=\"{call_id}\">\
+             \n{}\n</function_call>",
             namespace.as_deref().unwrap_or(""),
             arguments
         )),
@@ -589,7 +598,8 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             arguments,
             ..
         } => Some(format!(
-            "<tool_search_call call_id=\"{}\" status=\"{}\" execution=\"{execution}\">\n{}\n</tool_search_call>",
+            "<tool_search_call call_id=\"{}\" status=\"{}\" execution=\"{execution}\">\
+             \n{}\n</tool_search_call>",
             call_id.as_deref().unwrap_or(""),
             status.as_deref().unwrap_or(""),
             render_json(arguments)
@@ -610,7 +620,8 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             status,
             ..
         } => Some(format!(
-            "<custom_tool_call name=\"{name}\" call_id=\"{call_id}\" status=\"{}\">\n{input}\n</custom_tool_call>",
+            "<custom_tool_call name=\"{name}\" call_id=\"{call_id}\" status=\"{}\">\
+             \n{input}\n</custom_tool_call>",
             status.as_deref().unwrap_or("")
         )),
         ResponseItem::ToolSearchOutput {
@@ -619,7 +630,8 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             execution,
             tools,
         } => Some(format!(
-            "<tool_search_output call_id=\"{}\" status=\"{status}\" execution=\"{execution}\">\n{}\n</tool_search_output>",
+            "<tool_search_output call_id=\"{}\" status=\"{status}\" execution=\"{execution}\">\
+             \n{}\n</tool_search_output>",
             call_id.as_deref().unwrap_or(""),
             render_json(tools)
         )),
@@ -634,7 +646,8 @@ pub(crate) fn render_clamp_response_item(item: &ResponseItem) -> Option<String> 
             result,
             ..
         } => Some(format!(
-            "<image_generation_call status=\"{status}\">\nrevised_prompt: {}\nresult: {}\n</image_generation_call>",
+            "<image_generation_call status=\"{status}\">\
+             \nrevised_prompt: {}\nresult: {}\n</image_generation_call>",
             revised_prompt.as_deref().unwrap_or(""),
             clamp_elide_large_text(result)
         )),
@@ -657,8 +670,10 @@ pub(crate) fn render_clamp_full_prompt(prompt: &Prompt) -> String {
     }
 
     format!(
-        "Chaos restored the current Chaos conversation state after connecting the clamp transport.\n\
-Treat the transcript below as authoritative prior context, including tool calls and tool outputs that already happened.\n\
+        "Chaos restored the current Chaos conversation state after connecting the clamp \
+         transport.\n\
+Treat the transcript below as authoritative prior context, including tool calls and \
+         tool outputs that already happened.\n\
 Continue from the latest user request instead of restarting the conversation.\n\n\
 <conversation_state>\n{}\n</conversation_state>",
         rendered_items.join("\n\n")

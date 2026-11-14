@@ -39,6 +39,12 @@ pub struct ServeCli {
     #[usage(long = "mcp")]
     pub mcp: bool,
 
+    /// Viewer token for /monitor. Without it the monitor needs no token; set it
+    /// to share the pane over an untrusted network. Must differ from the bearer,
+    /// recovery and operator tokens. Falls back to `CHAOS_MONITOR_TOKEN` env var.
+    #[usage(long = "monitor-token", env = "CHAOS_MONITOR_TOKEN")]
+    pub monitor_token: Option<String>,
+
     /// Operator token for project trust administration over MCP. Requires --mcp and must
     /// differ from the bearer and recovery tokens; without it the trust tools are not served.
     /// Falls back to `CHAOS_OPERATOR_TOKEN` env var.

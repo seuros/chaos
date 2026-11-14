@@ -47,25 +47,8 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
             None,
             StatusCode::METHOD_NOT_ALLOWED,
         ),
-        ("GET", "/monitor/events", None, StatusCode::UNAUTHORIZED),
-        (
-            "GET",
-            "/monitor/events?token=test-token",
-            None,
-            StatusCode::UNAUTHORIZED,
-        ),
-        (
-            "GET",
-            "/monitor/events",
-            Some("Bearer wrong"),
-            StatusCode::UNAUTHORIZED,
-        ),
-        (
-            "GET",
-            "/monitor/events",
-            Some("Bearer test-token"),
-            StatusCode::OK,
-        ),
+        // Read-only and redacted: open unless a viewer token is set.
+        ("GET", "/monitor/events", None, StatusCode::OK),
         ("POST", "/api/trigger", None, StatusCode::UNAUTHORIZED),
         (
             "POST",
@@ -178,4 +161,90 @@ async fn routes_authenticate_and_bound_ingress_before_starting_processes() {
     assert_eq!(body["status"], "timeout");
     assert_eq!(body["error"], "request body deadline exceeded");
     assert_eq!(state.semaphore.available_permits(), 1);
+}
+
+fn viewer(path: &str, host: &str, bearer: Option<&str>) -> Request {
+    let mut request = Request::builder().uri(path).header("host", host);
+    if let Some(bearer) = bearer {
+        request = request.header("authorization", format!("Bearer {bearer}"));
+    }
+    request.body(Body::empty()).unwrap()
+}
+
+async fn page(state: &Arc<ServerState>, host: &str) -> String {
+    let response = handle(state.clone(), viewer("/monitor", host, None)).await;
+    let body = response.into_body().collect().await.unwrap();
+    String::from_utf8(body.to_bytes().to_vec()).unwrap()
+}
+
+#[tokio::test]
+async fn the_monitor_is_open_unless_a_viewer_token_is_set() {
+    use crate::monitor::Access;
+    let (_a, open) = crate::test_support::server_state(8, false).await;
+    let (_b, loopback) = crate::test_support::server_state_with(
+        8,
+        false,
+        Access {
+            token: None,
+            loopback_bind: true,
+        },
+    )
+    .await;
+    let (_c, shared) = crate::test_support::server_state_with(
+        8,
+        false,
+        Access {
+            token: Some(Arc::from("viewer-token")),
+            loopback_bind: false,
+        },
+    )
+    .await;
+    for (state, host, bearer, expected) in [
+        (&open, "10.0.0.7:4000", None, StatusCode::OK),
+        (&loopback, "127.0.0.1:4000", None, StatusCode::OK),
+        (&loopback, "[::1]:4000", None, StatusCode::OK),
+        (&loopback, "localhost:4000", None, StatusCode::OK),
+        // A page that rebinds its own name to 127.0.0.1 keeps its Host.
+        (&loopback, "evil.example:4000", None, StatusCode::FORBIDDEN),
+        (
+            &loopback,
+            "localhost.evil.example",
+            None,
+            StatusCode::FORBIDDEN,
+        ),
+        (&shared, "10.0.0.7:4000", None, StatusCode::UNAUTHORIZED),
+        (
+            &shared,
+            "10.0.0.7:4000",
+            Some("wrong"),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            &shared,
+            "10.0.0.7:4000",
+            Some("viewer-token"),
+            StatusCode::OK,
+        ),
+        (&shared, "10.0.0.7:4000", Some("test-token"), StatusCode::OK),
+    ] {
+        let response = handle(state.clone(), viewer("/monitor/events", host, bearer)).await;
+        assert_eq!(response.status(), expected, "{host} {bearer:?}");
+    }
+
+    let mut post = viewer("/api/trigger", "10.0.0.7:4000", Some("viewer-token"));
+    *post.method_mut() = rama::http::Method::POST;
+    assert_eq!(
+        handle(shared.clone(), post).await.status(),
+        StatusCode::UNAUTHORIZED,
+        "the viewer token never runs agents"
+    );
+
+    assert!(page(&open, "10.0.0.7:4000").await.contains("data-init="));
+    assert!(
+        page(&loopback, "localhost:4000")
+            .await
+            .contains("data-init=")
+    );
+    assert!(!page(&loopback, "evil.example").await.contains("data-init="));
+    assert!(!page(&shared, "10.0.0.7:4000").await.contains("data-init="));
 }

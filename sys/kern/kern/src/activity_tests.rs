@@ -396,3 +396,29 @@ fn minions_report_their_state_and_their_parent_waiting_on_them() {
         }]
     );
 }
+
+#[test]
+fn a_clamped_cli_using_chaos_tools_is_chaos_work_not_an_mcp_server() {
+    let bridged = |tool: &str| {
+        EventMsg::McpToolCallBegin(chaos_ipc::protocol::McpToolCallBeginEvent {
+            call_id: format!("{}1", crate::client::CLAMP_MCP_CALL_PREFIX),
+            invocation: chaos_ipc::protocol::McpInvocation {
+                server: Some("chaos".to_string()),
+                tool: tool.to_string(),
+                arguments: None,
+            },
+        })
+    };
+    let activity: [Activity; 1] = Activity::from_event(&bridged("read_file"))
+        .try_into()
+        .unwrap();
+    let [Activity::CallStarted { station, label, .. }] = activity else {
+        panic!("a bridged read must be reported: {activity:?}");
+    };
+    assert_eq!((station, label.as_str()), (Station::Files, "read_file"));
+    assert_eq!(
+        Activity::from_event(&bridged("exec_command")),
+        Vec::new(),
+        "the command reports itself through its exec events"
+    );
+}

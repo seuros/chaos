@@ -51,3 +51,46 @@ fn only_postgres_storage_is_shared() {
     assert!(shared("postgresql://harbor/chaos"));
     assert!(!shared("sqlite:///home/me/.chaos/chaos.sqlite"));
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn a_resident_keeps_listening_after_the_server_drops_it() {
+    let url = std::env::var("TEST_DATABASE_URL").unwrap();
+    let mut heard = listen(&url).await.unwrap();
+    let pool = PgPool::connect(&url).await.unwrap();
+    // Kill the resident's listening backend from the server side.
+    let killed: i64 = sqlx::query_scalar(
+        "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+         WHERE query ILIKE 'LISTEN %chaos_activity%'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(killed, 1);
+    let origin = Origin {
+        kind: OriginKind::Exec,
+        pid: 1,
+        host: "silica".into(),
+    };
+    let heard_again = async {
+        loop {
+            notify(
+                &pool,
+                &Notice {
+                    origin: origin.clone(),
+                    event: None,
+                },
+            )
+            .await;
+            if let Ok(Some(FleetEvent::Joined(joined))) =
+                tokio::time::timeout(Duration::from_millis(500), heard.recv()).await
+            {
+                return joined;
+            }
+        }
+    };
+    let joined = tokio::time::timeout(Duration::from_secs(20), heard_again)
+        .await
+        .expect("the resident never listened again");
+    assert_eq!(joined, origin);
+}

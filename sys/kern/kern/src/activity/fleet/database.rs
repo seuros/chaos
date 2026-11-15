@@ -19,6 +19,7 @@ use super::{FleetEvent, Origin};
 use crate::activity::ActivityEvent;
 
 const CHANNEL: &str = "chaos_activity";
+const LISTEN: &str = "LISTEN \"chaos_activity\"";
 const HEARTBEAT: Duration = Duration::from_secs(10);
 /// How often a resident proves its own listening connection still works.
 const PROBE: Duration = if cfg!(test) {
@@ -119,11 +120,13 @@ pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sql
                     }
                 },
                 // A connection the server dropped without a word looks idle
-                // forever; asking it something is the only way to know.
+                // forever; asking it something is the only way to know. Ask
+                // with LISTEN again: a no-op, but it stays the statement other
+                // processes look for to tell that a resident is listening.
                 _ = probe.tick() => {
                     let alive = tokio::time::timeout(
                         PROBE_TIMEOUT,
-                        sqlx::query("SELECT 1").execute(&mut listener),
+                        sqlx::query(LISTEN).execute(&mut listener),
                     )
                     .await;
                     if !matches!(alive, Ok(Ok(_))) {

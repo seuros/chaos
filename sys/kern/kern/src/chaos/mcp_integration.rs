@@ -588,7 +588,7 @@ impl Session {
             store_mode,
             auth_statuses,
             &approval_policy,
-            self.get_tx_event(),
+            self.mcp_tx_event(),
             Some(self.mcp_notification_tx.clone()),
             sandbox_state,
             config.chaos_home.clone(),

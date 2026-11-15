@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- The monitor shows each session's MCP servers, lit while one of their tools
+  runs, and a server that fails to start.
 - The monitor shows idle sessions too, and can switch to one machine's view.
 - `chaos serve`'s monitor also shows the console, `chaos exec`, MCP and ACP
   processes of the same Chaos home, and with Postgres storage those on every

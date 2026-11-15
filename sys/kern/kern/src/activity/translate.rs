@@ -181,6 +181,10 @@ impl Activity {
                 children: ev.receiver_process_ids.clone(),
             },
             EventMsg::CollabWaitingEnd(_) => Self::DoneWaiting,
+            EventMsg::McpStartupUpdate(ev) => Self::McpServer {
+                server: ev.server.clone(),
+                state: (&ev.status).into(),
+            },
             EventMsg::Error(_) => Self::Failed,
             _ => return Vec::new(),
         };

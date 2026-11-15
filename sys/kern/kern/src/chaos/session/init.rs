@@ -724,7 +724,7 @@ impl Session {
             config.mcp_oauth_credentials_store_mode,
             auth_statuses.clone(),
             &session_configuration.approval_policy,
-            tx_event.clone(),
+            sess.mcp_tx_event(),
             Some(mcp_notification_tx),
             sandbox_state,
             config.chaos_home.clone(),

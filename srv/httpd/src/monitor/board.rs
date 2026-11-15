@@ -7,7 +7,7 @@ use chaos_ipc::ProcessId;
 pub(super) use chaos_kern::activity::fleet::Origin;
 use chaos_kern::activity::{
     Activity, ActivityEvent, AgentRun, Attention, CallOutcome, Check, CheckKind, LimitWindow,
-    MachineCause, MachinePhase, ModelUsage, Station, TurnOutcome,
+    MachineCause, MachinePhase, McpState, ModelUsage, Station, TurnOutcome,
 };
 
 pub(super) const FEED_LEN: usize = 100;
@@ -86,6 +86,8 @@ pub(super) struct Session {
     pub origin: Option<Origin>,
     /// That process exited at this time; the session does no more work.
     pub exited_at_ms: Option<i64>,
+    /// Its MCP servers by name.
+    pub mcp: BTreeMap<String, McpState>,
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +178,7 @@ impl Session {
             closed: false,
             origin: None,
             exited_at_ms: None,
+            mcp: BTreeMap::new(),
         }
     }
 }

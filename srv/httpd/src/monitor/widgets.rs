@@ -10,10 +10,15 @@ use super::view::{Widget, name};
 mod attention;
 mod instruments;
 mod map;
+mod mcp;
 
 pub(super) use attention::Attention;
 pub(super) use instruments::Instruments;
 pub(super) use map::Map;
+use mcp::McpChip;
+
+#[cfg(test)]
+mod tests;
 
 #[derive(Serialize)]
 pub(super) struct Summary {
@@ -196,6 +201,7 @@ pub(super) struct Session {
     pub waiting_for: Option<String>,
     /// Where it runs, when that is not this resident.
     pub origin: Option<String>,
+    pub mcp: Vec<McpChip>,
 }
 
 #[derive(Serialize)]
@@ -319,6 +325,7 @@ impl Session {
                 })
                 .collect(),
             origin: session.origin.as_ref().map(origin_label),
+            mcp: mcp::chips(session),
             waiting_on: session.waiting_on.len(),
             waiting_for: session.waiting_since_ms.map(|since| {
                 board::duration(u64::try_from(session.last_at_ms.max(since) - since).unwrap_or(0))

@@ -18,9 +18,16 @@ use tokio::sync::broadcast;
 mod check;
 mod command;
 pub mod fleet;
+mod mcp;
+mod open;
 mod translate;
 
 pub use check::{CheckCounts, CheckKind};
+pub use mcp::McpState;
+pub use open::open_sessions;
+use open::track_open;
+#[cfg(test)]
+use open::{OPEN, Open};
 
 const CAPACITY: usize = 1024;
 
@@ -43,18 +50,6 @@ pub fn subscribe() -> broadcast::Receiver<ActivityEvent> {
     BUS.subscribe()
 }
 
-/// Sessions open in this process, so a resident that connects late can be
-/// told about the idle ones too.
-static OPEN: LazyLock<Mutex<HashMap<ProcessId, Open>>> = LazyLock::new(Default::default);
-
-/// What a late resident needs to know about a session already open.
-struct Open {
-    model: String,
-    at_ms: i64,
-    /// The machine health it last reported; health is sent only on change.
-    machine: Option<Activity>,
-}
-
 pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
     track_open(process_id, msg);
     if BUS.receiver_count() == 0 {
@@ -65,51 +60,6 @@ pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
             send(process_id, activity);
         }
     }
-}
-
-fn track_open(process_id: ProcessId, msg: &EventMsg) {
-    let Ok(mut open) = OPEN.lock() else { return };
-    match msg {
-        EventMsg::SessionConfigured(ev) => {
-            open.insert(
-                process_id,
-                Open {
-                    model: ev.model.clone(),
-                    at_ms: jiff::Timestamp::now().as_millisecond(),
-                    machine: None,
-                },
-            );
-        }
-        EventMsg::ShutdownComplete => {
-            open.remove(&process_id);
-        }
-        _ => {}
-    }
-}
-
-/// One `session_opened` per session still open, as when each began.
-pub fn open_sessions() -> Vec<ActivityEvent> {
-    let Ok(open) = OPEN.lock() else {
-        return Vec::new();
-    };
-    let mut events = Vec::new();
-    for (process_id, session) in open.iter() {
-        events.push(ActivityEvent {
-            process_id: *process_id,
-            at_ms: session.at_ms,
-            activity: Activity::SessionOpened {
-                model: session.model.clone(),
-            },
-        });
-        if let Some(machine) = &session.machine {
-            events.push(ActivityEvent {
-                process_id: *process_id,
-                at_ms: session.at_ms,
-                activity: machine.clone(),
-            });
-        }
-    }
-    events
 }
 
 fn changed(process_id: ProcessId, activity: &Activity) -> bool {
@@ -142,11 +92,7 @@ pub(crate) fn machine(
         phase: phase.into(),
         causes: causes.into_iter().filter_map(MachineCause::named).collect(),
     };
-    if let Ok(mut open) = OPEN.lock()
-        && let Some(session) = open.get_mut(&process_id)
-    {
-        session.machine = Some(activity.clone());
-    }
+    open::remember_machine(process_id, &activity);
     if BUS.receiver_count() > 0 {
         send(process_id, activity);
     }
@@ -332,6 +278,12 @@ pub enum Activity {
     Machine {
         phase: MachinePhase,
         causes: Vec<MachineCause>,
+    },
+    /// One of this session's MCP servers changed state. Its name only, never
+    /// its command, URL or error.
+    McpServer {
+        server: String,
+        state: McpState,
     },
     Failed,
 }

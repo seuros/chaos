@@ -19,6 +19,11 @@
     {% for minion in session.minions %}<span class="minion-chip" data-hue="{{ minion.hue }}" data-run="{{ minion.state }}">{{ minion.name }}{% if minion.role %} <em>{{ minion.role }}</em>{% endif %}</span>{% endfor %}
   </div>
   {% endif %}
+  {% if session.mcp %}
+  <div class="session-mcp">
+    {% for server in session.mcp %}<span class="mcp-chip" data-state="{{ server.state }}" data-busy="{{ server.busy | flag }}" title="{{ server.state }}">{{ server.name }}</span>{% endfor %}
+  </div>
+  {% endif %}
   {% if session.calls %}
   <div class="session-calls">
     {% for call in session.calls %}{{ ui.chip(call.station, call.label, call.check) }}{% endfor %}

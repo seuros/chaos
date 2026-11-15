@@ -33,3 +33,13 @@
 .minion-chip[data-run="failed"] { border-color: var(--bad); color: var(--bad); }
 .minion-chip[data-run="stopped"] { opacity: .5; }
 .session-origin { padding: 0 6px; border: 1px solid var(--line-2); border-radius: 2px; font-size: 10px; color: var(--muted); letter-spacing: .04em; }
+.session-mcp { display: flex; flex-wrap: wrap; gap: 6px; }
+.mcp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 2px; font-size: 11px; color: var(--muted); transition: color .2s ease, border-color .2s ease, background-color .2s ease; }
+.mcp-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.mcp-chip[data-state="ready"]::before { background: var(--ok); }
+.mcp-chip[data-state="starting"]::before { background: var(--muted); animation: pulse 1.2s ease-in-out infinite; }
+.mcp-chip[data-state="failed"] { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 60%, var(--line-2)); }
+.mcp-chip[data-state="failed"]::before { background: var(--bad); }
+.mcp-chip[data-state="cancelled"] { opacity: .5; }
+.mcp-chip[data-busy="true"] { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+.mcp-chip[data-busy="true"]::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse .6s ease-in-out infinite; }

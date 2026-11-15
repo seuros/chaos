@@ -13,6 +13,23 @@ impl Session {
         self.tx_event.clone()
     }
 
+    /// A sender for the MCP connection manager, which reports outside the
+    /// session: its events reach the activity bus on their way to the client.
+    pub(crate) fn mcp_tx_event(&self) -> Sender<Event> {
+        let (tx, rx) = async_channel::bounded::<Event>(64);
+        let out = self.tx_event.clone();
+        let process_id = self.conversation_id;
+        tokio::spawn(async move {
+            while let Ok(event) = rx.recv().await {
+                crate::activity::publish(process_id, &event.msg);
+                if out.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tx
+    }
+
     pub(crate) fn runtime_db(&self) -> Option<crate::runtime_db::RuntimeDbHandle> {
         self.services.runtime_db.clone()
     }

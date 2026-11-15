@@ -447,7 +447,7 @@ async fn a_request_reports_the_model_that_served_it() {
 }
 
 #[test]
-fn a_late_resident_learns_a_machine_still_recovering() {
+fn a_late_resident_learns_the_machine_and_mcp_servers_of_open_sessions() {
     let process_id = ProcessId::new();
     OPEN.lock().unwrap().insert(
         process_id,
@@ -455,7 +455,17 @@ fn a_late_resident_learns_a_machine_still_recovering() {
             model: "model-a".to_string(),
             at_ms: 1,
             machine: None,
+            mcp: Default::default(),
         },
+    );
+    track_open(
+        process_id,
+        &EventMsg::McpStartupUpdate(chaos_ipc::protocol::McpStartupUpdateEvent {
+            server: "skipper".to_string(),
+            status: chaos_ipc::protocol::McpStartupStatus::Failed {
+                error: "spawn /secret/path: not found".to_string(),
+            },
+        }),
     );
     machine(
         process_id,
@@ -476,6 +486,10 @@ fn a_late_resident_learns_a_machine_still_recovering() {
             Activity::Machine {
                 phase: MachinePhase::Stabilizing,
                 causes: vec![MachineCause::Thermal],
+            },
+            Activity::McpServer {
+                server: "skipper".to_string(),
+                state: McpState::Failed,
             },
         ]
     );

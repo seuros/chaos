@@ -1,6 +1,6 @@
 //! How one event changes the session it belongs to.
 
-use chaos_kern::activity::{Activity, AgentRun, CallOutcome, Station, TurnOutcome};
+use chaos_kern::activity::{Activity, AgentRun, CallOutcome, McpState, Station, TurnOutcome};
 
 use super::{Call, Session, Tone, attention, duration};
 
@@ -174,6 +174,17 @@ pub(super) fn fold(session: &mut Session, activity: &Activity, at_ms: i64) -> Op
         Activity::Failed => {
             session.failed = true;
             Some((None, "error".into(), Tone::Bad))
+        }
+        Activity::McpServer { server, state } => {
+            let before = session.mcp.insert(server.clone(), *state);
+            // Heartbeats repeat the state; only a new failure is news.
+            (*state == McpState::Failed && before != Some(McpState::Failed)).then(|| {
+                (
+                    Some(Station::Mcp),
+                    format!("{server} failed to start"),
+                    Tone::Bad,
+                )
+            })
         }
         Activity::AgentEnded { .. }
         | Activity::AgentMessaged { .. }

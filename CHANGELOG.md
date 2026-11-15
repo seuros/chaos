@@ -75,6 +75,8 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- A monitor watching other machines keeps listening after the database drops
+  its connection, instead of going quiet until restarted.
 - The monitor keeps an exited process's sessions for ten minutes, so a short
   `chaos exec` run is still there when you look.
 - Clamped sessions report the model Claude Code actually ran, not the configured

@@ -20,6 +20,14 @@ use crate::activity::ActivityEvent;
 
 const CHANNEL: &str = "chaos_activity";
 const HEARTBEAT: Duration = Duration::from_secs(10);
+/// How often a resident proves its own listening connection still works.
+const PROBE: Duration = if cfg!(test) {
+    Duration::from_millis(300)
+} else {
+    Duration::from_secs(30)
+};
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const RECONNECT_MAX: Duration = Duration::from_secs(30);
 const SILENCE: Duration = Duration::from_secs(30);
 /// Postgres refuses payloads of 8000 bytes or more.
 const MAX_PAYLOAD: usize = 7900;
@@ -92,22 +100,37 @@ pub(super) async fn forward(pool: PgPool, origin: Origin) {
 /// Listen for every process notifying this database. Its own connection, so
 /// the shared pool keeps all of its slots.
 pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sqlx::Error> {
-    let mut listener = PgListener::connect(storage_url).await?;
-    listener.listen(CHANNEL).await?;
+    let mut listener = subscribe(storage_url).await?;
+    let storage_url = storage_url.to_string();
     let (tx, rx) = mpsc::channel(1024);
     tokio::spawn(async move {
         let mut seen: HashMap<Origin, Instant> = HashMap::new();
         let mut sweep = tokio::time::interval(HEARTBEAT);
+        let mut probe = tokio::time::interval_at(Instant::now() + PROBE, PROBE);
         loop {
             let heard = tokio::select! {
                 notification = listener.recv() => match notification {
                     Ok(notification) => serde_json::from_str::<Notice>(notification.payload()).ok(),
-                    // PgListener reconnects on the next recv.
+                    // PgListener recovers from some lost connections but not a
+                    // reset one, so any failure starts over on a new connection.
                     Err(_) => {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        listener = resubscribe(&storage_url).await;
                         None
                     }
                 },
+                // A connection the server dropped without a word looks idle
+                // forever; asking it something is the only way to know.
+                _ = probe.tick() => {
+                    let alive = tokio::time::timeout(
+                        PROBE_TIMEOUT,
+                        sqlx::query("SELECT 1").execute(&mut listener),
+                    )
+                    .await;
+                    if !matches!(alive, Ok(Ok(_))) {
+                        listener = resubscribe(&storage_url).await;
+                    }
+                    None
+                }
                 _ = sweep.tick() => {
                     let now = Instant::now();
                     let gone: Vec<Origin> = seen
@@ -144,6 +167,25 @@ pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sql
         }
     });
     Ok(rx)
+}
+
+async fn subscribe(storage_url: &str) -> Result<PgListener, sqlx::Error> {
+    let mut listener = PgListener::connect(storage_url).await?;
+    listener.listen(CHANNEL).await?;
+    Ok(listener)
+}
+
+/// A fresh listening connection, waiting longer between attempts while the
+/// database stays out of reach.
+async fn resubscribe(storage_url: &str) -> PgListener {
+    let mut wait = Duration::from_secs(1);
+    loop {
+        if let Ok(listener) = subscribe(storage_url).await {
+            return listener;
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(RECONNECT_MAX);
+    }
 }
 
 #[cfg(test)]

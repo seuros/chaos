@@ -7,6 +7,7 @@ use serde_json::Value;
 #[test]
 fn output_cap_is_opt_in_for_streaming_and_structured_chat() {
     let mut request = TurnRequest {
+        continuation: None,
         model: "model".into(),
         instructions: String::new(),
         input: vec![],
@@ -80,6 +81,7 @@ fn build_request_body_preserves_output_schema() {
         "additionalProperties": false
     });
     let mut request = TurnRequest {
+        continuation: None,
         model: "test-model".to_string(),
         instructions: String::new(),
         input: vec![],
@@ -123,6 +125,7 @@ fn build_request_body_merges_every_system_message_into_the_leading_block() {
         phase: None,
     };
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: "base".to_string(),
         input: vec![
@@ -162,6 +165,7 @@ fn build_request_body_hoists_a_lone_later_system_message_without_instructions() 
         phase: None,
     };
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
         input: vec![
@@ -190,6 +194,7 @@ fn build_request_body_hoists_a_lone_later_system_message_without_instructions() 
 #[test]
 fn build_request_body_includes_system_message() {
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: "You are helpful".to_string(),
         input: vec![],
@@ -211,6 +216,7 @@ fn build_request_body_includes_system_message() {
 #[test]
 fn build_request_body_no_system_when_no_instructions() {
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
         input: vec![],
@@ -274,6 +280,7 @@ fn build_headers_includes_bearer_token() {
 
 fn stop_hook_request(input: Vec<ResponseItem>) -> TurnRequest {
     TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: "base".to_string(),
         input,

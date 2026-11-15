@@ -301,6 +301,7 @@ impl ModelClient {
         ModelClientSession {
             client: self.clone(),
             turn_state: Arc::new(std::sync::OnceLock::new()),
+            continuation: chaos_abi::ContinuationSlot::default(),
             sample_token_limit: None,
         }
     }

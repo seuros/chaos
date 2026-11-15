@@ -23,6 +23,7 @@ fn build_request(prompt: &str) -> TurnRequest {
     let mut extensions = Map::new();
     extensions.insert("max_tokens".into(), serde_json::json!(64));
     TurnRequest {
+        continuation: None,
         model: String::new(),
         instructions: "Reply with a single short sentence.".into(),
         input: vec![ResponseItem::Message {

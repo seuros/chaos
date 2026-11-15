@@ -3,6 +3,7 @@ use rama::futures;
 
 fn token_limit_request() -> TurnRequest {
     TurnRequest {
+        continuation: None,
         model: "coding_large".into(),
         instructions: String::new(),
         input: vec![],

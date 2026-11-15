@@ -107,6 +107,7 @@ fn responses_options_preserve_conversation_and_session_when_not_overridden() {
     );
 
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
         input: vec![],
@@ -142,6 +143,7 @@ fn responses_options_apply_request_level_overrides() {
     );
     extensions.insert("compression".to_string(), serde_json::json!("zstd"));
     let request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
         input: vec![],
@@ -183,6 +185,7 @@ fn malformed_overrides_clear_defaults_and_invalid_header_entries_are_skipped() {
         HeaderValue::from_static("present"),
     );
     let mut request = TurnRequest {
+        continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
         input: vec![],

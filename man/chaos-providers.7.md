@@ -406,6 +406,11 @@ chaos --provider lsd --model my-function
 
 LSD has its own inference protocol — explicit `wire_api = "lsd"` required.
 
+- A bare model is an LSD function; `provider::model` names a model.
+- Within a turn, requests continue the LSD trip and send only new messages; a
+  rewritten history or a lost trip is replayed in full.
+- `chaos serve` speaks the same protocol, so `base_url` may point at another chaos.
+
 ### Z.ai (GLM)
 
 Bundled as two separate providers — Z.ai runs distinct endpoints for

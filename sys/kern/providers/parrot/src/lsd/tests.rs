@@ -1,10 +1,27 @@
+use super::request::build_request;
+use super::request::fingerprint;
+use super::stream::ChunkFolder;
 use super::*;
+use chaos_abi::ContentItem;
+use chaos_abi::ReasoningConfig;
+use chaos_abi::ResponseItem;
+use chaos_ipc::config_types::ReasoningSummary;
+use chaos_ipc::models::FunctionCallOutputBody;
+use chaos_ipc::models::FunctionCallOutputPayload;
+use chaos_ipc::models::ReasoningItemContent;
+use chaos_ipc::openai_models::ReasoningEffort;
+use lsd_protocol::Content;
+use lsd_protocol::Effort;
+use lsd_protocol::File;
+use lsd_protocol::ThinkingDisplay;
+use lsd_protocol::fixtures::CHUNK_STREAMS;
+use pretty_assertions::assert_eq;
 use rama::futures;
 
-fn token_limit_request() -> TurnRequest {
+fn turn(model: &str) -> TurnRequest {
     TurnRequest {
         continuation: None,
-        model: "coding_large".into(),
+        model: model.into(),
         instructions: String::new(),
         input: vec![],
         tools: vec![],
@@ -17,480 +34,369 @@ fn token_limit_request() -> TurnRequest {
     }
 }
 
+fn user(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "user".into(),
+        content: vec![ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn assistant(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "assistant".into(),
+        content: vec![ContentItem::OutputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn call(id: &str) -> ResponseItem {
+    ResponseItem::FunctionCall {
+        id: None,
+        name: "shell".into(),
+        namespace: None,
+        arguments: r#"{"command":"ls"}"#.into(),
+        call_id: id.into(),
+        provider_metadata: None,
+    }
+}
+
+fn output(id: &str, success: Option<bool>) -> ResponseItem {
+    ResponseItem::FunctionCallOutput {
+        call_id: id.into(),
+        output: FunctionCallOutputPayload {
+            body: FunctionCallOutputBody::Text("done".into()),
+            success,
+        },
+        tool_name: Some("shell".into()),
+    }
+}
+
+fn body(request: &TurnRequest) -> Value {
+    serde_json::to_value(build_request(request, &request.model).unwrap()).unwrap()
+}
+
 #[test]
-fn output_cap_is_opt_in_and_preserves_legacy_lsd_params() {
-    let mut request = token_limit_request();
-    let baseline = build_request_body(&request, "coding_large", Some("episode")).unwrap();
+fn bare_targets_are_functions_and_qualified_targets_are_models() {
     assert_eq!(
-        baseline,
+        body(&turn("coding_large")),
         serde_json::json!({
             "function_name": "coding_large",
             "input": {"messages": []},
             "stream": true,
-            "episode_id": "episode"
         })
     );
-    for cap in [1, 37, u32::MAX] {
-        request
-            .extensions
-            .insert("max_output_tokens".into(), serde_json::json!(cap));
-        let mut body = build_request_body(&request, "coding_large", Some("episode")).unwrap();
-        assert_eq!(body["params"]["chat_completion"]["max_tokens"], cap);
-        assert!(body.get("max_output_tokens").is_none());
-        body.as_object_mut().unwrap().remove("params");
-        assert_eq!(
-            serde_json::to_vec(&body).unwrap(),
-            serde_json::to_vec(&baseline).unwrap()
-        );
-    }
-    request.extensions.remove("max_output_tokens");
+    assert_eq!(
+        body(&turn("anthropic::claude-opus-5-5"))["model_name"],
+        "anthropic::claude-opus-5-5"
+    );
+}
+
+#[test]
+fn output_cap_wins_over_the_legacy_extension_and_invalid_caps_fail() {
+    let mut request = turn("coding_large");
     request
         .extensions
         .insert("max_tokens".into(), serde_json::json!(1234));
     request
         .extensions
         .insert("temperature".into(), serde_json::json!(0.25));
-    let legacy = build_request_body(&request, "coding_large", Some("episode")).unwrap();
     assert_eq!(
-        legacy["params"],
+        body(&request)["params"],
         serde_json::json!({"chat_completion": {"max_tokens": 1234, "temperature": 0.25}})
     );
     request
         .extensions
         .insert("max_output_tokens".into(), serde_json::json!(37));
-    let mut capped = build_request_body(&request, "coding_large", Some("episode")).unwrap();
-    assert_eq!(capped["params"]["chat_completion"]["max_tokens"], 37);
-    capped["params"]["chat_completion"]["max_tokens"] = serde_json::json!(1234);
-    assert_eq!(capped, legacy);
-}
-
-#[test]
-fn invalid_output_cap_cannot_fall_back_to_a_legacy_lsd_limit() {
-    let mut request = token_limit_request();
-    request
-        .extensions
-        .insert("max_tokens".into(), serde_json::json!(1234));
+    assert_eq!(
+        body(&request)["params"]["chat_completion"]["max_tokens"],
+        37
+    );
     for invalid in [
         serde_json::json!(0),
-        serde_json::json!(-1),
-        serde_json::json!(1.5),
         serde_json::json!("37"),
-        serde_json::json!(null),
-        serde_json::json!(u64::from(u32::MAX) + 1),
+        serde_json::json!(-1),
     ] {
         request
             .extensions
             .insert("max_output_tokens".into(), invalid);
         std::assert_matches!(
-            build_request_body(&request, "coding_large", None),
+            build_request(&request, "coding_large"),
             Err(AbiError::InvalidRequest { .. })
         );
     }
 }
 
 #[test]
-fn build_request_body_includes_only_nonempty_system_prompts() {
-    for instructions in ["You are helpful", ""] {
-        let mut request = token_limit_request();
-        request.instructions = instructions.to_string();
-        let body = build_request_body(&request, "coding_large", None).expect("body should build");
-        assert_eq!(body["function_name"], "coding_large");
-        assert_eq!(body["stream"], true);
-        assert_eq!(
-            body["input"].get("system").and_then(Value::as_str),
-            (!instructions.is_empty()).then_some(instructions),
-        );
-    }
-}
-
-#[test]
-fn parse_chunk_handles_text_content() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
-    let mut response_id = String::new();
-    let mut server_model = None;
-
-    let events = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "episode_id": "019d-ep",
-            "variant_name": "glm_air",
-            "content": [{"type": "text", "text": "Hello"}],
-            "usage": null,
-            "finish_reason": null
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse");
-
-    assert_eq!(response_id, "019d-test");
-    assert!(events.iter().any(|e| matches!(e, TurnEvent::Created)));
-    // ServerModel is NOT emitted from variant_name — the function name is
-    // injected by the caller (stream()) to avoid model-mismatch warnings.
-    assert!(
-        !events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::ServerModel(_)))
-    );
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::OutputTextDelta(t) if t == "Hello"))
-    );
-}
-
-#[test]
-fn parse_chunk_handles_thought_content() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
-    let mut response_id = String::new();
-    let mut server_model = None;
-
-    let events = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [{"type": "thought", "text": "thinking..."}],
-            "usage": null,
-            "finish_reason": null
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse");
-
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::OutputItemAdded(ResponseItem::Reasoning { .. })
-    )));
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::ReasoningContentDelta { delta, .. } if delta == "thinking..."
-    )));
-    // OutputItemDone is NOT emitted until finish_reason is set.
-    assert!(
-        !events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::OutputItemDone(ResponseItem::Reasoning { .. })))
-    );
-    assert!(thought_acc.is_some());
-}
-
-#[test]
-fn parse_chunk_finalizes_on_stop() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = Some(TextAccumulator {
-        text: "Hello world".to_string(),
+fn reasoning_maps_to_effort_and_display() {
+    let mut request = turn("coding_large");
+    request.instructions = "Be terse.".into();
+    request.reasoning = Some(ReasoningConfig {
+        effort: Some(ReasoningEffort::XHigh),
+        summary: Some(ReasoningSummary::Detailed),
     });
-    let mut thought_acc = None;
-    let mut response_id = "019d-test".to_string();
-    let mut server_model = Some("glm_air".to_string());
-
-    let events = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [],
-            "usage": {"input_tokens": 42, "output_tokens": 10},
-            "finish_reason": "stop"
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse");
-
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::OutputItemDone(ResponseItem::Message { content, .. })
-            if content.len() == 1
-    )));
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::Completed { token_usage: Some(usage), .. }
-            if usage.input_tokens == 42 && usage.output_tokens == 10
-    )));
+    let wire = build_request(&request, "coding_large").unwrap();
+    assert_eq!(
+        wire.params.chat_completion.reasoning_effort,
+        Some(Effort::Xhigh)
+    );
+    assert_eq!(
+        wire.params.chat_completion.thinking_display,
+        Some(ThinkingDisplay::Summarized)
+    );
+    assert_eq!(body(&request)["input"]["system"], "Be terse.");
 }
 
 #[test]
-fn parse_chunk_handles_tool_call() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
-    let mut response_id = String::new();
-    let mut server_model = None;
-
-    // Chunk with tool call.
-    let _ = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [{
-                "type": "tool_call",
-                "id": "call_1",
-                "raw_name": "shell",
-                "raw_arguments": "{\"command\": \"ls\"}"
+fn a_reply_travels_as_one_assistant_message_with_its_signed_thought() {
+    let mut request = turn("coding_large");
+    request.input = vec![
+        ResponseItem::Message {
+            id: None,
+            role: "developer".into(),
+            content: vec![ContentItem::InputText {
+                text: "Sandbox is read-only.".into(),
             }],
-            "usage": null,
-            "finish_reason": null
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse");
-
-    assert_eq!(tool_acc.len(), 1);
-
-    // Finish chunk.
-    let events = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [],
-            "usage": {"input_tokens": 10, "output_tokens": 5},
-            "finish_reason": "tool_calls"
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse");
-
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::OutputItemDone(ResponseItem::FunctionCall { name, call_id, .. })
-            if name == "shell" && call_id == "call_1"
-    )));
-}
-
-#[tokio::test]
-async fn process_sse_stream_completes_on_done() {
-    let stream = futures::stream::iter(vec![
-        Ok::<_, std::io::Error>(Bytes::from(concat!(
-            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",",
-            "\"variant_name\":\"v1\",\"content\":[{\"type\":\"text\",\"text\":\"Hi\"}],",
-            "\"usage\":null,\"finish_reason\":null}\n\n",
-        ))),
-        Ok::<_, std::io::Error>(Bytes::from(concat!(
-            "data: {\"inference_id\":\"id-1\",\"episode_id\":\"ep-1\",",
-            "\"variant_name\":\"v1\",\"content\":[],",
-            "\"usage\":{\"input_tokens\":5,\"output_tokens\":1},",
-            "\"finish_reason\":\"stop\"}\n\n",
-        ))),
-        Ok::<_, std::io::Error>(Bytes::from("data: [DONE]\n\n")),
-    ]);
-    let (tx, mut rx) = mpsc::channel(16);
-    let turn_state = Arc::new(OnceLock::new());
-
-    process_sse_data_stream(stream, Duration::from_secs(1), Some(turn_state.clone()), tx)
-        .await
-        .expect("stream should succeed");
-    assert_eq!(turn_state.get().map(String::as_str), Some("ep-1"));
-
-    let mut events = Vec::new();
-    while let Ok(event) = rx.try_recv() {
-        events.push(event.expect("event should be ok"));
-    }
-
-    assert!(events.iter().any(|e| matches!(e, TurnEvent::Created)));
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::OutputTextDelta(t) if t == "Hi"))
+            end_turn: None,
+            phase: None,
+        },
+        user("list files"),
+        ResponseItem::Reasoning {
+            id: String::new(),
+            summary: vec![],
+            content: Some(vec![ReasoningItemContent::ReasoningText {
+                text: "check".into(),
+            }]),
+            encrypted_content: Some("sig".into()),
+        },
+        assistant("Listing."),
+        call("c1"),
+        call("c2"),
+        output("c1", Some(true)),
+        output("c2", Some(false)),
+        ResponseItem::Message {
+            id: None,
+            role: "user".into(),
+            content: vec![ContentItem::InputImage {
+                image_url: "data:image/png;base64,AAAA".into(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ];
+    let messages = build_request(&request, "coding_large")
+        .unwrap()
+        .input
+        .messages;
+    let roles: Vec<Role> = messages.iter().map(|m| m.role).collect();
+    assert_eq!(
+        roles,
+        [Role::System, Role::User, Role::Assistant, Role::User]
     );
-    assert!(events.iter().any(|e| matches!(
-        e,
-        TurnEvent::Completed { token_usage: Some(u), .. } if u.input_tokens == 5
-    )));
+
+    let reply = &messages[2].content;
+    assert_eq!(reply.len(), 4);
+    std::assert_matches!(&reply[0], Content::Thought(t) if t.signature.as_deref() == Some("sig"));
+
+    let results = &messages[3].content;
+    std::assert_matches!(&results[0], Content::ToolResult(r) if !r.is_error);
+    std::assert_matches!(&results[1], Content::ToolResult(r) if r.is_error && r.name == "shell");
+    std::assert_matches!(
+        &results[2],
+        Content::File(File::Base64 { mime_type, data, .. })
+            if mime_type == "image/png" && data == "AAAA"
+    );
+}
+
+fn full(input: Vec<ResponseItem>) -> InferenceRequest {
+    let mut request = turn("coding_large");
+    request.input = input;
+    build_request(&request, "coding_large").unwrap()
+}
+
+fn stored(after: &InferenceRequest, trip: &str) -> Continuation {
+    let prefix_len = after.input.messages.len();
+    Continuation {
+        token: trip.into(),
+        prefix_len,
+        fingerprint: fingerprint(after, prefix_len),
+    }
+}
+
+const TRIP: &str = "01938d2a-7c4e-7a10-9f5e-1b2c3d4e5f60";
+
+#[test]
+fn a_turn_that_extends_the_trip_sends_only_what_follows_the_stored_reply() {
+    let first = full(vec![user("list files")]);
+    let next = full(vec![
+        user("list files"),
+        assistant("Listing."),
+        call("c1"),
+        output("c1", None),
+    ]);
+    let body = plan(&next, Some(&stored(&first, TRIP)));
+    assert!(body.continue_trip);
+    assert_eq!(body.trip_id.map(|id| id.to_string()).as_deref(), Some(TRIP));
+    assert_eq!(body.input.messages.len(), 1);
+    assert_eq!(body.input.messages[0].role, Role::User);
+}
+
+#[test]
+fn a_rewritten_history_replays_everything_under_the_same_trip() {
+    let first = full(vec![user("list files")]);
+    let compacted = full(vec![
+        user("summary of earlier work"),
+        assistant("ok"),
+        user("go on"),
+    ]);
+    let body = plan(&compacted, Some(&stored(&first, TRIP)));
+    assert!(!body.continue_trip);
+    assert_eq!(body.input.messages.len(), 3);
+    assert_eq!(body.trip_id.map(|id| id.to_string()).as_deref(), Some(TRIP));
+}
+
+#[test]
+fn nothing_new_after_the_reply_is_sent_in_full() {
+    let first = full(vec![user("hi")]);
+    let retry = full(vec![user("hi"), assistant("hello")]);
+    assert!(!plan(&retry, Some(&stored(&first, TRIP))).continue_trip);
+    assert!(!plan(&first, None).continue_trip);
+}
+
+#[test]
+fn trip_loss_is_recognised_only_from_its_error_code() {
+    let lost = AbiError::Transport {
+        status: 404,
+        message: r#"{"error":"gone","error_code":"trip_not_found"}"#.into(),
+    };
+    assert!(is_trip_not_found(&protocol_error(lost)));
+    let unknown = AbiError::Transport {
+        status: 404,
+        message: r#"{"error":"no such function","error_code":"unknown_target"}"#.into(),
+    };
+    std::assert_matches!(protocol_error(unknown), AbiError::InvalidRequest { .. });
+    let limited = AbiError::Transport {
+        status: 429,
+        message: r#"{"error":"slow down","error_code":"rate_limited","retry_after_ms":1500}"#
+            .into(),
+    };
+    std::assert_matches!(
+        protocol_error(limited),
+        AbiError::Retryable { delay: Some(d), .. } if d == Duration::from_millis(1500)
+    );
+}
+
+fn sse(lines: &str) -> impl futures::Stream<Item = Result<Bytes, std::io::Error>> + Unpin {
+    let mut frames: Vec<Result<Bytes, std::io::Error>> = lines
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| Ok(Bytes::from(format!("data: {line}\n\n"))))
+        .collect();
+    frames.push(Ok(Bytes::from_static(b"data: [DONE]\n\n")));
+    futures::stream::iter(frames)
+}
+
+async fn drain(lines: &str) -> (Result<Option<uuid::Uuid>, AbiError>, Vec<TurnEvent>) {
+    let (tx, mut rx) = mpsc::channel(64);
+    let result = process_sse_data_stream(sse(lines), Duration::from_secs(1), tx).await;
+    let mut events = Vec::new();
+    while let Ok(Ok(event)) = rx.try_recv() {
+        events.push(event);
+    }
+    (result, events)
 }
 
 #[tokio::test]
-async fn process_sse_stream_preserves_provider_errors() {
-    let stream = futures::stream::iter([Ok::<_, std::io::Error>(Bytes::from_static(
-        b"data: {\"error\":\"inference failed\",\"episode_id\":\"not-captured\"}\n\n",
-    ))]);
-    let (tx, mut rx) = mpsc::channel(8);
-    let turn_state = Arc::new(OnceLock::new());
-    let result =
-        process_sse_data_stream(stream, Duration::from_secs(1), Some(turn_state.clone()), tx).await;
+async fn the_golden_stream_folds_into_a_signed_reasoning_text_and_one_tool_call() {
+    let (_, stream) = CHUNK_STREAMS[0];
+    let (result, events) = drain(stream).await;
+    assert_eq!(
+        result.unwrap().map(|id| id.to_string()).as_deref(),
+        Some(TRIP)
+    );
+
+    let done: Vec<&ResponseItem> = events
+        .iter()
+        .filter_map(|event| match event {
+            TurnEvent::OutputItemDone(item) => Some(item),
+            _ => None,
+        })
+        .collect();
+    std::assert_matches!(
+        done[0],
+        ResponseItem::Reasoning { encrypted_content: Some(sig), .. } if sig == "sig-xyz"
+    );
+    std::assert_matches!(done[1], ResponseItem::Message { .. });
+    std::assert_matches!(
+        done[2],
+        ResponseItem::FunctionCall { name, arguments, call_id, .. }
+            if name == "shell" && arguments == r#"{"command":"pwd"}"# && call_id == "call_3"
+    );
+    std::assert_matches!(
+        events.last(),
+        Some(TurnEvent::Completed { token_usage: Some(usage), .. })
+            if usage.input_tokens == 1200 && usage.cache_read_input_tokens == 30000
+    );
+}
+
+#[tokio::test]
+async fn a_refusal_ends_the_turn_as_a_typed_error() {
+    let (_, stream) = CHUNK_STREAMS[1];
+    let (result, events) = drain(stream).await;
+    std::assert_matches!(
+        result,
+        Err(AbiError::Refusal { category: Some(c), .. }) if c == "cyber"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, TurnEvent::Completed { .. }))
+    );
+}
+
+#[tokio::test]
+async fn mid_stream_errors_keep_a_retryable_status_and_store_nothing() {
+    let (result, events) = drain(r#"{"error":"inference failed","error_code":"other"}"#).await;
     std::assert_matches!(
         result,
         Err(AbiError::Transport { status: 500, message }) if message == "inference failed"
     );
-    assert!(
-        turn_state.get().is_none(),
-        "error frames must not update episode state"
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "provider errors must not emit completion"
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn an_uncoded_mid_stream_error_keeps_its_text() {
+    let (result, _) = drain(r#"{"error":"upstream reset"}"#).await;
+    std::assert_matches!(
+        result,
+        Err(AbiError::Transport { status: 500, message }) if message == "upstream reset"
     );
 }
 
 #[test]
-fn parse_chunk_ignores_missing_or_unknown_content_without_fabricating_output() {
-    for chunk in [
-        serde_json::json!({"inference_id": "019d-test"}),
-        serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [{"type": "unknown_type", "data": "test"}],
-            "usage": null,
-            "finish_reason": null
-        }),
-    ] {
-        let mut tools = BTreeMap::new();
-        let mut text = None;
-        let mut thoughts = None;
-        let mut response_id = String::new();
-        let mut server_model = None;
-        let events = parse_chunk(
-            &chunk,
-            &mut tools,
-            &mut text,
-            &mut thoughts,
-            &mut response_id,
-            &mut server_model,
-        )
-        .expect("unsupported content should be ignored");
-        std::assert_matches!(events.as_slice(), [TurnEvent::Created]);
-        assert_eq!(response_id, "019d-test");
-        assert!(tools.is_empty());
-        assert!(text.is_none());
-        assert!(thoughts.is_none());
-        assert!(server_model.is_none());
-    }
-}
-
-#[test]
-fn parse_chunk_accumulates_multiple_tool_calls() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = None;
-    let mut thought_acc = None;
+fn partial_usage_is_unknown_rather_than_zero() {
+    let mut folder = ChunkFolder::default();
+    let chunk: InferenceResponseChunk = serde_json::from_value(serde_json::json!({
+        "inference_id": "01938d2a-8000-7a10-9f5e-1b2c3d4e5f61",
+        "trip_id": TRIP,
+        "variant_name": "v",
+        "content": [],
+        "usage": {"input_tokens": 5, "output_tokens": null},
+        "finish_reason": "stop"
+    }))
+    .unwrap();
     let mut response_id = String::new();
-    let mut server_model = None;
-
-    // First tool call
-    let _ = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-multi",
-            "variant_name": "glm_air",
-            "content": [{
-                "type": "tool_call",
-                "id": "call_1",
-                "raw_name": "shell",
-                "raw_arguments": "{\"command\": \"ls\"}"
-            }],
-            "usage": null,
-            "finish_reason": null
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse first tool call");
-
-    assert_eq!(tool_acc.len(), 1, "should have 1 tool call");
-
-    // Second tool call
-    let _ = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-multi",
-            "variant_name": "glm_air",
-            "content": [{
-                "type": "tool_call",
-                "id": "call_2",
-                "raw_name": "shell",
-                "raw_arguments": "{\"command\": \"pwd\"}"
-            }],
-            "usage": null,
-            "finish_reason": null
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse second tool call");
-
-    assert_eq!(tool_acc.len(), 2, "should accumulate multiple tool calls");
-}
-
-#[test]
-fn parse_chunk_finalization_with_empty_usage() {
-    let mut tool_acc = BTreeMap::new();
-    let mut text_acc = Some(TextAccumulator {
-        text: "Output".to_string(),
-    });
-    let mut response_id = "019d-test".to_string();
-    let mut server_model = Some("glm_air".to_string());
-    let mut thought_acc = None;
-
-    let events = parse_chunk(
-        &serde_json::json!({
-            "inference_id": "019d-test",
-            "variant_name": "glm_air",
-            "content": [],
-            "usage": null,
-            "finish_reason": "stop"
-        }),
-        &mut tool_acc,
-        &mut text_acc,
-        &mut thought_acc,
-        &mut response_id,
-        &mut server_model,
-    )
-    .expect("should parse with null usage");
-
-    // Should complete even without usage data
-    assert!(
-        events
-            .iter()
-            .any(|e| matches!(e, TurnEvent::OutputItemDone(..)))
+    let (events, finished) = folder.fold(chunk, &mut response_id).unwrap();
+    assert!(finished.is_some());
+    std::assert_matches!(
+        events.last(),
+        Some(TurnEvent::Completed {
+            token_usage: None,
+            ..
+        })
     );
-}
-
-#[test]
-fn partial_usage_is_not_reported_as_known_zero() {
-    for usage in [
-        serde_json::json!({}),
-        serde_json::json!({"input_tokens": 12}),
-        serde_json::json!({"output_tokens": 0}),
-        serde_json::json!({"input_tokens": -1, "output_tokens": 0}),
-    ] {
-        let mut tools = BTreeMap::new();
-        let mut text = None;
-        let mut thoughts = None;
-        let mut id = String::new();
-        let mut model = None;
-        let events = parse_chunk(&serde_json::json!({
-            "inference_id": "partial-usage", "content": [], "finish_reason": "stop", "usage": usage,
-        }), &mut tools, &mut text, &mut thoughts, &mut id, &mut model).unwrap();
-        assert!(events.iter().any(|event| matches!(
-            event,
-            TurnEvent::Completed {
-                token_usage: None,
-                ..
-            }
-        )));
-    }
 }

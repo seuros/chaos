@@ -9,6 +9,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 /// - **OpenAI**: `reasoning.effort` + `reasoning.summary`
 /// - **Anthropic**: `thinking.type` = `"enabled"`, `thinking.budget_tokens`
 ///   derived from effort level
+/// - **LSD**: `params.chat_completion.reasoning_effort`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReasoningConfig {
     /// How much effort the model should spend reasoning.

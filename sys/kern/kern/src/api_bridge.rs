@@ -161,6 +161,9 @@ pub(crate) fn abi_error_to_api_error(err: AbiError) -> ApiError {
             body: Some(message),
         }),
         AbiError::Retryable { message, delay } => ApiError::Retryable { message, delay },
+        refusal @ AbiError::Refusal { .. } => ApiError::InvalidRequest {
+            message: refusal.to_string(),
+        },
     }
 }
 

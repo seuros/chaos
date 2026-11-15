@@ -75,6 +75,8 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- The monitor shows each machine's own health and limits, and a monitor that
+  starts late still learns a machine is recovering.
 - A monitor watching other machines keeps listening after the database drops
   its connection, instead of going quiet until restarted.
 - The monitor keeps an exited process's sessions for ten minutes, so a short

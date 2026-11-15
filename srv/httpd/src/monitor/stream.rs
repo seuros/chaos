@@ -32,7 +32,7 @@ pub(super) fn dashboard(state: &ServerState, host: &Option<String>) -> Patch {
     replace(&Dashboard {
         machines: machines(state, host)?,
         summary: summary_from(state, &board, host),
-        machine: Machine::from(&board),
+        machine: Machine::from(&board, host.is_some()),
         instruments: Instruments::from(&board, now),
         map: Map::from(&board, now),
         attention: Attention::from(&board, now),
@@ -105,7 +105,7 @@ pub(super) fn patch(state: &ServerState, change: &Change, host: &Option<String>)
             patches
         }
         Change::Machine => vec![
-            replace(&Machine::from(&board)),
+            replace(&Machine::from(&board, host.is_some())),
             replace(&Attention::from(&board, now)),
         ],
         Change::Limits => vec![replace(&Instruments::from(&board, now))],

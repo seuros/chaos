@@ -1,4 +1,5 @@
-.machine p { margin-bottom: var(--space-2); }
+.machine-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1); margin-bottom: var(--space-2); }
+.machine-host { color: var(--text); margin-right: var(--space-1); }
 .machine-causes { display: flex; gap: var(--space-1); flex-wrap: wrap; }
 .machine[data-pausing="true"] { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); }
 .machine[data-pausing="true"]::before { border-color: var(--bad); }

@@ -12,6 +12,7 @@ impl Board {
         origin: Origin,
         event: &ActivityEvent,
     ) -> Vec<Change> {
+        let host = origin.host.clone();
         if !matches!(
             event.activity,
             Activity::Machine { .. } | Activity::Limits { .. }
@@ -24,7 +25,7 @@ impl Board {
                 .or_insert_with(|| Session::new(event.at_ms))
                 .origin = Some(origin);
         }
-        let mut changes = self.apply(event);
+        let mut changes = self.apply_on(&host, event);
         changes.push(Change::SessionAdded);
         changes.dedup();
         changes
@@ -56,6 +57,8 @@ impl Board {
         view.stations.retain(|(h, _), _| h == host);
         view.route.retain(|(h, ..)| h == host);
         view.elsewhere.retain(|origin| origin.host == host);
+        view.machine.retain(|h, _| h == host);
+        view.limits.retain(|h, _| h == host);
         view
     }
 

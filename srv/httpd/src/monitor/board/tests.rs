@@ -122,7 +122,10 @@ fn host_wide_state_does_not_invent_a_session() {
     assert!(board.sessions.is_empty());
     assert_eq!(
         board.machine,
-        Some((MachinePhase::Warning, vec![MachineCause::Thermal]))
+        std::collections::BTreeMap::from([(
+            chaos_kern::activity::fleet::local_host().to_string(),
+            (MachinePhase::Warning, vec![MachineCause::Thermal])
+        )])
     );
 }
 
@@ -368,4 +371,45 @@ fn a_one_machine_view_lists_its_processes_without_repeating_the_machine() {
         crate::monitor::widgets::origin_label(&origin),
         "console 9064 @ magellan"
     );
+}
+
+#[test]
+fn each_machine_keeps_its_own_health_and_limits() {
+    use chaos_kern::activity::fleet::OriginKind;
+    let mut board = Board::default();
+    let origin = |host: &str| Origin {
+        kind: OriginKind::Console,
+        pid: 1,
+        host: host.into(),
+    };
+    let hot = Activity::Machine {
+        phase: MachinePhase::Stabilizing,
+        causes: vec![MachineCause::Thermal],
+    };
+    let fine = Activity::Machine {
+        phase: MachinePhase::Healthy,
+        causes: Vec::new(),
+    };
+    board.apply_remote(origin("magellan"), &event(ProcessId::new(), 1, hot));
+    board.apply_remote(origin("silica"), &event(ProcessId::new(), 2, fine));
+    assert_eq!(board.machine["magellan"].0, MachinePhase::Stabilizing);
+    assert_eq!(
+        board.machine["silica"].0,
+        MachinePhase::Healthy,
+        "silica reporting later does not overwrite magellan"
+    );
+    assert_eq!(board.only("silica").machine.len(), 1);
+    assert!(board.only("silica").machine.contains_key("silica"));
+
+    let window = |used| Activity::Limits {
+        windows: vec![LimitWindow {
+            used_percent: used,
+            window_minutes: Some(10_080),
+            resets_at: None,
+        }],
+    };
+    board.apply_remote(origin("magellan"), &event(ProcessId::new(), 3, window(70)));
+    board.apply_remote(origin("silica"), &event(ProcessId::new(), 4, window(20)));
+    assert_eq!(board.limits["magellan"][0].used_percent, 70);
+    assert_eq!(board.limits["silica"][0].used_percent, 20);
 }

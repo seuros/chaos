@@ -69,37 +69,48 @@ impl Machines {
     }
 }
 
+/// Machine health: one machine's state, or every machine that is unwell.
 #[derive(Serialize)]
 pub(super) struct Machine {
+    pub hosts: Vec<Health>,
+    pub pausing: bool,
+}
+
+#[derive(Serialize)]
+pub(super) struct Health {
+    /// Omitted when the view already shows one machine.
+    pub host: Option<String>,
     pub phase: String,
     pub tone: &'static str,
     pub causes: Vec<String>,
-    pub pausing: bool,
 }
 
 impl Widget for Machine {
     const NAME: &'static str = "machine";
 }
 
+pub(super) fn pausing(phase: &MachinePhase) -> bool {
+    !matches!(phase, MachinePhase::Healthy | MachinePhase::Recovered)
+}
+
 impl Machine {
-    pub(super) fn from(board: &Board) -> Self {
-        match &board.machine {
-            Some((phase, causes)) => {
-                let pausing = !matches!(phase, MachinePhase::Healthy | MachinePhase::Recovered);
-                Self {
-                    phase: name(phase),
-                    tone: if pausing { "bad" } else { "good" },
-                    causes: causes.iter().map(name).collect(),
-                    pausing,
-                }
-            }
-            // Sessions report only changes; a machine that never warned says nothing.
-            None => Self {
-                phase: "no warnings".into(),
-                tone: "quiet",
-                causes: Vec::new(),
-                pausing: false,
-            },
+    /// `one`: the view holds a single machine, so its state is always shown;
+    /// across machines only the unwell ones are worth a line.
+    pub(super) fn from(board: &Board, one: bool) -> Self {
+        let hosts: Vec<Health> = board
+            .machine
+            .iter()
+            .filter(|(_, (phase, _))| one || pausing(phase))
+            .map(|(host, (phase, causes))| Health {
+                host: (!one).then(|| host.clone()),
+                phase: name(phase),
+                tone: if pausing(phase) { "bad" } else { "good" },
+                causes: causes.iter().map(name).collect(),
+            })
+            .collect();
+        Self {
+            pausing: board.machine.values().any(|(phase, _)| pausing(phase)),
+            hosts,
         }
     }
 }

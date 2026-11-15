@@ -445,3 +445,39 @@ async fn a_request_reports_the_model_that_served_it() {
         .expect("the request never ended on the bus");
     assert_eq!(model, "claude-served");
 }
+
+#[test]
+fn a_late_resident_learns_a_machine_still_recovering() {
+    let process_id = ProcessId::new();
+    OPEN.lock().unwrap().insert(
+        process_id,
+        Open {
+            model: "model-a".to_string(),
+            at_ms: 1,
+            machine: None,
+        },
+    );
+    machine(
+        process_id,
+        crate::machine_recovery::Phase::Stabilizing,
+        vec!["thermal"],
+    );
+    let ours: Vec<_> = open_sessions()
+        .into_iter()
+        .filter(|event| event.process_id == process_id)
+        .map(|event| event.activity)
+        .collect();
+    assert_eq!(
+        ours,
+        vec![
+            Activity::SessionOpened {
+                model: "model-a".to_string()
+            },
+            Activity::Machine {
+                phase: MachinePhase::Stabilizing,
+                causes: vec![MachineCause::Thermal],
+            },
+        ]
+    );
+    OPEN.lock().unwrap().remove(&process_id);
+}

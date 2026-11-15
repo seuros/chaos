@@ -133,6 +133,16 @@ All errors are JSON. `caller_session_id` and `conversation_id` are included when
 | `500` | Process error (agent failure, runtime crash). Internal details are logged, not returned. |
 | `504` | Timeout exceeded. Process is cleaned up. |
 
+### `POST /inference`
+
+The native LSD inference protocol on the configured providers. Bearer auth.
+The caller keeps the conversation and runs its own tools.
+
+- `model_name` is `provider::model`; a bare name uses the default provider.
+- `stream: true` answers server-sent chunks ending in `data: [DONE]`.
+- No trips: `continue_trip` answers `404 trip_not_found`, and the client replays.
+- Errors carry `error_code`; `max_tokens` and `temperature` follow the model's configuration.
+
 ### `GET /monitor` and `GET /monitor/events`
 
 A live, read-only view of the resident: sessions and minions, tool calls by

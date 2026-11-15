@@ -39,7 +39,6 @@ pub(crate) use adapters::annotation_labels;
 #[cfg(test)]
 pub(crate) use adapters::annotation_suffix;
 pub use adapters::create_tools_json_for_responses_api;
-#[cfg(test)]
 pub(crate) use adapters::dynamic_tool_to_model_tool;
 #[cfg(test)]
 pub(crate) use adapters::mcp_tool_to_deferred_model_tool;

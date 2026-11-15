@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- `chaos serve` answers `POST /inference`, the native LSD protocol, so an LSD
+  provider can point at another chaos.
 - The LSD provider continues the gateway's trip within a turn, sends signed
   reasoning back, and replays the conversation when the trip is lost.
 - The monitor shows each session's MCP servers, lit while one of their tools

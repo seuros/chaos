@@ -94,3 +94,17 @@ async fn a_resident_keeps_listening_after_the_server_drops_it() {
         .expect("the resident never listened again");
     assert_eq!(joined, origin);
 }
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL"]
+async fn a_probed_resident_still_looks_like_it_is_listening() {
+    let url = std::env::var("TEST_DATABASE_URL").unwrap();
+    let _heard = listen(&url).await.unwrap();
+    let pool = PgPool::connect(&url).await.unwrap();
+    // Several probes run in this time under test.
+    tokio::time::sleep(PROBE * 4).await;
+    assert!(
+        watched(&pool).await,
+        "processes stop forwarding when the probe hides the LISTEN"
+    );
+}

@@ -32,8 +32,10 @@ const EXITED_KEEP_MS: i64 = 10 * 60_000;
 #[derive(Debug, Default, Clone)]
 pub(super) struct Board {
     pub sessions: HashMap<ProcessId, Session>,
-    pub machine: Option<(MachinePhase, Vec<MachineCause>)>,
-    pub limits: Vec<LimitWindow>,
+    /// Each machine's health, as its sessions last reported it.
+    pub machine: BTreeMap<String, (MachinePhase, Vec<MachineCause>)>,
+    /// Rate limits by machine: each reports its own provider account's.
+    pub limits: BTreeMap<String, Vec<LimitWindow>>,
     /// Finished calls by machine and station.
     pub stations: HashMap<(String, Station), Tally>,
     pub feed: VecDeque<Entry>,
@@ -180,14 +182,24 @@ impl Session {
 
 impl Board {
     pub(super) fn apply(&mut self, event: &ActivityEvent) -> Vec<Change> {
+        let host = self.sessions.get(&event.process_id).map_or_else(
+            || chaos_kern::activity::fleet::local_host().to_string(),
+            |session| session.host().to_string(),
+        );
+        self.apply_on(&host, event)
+    }
+
+    /// `host`: the machine the event came from.
+    pub(super) fn apply_on(&mut self, host: &str, event: &ActivityEvent) -> Vec<Change> {
         let id = event.process_id;
         match &event.activity {
             Activity::Machine { phase, causes } => {
-                self.machine = Some((*phase, causes.clone()));
+                self.machine
+                    .insert(host.to_string(), (*phase, causes.clone()));
                 return vec![Change::Machine];
             }
             Activity::Limits { windows } => {
-                self.limits = windows.clone();
+                self.limits.insert(host.to_string(), windows.clone());
                 return vec![Change::Limits];
             }
             _ => {}

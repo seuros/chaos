@@ -103,10 +103,14 @@ impl Instruments {
             (input > 0).then(|| format!("{} of {}", compact(cached), compact(input))),
         );
         let now_s = now_ms / 1_000;
+        // Each machine reports its own account's limits; name the machine
+        // when the pane shows more than one.
+        let several = board.limits.len() > 1;
         let limits = board
             .limits
             .iter()
-            .map(|window| {
+            .flat_map(|(host, windows)| windows.iter().map(move |window| (host, window)))
+            .map(|(host, window)| {
                 let pace =
                     window
                         .window_minutes
@@ -118,10 +122,15 @@ impl Instruments {
                                 (100 - left * 100 / length) as u8
                             })
                         });
+                let span = window
+                    .window_minutes
+                    .map_or_else(|| "window".into(), window_label);
                 Gauge {
-                    label: window
-                        .window_minutes
-                        .map_or_else(|| "window".into(), window_label),
+                    label: if several {
+                        format!("{span} · {host}")
+                    } else {
+                        span
+                    },
                     used: window.used_percent,
                     pace,
                     ahead: pace.is_some_and(|pace| window.used_percent > pace.saturating_add(5)),

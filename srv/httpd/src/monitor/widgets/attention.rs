@@ -1,6 +1,6 @@
 //! What deserves a look, worst first. Every rule reads only the board.
 
-use chaos_kern::activity::{AgentRun, MachinePhase};
+use chaos_kern::activity::AgentRun;
 use serde::Serialize;
 
 use super::super::board::{self, Board};
@@ -45,17 +45,17 @@ impl Attention {
                 rank,
             });
         };
-        if let Some((phase, causes)) = &board.machine
-            && !matches!(phase, MachinePhase::Healthy | MachinePhase::Recovered)
-        {
-            let causes: Vec<_> = causes.iter().map(name).collect();
-            push(
-                0,
-                "bad",
-                "agents paused".into(),
-                format!("machine {}: {}", name(phase), causes.join(", ")),
-                None,
-            );
+        for (host, (phase, causes)) in &board.machine {
+            if super::pausing(phase) {
+                let causes: Vec<_> = causes.iter().map(name).collect();
+                push(
+                    0,
+                    "bad",
+                    "agents paused".into(),
+                    format!("{host} {}: {}", name(phase), causes.join(", ")),
+                    None,
+                );
+            }
         }
         for (id, session) in &board.sessions {
             let who = Some(short(&id.to_string()));

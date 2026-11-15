@@ -60,7 +60,7 @@ fn the_dashboard_composes_every_widget_under_its_id() {
     let html = Dashboard {
         machines: crate::monitor::widgets::Machines::from(&board.hosts(), None),
         summary: summary(),
-        machine: Machine::from(&board),
+        machine: Machine::from(&board, false),
         instruments: Instruments::from(&board, 2_000),
         map: Map::from(&board, 2_000),
         attention: Attention::from(&board, 2_000),

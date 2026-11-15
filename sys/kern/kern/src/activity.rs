@@ -45,7 +45,15 @@ pub fn subscribe() -> broadcast::Receiver<ActivityEvent> {
 
 /// Sessions open in this process, so a resident that connects late can be
 /// told about the idle ones too.
-static OPEN: LazyLock<Mutex<HashMap<ProcessId, (String, i64)>>> = LazyLock::new(Default::default);
+static OPEN: LazyLock<Mutex<HashMap<ProcessId, Open>>> = LazyLock::new(Default::default);
+
+/// What a late resident needs to know about a session already open.
+struct Open {
+    model: String,
+    at_ms: i64,
+    /// The machine health it last reported; health is sent only on change.
+    machine: Option<Activity>,
+}
 
 pub(crate) fn publish(process_id: ProcessId, msg: &EventMsg) {
     track_open(process_id, msg);
@@ -65,7 +73,11 @@ fn track_open(process_id: ProcessId, msg: &EventMsg) {
         EventMsg::SessionConfigured(ev) => {
             open.insert(
                 process_id,
-                (ev.model.clone(), jiff::Timestamp::now().as_millisecond()),
+                Open {
+                    model: ev.model.clone(),
+                    at_ms: jiff::Timestamp::now().as_millisecond(),
+                    machine: None,
+                },
             );
         }
         EventMsg::ShutdownComplete => {
@@ -80,15 +92,24 @@ pub fn open_sessions() -> Vec<ActivityEvent> {
     let Ok(open) = OPEN.lock() else {
         return Vec::new();
     };
-    open.iter()
-        .map(|(process_id, (model, at_ms))| ActivityEvent {
+    let mut events = Vec::new();
+    for (process_id, session) in open.iter() {
+        events.push(ActivityEvent {
             process_id: *process_id,
-            at_ms: *at_ms,
+            at_ms: session.at_ms,
             activity: Activity::SessionOpened {
-                model: model.clone(),
+                model: session.model.clone(),
             },
-        })
-        .collect()
+        });
+        if let Some(machine) = &session.machine {
+            events.push(ActivityEvent {
+                process_id: *process_id,
+                at_ms: session.at_ms,
+                activity: machine.clone(),
+            });
+        }
+    }
+    events
 }
 
 fn changed(process_id: ProcessId, activity: &Activity) -> bool {
@@ -117,14 +138,17 @@ pub(crate) fn machine(
     phase: crate::machine_recovery::Phase,
     causes: Vec<&'static str>,
 ) {
+    let activity = Activity::Machine {
+        phase: phase.into(),
+        causes: causes.into_iter().filter_map(MachineCause::named).collect(),
+    };
+    if let Ok(mut open) = OPEN.lock()
+        && let Some(session) = open.get_mut(&process_id)
+    {
+        session.machine = Some(activity.clone());
+    }
     if BUS.receiver_count() > 0 {
-        send(
-            process_id,
-            Activity::Machine {
-                phase: phase.into(),
-                causes: causes.into_iter().filter_map(MachineCause::named).collect(),
-            },
-        );
+        send(process_id, activity);
     }
 }
 

@@ -133,3 +133,40 @@ fn a_minion_failing_while_its_parent_waits_is_flagged() {
         titles(&board, 6 * 60_000)
     );
 }
+
+#[test]
+fn a_paused_machine_is_named_and_only_that_one() {
+    use chaos_kern::activity::fleet::{Origin, OriginKind};
+    let mut board = Board::default();
+    let origin = |host: &str| Origin {
+        kind: OriginKind::Console,
+        pid: 1,
+        host: host.into(),
+    };
+    board.apply_remote(
+        origin("magellan"),
+        &ActivityEvent {
+            process_id: ProcessId::new(),
+            at_ms: 1,
+            activity: Activity::Machine {
+                phase: chaos_kern::activity::MachinePhase::Stabilizing,
+                causes: vec![MachineCause::Thermal],
+            },
+        },
+    );
+    board.apply_remote(
+        origin("silica"),
+        &ActivityEvent {
+            process_id: ProcessId::new(),
+            at_ms: 2,
+            activity: Activity::Machine {
+                phase: chaos_kern::activity::MachinePhase::Healthy,
+                causes: Vec::new(),
+            },
+        },
+    );
+    let items = Attention::from(&board, 3).items;
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].detail, "magellan stabilizing: thermal");
+    assert!(Attention::from(&board.only("silica"), 3).items.is_empty());
+}

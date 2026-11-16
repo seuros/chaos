@@ -15,6 +15,8 @@ fn accepts_known_provider_key_formats() {
         ("anthropic", "sk-ant-api01-test_key-123"),
         ("anthropic", "sk-ant-api03-test_key-123"),
         ("anthropic", "sk-ant-api99-future-key-version"),
+        ("anthropic", "sk-ant-usr-user_scoped-key"),
+        ("anthropic", "sk-ant-svc01-future-kind"),
         ("charm", "sk-hyper-test-key"),
         ("moonshotai", "sk-MoonshotKey123"),
         ("moonshotai", "sk-opaque_test-key"),
@@ -65,7 +67,8 @@ fn rejects_incomplete_keys_oauth_tokens_and_wrong_formats() {
         ("openai", "sk-ant-oat01-setup-token"),
         ("openai", "eyJhbGciOiJSUzI1NiJ9.payload.signature"),
         ("anthropic", "sk-ant-api03-"),
-        ("anthropic", "sk-ant-api-secret"),
+        ("anthropic", "sk-ant-usr-"),
+        ("anthropic", "sk-ant-"),
         ("anthropic", "sk-ant-oat01-setup-token"),
         ("anthropic", "sk-ant-admin01-admin-key"),
         ("charm", "sk-hyper-"),
@@ -126,7 +129,7 @@ fn validation_errors_never_capture_or_display_the_secret() {
         assert!(!message.contains("DO_NOT_DISCLOSE"));
     }
     assert!(error.to_string().contains("Anthropic"));
-    assert!(error.to_string().contains("sk-ant-api"));
+    assert!(error.to_string().contains("sk-ant-"));
 }
 
 #[test]

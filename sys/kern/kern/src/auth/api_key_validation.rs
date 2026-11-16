@@ -46,7 +46,7 @@ pub fn validate_provider_api_key(
         ),
         "anthropic" => (
             "Anthropic",
-            "an Anthropic API key (sk-ant-api…)",
+            "an Anthropic API key (sk-ant-…), not an OAuth token or an Admin API key",
             is_anthropic_api_key(api_key),
         ),
         "charm" => (
@@ -99,13 +99,17 @@ fn has_unscoped_sk_prefix(key: &str) -> bool {
 }
 
 fn is_anthropic_api_key(key: &str) -> bool {
-    // Accept API-key versions without accepting OAuth/setup or admin tokens.
-    key.strip_prefix("sk-ant-api")
+    // Anthropic issues several API-key kinds (`sk-ant-api03-`, `sk-ant-usr-`,
+    // and more to come); accept any `sk-ant-<kind>-<secret>`. OAuth/setup
+    // tokens belong to subscription login and admin keys only reach the Admin
+    // API, so both would fail on the first request.
+    key.strip_prefix("sk-ant-")
         .and_then(|rest| rest.split_once('-'))
-        .is_some_and(|(version, secret)| {
-            !version.is_empty()
-                && version.bytes().all(|byte| byte.is_ascii_digit())
+        .is_some_and(|(kind, secret)| {
+            !kind.is_empty()
                 && !secret.is_empty()
+                && !kind.starts_with("oat")
+                && !kind.starts_with("admin")
         })
 }
 

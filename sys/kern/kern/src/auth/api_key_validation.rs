@@ -46,7 +46,7 @@ pub fn validate_provider_api_key(
         ),
         "anthropic" => (
             "Anthropic",
-            "an Anthropic API key (sk-ant-api…)",
+            "an Anthropic API key (sk-ant-api…- or sk-ant-usr-…), not an OAuth, session or admin token",
             is_anthropic_api_key(api_key),
         ),
         "charm" => (
@@ -99,13 +99,19 @@ fn has_unscoped_sk_prefix(key: &str) -> bool {
 }
 
 fn is_anthropic_api_key(key: &str) -> bool {
-    // Accept API-key versions without accepting OAuth/setup or admin tokens.
-    key.strip_prefix("sk-ant-api")
+    // An allowlist of the key kinds that reach the Messages API: versioned
+    // console keys (`api03`) and user keys (`usr`). OAuth, refresh, session and
+    // admin tokens share the `sk-ant-` prefix and must fail here, not on the
+    // first request; a new kind is a one-line addition once Anthropic issues it.
+    let digits = |s: &str| s.bytes().all(|byte| byte.is_ascii_digit());
+    key.strip_prefix("sk-ant-")
         .and_then(|rest| rest.split_once('-'))
-        .is_some_and(|(version, secret)| {
-            !version.is_empty()
-                && version.bytes().all(|byte| byte.is_ascii_digit())
-                && !secret.is_empty()
+        .is_some_and(|(kind, secret)| {
+            let known = match kind.strip_prefix("api") {
+                Some(version) => !version.is_empty() && digits(version),
+                None => kind.strip_prefix("usr").is_some_and(digits),
+            };
+            known && !secret.is_empty()
         })
 }
 

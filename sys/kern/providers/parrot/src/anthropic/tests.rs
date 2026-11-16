@@ -517,3 +517,51 @@ fn reasoning_from_another_provider_is_not_replayed() {
     assert_eq!(messages[0].content.as_array().map(Vec::len), Some(1));
     assert_eq!(messages[0].content[0]["type"], "tool_use");
 }
+
+#[test]
+fn requests_speak_api_version_2026_10_21_without_sampling_parameters() {
+    let adapter = AnthropicAdapter::new(
+        test_provider(),
+        AnthropicAuth::ApiKey("sk-ant".to_string()),
+        None,
+    );
+    let headers = adapter.build_headers().expect("headers should build");
+    assert_eq!(
+        headers
+            .get(ANTHROPIC_VERSION_HEADER)
+            .and_then(|value| value.to_str().ok()),
+        Some("2026-10-21"),
+    );
+
+    let mut request = test_request();
+    request.extensions.insert("temperature".into(), json!(0.2));
+    request.extensions.insert("top_p".into(), json!(0.9));
+    let body = build_request_body(&request, "claude-test").unwrap();
+    for field in ["temperature", "top_p", "top_k"] {
+        assert!(
+            body.get(field).is_none(),
+            "{field} is rejected on 2026-10-21"
+        );
+    }
+}
+
+#[test]
+fn documents_reach_the_api_only_in_user_turns() {
+    let document = |role: &str| ResponseItem::Message {
+        id: None,
+        role: role.to_string(),
+        content: vec![ContentItem::Document {
+            name: Some("notes.txt".to_string()),
+            mime_type: "text/plain".to_string(),
+            text: "body".to_string(),
+        }],
+        phase: None,
+        end_turn: None,
+    };
+    let messages = convert_input_to_messages(&[document("user"), document("assistant")]);
+    assert_eq!(messages[0].content[0]["type"], "document");
+    assert_eq!(
+        messages[1].content[0],
+        json!({"type": "text", "text": "[notes.txt]\nbody"})
+    );
+}

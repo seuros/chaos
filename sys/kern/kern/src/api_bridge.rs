@@ -275,6 +275,34 @@ pub(crate) fn auth_provider_from_auth(
     })
 }
 
+/// Credentials for the Anthropic Messages wire, which needs to know whether a
+/// secret is an API key (`x-api-key`) or a bearer token. Same precedence as
+/// every other provider: the stored account, then the provider's environment
+/// variable, then a configured bearer token.
+pub(crate) fn anthropic_auth(
+    auth: Option<&ChaosAuth>,
+    provider: &ModelProviderInfo,
+) -> crate::error::Result<chaos_parrot::anthropic::AnthropicAuth> {
+    use chaos_parrot::anthropic::AnthropicAuth;
+    if let Some(auth) = auth {
+        let token = auth.get_token()?;
+        return Ok(if auth.is_api_key_auth() {
+            AnthropicAuth::ApiKey(token)
+        } else {
+            AnthropicAuth::BearerToken(token)
+        });
+    }
+    match provider.api_key() {
+        Ok(Some(api_key)) => return Ok(AnthropicAuth::ApiKey(api_key)),
+        Ok(None) | Err(ChaosErr::EnvVar(_)) => {}
+        Err(other) => return Err(other),
+    }
+    if let Some(token) = provider.experimental_bearer_token.clone() {
+        return Ok(AnthropicAuth::BearerToken(token));
+    }
+    Err(provider_auth_missing(provider))
+}
+
 pub(crate) fn provider_auth_missing(provider: &ModelProviderInfo) -> ChaosErr {
     ChaosErr::ProviderAuthMissing(ProviderAuthMissingError {
         provider_id: stable_provider_id(provider),

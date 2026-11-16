@@ -7,7 +7,7 @@ Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR.TIMESTAMP`. A MAJOR
 entry means read this file before upgrading. A MINOR entry means you probably
 should. There is no patch level; the build timestamp is the patch.
 
-## [Unreleased]
+## [47.15.0] - 2026-11-16
 
 ### Added
 - Per-request tool guidance and warnings travel apart from the conversation,
@@ -82,8 +82,6 @@ should. There is no patch level; the build timestamp is the patch.
   session history, `chaos serve` session usage and `chaos exec --json`, which
   drops its `cached_input_tokens` duplicate. Upgrading rewrites stored session
   history once; stop old writers first.
-
-### Changed
 - `chaos serve`'s `/monitor` needs no token; set `--monitor-token` to require
   a viewer-only one when sharing it over an untrusted network.
 

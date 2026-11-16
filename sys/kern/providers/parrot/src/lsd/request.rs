@@ -77,6 +77,7 @@ pub(super) fn build_request(
             system: (!request.instructions.is_empty())
                 .then(|| System::Text(request.instructions.clone())),
             messages: messages(&request.input),
+            ephemeral: messages(&request.ephemeral),
         },
         stream: Some(true),
         params: Params { chat_completion },
@@ -89,16 +90,16 @@ pub(super) fn build_request(
     Ok(wire)
 }
 
-/// Pins what the server stored for a trip: the target, system prompt, tools
-/// and the first `prefix_len` messages. Any change means the trip no longer
-/// matches this conversation and the whole history must be sent again.
+/// Pins what the server stored for a trip: the target, system prompt and the
+/// first `prefix_len` messages. Any change means the trip no longer matches
+/// this conversation and the whole history must be sent again. Tools and
+/// ephemeral context travel fresh with every request, so they are not pinned.
 pub(super) fn fingerprint(request: &InferenceRequest, prefix_len: usize) -> u64 {
     let mut hasher = DefaultHasher::new();
     request.function_name.hash(&mut hasher);
     request.model_name.hash(&mut hasher);
     for part in [
         serde_json::to_string(&request.input.system),
-        serde_json::to_string(&request.additional_tools),
         serde_json::to_string(
             &request.input.messages[..prefix_len.min(request.input.messages.len())],
         ),

@@ -25,6 +25,11 @@ pub struct TurnRequest {
     /// Conversation history as neutral items.
     pub input: Vec<ResponseItem>,
 
+    /// Context for this request only, sent after the history and never part
+    /// of it: guidance derived from the current tools and mode, and live
+    /// warnings. A backend that stores the conversation must not keep it.
+    pub ephemeral: Vec<ResponseItem>,
+
     /// Tool definitions in provider-neutral format.
     pub tools: Vec<ToolDef>,
 
@@ -57,4 +62,13 @@ pub struct TurnRequest {
     /// - OpenAI: `store`, `include`, `service_tier`, `prompt_cache_key`
     /// - Anthropic: `max_tokens`, `thinking.budget_tokens`, `anthropic_cache_ttl`
     pub extensions: Map<String, Value>,
+}
+
+impl TurnRequest {
+    /// History followed by this request's ephemeral context, for backends
+    /// that keep no conversation and so take both as one input.
+    pub fn inline_ephemeral(mut self) -> Self {
+        self.input.append(&mut self.ephemeral);
+        self
+    }
 }

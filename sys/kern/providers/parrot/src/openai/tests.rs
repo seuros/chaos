@@ -8,6 +8,7 @@ fn openai_turn_preparation_does_not_apply_grok_subscription_policy() {
         Some("grok-4.3".to_string()),
     );
     let mut request = TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: String::new(),
         instructions: String::new(),
@@ -68,6 +69,7 @@ fn web_search_content_types_follow_endpoint_compatibility() {
                 }
             ]);
             let mut request = TurnRequest {
+                ephemeral: Vec::new(),
                 continuation: None,
                 model: String::new(),
                 instructions: String::new(),

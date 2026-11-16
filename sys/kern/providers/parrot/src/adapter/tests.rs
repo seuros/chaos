@@ -7,6 +7,7 @@ use serde_json::json;
 
 fn make_req(model: &str) -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: model.to_string(),
         instructions: String::new(),
@@ -218,6 +219,7 @@ fn none_effort_is_preserved_for_non_kimi_providers() {
 #[test]
 fn turn_request_converts_to_responses_api_request() {
     let req = TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: "Be helpful.".to_string(),
@@ -304,6 +306,7 @@ fn extensions_populate_openai_specific_fields() {
     extensions.insert("prompt_cache_key".to_string(), json!("conv-123"));
 
     let req = TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),
@@ -335,6 +338,7 @@ fn openai_tools_extension_overrides_neutral_tool_conversion() {
     );
 
     let req = TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: TEST_MODEL.to_string(),
         instructions: String::new(),

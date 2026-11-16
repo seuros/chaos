@@ -468,6 +468,7 @@ async fn dropping_abi_adapter_stream_releases_silent_session_socket() {
     .with_websocket(session);
     let mut stream = adapter
         .stream(TurnRequest {
+            ephemeral: Vec::new(),
             continuation: None,
             model: "stall".into(),
             instructions: "instructions".into(),

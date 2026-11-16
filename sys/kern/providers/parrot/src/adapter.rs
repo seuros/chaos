@@ -34,6 +34,7 @@ pub(crate) fn turn_request_to_api_request(
     req: TurnRequest,
     representer: &dyn Representer,
 ) -> Result<ResponsesApiRequest, AbiError> {
+    let req = req.inline_ephemeral();
     let max_output_tokens = crate::common::max_output_tokens(&req)?;
     let tools: Vec<Value> = req
         .extensions

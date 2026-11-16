@@ -404,7 +404,12 @@ impl ModelClientSession {
         model_info: &ModelInfo,
         config: HttpTurnRequestConfig<'_>,
     ) -> Result<AbiTurnRequest> {
-        let input = prompt.get_formatted_input();
+        let mut input = prompt.get_formatted_input();
+        let ephemeral = prompt
+            .request_local_start
+            .filter(|start| *start <= input.len())
+            .map(|start| input.split_off(start))
+            .unwrap_or_default();
         if self.sample_token_limit.is_some() && !prompt.tools.is_empty() {
             return Err(ChaosErr::Fatal(
                 "workflow sampling cannot advertise tools".into(),
@@ -495,6 +500,7 @@ impl ModelClientSession {
             model: model_info.slug.clone(),
             instructions: prompt.base_instructions.text.clone(),
             input,
+            ephemeral,
             tools,
             parallel_tool_calls: self.sample_token_limit.is_none() && prompt.parallel_tool_calls,
             reasoning,

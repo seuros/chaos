@@ -250,7 +250,9 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
         Some(request.instructions.clone())
     };
 
-    let messages = convert_input_to_messages(&request.input);
+    let messages = convert_input_to_messages(
+        &[request.input.as_slice(), request.ephemeral.as_slice()].concat(),
+    );
     let tools = convert_tools(&request.tools);
 
     let mut body = serde_json::to_value(AnthropicRequest {

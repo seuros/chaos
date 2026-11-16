@@ -68,6 +68,7 @@ async fn adapter_selects_json_for_schema_and_sse_otherwise() {
         let adapter =
             ChatCompletionsAdapter::from_base_url_and_api_key(server.uri(), "secret".into(), None);
         let request = TurnRequest {
+            ephemeral: Vec::new(),
             continuation: None,
             model: "test-model".into(),
             instructions: String::new(),

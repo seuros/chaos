@@ -33,6 +33,7 @@ fn user(text: &str) -> ResponseItem {
 
 fn turn(input: Vec<ResponseItem>, slot: &ContinuationSlot) -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: Some(slot.clone()),
         model: "coding_large".into(),
         instructions: "Be terse.".into(),

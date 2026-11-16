@@ -116,6 +116,7 @@ impl SpoolBackend for FailingBackend {
 fn dummy_turn_request(model: &str) -> TurnRequest {
     TurnRequest {
         continuation: None,
+        ephemeral: Vec::new(),
         model: model.into(),
         instructions: String::new(),
         input: vec![],

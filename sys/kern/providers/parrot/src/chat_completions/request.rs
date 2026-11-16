@@ -74,7 +74,9 @@ pub(crate) fn build_request_body(
         });
     }
 
-    messages.extend(convert_input_to_messages(&request.input));
+    messages.extend(convert_input_to_messages(
+        &[request.input.as_slice(), request.ephemeral.as_slice()].concat(),
+    ));
     normalize_system_messages(&mut messages);
 
     let tools = convert_tools(&request.tools);

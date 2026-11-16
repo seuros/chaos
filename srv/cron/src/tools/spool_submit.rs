@@ -212,6 +212,7 @@ async fn persist_failed_attempt(provider: &ChaosVfs, params: &SpoolSubmitParams,
 fn item_to_turn_request(item: &SpoolSubmitItem) -> TurnRequest {
     TurnRequest {
         continuation: None,
+        ephemeral: Vec::new(),
         model: item.model.clone(),
         instructions: item.instructions.clone(),
         input: vec![ResponseItem::Message {

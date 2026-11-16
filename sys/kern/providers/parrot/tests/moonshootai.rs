@@ -14,6 +14,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn turn(model: &str, input: Vec<ResponseItem>) -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: model.into(),
         instructions: "Inspect the project.".into(),

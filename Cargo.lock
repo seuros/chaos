@@ -6814,9 +6814,9 @@ dependencies = [
 
 [[package]]
 name = "lsd-protocol"
-version = "113.0.1"
+version = "113.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e24f9cd835b7a29e5dc42484de121a330022814b2cc24c0d77eacd5863900a61"
+checksum = "5cb8bcfca3cc3f70c406e08b972f7f33e4163954b6f91c8f870eeb82fc25de1e"
 dependencies = [
  "serde",
  "serde_json",

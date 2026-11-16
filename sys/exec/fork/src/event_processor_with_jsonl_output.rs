@@ -16,6 +16,7 @@ use crate::exec_events::CommandExecutionStatus;
 use crate::exec_events::ErrorItem;
 use crate::exec_events::FileChangeItem;
 use crate::exec_events::FileUpdateChange;
+use crate::exec_events::HookRunEvent;
 use crate::exec_events::ItemCompletedEvent;
 use crate::exec_events::ItemStartedEvent;
 use crate::exec_events::McpToolCallItem;
@@ -188,6 +189,18 @@ impl EventProcessorWithJsonOutput {
                 vec![ProcessEvent::Error(ProcessErrorEvent { message })]
             }
             protocol::EventMsg::PlanUpdate(ev) => vec![ProcessEvent::PlanUpdated(ev.clone())],
+            protocol::EventMsg::HookStarted(ev) => {
+                vec![ProcessEvent::HookStarted(HookRunEvent::from_run(
+                    &ev.turn_id,
+                    &ev.run,
+                ))]
+            }
+            protocol::EventMsg::HookCompleted(ev) => {
+                vec![ProcessEvent::HookCompleted(HookRunEvent::from_run(
+                    &ev.turn_id,
+                    &ev.run,
+                ))]
+            }
             _ => Vec::new(),
         }
     }

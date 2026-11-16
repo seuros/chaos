@@ -1601,3 +1601,101 @@ fn usage_deserializes_legacy_turn_completed_shape_with_safe_defaults() {
         })
     );
 }
+
+fn hook_run(
+    status: chaos_ipc::protocol::HookRunStatus,
+    completed: bool,
+) -> chaos_ipc::protocol::HookRunSummary {
+    use chaos_ipc::protocol::*;
+    HookRunSummary {
+        id: "chaos://hooks/wake".to_string(),
+        event_name: HookEventName::SessionStart,
+        handler_type: HookHandlerType::Command,
+        execution_mode: HookExecutionMode::Sync,
+        scope: HookScope::Process,
+        source_path: "/secret/path/hook.sh".into(),
+        display_order: 0,
+        status,
+        status_message: Some("STATUS-MESSAGE-SECRET".to_string()),
+        started_at: 100,
+        completed_at: completed.then_some(105),
+        duration_ms: completed.then_some(5000),
+        entries: vec![HookOutputEntry {
+            kind: HookOutputEntryKind::Context,
+            text: "HOOK-OUTPUT-SECRET".to_string(),
+        }],
+    }
+}
+
+#[test]
+fn hook_started_maps_to_hook_started_event() {
+    use chaos_ipc::protocol::*;
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let ev = event(
+        "h1",
+        EventMsg::HookStarted(HookStartedEvent {
+            turn_id: Some("turn-1".to_string()),
+            run: hook_run(HookRunStatus::Running, false),
+        }),
+    );
+    let out = ep.collect_process_events(&ev);
+    assert_eq!(
+        out,
+        vec![ProcessEvent::HookStarted(
+            chaos_fork::exec_events::HookRunEvent {
+                turn_id: Some("turn-1".to_string()),
+                id: "chaos://hooks/wake".to_string(),
+                event_name: HookEventName::SessionStart,
+                status: HookRunStatus::Running,
+                started_at: 100,
+                completed_at: None,
+                duration_ms: None,
+            }
+        )]
+    );
+    assert_eq!(
+        serde_json::to_value(&out[0]).unwrap(),
+        serde_json::json!({
+            "type": "hook.started",
+            "turn_id": "turn-1",
+            "id": "chaos://hooks/wake",
+            "event_name": "session_start",
+            "status": "running",
+            "started_at": 100,
+            "completed_at": null,
+            "duration_ms": null,
+        })
+    );
+}
+
+#[test]
+fn hook_completed_failed_maps_and_hides_hook_output() {
+    use chaos_ipc::protocol::*;
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let ev = event(
+        "h2",
+        EventMsg::HookCompleted(HookCompletedEvent {
+            turn_id: None,
+            run: hook_run(HookRunStatus::Failed, true),
+        }),
+    );
+    let out = ep.collect_process_events(&ev);
+    assert_eq!(out.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&out[0]).unwrap(),
+        serde_json::json!({
+            "type": "hook.completed",
+            "turn_id": null,
+            "id": "chaos://hooks/wake",
+            "event_name": "session_start",
+            "status": "failed",
+            "started_at": 100,
+            "completed_at": 105,
+            "duration_ms": 5000,
+        })
+    );
+    let line = serde_json::to_string(&out[0]).unwrap();
+    assert!(!line.contains("HOOK-OUTPUT-SECRET"));
+    assert!(!line.contains("STATUS-MESSAGE-SECRET"));
+    assert!(!line.contains("/secret/path"));
+}

@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- Per-request tool guidance and warnings travel apart from the conversation,
+  so an LSD trip continues across a turn's tool rounds.
 - Anthropic models get the chosen reasoning effort, keep their signed thinking
   across tool calls, and end the turn on a refusal.
 - `chaos serve` answers `POST /inference`, the native LSD protocol, so an LSD

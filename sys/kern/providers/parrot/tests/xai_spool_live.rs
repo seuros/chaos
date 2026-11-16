@@ -21,6 +21,7 @@ const OVERALL_BUDGET: Duration = Duration::from_secs(30 * 60);
 
 fn build_request(prompt: &str) -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: String::new(),
         instructions: "Reply with a single short sentence.".into(),

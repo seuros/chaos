@@ -306,7 +306,7 @@ dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] 
 landlock = "0.4.7"
 libc = "0.2.191"
 log = "0.4"
-lsd-protocol = "113.0.1"
+lsd-protocol = "113.0.2"
 lru = "0.19"
 mime_guess = "2"
 mimalloc = { version = "0.1", default-features = false }

@@ -20,6 +20,7 @@ use rama::futures;
 
 fn turn(model: &str) -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: model.into(),
         instructions: String::new(),
@@ -398,5 +399,52 @@ fn partial_usage_is_unknown_rather_than_zero() {
             token_usage: None,
             ..
         })
+    );
+}
+
+fn developer(text: &str) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "developer".into(),
+        content: vec![ContentItem::InputText { text: text.into() }],
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn shell_tool() -> chaos_abi::ToolDef {
+    chaos_abi::ToolDef::Function(chaos_abi::tools::FunctionToolDef {
+        name: "shell".into(),
+        description: "Run a command".into(),
+        parameters: serde_json::json!({"type": "object"}),
+        strict: false,
+    })
+}
+
+#[test]
+fn fresh_tools_and_ephemeral_context_still_continue_the_trip() {
+    let mut first = turn("coding_large");
+    first.input = vec![user("list files")];
+    first.ephemeral = vec![developer("Enabled tools: none.")];
+    let first = build_request(&first, "coding_large").unwrap();
+
+    let mut next = turn("coding_large");
+    next.input = vec![
+        user("list files"),
+        assistant("Listing."),
+        call("c1"),
+        output("c1", None),
+    ];
+    next.tools = vec![shell_tool()];
+    next.ephemeral = vec![developer("Enabled tools: shell.")];
+    let next = build_request(&next, "coding_large").unwrap();
+
+    let body = plan(&next, Some(&stored(&first, TRIP)));
+    assert!(body.continue_trip, "only history is pinned");
+    assert_eq!(body.input.messages.len(), 1);
+    assert_eq!(body.input.ephemeral.len(), 1);
+    std::assert_matches!(
+        &body.input.ephemeral[0].content[0],
+        Content::Text { text } if text == "Enabled tools: shell."
     );
 }

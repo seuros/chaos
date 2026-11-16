@@ -361,6 +361,7 @@ fn gemini_thought_signature_survives_tool_call_round_trip() {
     .expect("tool call should deserialize");
 
     let request = TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: "gemini-2.5-pro".to_string(),
         instructions: String::new(),

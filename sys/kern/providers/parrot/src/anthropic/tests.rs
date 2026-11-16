@@ -7,6 +7,7 @@ use std::time::Duration;
 
 fn test_request() -> TurnRequest {
     TurnRequest {
+        ephemeral: Vec::new(),
         continuation: None,
         model: "claude-test".to_string(),
         instructions: "Be helpful.".to_string(),

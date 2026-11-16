@@ -59,6 +59,9 @@ pub(super) fn turn(request: &InferenceRequest) -> Result<Turn, String> {
     for message in &request.input.messages {
         message_items(message, &mut input)?;
     }
+    for message in &request.input.ephemeral {
+        message_items(message, &mut input)?;
+    }
     let tools = match request.tool_choice {
         None | Some(ToolChoice::Auto) => tools(request),
         Some(ToolChoice::None) => Vec::new(),

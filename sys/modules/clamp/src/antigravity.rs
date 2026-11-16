@@ -1044,11 +1044,18 @@ const SECRET_KEY: &str = r"[A-Za-z0-9_.-]*(?i:token|secret|passw(?:or)?d|api[_-]
 
 /// How many contextual redaction rules there are; a test checks all compiled.
 #[cfg(test)]
-const REDACTION_RULE_COUNT: usize = 6;
+const REDACTION_RULE_COUNT: usize = 7;
 
 static CONTEXTUAL_REDACTIONS: std::sync::LazyLock<Vec<(regex_lite::Regex, &'static str)>> =
     std::sync::LazyLock::new(|| {
         let rules = [
+            // A whole Cookie / Set-Cookie header: its pairs are separated by
+            // semicolons, which end an unquoted value below, so the header
+            // goes whole, first.
+            (
+                r"(?i)\b((?:set-)?cookie\s*:\s*)[^\r\n]*".to_string(),
+                "$1[redacted]",
+            ),
             // Bearer / Basic credentials, wherever they appear.
             (
                 r#"(?i)\b(bearer|basic)\s+[^\s"',;]+"#.to_string(),
@@ -1094,7 +1101,7 @@ static CONTEXTUAL_REDACTIONS: std::sync::LazyLock<Vec<(regex_lite::Regex, &'stat
 /// and basic credentials, values of secret-named keys (whole, quoted or
 /// not), known key shapes, URL query strings, then any long opaque run.
 /// Control characters collapse to spaces.
-fn sanitise_diagnostic(text: &str) -> String {
+pub(crate) fn sanitise_diagnostic(text: &str) -> String {
     let mut text = text.to_string();
     for (pattern, replacement) in CONTEXTUAL_REDACTIONS.iter() {
         text = pattern.replace_all(&text, *replacement).into_owned();

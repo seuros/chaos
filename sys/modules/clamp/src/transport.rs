@@ -372,8 +372,15 @@ pub enum ClampError {
     #[error("Claude Code subscription authentication is unavailable")]
     AuthenticationUnavailable,
 
-    #[error("Claude Code reported a failed result")]
-    TurnFailed,
+    /// Claude Code ended the turn with an error result. `detail` is what it
+    /// said (its `result` text, or its `errors` list), bounded and with
+    /// credential shapes redacted, so a host can tell an upstream blip (an
+    /// API 5xx, a Cloudflare challenge page) from a failure of its own.
+    #[error("Claude Code reported a failed result{}", failed_result_suffix(.subtype.as_deref(), .detail.as_deref()))]
+    TurnFailed {
+        subtype: Option<String>,
+        detail: Option<String>,
+    },
 
     #[error("transport closed")]
     Closed,
@@ -610,11 +617,12 @@ impl ClampTransport {
                     result,
                     subtype,
                     is_error,
+                    errors,
                     ..
                 } = &message
                     && result_indicates_error(subtype.as_deref(), *is_error)
                 {
-                    return Err(self.classify_result_error(result));
+                    return Err(self.classify_result_error(result, subtype.as_deref(), errors));
                 }
                 return Ok(Some(message));
             }
@@ -682,17 +690,18 @@ impl ClampTransport {
         }
     }
 
-    fn classify_result_error(&self, result: &Value) -> ClampError {
-        let result = result
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| result.to_string());
-        if text_indicates_auth_failure(&result) || stderr_indicates_auth_failure(&self.stderr_tail)
-        {
-            ClampError::AuthenticationUnavailable
-        } else {
-            ClampError::TurnFailed
-        }
+    fn classify_result_error(
+        &self,
+        result: &Value,
+        subtype: Option<&str>,
+        errors: &[Value],
+    ) -> ClampError {
+        classify_failed_result(
+            result,
+            subtype,
+            errors,
+            stderr_indicates_auth_failure(&self.stderr_tail),
+        )
     }
 
     async fn write_json(&mut self, value: &Value) -> Result<(), ClampError> {
@@ -736,6 +745,7 @@ impl ClampTransport {
                 result,
                 subtype,
                 is_error,
+                errors,
                 total_cost_usd,
                 usage,
                 model_usage,
@@ -745,6 +755,7 @@ impl ClampTransport {
                     result,
                     subtype,
                     is_error,
+                    errors,
                     total_cost_usd,
                     session_id: Some(session_id),
                     usage,
@@ -915,6 +926,97 @@ fn text_indicates_auth_failure(text: &str) -> bool {
 
 fn result_indicates_error(subtype: Option<&str>, is_error: bool) -> bool {
     is_error || subtype.is_some_and(|subtype| subtype != "success")
+}
+
+/// Longest failed-result detail carried in a `TurnFailed`, in characters.
+const FAILED_RESULT_DETAIL_LIMIT: usize = 400;
+
+fn failed_result_suffix(subtype: Option<&str>, detail: Option<&str>) -> String {
+    let subtype = subtype.filter(|subtype| !subtype.is_empty() && *subtype != "success");
+    match (subtype, detail) {
+        (Some(subtype), Some(detail)) => format!(" ({subtype}): {detail}"),
+        (Some(subtype), None) => format!(" ({subtype})"),
+        (None, Some(detail)) => format!(": {detail}"),
+        (None, None) => String::new(),
+    }
+}
+
+/// A failed result as an error. Classification and the carried detail read
+/// one reason source (`failed_result_reason`), so a login failure reported
+/// only in `errors` is still `AuthenticationUnavailable`; a Cloudflare 403
+/// matches no auth marker and stays a `TurnFailed` that names itself.
+fn classify_failed_result(
+    result: &Value,
+    subtype: Option<&str>,
+    errors: &[Value],
+    stderr_says_auth: bool,
+) -> ClampError {
+    let reason = failed_result_reason(result, errors).unwrap_or_default();
+    if stderr_says_auth || text_indicates_auth_failure(&reason) {
+        ClampError::AuthenticationUnavailable
+    } else {
+        ClampError::TurnFailed {
+            subtype: subtype.map(str::to_owned),
+            detail: failed_result_detail(result, errors),
+        }
+    }
+}
+
+/// What Claude Code said about a failed turn, raw: the result text, or the
+/// errors list joined when the result is empty.
+fn failed_result_reason(result: &Value, errors: &[Value]) -> Option<String> {
+    let value_text = |value: &Value| match value {
+        Value::Null => None,
+        Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    value_text(result)
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| {
+            let joined = errors
+                .iter()
+                .filter_map(value_text)
+                .collect::<Vec<_>>()
+                .join("; ");
+            (!joined.trim().is_empty()).then_some(joined)
+        })
+}
+
+/// What Claude Code said about a failed turn, made safe to log and to hand
+/// to a host: markup stripped (an HTML error page keeps its words), runs of
+/// whitespace collapsed, credential shapes redacted, length bounded.
+fn failed_result_detail(result: &Value, errors: &[Value]) -> Option<String> {
+    let raw = failed_result_reason(result, errors)?;
+    let text = crate::antigravity::sanitise_diagnostic(&strip_markup(&raw));
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return None;
+    }
+    if text.chars().count() > FAILED_RESULT_DETAIL_LIMIT {
+        let mut bounded: String = text.chars().take(FAILED_RESULT_DETAIL_LIMIT - 1).collect();
+        bounded.push('…');
+        return Some(bounded);
+    }
+    Some(text)
+}
+
+fn strip_markup(text: &str) -> String {
+    if !text.contains('<') {
+        return text.to_owned();
+    }
+    // Patterns that fail to compile leave the text as it was; a test pins
+    // that both strip a real challenge page.
+    static SCRIPT: std::sync::LazyLock<Option<regex_lite::Regex>> =
+        std::sync::LazyLock::new(|| {
+            regex_lite::Regex::new(r"(?is)<(script|style)\b.*?</(script|style)\s*>").ok()
+        });
+    static TAG: std::sync::LazyLock<Option<regex_lite::Regex>> =
+        std::sync::LazyLock::new(|| regex_lite::Regex::new(r"(?s)<[!/?]?[A-Za-z][^<>]*>").ok());
+    let mut text = text.to_owned();
+    for pattern in [&*SCRIPT, &*TAG].into_iter().flatten() {
+        text = pattern.replace_all(&text, " ").into_owned();
+    }
+    text
 }
 
 fn control_response_request_id(msg: &Message) -> Option<&str> {

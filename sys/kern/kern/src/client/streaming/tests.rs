@@ -180,7 +180,10 @@ fn clamp_usage_leaves_context_unknown_without_assistant_usage() {
 fn claude_failures_cannot_replay_a_native_turn_through_sampling_retries() {
     for error in [
         chaos_clamp::ClampError::Closed,
-        chaos_clamp::ClampError::TurnFailed,
+        chaos_clamp::ClampError::TurnFailed {
+            subtype: None,
+            detail: None,
+        },
         chaos_clamp::ClampError::AuthenticationUnavailable,
         chaos_clamp::ClampError::Timeout("initialize".into()),
     ] {
@@ -188,6 +191,26 @@ fn claude_failures_cannot_replay_a_native_turn_through_sampling_retries() {
             crate::api_bridge::map_api_error(super::clamp_failure(&error, "clamp_runtime_failed"));
         assert!(!error.is_retryable());
     }
+}
+
+#[test]
+fn claude_failed_results_say_why_in_the_runtime_failure() {
+    let error = chaos_clamp::ClampError::TurnFailed {
+        subtype: Some("success".into()),
+        detail: Some(
+            "Failed to authenticate. API Error: 403 Attention Required! | Cloudflare".into(),
+        ),
+    };
+    let chaos_parrot::error::ApiError::InvalidRequest { message } =
+        super::clamp_failure(&error, "clamp_runtime_failed")
+    else {
+        panic!("clamp failures are invalid requests");
+    };
+    assert_eq!(
+        message,
+        "clamp_runtime_failed: Claude Code reported a failed result: \
+         Failed to authenticate. API Error: 403 Attention Required! | Cloudflare"
+    );
 }
 
 #[test]

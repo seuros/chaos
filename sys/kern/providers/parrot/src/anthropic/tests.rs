@@ -155,10 +155,20 @@ async fn model_discovery_maps_anthropics_native_metadata() {
                 "max_input_tokens": 200000,
                 "max_tokens": 8192,
                 "capabilities": {
-                    "thinking": {"supported": true, "types": {"adaptive": true}},
+                    "thinking": {"supported": true, "types": {
+                        "enabled": {"supported": false},
+                        "adaptive": {"supported": true}
+                    }},
                     "image_input": {"supported": true},
                     "structured_outputs": {"supported": true},
-                    "effort": {"supported": false}
+                    "effort": {
+                        "supported": true,
+                        "low": {"supported": true},
+                        "medium": {"supported": true},
+                        "high": {"supported": true},
+                        "xhigh": {"supported": false},
+                        "max": {"supported": true}
+                    }
                 }
             }],
             "has_more": false,
@@ -184,13 +194,22 @@ async fn model_discovery_maps_anthropics_native_metadata() {
     assert!(model.supports_thinking);
     assert!(model.supports_images);
     assert!(model.supports_structured_output);
-    assert!(!model.supports_reasoning_effort);
+    assert_eq!(
+        model.reasoning_efforts,
+        [
+            chaos_abi::ReasoningEffort::Low,
+            chaos_abi::ReasoningEffort::Medium,
+            chaos_abi::ReasoningEffort::High,
+            chaos_abi::ReasoningEffort::Max,
+        ]
+    );
 }
 
 #[test]
 fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() {
     let mut tool_acc = None;
     let mut text_acc = None;
+    let mut thinking_acc = None;
     let mut usage_acc = UsageAccumulator::default();
 
     let start_events = parse_sse_event(
@@ -209,6 +228,7 @@ fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() 
         }),
         &mut tool_acc,
         &mut text_acc,
+        &mut thinking_acc,
         &mut usage_acc,
     )
     .expect("message_start should parse");
@@ -227,6 +247,7 @@ fn streamed_usage_combines_message_start_cache_usage_and_message_delta_output() 
         }),
         &mut tool_acc,
         &mut text_acc,
+        &mut thinking_acc,
         &mut usage_acc,
     )
     .expect("message_delta should parse");
@@ -264,12 +285,14 @@ fn missing_or_partial_streamed_usage_is_not_a_fabricated_zero_receipt() {
     for start_usage in [json!(null), json!({"input_tokens": 12})] {
         let mut tools = None;
         let mut text = None;
+        let mut thinking = None;
         let mut usage = UsageAccumulator::default();
         parse_sse_event(
             "message_start",
             &json!({"message": {"usage": start_usage}}),
             &mut tools,
             &mut text,
+            &mut thinking,
             &mut usage,
         )
         .unwrap();
@@ -278,6 +301,7 @@ fn missing_or_partial_streamed_usage_is_not_a_fabricated_zero_receipt() {
             &json!({"delta": {"stop_reason": "end_turn"}}),
             &mut tools,
             &mut text,
+            &mut thinking,
             &mut usage,
         )
         .unwrap();
@@ -306,4 +330,189 @@ fn document_content_preserves_source_and_optional_title() {
         assert_eq!(value["source"]["media_type"], "text/plain");
         assert_eq!(value["source"]["data"], "document body");
     }
+}
+
+fn reasoning(
+    effort: Option<chaos_abi::ReasoningEffort>,
+    summary: bool,
+) -> Option<chaos_abi::ReasoningConfig> {
+    Some(chaos_abi::ReasoningConfig {
+        effort,
+        summary: summary.then_some(chaos_ipc::config_types::ReasoningSummary::Auto),
+    })
+}
+
+#[test]
+fn reasoning_sends_adaptive_thinking_with_the_chosen_effort() {
+    let mut request = test_request();
+    request.reasoning = reasoning(Some(chaos_abi::ReasoningEffort::XHigh), true);
+    request.output_schema = Some(json!({"type": "object"}));
+    let body = build_request_body(&request, "claude-test").unwrap();
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "adaptive", "display": "summarized"})
+    );
+    assert_eq!(body["output_config"]["effort"], "xhigh");
+    assert_eq!(body["output_config"]["format"]["type"], "json_schema");
+    assert_eq!(body["max_tokens"], THINKING_DEFAULT_MAX_TOKENS);
+
+    request.reasoning = reasoning(None, false);
+    request.output_schema = None;
+    let body = build_request_body(&request, "claude-test").unwrap();
+    assert_eq!(body["thinking"], json!({"type": "adaptive"}));
+    assert!(body.get("output_config").is_none());
+
+    request.reasoning = None;
+    let body = build_request_body(&request, "claude-test").unwrap();
+    assert!(body.get("thinking").is_none());
+    assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
+}
+
+#[test]
+fn an_explicit_budget_keeps_manual_thinking() {
+    let mut request = test_request();
+    request.reasoning = reasoning(Some(chaos_abi::ReasoningEffort::High), false);
+    request
+        .extensions
+        .insert("thinking_budget_tokens".into(), json!(4096));
+    let body = build_request_body(&request, "claude-test").unwrap();
+    assert_eq!(
+        body["thinking"],
+        json!({"type": "enabled", "budget_tokens": 4096})
+    );
+    assert!(body.get("output_config").is_none());
+    assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
+}
+
+fn stream_events(events: &[(&str, Value)]) -> Result<Vec<TurnEvent>, AbiError> {
+    let mut tools = None;
+    let mut text = None;
+    let mut thinking = None;
+    let mut usage = UsageAccumulator::default();
+    let mut out = Vec::new();
+    for (event, json) in events {
+        out.extend(parse_sse_event(
+            event,
+            json,
+            &mut tools,
+            &mut text,
+            &mut thinking,
+            &mut usage,
+        )?);
+    }
+    Ok(out)
+}
+
+#[test]
+fn a_thinking_block_finishes_as_signed_reasoning() {
+    let events = stream_events(&[
+        (
+            "content_block_start",
+            json!({"content_block": {"type": "thinking", "thinking": ""}}),
+        ),
+        (
+            "content_block_delta",
+            json!({"delta": {"type": "thinking_delta", "thinking": "check the tree"}}),
+        ),
+        (
+            "content_block_delta",
+            json!({"delta": {"type": "signature_delta", "signature": "sig-1"}}),
+        ),
+        ("content_block_stop", json!({})),
+    ])
+    .unwrap();
+    std::assert_matches!(
+        &events[0],
+        TurnEvent::OutputItemAdded(ResponseItem::Reasoning { .. })
+    );
+    std::assert_matches!(
+        events.last(),
+        Some(TurnEvent::OutputItemDone(ResponseItem::Reasoning {
+            id,
+            encrypted_content: Some(signature),
+            content: Some(content),
+            ..
+        })) if id == THINKING_ITEM_ID && signature == "sig-1" && !content.is_empty()
+    );
+}
+
+#[test]
+fn a_refusal_ends_the_turn_as_a_typed_error() {
+    let result = stream_events(&[(
+        "message_delta",
+        json!({"delta": {
+            "stop_reason": "refusal",
+            "stop_details": {"type": "refusal", "category": "cyber", "explanation": "declined"}
+        }}),
+    )]);
+    std::assert_matches!(
+        result,
+        Err(AbiError::Refusal { category: Some(c), explanation: Some(e) })
+            if c == "cyber" && e == "declined"
+    );
+}
+
+fn thinking_item(id: &str, signature: &str) -> ResponseItem {
+    ResponseItem::Reasoning {
+        id: id.to_string(),
+        summary: vec![],
+        content: Some(vec![
+            chaos_ipc::models::ReasoningItemContent::ReasoningText {
+                text: "plan".to_string(),
+            },
+        ]),
+        encrypted_content: Some(signature.to_string()),
+    }
+}
+
+fn tool_call(call_id: &str) -> ResponseItem {
+    ResponseItem::FunctionCall {
+        id: None,
+        name: "shell".to_string(),
+        namespace: None,
+        arguments: r#"{"command":"ls"}"#.to_string(),
+        call_id: call_id.to_string(),
+        provider_metadata: None,
+    }
+}
+
+fn tool_output(call_id: &str) -> ResponseItem {
+    ResponseItem::FunctionCallOutput {
+        call_id: call_id.to_string(),
+        output: chaos_ipc::models::FunctionCallOutputPayload {
+            body: chaos_ipc::models::FunctionCallOutputBody::Text("ok".to_string()),
+            success: Some(true),
+        },
+        tool_name: None,
+    }
+}
+
+#[test]
+fn signed_thinking_returns_beside_its_tool_calls_and_results_share_a_turn() {
+    let messages = convert_input_to_messages(&[
+        thinking_item(THINKING_ITEM_ID, "sig-1"),
+        tool_call("c1"),
+        tool_call("c2"),
+        tool_output("c1"),
+        tool_output("c2"),
+    ]);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].role, "assistant");
+    assert_eq!(
+        messages[0].content[0],
+        json!({"type": "thinking", "thinking": "plan", "signature": "sig-1"})
+    );
+    assert_eq!(messages[0].content.as_array().map(Vec::len), Some(3));
+    assert_eq!(messages[1].role, "user");
+    assert_eq!(messages[1].content.as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn reasoning_from_another_provider_is_not_replayed() {
+    let messages = convert_input_to_messages(&[
+        thinking_item("rs_openai", "gAAAA-encrypted"),
+        tool_call("c1"),
+    ]);
+    assert_eq!(messages[0].content.as_array().map(Vec::len), Some(1));
+    assert_eq!(messages[0].content[0]["type"], "tool_use");
 }

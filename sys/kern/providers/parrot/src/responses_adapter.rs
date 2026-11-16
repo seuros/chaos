@@ -351,7 +351,7 @@ fn models_from_slice(
                 supports_thinking: caps.reasoning.or(m.supports_reasoning).unwrap_or(false),
                 supports_images: caps.vision.or(m.supports_image_in).unwrap_or(false),
                 supports_structured_output: false,
-                supports_reasoning_effort: false,
+                reasoning_efforts: Vec::new(),
                 native_server_side_tools: vec![],
             }
         })

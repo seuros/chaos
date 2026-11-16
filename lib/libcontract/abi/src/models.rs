@@ -48,8 +48,9 @@ pub struct AbiModelInfo {
     /// Whether the model supports structured output / JSON schema.
     pub supports_structured_output: bool,
 
-    /// Whether the model supports reasoning effort levels.
-    pub supports_reasoning_effort: bool,
+    /// The reasoning effort levels the model accepts; empty when it takes none.
+    #[serde(default)]
+    pub reasoning_efforts: Vec<crate::ReasoningEffort>,
 
     /// Server-side tools the provider executes natively for this model.
     ///

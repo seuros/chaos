@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- Anthropic models get the chosen reasoning effort, keep their signed thinking
+  across tool calls, and end the turn on a refusal.
 - `chaos serve` answers `POST /inference`, the native LSD protocol, so an LSD
   provider can point at another chaos.
 - The LSD provider continues the gateway's trip within a turn, sends signed
@@ -81,6 +83,8 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- `chaos serve` `/inference` works on a fresh home: it fetches a provider's
+  model catalog when none is cached.
 - The monitor shows each machine's own health and limits, and a monitor that
   starts late still learns a machine is recovering.
 - A monitor watching other machines keeps listening after the database drops

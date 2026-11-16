@@ -5,6 +5,7 @@ use chaos_ipc::openai_models::ConfigShellToolType;
 use chaos_ipc::openai_models::InputModality;
 use chaos_ipc::openai_models::ModelInfo;
 use chaos_ipc::openai_models::ModelVisibility;
+use chaos_ipc::openai_models::ReasoningEffortPreset;
 use chaos_ipc::openai_models::TruncationMode;
 use chaos_ipc::openai_models::TruncationPolicyConfig;
 use chaos_ipc::openai_models::WebSearchToolType;
@@ -40,7 +41,14 @@ pub fn model_info_from_abi(abi: &AbiModelInfo) -> ModelInfo {
         display_name: abi.display_name.clone(),
         description: abi.description.clone(),
         default_reasoning_level: None,
-        supported_reasoning_levels: Vec::new(),
+        supported_reasoning_levels: abi
+            .reasoning_efforts
+            .iter()
+            .map(|effort| ReasoningEffortPreset {
+                effort: *effort,
+                description: effort.to_string(),
+            })
+            .collect(),
         shell_type: ConfigShellToolType::Default,
         visibility: ModelVisibility::List,
         supported_in_api: true,

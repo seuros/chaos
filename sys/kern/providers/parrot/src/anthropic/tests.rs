@@ -544,3 +544,24 @@ fn requests_speak_api_version_2026_10_21_without_sampling_parameters() {
         );
     }
 }
+
+#[test]
+fn documents_reach_the_api_only_in_user_turns() {
+    let document = |role: &str| ResponseItem::Message {
+        id: None,
+        role: role.to_string(),
+        content: vec![ContentItem::Document {
+            name: Some("notes.txt".to_string()),
+            mime_type: "text/plain".to_string(),
+            text: "body".to_string(),
+        }],
+        phase: None,
+        end_turn: None,
+    };
+    let messages = convert_input_to_messages(&[document("user"), document("assistant")]);
+    assert_eq!(messages[0].content[0]["type"], "document");
+    assert_eq!(
+        messages[1].content[0],
+        json!({"type": "text", "text": "[notes.txt]\nbody"})
+    );
+}

@@ -392,15 +392,25 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
     for item in input {
         match item {
             ResponseItem::Message { role, content, .. } => {
-                let content_value: Vec<Value> =
-                    content.iter().filter_map(convert_content_item).collect();
+                // Anthropic only accepts "user" or "assistant". Map OpenAI's
+                // "developer" / "system" roles to "user".
+                let anthropic_role = match role.as_str() {
+                    "assistant" => "assistant",
+                    _ => "user",
+                };
+                let content_value: Vec<Value> = content
+                    .iter()
+                    .filter_map(|item| match item {
+                        // A `document` block in an assistant turn is a 400; its
+                        // text carries the same content.
+                        ContentItem::Document { name, text, .. } if anthropic_role == "assistant" => {
+                            let header = name.as_deref().map(|n| format!("[{n}]\n")).unwrap_or_default();
+                            Some(serde_json::json!({"type": "text", "text": format!("{header}{text}")}))
+                        }
+                        _ => convert_content_item(item),
+                    })
+                    .collect();
                 if !content_value.is_empty() {
-                    // Anthropic only accepts "user" or "assistant". Map OpenAI's
-                    // "developer" / "system" roles to "user".
-                    let anthropic_role = match role.as_str() {
-                        "assistant" => "assistant",
-                        _ => "user",
-                    };
                     push_blocks(&mut messages, anthropic_role, Value::Array(content_value));
                 }
             }

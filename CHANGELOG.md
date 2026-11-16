@@ -88,6 +88,8 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- Anthropic user keys (`sk-ant-usr-…`) can be stored with `chaos accounts`, beside
+  `sk-ant-api…` keys; OAuth, session and admin tokens are still refused.
 - An Anthropic key stored with `chaos accounts` now works for turns and model
   discovery; before, only `ANTHROPIC_API_KEY` did.
 - `chaos serve` `/inference` works on a fresh home: it fetches a provider's

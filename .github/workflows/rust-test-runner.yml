@@ -181,18 +181,17 @@ jobs:
           RUST_BACKTRACE: 1
           NEXTEST_STATUS_LEVEL: leak
 
-      # Keep optional UI/release/library feature coverage, but do not select
-      # mcp-guest's alternative TLS features in the application workspace graph.
-      # Each guest backend is tested separately by rust-tls.yml.
+      # Keep optional UI/release/library feature coverage on the Ring-only graph;
+      # mcp-guest's TLS backends are tested in its own repository.
       - name: Optional workspace features — Ring
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          cargo tree --locked --workspace --exclude mcp-guest --all-features \
+          cargo tree --locked --workspace --all-features \
             --target ${{ inputs.target }} --edges normal,build,dev \
             --prefix none --format '{p}' |
             bash scripts/check-tls-dependencies.sh production
-          mbx nextest run --locked --workspace --exclude mcp-guest --all-features \
+          mbx nextest run --locked --workspace --all-features \
             --no-fail-fast --target ${{ inputs.target }} --cargo-profile ci-test
         env:
           RUST_BACKTRACE: 1

@@ -48,7 +48,6 @@ members = [
     "srv/acpd",
     "lib/libacp/host",
     "lib/libacp/guest",
-    "lib/libmcp/guest",
     "lib/libmcp/runtime",
     "srv/arsenal",
     "srv/journald",
@@ -180,7 +179,7 @@ chaos-model-catalog = { path = "lib/libmodel/catalog" }
 chaos-mcpd = { path = "srv/mcpd" }
 chaos-acpd = { path = "srv/acpd" }
 acp-host = { path = "lib/libacp/host", version = "0.1.0" }
-mcp-guest = { path = "lib/libmcp/guest" }
+mcp-guest = "0.17"
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos_journald = { path = "srv/journald" }
@@ -253,7 +252,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.23", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.24", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3", default-features = false }

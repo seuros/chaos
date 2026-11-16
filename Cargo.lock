@@ -1676,6 +1676,7 @@ dependencies = [
  "hmac 0.13.0",
  "jiff",
  "lease-machines",
+ "lsd-protocol",
  "mcp-host",
  "minijinja",
  "rama",
@@ -2054,6 +2055,7 @@ dependencies = [
  "chaos-services",
  "chaos-test-fixtures",
  "jiff",
+ "lsd-protocol",
  "pretty_assertions",
  "rama",
  "regex-lite",
@@ -2066,6 +2068,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "uuid",
  "wiremock",
 ]
 
@@ -6807,6 +6810,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a9f71e3591c7ec44d3e563e87bf14ddc2bada8519dca046e5b0e560cd004e2d"
 dependencies = [
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "lsd-protocol"
+version = "113.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e24f9cd835b7a29e5dc42484de121a330022814b2cc24c0d77eacd5863900a61"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]

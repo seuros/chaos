@@ -1,5 +1,6 @@
 //! The canonical request the core harness sends to any model adapter.
 
+use crate::continuation::ContinuationSlot;
 use crate::reasoning::ReasoningConfig;
 use crate::tools::ToolDef;
 use chaos_ipc::config_types::Verbosity;
@@ -42,6 +43,9 @@ pub struct TurnRequest {
     /// Optional per-turn state slot used by transports that need to cache a
     /// sticky routing token across multiple requests within the same turn.
     pub turn_state: Option<Arc<OnceLock<String>>>,
+
+    /// What a conversation-holding backend already stores for this turn.
+    pub continuation: Option<ContinuationSlot>,
 
     /// Provider-opaque extension bag.
     ///

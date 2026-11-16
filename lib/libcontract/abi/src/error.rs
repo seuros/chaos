@@ -43,12 +43,25 @@ pub enum AbiError {
     #[error("transport error: HTTP {status} — {message}")]
     Transport { status: u16, message: String },
 
+    /// The model declined to answer. Retrying the same request will not help.
+    #[error("model refused{}", refusal_detail(category.as_deref(), explanation.as_deref()))]
+    Refusal {
+        category: Option<String>,
+        explanation: Option<String>,
+    },
+
     /// A transient error that may succeed on retry.
     #[error("retryable: {message}")]
     Retryable {
         message: String,
         delay: Option<Duration>,
     },
+}
+
+fn refusal_detail(category: Option<&str>, explanation: Option<&str>) -> String {
+    let category = category.map(|c| format!(" ({c})")).unwrap_or_default();
+    let explanation = explanation.map(|e| format!(": {e}")).unwrap_or_default();
+    format!("{category}{explanation}")
 }
 
 impl WireFormatError for AbiError {
@@ -63,6 +76,7 @@ impl WireFormatError for AbiError {
             | Self::UsageNotIncluded
             | Self::InvalidRequest { .. }
             | Self::InvalidEncryptedContent { .. }
+            | Self::Refusal { .. }
             | Self::Stream(_) => false,
         }
     }

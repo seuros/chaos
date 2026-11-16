@@ -501,6 +501,7 @@ impl ModelClientSession {
             output_schema: prompt.output_schema.clone(),
             verbosity,
             turn_state: config.options.turn_state.clone(),
+            continuation: Some(self.continuation.clone()),
             extensions,
         })
     }

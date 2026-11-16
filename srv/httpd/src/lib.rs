@@ -9,6 +9,7 @@ extern crate usage as usage_rs;
 mod api;
 mod auth;
 pub mod cli;
+mod inference;
 mod ingress;
 #[cfg(feature = "mcpd")]
 mod mcp;
@@ -68,7 +69,6 @@ const DEFAULT_ANALYTICS_ENABLED: bool = true;
 pub(crate) struct ServerState {
     config: Arc<Config>,
     process_table: Arc<ProcessTable>,
-    #[allow(dead_code)]
     auth_manager: Arc<AuthManager>,
     bearer_token: Arc<str>,
     recovery_token: Option<Arc<str>>,

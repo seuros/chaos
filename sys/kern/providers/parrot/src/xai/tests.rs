@@ -246,6 +246,7 @@ fn discovery_policy_applies_image_fallback_and_native_tools_independently() {
 
 fn empty_request() -> TurnRequest {
     TurnRequest {
+        continuation: None,
         model: String::new(),
         instructions: String::new(),
         input: vec![],

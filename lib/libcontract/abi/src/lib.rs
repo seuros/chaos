@@ -7,6 +7,7 @@
 //! No provider is privileged — all are equidistant from the ABI.
 
 pub mod adapter;
+pub mod continuation;
 pub mod error;
 pub mod event;
 pub mod models;
@@ -22,6 +23,8 @@ pub mod wire_error;
 // Re-export ABI surface.
 pub use adapter::AdapterFuture;
 pub use adapter::ModelAdapter;
+pub use continuation::Continuation;
+pub use continuation::ContinuationSlot;
 pub use error::AbiError;
 pub use event::TurnEvent;
 pub use models::AbiModelInfo;

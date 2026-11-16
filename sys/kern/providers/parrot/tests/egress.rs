@@ -13,6 +13,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn turn() -> TurnRequest {
     TurnRequest {
+        continuation: None,
         model: "test-model".into(),
         instructions: "Be helpful.".into(),
         input: vec![],

@@ -16,6 +16,7 @@ chaos-libration = { workspace = true }
 chaos-services = { workspace = true }
 chaos-client = { workspace = true }
 jiff = { workspace = true }
+lsd-protocol = { workspace = true }
 rama = { workspace = true }
 regex-lite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -25,9 +26,11 @@ tokio = { workspace = true, features = ["macros", "net", "rt", "sync", "time"] }
 tokio-util = { workspace = true, features = ["codec", "rt"] }
 tracing = { workspace = true }
 url = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 chaos-test-fixtures = { workspace = true }
+lsd-protocol = { workspace = true, features = ["fixtures"] }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 pretty_assertions = { workspace = true }

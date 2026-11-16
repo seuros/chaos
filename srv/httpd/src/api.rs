@@ -70,6 +70,9 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     if path == MONITOR_EVENTS_PATH && method == Method::GET {
         return monitor::events(state, &request);
     }
+    if path == lsd_protocol::INFERENCE_PATH {
+        return inference_gate(state, request).await;
+    }
     if path == TRIGGER_PATH || path == "/api/sessions" || path.starts_with("/api/sessions/") {
         let auth_header = request
             .headers()
@@ -134,6 +137,43 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
         // Unknown route.
         _ => json_response(StatusCode::NOT_FOUND, &ApiErrorResponse::error("not found")),
     }
+}
+
+/// The inference lane answers in the `lsd-protocol` error shape, refusals
+/// included, so a protocol client can branch on `error_code`.
+async fn inference_gate(state: Arc<ServerState>, request: Request) -> Response {
+    use lsd_protocol::ErrorCode;
+    if request.method() != Method::POST {
+        let mut response =
+            crate::inference::error_response(ErrorCode::InvalidRequest, "method not allowed");
+        *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+        response
+            .headers_mut()
+            .insert("allow", HeaderValue::from_static("POST"));
+        return response;
+    }
+    let auth_header = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok());
+    if let Err(message) = auth::validate_bearer(auth_header, &state.bearer_token) {
+        let mut response = crate::inference::error_response(ErrorCode::Unauthorized, message);
+        response
+            .headers_mut()
+            .insert("www-authenticate", HeaderValue::from_static("Bearer"));
+        return response;
+    }
+    if state
+        .sessions
+        .as_ref()
+        .is_some_and(|manager| manager.recovery_only())
+    {
+        return crate::inference::error_response(
+            ErrorCode::Overloaded,
+            "recovery-only mode serves no inference",
+        );
+    }
+    crate::inference::handle(state, request).await
 }
 
 fn handle_health() -> Response {

@@ -324,6 +324,8 @@ pub struct ModelClientSession {
     pub(super) client: ModelClient,
     /// Turn state for sticky routing.
     pub(super) turn_state: Arc<OnceLock<String>>,
+    /// What a conversation-holding backend already stores for this turn.
+    pub(super) continuation: chaos_abi::ContinuationSlot,
     /// Host-only bound for isolated, tool-free workflow sampling.
     pub(super) sample_token_limit: Option<std::num::NonZeroU32>,
 }

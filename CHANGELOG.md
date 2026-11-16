@@ -68,6 +68,7 @@ should. There is no patch level; the build timestamp is the patch.
 ### Changed
 - The MCP client is the published `mcp-guest` 0.17, built on the shared `mcp-wire`
   protocol types, with `mcp-host` 0.24 on the server side.
+- Anthropic requests use API version `2026-10-21`.
 - Release `mcp-guest` 0.13.0 against `mcp-host` 0.19.0. `mcp_guest::protocol`
   re-exports `mcp-host` types, so applications that also depend on `mcp-host`
   must move to 0.19 together with it. Requests now emit `mcp.guest.request`

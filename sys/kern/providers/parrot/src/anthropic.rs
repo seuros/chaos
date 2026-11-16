@@ -34,7 +34,7 @@ const THINKING_DEFAULT_MAX_TOKENS: u64 = 64_000;
 /// Marks reasoning items this adapter produced. Only those carry a signature
 /// Anthropic can verify; another provider's encrypted reasoning would fail it.
 const THINKING_ITEM_ID: &str = "anthropic_thinking";
-pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
+pub(crate) const ANTHROPIC_VERSION: &str = "2026-10-21";
 pub(crate) const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
 const DEFAULT_CACHE_TTL: &str = "5m";
 const CACHE_TTL_EXTENSION: &str = "anthropic_cache_ttl";

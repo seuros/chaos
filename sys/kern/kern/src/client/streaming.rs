@@ -1499,7 +1499,7 @@ impl ModelClientSession {
             },
         )?;
 
-        let auth = self.resolve_anthropic_auth()?;
+        let auth = self.resolve_anthropic_auth(client_setup.auth.as_ref())?;
         let sniffer = chaos_libration::registry::sniffer_for(
             "anthropic_messages",
             &client_setup.api_provider.base_url,
@@ -1704,25 +1704,8 @@ impl ModelClientSession {
         .await
     }
 
-    pub(super) fn resolve_anthropic_auth(&self) -> Result<AnthropicAuth> {
-        match self.client.state.provider.api_key() {
-            Ok(Some(api_key)) => return Ok(AnthropicAuth::ApiKey(api_key)),
-            Ok(None) => {}
-            Err(ChaosErr::EnvVar(_)) => {
-                return Err(crate::api_bridge::provider_auth_missing(
-                    &self.client.state.provider,
-                ));
-            }
-            Err(other) => return Err(other),
-        }
-
-        if let Some(token) = self.client.state.provider.experimental_bearer_token.clone() {
-            return Ok(AnthropicAuth::BearerToken(token));
-        }
-
-        Err(crate::api_bridge::provider_auth_missing(
-            &self.client.state.provider,
-        ))
+    pub(super) fn resolve_anthropic_auth(&self, auth: Option<&ChaosAuth>) -> Result<AnthropicAuth> {
+        crate::api_bridge::anthropic_auth(auth, &self.client.state.provider)
     }
 
     pub(super) fn resolve_chat_completions_api_key(

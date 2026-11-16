@@ -899,27 +899,12 @@ impl ModelsManager {
         use chaos_abi::ListModelsError;
         use chaos_abi::ModelAdapter;
         use chaos_parrot::anthropic::AnthropicAdapter;
-        use chaos_parrot::anthropic::AnthropicAuth;
 
         let auth_mode = self.auth_manager.auth().await;
         let auth_mode_ref = auth_mode.as_ref().map(ChaosAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode_ref)?;
 
-        // Resolve auth the same way client.rs does.
-        let adapter_auth = match self.provider.api_key() {
-            Ok(Some(api_key)) => AnthropicAuth::ApiKey(api_key),
-            Ok(None) => {
-                if let Some(token) = self.provider.experimental_bearer_token.clone() {
-                    AnthropicAuth::BearerToken(token)
-                } else {
-                    return Err(crate::api_bridge::provider_auth_missing(&self.provider));
-                }
-            }
-            Err(ChaosErr::EnvVar(_)) => {
-                return Err(crate::api_bridge::provider_auth_missing(&self.provider));
-            }
-            Err(other) => return Err(other),
-        };
+        let adapter_auth = crate::api_bridge::anthropic_auth(auth_mode.as_ref(), &self.provider)?;
 
         let sniffer =
             chaos_libration::registry::sniffer_for("anthropic_messages", &api_provider.base_url);

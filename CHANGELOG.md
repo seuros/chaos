@@ -88,6 +88,8 @@ should. There is no patch level; the build timestamp is the patch.
   a viewer-only one when sharing it over an untrusted network.
 
 ### Fixed
+- An Anthropic key stored with `chaos accounts` now works for turns and model
+  discovery; before, only `ANTHROPIC_API_KEY` did.
 - `chaos serve` `/inference` works on a fresh home: it fetches a provider's
   model catalog when none is cached.
 - The monitor shows each machine's own health and limits, and a monitor that

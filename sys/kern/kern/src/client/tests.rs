@@ -265,7 +265,7 @@ fn resolve_anthropic_auth_uses_bearer_token_from_provider_config() {
     let session = client.new_session();
 
     let auth = session
-        .resolve_anthropic_auth()
+        .resolve_anthropic_auth(None)
         .expect("bearer token should resolve");
 
     assert_eq!(
@@ -292,10 +292,38 @@ fn resolve_anthropic_auth_errors_when_provider_has_no_static_auth() {
     let session = client.new_session();
 
     let err = session
-        .resolve_anthropic_auth()
+        .resolve_anthropic_auth(None)
         .expect_err("missing auth should fail locally");
 
     std::assert_matches!(err, crate::error::ChaosErr::ProviderAuthMissing(_));
+}
+
+#[test]
+fn resolve_anthropic_auth_uses_the_stored_account_key() {
+    let client = ModelClient::new(
+        None,
+        ProcessId::new(),
+        "anthropic".to_string(),
+        test_anthropic_provider(),
+        SessionSource::Cli,
+        ApprovalPolicy::Interactive,
+        None,
+        false,
+        None,
+        false,
+        crate::config::ClampSettings::default(),
+    );
+    let stored = crate::auth::ChaosAuth::from_api_key("sk-ant-usr-stored-key");
+
+    let auth = client
+        .new_session()
+        .resolve_anthropic_auth(Some(&stored))
+        .expect("a key stored with `chaos accounts` should resolve");
+
+    assert_eq!(
+        auth,
+        AnthropicAuth::ApiKey("sk-ant-usr-stored-key".to_string())
+    );
 }
 
 #[tokio::test]

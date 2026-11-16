@@ -29,6 +29,11 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 const DEFAULT_MAX_TOKENS: u64 = 8192;
+/// Thinking counts against `max_tokens`, so a thinking turn needs room.
+const THINKING_DEFAULT_MAX_TOKENS: u64 = 64_000;
+/// Marks reasoning items this adapter produced. Only those carry a signature
+/// Anthropic can verify; another provider's encrypted reasoning would fail it.
+const THINKING_ITEM_ID: &str = "anthropic_thinking";
 pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
 pub(crate) const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
 const DEFAULT_CACHE_TTL: &str = "5m";
@@ -210,10 +215,22 @@ struct AnthropicTool {
 }
 
 pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<Value, AbiError> {
+    let legacy_budget = request
+        .extensions
+        .get("thinking_budget_tokens")
+        .and_then(Value::as_u64);
+    let adaptive = request
+        .reasoning
+        .as_ref()
+        .filter(|_| legacy_budget.is_none());
     let max_tokens = crate::common::max_output_tokens(request)?
         .map(u64::from)
         .or_else(|| request.extensions.get("max_tokens").and_then(Value::as_u64))
-        .unwrap_or(DEFAULT_MAX_TOKENS);
+        .unwrap_or(if adaptive.is_some() {
+            THINKING_DEFAULT_MAX_TOKENS
+        } else {
+            DEFAULT_MAX_TOKENS
+        });
     let cache_ttl = request
         .extensions
         .get(CACHE_TTL_EXTENSION)
@@ -266,35 +283,48 @@ pub(crate) fn build_request_body(request: &TurnRequest, model: &str) -> Result<V
         );
     }
 
-    // reasoning → thinking config
-    if let Some(ref _reasoning) = request.reasoning
-        && let Some(budget) = request
-            .extensions
-            .get("thinking_budget_tokens")
-            .and_then(Value::as_u64)
-    {
+    // The kernel sets `reasoning` only for models the catalog lists with
+    // adaptive thinking, and an effort only from the levels the model lists.
+    // An explicit budget keeps the manual mode for models that predate both.
+    let mut output_config = serde_json::Map::new();
+    if let (Some(_), Some(budget)) = (&request.reasoning, legacy_budget) {
         obj.insert(
             "thinking".to_string(),
-            serde_json::json!({
-                "type": "enabled",
-                "budget_tokens": budget,
-            }),
+            serde_json::json!({"type": "enabled", "budget_tokens": budget}),
+        );
+    } else if let Some(reasoning) = adaptive {
+        let mut thinking = serde_json::json!({"type": "adaptive"});
+        if reasoning.summary.is_some() {
+            thinking["display"] = Value::String("summarized".to_string());
+        }
+        obj.insert("thinking".to_string(), thinking);
+        if let Some(effort) = reasoning.effort.and_then(anthropic_effort) {
+            output_config.insert("effort".to_string(), Value::String(effort.to_string()));
+        }
+    }
+    if let Some(schema) = &request.output_schema {
+        output_config.insert(
+            "format".to_string(),
+            serde_json::json!({"type": "json_schema", "schema": schema}),
         );
     }
-
-    if let Some(schema) = &request.output_schema {
-        obj.insert(
-            "output_config".to_string(),
-            serde_json::json!({
-                "format": {
-                    "type": "json_schema",
-                    "schema": schema,
-                },
-            }),
-        );
+    if !output_config.is_empty() {
+        obj.insert("output_config".to_string(), Value::Object(output_config));
     }
 
     Ok(body)
+}
+
+fn anthropic_effort(effort: chaos_abi::ReasoningEffort) -> Option<&'static str> {
+    use chaos_abi::ReasoningEffort;
+    Some(match effort {
+        ReasoningEffort::None => return None,
+        ReasoningEffort::Minimal | ReasoningEffort::Low => "low",
+        ReasoningEffort::Medium => "medium",
+        ReasoningEffort::High => "high",
+        ReasoningEffort::XHigh => "xhigh",
+        ReasoningEffort::Max | ReasoningEffort::Ultra => "max",
+    })
 }
 
 fn convert_content_item(c: &ContentItem) -> Option<Value> {
@@ -334,6 +364,26 @@ fn convert_content_item(c: &ContentItem) -> Option<Value> {
     }
 }
 
+/// Consecutive blocks of one role travel as one message, so a reply's
+/// thinking sits beside the tool calls it led to and parallel tool results
+/// answer in a single turn.
+fn push_blocks(messages: &mut Vec<AnthropicMessage>, role: &str, blocks: Value) {
+    let Value::Array(blocks) = blocks else {
+        return;
+    };
+    if let Some(last) = messages.last_mut()
+        && last.role == role
+        && let Value::Array(content) = &mut last.content
+    {
+        content.extend(blocks);
+        return;
+    }
+    messages.push(AnthropicMessage {
+        role: role.to_string(),
+        content: Value::Array(blocks),
+    });
+}
+
 fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
     let mut messages = Vec::new();
 
@@ -349,10 +399,7 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                         "assistant" => "assistant",
                         _ => "user",
                     };
-                    messages.push(AnthropicMessage {
-                        role: anthropic_role.to_string(),
-                        content: Value::Array(content_value),
-                    });
+                    push_blocks(&mut messages, anthropic_role, Value::Array(content_value));
                 }
             }
             ResponseItem::FunctionCall {
@@ -361,16 +408,17 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                 call_id,
                 ..
             } => {
-                messages.push(AnthropicMessage {
-                    role: "assistant".to_string(),
-                    content: serde_json::json!([{
+                push_blocks(
+                    &mut messages,
+                    "assistant",
+                    serde_json::json!([{
                         "type": "tool_use",
                         "id": call_id,
                         "name": name,
                         "input": serde_json::from_str::<Value>(arguments)
                             .unwrap_or(Value::Object(Default::default())),
                     }]),
-                });
+                );
             }
             ResponseItem::FunctionCallOutput {
                 call_id, output, ..
@@ -379,14 +427,15 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                 call_id, output, ..
             } => {
                 let content_text = crate::common::function_output_text(&output.body);
-                messages.push(AnthropicMessage {
-                    role: "user".to_string(),
-                    content: serde_json::json!([{
+                push_blocks(
+                    &mut messages,
+                    "user",
+                    serde_json::json!([{
                         "type": "tool_result",
                         "tool_use_id": call_id,
                         "content": content_text,
                     }]),
-                });
+                );
             }
             ResponseItem::LocalShellCall {
                 call_id, action, ..
@@ -395,18 +444,43 @@ fn convert_input_to_messages(input: &[ResponseItem]) -> Vec<AnthropicMessage> {
                     chaos_ipc::models::LocalShellAction::Exec(exec) => exec.command.join(" "),
                 };
                 if let Some(call_id) = call_id {
-                    messages.push(AnthropicMessage {
-                        role: "assistant".to_string(),
-                        content: serde_json::json!([{
+                    push_blocks(
+                        &mut messages,
+                        "assistant",
+                        serde_json::json!([{
                             "type": "tool_use",
                             "id": call_id,
                             "name": "shell",
                             "input": {"command": cmd},
                         }]),
-                    });
+                    );
                 }
             }
-            // Reasoning items are not part of Anthropic's message history
+            ResponseItem::Reasoning {
+                id,
+                content,
+                encrypted_content: Some(signature),
+                ..
+            } if id == THINKING_ITEM_ID => {
+                let thinking: String = content
+                    .iter()
+                    .flatten()
+                    .map(|part| match part {
+                        chaos_ipc::models::ReasoningItemContent::ReasoningText { text }
+                        | chaos_ipc::models::ReasoningItemContent::Text { text } => text.as_str(),
+                    })
+                    .collect();
+                push_blocks(
+                    &mut messages,
+                    "assistant",
+                    serde_json::json!([{
+                        "type": "thinking",
+                        "thinking": thinking,
+                        "signature": signature,
+                    }]),
+                );
+            }
+            // Other providers' reasoning cannot pass Anthropic's signature check.
             ResponseItem::Reasoning { .. } => {}
             // Skip items that have no Anthropic equivalent
             _ => {
@@ -467,6 +541,14 @@ struct ToolUseAccumulator {
 #[derive(Default)]
 struct TextAccumulator {
     text: String,
+}
+
+/// In-flight thinking block: its text and the signature that lets the
+/// provider verify it when the block is sent back.
+#[derive(Default)]
+struct ThinkingAccumulator {
+    text: String,
+    signature: String,
 }
 
 #[derive(Default)]
@@ -544,6 +626,7 @@ fn parse_sse_event(
     json: &Value,
     tool_acc: &mut Option<ToolUseAccumulator>,
     text_acc: &mut Option<TextAccumulator>,
+    thinking_acc: &mut Option<ThinkingAccumulator>,
     usage_acc: &mut UsageAccumulator,
 ) -> Result<Vec<TurnEvent>, AbiError> {
     match event_type {
@@ -587,6 +670,15 @@ fn parse_sse_event(
                     });
                     Ok(vec![])
                 }
+                "thinking" => {
+                    *thinking_acc = Some(ThinkingAccumulator::default());
+                    Ok(vec![TurnEvent::OutputItemAdded(ResponseItem::Reasoning {
+                        id: THINKING_ITEM_ID.to_string(),
+                        summary: vec![],
+                        content: None,
+                        encrypted_content: None,
+                    })])
+                }
                 "text" => {
                     // Kern needs OutputItemAdded before any OutputTextDelta.
                     *text_acc = Some(TextAccumulator::default());
@@ -618,8 +710,20 @@ fn parse_sse_event(
                         Ok(vec![])
                     }
                 }
+                "signature_delta" => {
+                    if let Some(acc) = thinking_acc.as_mut()
+                        && let Some(signature) =
+                            json.pointer("/delta/signature").and_then(Value::as_str)
+                    {
+                        acc.signature.push_str(signature);
+                    }
+                    Ok(vec![])
+                }
                 "thinking_delta" => {
                     if let Some(text) = json.pointer("/delta/thinking").and_then(Value::as_str) {
+                        if let Some(acc) = thinking_acc.as_mut() {
+                            acc.text.push_str(text);
+                        }
                         Ok(vec![TurnEvent::ReasoningContentDelta {
                             delta: text.to_string(),
                             content_index: 0,
@@ -642,7 +746,18 @@ fn parse_sse_event(
         }
 
         "content_block_stop" => {
-            if let Some(acc) = tool_acc.take() {
+            if let Some(acc) = thinking_acc.take() {
+                Ok(vec![TurnEvent::OutputItemDone(ResponseItem::Reasoning {
+                    id: THINKING_ITEM_ID.to_string(),
+                    summary: vec![],
+                    content: (!acc.text.is_empty()).then(|| {
+                        vec![chaos_ipc::models::ReasoningItemContent::ReasoningText {
+                            text: acc.text,
+                        }]
+                    }),
+                    encrypted_content: (!acc.signature.is_empty()).then_some(acc.signature),
+                })])
+            } else if let Some(acc) = tool_acc.take() {
                 // Tool use block finished — emit the completed function call.
                 Ok(vec![TurnEvent::OutputItemDone(
                     ResponseItem::FunctionCall {
@@ -674,6 +789,17 @@ fn parse_sse_event(
 
         "message_delta" => {
             let stop_reason = json.pointer("/delta/stop_reason").and_then(Value::as_str);
+            if stop_reason == Some("refusal") {
+                let detail = |field: &str| {
+                    json.pointer(&format!("/delta/stop_details/{field}"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                };
+                return Err(AbiError::Refusal {
+                    category: detail("category"),
+                    explanation: detail("explanation"),
+                });
+            }
             if stop_reason.is_some() {
                 if let Some(usage) = json.get("usage") {
                     usage_acc.update(usage);
@@ -757,6 +883,7 @@ where
 {
     let mut tool_acc: Option<ToolUseAccumulator> = None;
     let mut text_acc: Option<TextAccumulator> = None;
+    let mut thinking_acc: Option<ThinkingAccumulator> = None;
     let mut usage_acc = UsageAccumulator::default();
     let mut stream = EventStream::<_, String>::new(data_stream);
     loop {
@@ -783,6 +910,7 @@ where
             &json,
             &mut tool_acc,
             &mut text_acc,
+            &mut thinking_acc,
             &mut usage_acc,
         )?;
         for event in events {
@@ -833,19 +961,81 @@ async fn fetch_anthropic_models(
     #[derive(Deserialize)]
     struct Capabilities {
         #[serde(default)]
-        thinking: Option<Supported>,
+        thinking: Option<Thinking>,
         #[serde(default)]
         image_input: Option<Supported>,
         #[serde(default)]
         structured_outputs: Option<Supported>,
         #[serde(default)]
-        effort: Option<Supported>,
+        effort: Option<Effort>,
     }
 
     #[derive(Deserialize)]
-    struct Supported {
+    struct Thinking {
+        #[serde(default)]
+        types: Option<ThinkingTypes>,
+    }
+
+    #[derive(Deserialize)]
+    struct ThinkingTypes {
+        #[serde(default)]
+        adaptive: Option<Supported>,
+    }
+
+    #[derive(Deserialize)]
+    struct Effort {
         #[serde(default)]
         supported: bool,
+        #[serde(default)]
+        low: Option<Supported>,
+        #[serde(default)]
+        medium: Option<Supported>,
+        #[serde(default)]
+        high: Option<Supported>,
+        #[serde(default)]
+        xhigh: Option<Supported>,
+        #[serde(default)]
+        max: Option<Supported>,
+    }
+
+    impl Effort {
+        fn levels(&self) -> Vec<chaos_abi::ReasoningEffort> {
+            use chaos_abi::ReasoningEffort;
+            if !self.supported {
+                return Vec::new();
+            }
+            [
+                (&self.low, ReasoningEffort::Low),
+                (&self.medium, ReasoningEffort::Medium),
+                (&self.high, ReasoningEffort::High),
+                (&self.xhigh, ReasoningEffort::XHigh),
+                (&self.max, ReasoningEffort::Max),
+            ]
+            .into_iter()
+            .filter(|(level, _)| level.as_ref().is_some_and(Supported::supported))
+            .map(|(_, effort)| effort)
+            .collect()
+        }
+    }
+
+    /// A capability leaf. Documented as `{"supported": bool}`; a bare bool is
+    /// read the same way so one odd leaf cannot fail the whole discovery.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Supported {
+        Flag(bool),
+        Leaf {
+            #[serde(default)]
+            supported: bool,
+        },
+    }
+
+    impl Supported {
+        fn supported(&self) -> bool {
+            match self {
+                Supported::Flag(supported) | Supported::Leaf { supported } => *supported,
+            }
+        }
     }
 
     let client = chaos_client::default_rama_http_client_with_egress(egress);
@@ -911,18 +1101,23 @@ async fn fetch_anthropic_models(
                 description: None,
                 max_input_tokens: m.max_input_tokens,
                 max_output_tokens: m.max_tokens,
+                // The adapter drives thinking only in adaptive mode, so a model
+                // offering just the manual budget mode is not listed as thinking.
                 supports_thinking: caps
                     .and_then(|c| c.thinking.as_ref())
-                    .is_some_and(|s| s.supported),
+                    .and_then(|t| t.types.as_ref())
+                    .and_then(|t| t.adaptive.as_ref())
+                    .is_some_and(Supported::supported),
                 supports_images: caps
                     .and_then(|c| c.image_input.as_ref())
-                    .is_some_and(|s| s.supported),
+                    .is_some_and(Supported::supported),
                 supports_structured_output: caps
                     .and_then(|c| c.structured_outputs.as_ref())
-                    .is_some_and(|s| s.supported),
-                supports_reasoning_effort: caps
+                    .is_some_and(Supported::supported),
+                reasoning_efforts: caps
                     .and_then(|c| c.effort.as_ref())
-                    .is_some_and(|s| s.supported),
+                    .map(Effort::levels)
+                    .unwrap_or_default(),
                 native_server_side_tools: vec![],
             }
         })

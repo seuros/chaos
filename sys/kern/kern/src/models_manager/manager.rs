@@ -759,7 +759,7 @@ impl ModelsManager {
                     supports_thinking: false,
                     supports_images: true,
                     supports_structured_output: false,
-                    supports_reasoning_effort: false,
+                    reasoning_efforts: Vec::new(),
                     native_server_side_tools: Vec::new(),
                 })
             }

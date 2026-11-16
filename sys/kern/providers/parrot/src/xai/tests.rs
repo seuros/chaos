@@ -222,7 +222,7 @@ fn discovery_policy_applies_image_fallback_and_native_tools_independently() {
         supports_thinking: false,
         supports_images: false,
         supports_structured_output: false,
-        supports_reasoning_effort: false,
+        reasoning_efforts: Vec::new(),
         native_server_side_tools: vec![],
     };
     let mut proxy_models = vec![model.clone()];

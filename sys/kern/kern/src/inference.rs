@@ -21,6 +21,7 @@ use crate::client_common::Prompt;
 use crate::client_common::ResponseStream;
 use crate::client_common::tools::ToolSpec;
 use crate::config::Config;
+use crate::models_manager::RefreshStrategy;
 use crate::process_table::ProcessTable;
 use crate::tools::spec::dynamic_tool_to_model_tool;
 
@@ -67,6 +68,20 @@ pub async fn infer(
         .clone()
         .unwrap_or_else(|| config.model_provider_id.clone());
     let manager = process_table.get_models_manager();
+    let provider = config
+        .model_providers
+        .get(&provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            InferenceError::UnknownTarget(format!("unknown provider `{provider_id}`"))
+        })?;
+    // Binding reads only the cached catalog. A session warms it when it lists
+    // models; a stateless caller never does, so fetch it here when it is missing.
+    if manager.is_bound_to(&provider_id, &provider) {
+        manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+    } else if let Some(rebound) = manager.rebound_to(&provider_id, provider) {
+        rebound.list_models(RefreshStrategy::OnlineIfUncached).await;
+    }
     let mut config = config.clone();
     manager
         .apply_provider_binding(&mut config, &provider_id, Some(&request.model), None)

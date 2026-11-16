@@ -17,7 +17,11 @@ fn with_config_overrides_never_yields_empty_base_instructions() {
 }
 
 fn unknown_model() -> ModelInfo {
-    model_info_from_abi(&AbiModelInfo {
+    model_info_from_abi(&unknown_model_abi())
+}
+
+fn unknown_model_abi() -> AbiModelInfo {
+    AbiModelInfo {
         id: "unknown-model".to_string(),
         model_family: Default::default(),
         display_name: "unknown-model".to_string(),
@@ -27,9 +31,9 @@ fn unknown_model() -> ModelInfo {
         supports_thinking: false,
         supports_images: false,
         supports_structured_output: false,
-        supports_reasoning_effort: false,
+        reasoning_efforts: Vec::new(),
         native_server_side_tools: vec![],
-    })
+    }
 }
 
 #[test]
@@ -209,4 +213,33 @@ fn provider_native_tools_are_merged_from_config_and_base_url() {
             "x_search".to_string(),
         ]
     );
+}
+
+#[test]
+fn provider_effort_levels_become_the_models_reasoning_levels() {
+    use chaos_ipc::openai_models::ReasoningEffort;
+    let model = model_info_from_abi(&AbiModelInfo {
+        supports_thinking: true,
+        reasoning_efforts: vec![
+            ReasoningEffort::Low,
+            ReasoningEffort::High,
+            ReasoningEffort::Max,
+        ],
+        ..unknown_model_abi()
+    });
+    let levels: Vec<_> = model
+        .supported_reasoning_levels
+        .iter()
+        .map(|preset| preset.effort)
+        .collect();
+    assert_eq!(
+        levels,
+        [
+            ReasoningEffort::Low,
+            ReasoningEffort::High,
+            ReasoningEffort::Max
+        ]
+    );
+    assert!(model.supports_reasoning_summaries);
+    assert!(unknown_model().supported_reasoning_levels.is_empty());
 }

@@ -3,7 +3,6 @@
 mod evaluator;
 mod evidence;
 mod journal;
-mod lifecycle;
 #[cfg(test)]
 mod tests;
 

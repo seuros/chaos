@@ -4,7 +4,9 @@
 //! Transition `Queued → InProgress` happens on the submit path (owned by
 //! whatever tool creates the manifest) and is not implemented here.
 
+use chaos_abi::SpoolEvent;
 use chaos_abi::SpoolPhase;
+use chaos_abi::SpoolState;
 use chaos_vfs::ChaosVfs;
 use chaos_vfs::Vfs;
 use sqlx::PgPool;
@@ -54,29 +56,34 @@ impl SpoolStore {
         Ok(row)
     }
 
-    /// Write terminal state: `Completed`/`Failed`/`Expired`/`Cancelled` with
-    /// the corresponding payload columns.
+    /// Advance `row` by the polled `phase` and write the resulting terminal
+    /// state. Returns `false` when the machine refuses the event or the row
+    /// moved on since it was loaded.
     pub async fn mark_terminal(
         &self,
-        manifest_id: &str,
+        row: &SpoolRow,
         phase: SpoolPhase,
         result_json: Option<&str>,
         error: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let status = phase_to_status(phase);
+    ) -> anyhow::Result<bool> {
+        let Some(next) = advance(&row.status, phase.into()) else {
+            return Ok(false);
+        };
         let now = jiff::Timestamp::now().as_second();
-        sqlx::query(
+        let updated = sqlx::query(
             "UPDATE spool_jobs SET status = ?, result_json = ?, error = ?, completed_at = ? \
-             WHERE manifest_id = ?",
+             WHERE manifest_id = ? AND status = ? AND batch_id = ?",
         )
-        .bind(status)
+        .bind(next.name())
         .bind(result_json)
         .bind(error)
         .bind(now)
-        .bind(manifest_id)
+        .bind(&row.manifest_id)
+        .bind(&row.status)
+        .bind(row.batch_id.as_deref())
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(updated.rows_affected() == 1)
     }
 
     /// Insert (or replace) a row in `InProgress` with the batch_id the backend
@@ -93,11 +100,11 @@ impl SpoolStore {
             "INSERT INTO spool_jobs \
              (manifest_id, backend, batch_id, status, request_count, payload_json, \
                created_at, updated_at) \
-             VALUES (?, ?, NULL, 'Queued', ?, ?, ?, ?) \
+             VALUES (?, ?, NULL, ?, ?, ?, ?, ?) \
              ON CONFLICT (manifest_id) DO UPDATE SET \
                backend = excluded.backend, \
                batch_id = NULL, \
-               status = 'Queued', \
+               status = excluded.status, \
                request_count = excluded.request_count, \
                payload_json = excluded.payload_json, \
                result_json = NULL, \
@@ -109,6 +116,7 @@ impl SpoolStore {
         )
         .bind(manifest_id)
         .bind(backend)
+        .bind(SpoolState::Queued.name())
         .bind(request_count as i64)
         .bind(payload_json)
         .bind(now)
@@ -118,19 +126,38 @@ impl SpoolStore {
         Ok(())
     }
 
-    /// Mark a queued manifest as failed before it ever reached `InProgress`.
+    /// Fail a manifest whose submit saga aborted. Rows already terminal are
+    /// left alone.
     pub async fn mark_submit_failed(&self, manifest_id: &str, error: &str) -> anyhow::Result<()> {
-        let now = jiff::Timestamp::now().as_second();
-        sqlx::query(
-            "UPDATE spool_jobs SET status = 'Failed', error = ?, completed_at = ? \
-             WHERE manifest_id = ?",
-        )
-        .bind(error)
-        .bind(now)
-        .bind(manifest_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        loop {
+            let Some(status) = sqlx::query_scalar::<_, String>(
+                "SELECT status FROM spool_jobs WHERE manifest_id = ?",
+            )
+            .bind(manifest_id)
+            .fetch_optional(&self.pool)
+            .await?
+            else {
+                return Ok(());
+            };
+            let Some(next) = advance(&status, SpoolEvent::SubmitFailed) else {
+                return Ok(());
+            };
+            let now = jiff::Timestamp::now().as_second();
+            let updated = sqlx::query(
+                "UPDATE spool_jobs SET status = ?, error = ?, completed_at = ? \
+                 WHERE manifest_id = ? AND status = ?",
+            )
+            .bind(next.name())
+            .bind(error)
+            .bind(now)
+            .bind(manifest_id)
+            .bind(&status)
+            .execute(&self.pool)
+            .await?;
+            if updated.rows_affected() == 1 {
+                return Ok(());
+            }
+        }
     }
 
     pub async fn insert_submitted(
@@ -146,11 +173,11 @@ impl SpoolStore {
             "INSERT INTO spool_jobs \
              (manifest_id, backend, batch_id, status, request_count, payload_json, \
                submitted_at, created_at, updated_at) \
-             VALUES (?, ?, ?, 'InProgress', ?, ?, ?, ?, ?) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
              ON CONFLICT (manifest_id) DO UPDATE SET \
                backend = excluded.backend, \
                batch_id = excluded.batch_id, \
-               status = 'InProgress', \
+               status = excluded.status, \
                request_count = excluded.request_count, \
                payload_json = excluded.payload_json, \
                result_json = NULL, \
@@ -163,6 +190,7 @@ impl SpoolStore {
         .bind(manifest_id)
         .bind(backend)
         .bind(batch_id)
+        .bind(SpoolState::InProgress.name())
         .bind(request_count as i64)
         .bind(payload_json)
         .bind(now)
@@ -210,29 +238,34 @@ impl PostgresSpoolStore {
         Ok(row)
     }
 
-    /// Write terminal state: `Completed`/`Failed`/`Expired`/`Cancelled` with
-    /// the corresponding payload columns.
+    /// Advance `row` by the polled `phase` and write the resulting terminal
+    /// state. Returns `false` when the machine refuses the event or the row
+    /// moved on since it was loaded.
     pub async fn mark_terminal(
         &self,
-        manifest_id: &str,
+        row: &SpoolRow,
         phase: SpoolPhase,
         result_json: Option<&str>,
         error: Option<&str>,
-    ) -> anyhow::Result<()> {
-        let status = phase_to_status(phase);
+    ) -> anyhow::Result<bool> {
+        let Some(next) = advance(&row.status, phase.into()) else {
+            return Ok(false);
+        };
         let now = jiff::Timestamp::now().as_second();
-        sqlx::query(
+        let updated = sqlx::query(
             "UPDATE spool_jobs SET status = $1, result_json = $2, error = $3, completed_at = $4 \
-             WHERE manifest_id = $5",
+             WHERE manifest_id = $5 AND status = $6 AND batch_id = $7",
         )
-        .bind(status)
+        .bind(next.name())
         .bind(result_json)
         .bind(error)
         .bind(now)
-        .bind(manifest_id)
+        .bind(&row.manifest_id)
+        .bind(&row.status)
+        .bind(row.batch_id.as_deref())
         .execute(&self.pool)
         .await?;
-        Ok(())
+        Ok(updated.rows_affected() == 1)
     }
 
     /// Insert (or upsert) a row in `InProgress` with the batch_id the backend
@@ -249,11 +282,11 @@ impl PostgresSpoolStore {
             "INSERT INTO spool_jobs \
              (manifest_id, backend, batch_id, status, request_count, payload_json, \
               created_at, updated_at) \
-             VALUES ($1, $2, NULL, 'Queued', $3, $4, $5, $6) \
+             VALUES ($1, $2, NULL, $3, $4, $5, $6, $7) \
              ON CONFLICT (manifest_id) DO UPDATE SET \
                 backend = EXCLUDED.backend, \
                 batch_id = NULL, \
-                status = 'Queued', \
+                status = excluded.status, \
                 request_count = EXCLUDED.request_count, \
                 payload_json = EXCLUDED.payload_json, \
                 result_json = NULL, \
@@ -265,6 +298,7 @@ impl PostgresSpoolStore {
         )
         .bind(manifest_id)
         .bind(backend)
+        .bind(SpoolState::Queued.name())
         .bind(i64::from(request_count))
         .bind(payload_json)
         .bind(now)
@@ -274,19 +308,38 @@ impl PostgresSpoolStore {
         Ok(())
     }
 
-    /// Mark a queued manifest as failed before it ever reached `InProgress`.
+    /// Fail a manifest whose submit saga aborted. Rows already terminal are
+    /// left alone.
     pub async fn mark_submit_failed(&self, manifest_id: &str, error: &str) -> anyhow::Result<()> {
-        let now = jiff::Timestamp::now().as_second();
-        sqlx::query(
-            "UPDATE spool_jobs SET status = 'Failed', error = $1, completed_at = $2 \
-             WHERE manifest_id = $3",
-        )
-        .bind(error)
-        .bind(now)
-        .bind(manifest_id)
-        .execute(&self.pool)
-        .await?;
-        Ok(())
+        loop {
+            let Some(status) = sqlx::query_scalar::<_, String>(
+                "SELECT status FROM spool_jobs WHERE manifest_id = $1",
+            )
+            .bind(manifest_id)
+            .fetch_optional(&self.pool)
+            .await?
+            else {
+                return Ok(());
+            };
+            let Some(next) = advance(&status, SpoolEvent::SubmitFailed) else {
+                return Ok(());
+            };
+            let now = jiff::Timestamp::now().as_second();
+            let updated = sqlx::query(
+                "UPDATE spool_jobs SET status = $1, error = $2, completed_at = $3 \
+                 WHERE manifest_id = $4 AND status = $5",
+            )
+            .bind(next.name())
+            .bind(error)
+            .bind(now)
+            .bind(manifest_id)
+            .bind(&status)
+            .execute(&self.pool)
+            .await?;
+            if updated.rows_affected() == 1 {
+                return Ok(());
+            }
+        }
     }
 
     pub async fn insert_submitted(
@@ -302,11 +355,11 @@ impl PostgresSpoolStore {
             "INSERT INTO spool_jobs \
              (manifest_id, backend, batch_id, status, request_count, payload_json, \
               submitted_at, created_at, updated_at) \
-             VALUES ($1, $2, $3, 'InProgress', $4, $5, $6, $7, $8) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
              ON CONFLICT (manifest_id) DO UPDATE SET \
                 backend = EXCLUDED.backend, \
                 batch_id = EXCLUDED.batch_id, \
-                status = 'InProgress', \
+                status = excluded.status, \
                 request_count = EXCLUDED.request_count, \
                 payload_json = EXCLUDED.payload_json, \
                 result_json = NULL, \
@@ -319,6 +372,7 @@ impl PostgresSpoolStore {
         .bind(manifest_id)
         .bind(backend)
         .bind(batch_id)
+        .bind(SpoolState::InProgress.name())
         .bind(i64::from(request_count))
         .bind(payload_json)
         .bind(now)
@@ -360,11 +414,11 @@ impl BackendSpoolStore {
         pub async fn load(&self, manifest_id: &str) -> anyhow::Result<Option<SpoolRow>>;
         pub async fn mark_terminal(
             &self,
-            manifest_id: &str,
+            row: &SpoolRow,
             phase: SpoolPhase,
             result_json: Option<&str>,
             error: Option<&str>,
-        ) -> anyhow::Result<()>;
+        ) -> anyhow::Result<bool>;
         pub async fn insert_queued(
             &self,
             manifest_id: &str,
@@ -396,12 +450,6 @@ impl BackendSpoolStore {
     }
 }
 
-fn phase_to_status(phase: SpoolPhase) -> &'static str {
-    match phase {
-        SpoolPhase::InProgress => "InProgress",
-        SpoolPhase::Completed => "Completed",
-        SpoolPhase::Failed => "Failed",
-        SpoolPhase::Expired => "Expired",
-        SpoolPhase::Cancelled => "Cancelled",
-    }
+fn advance(status: &str, event: SpoolEvent) -> Option<SpoolState> {
+    SpoolState::from_name(status)?.after(event)
 }

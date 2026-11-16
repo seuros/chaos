@@ -8,7 +8,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
-use std::sync::atomic::AtomicU8;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -27,7 +26,6 @@ use chaos_traits::router::Adapter;
 use chaos_traits::router::AdapterError;
 use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
 use rama::futures::future::join_all;
-use tokio::sync::Notify;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -39,6 +37,8 @@ mod lifecycle;
 mod mailbox;
 mod reset;
 use lifecycle::ActorLifecycle;
+use lifecycle::McpActorState;
+use lifecycle::RegistryLifecycle;
 
 type ErasedResult = anyhow::Result<Box<dyn Any + Send>>;
 type ServerFuture = Pin<Box<dyn Future<Output = ErasedResult> + Send>>;
@@ -52,9 +52,6 @@ const MCP_SERVER_TASK_JOIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MCP_REFRESH_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 const MCP_REGISTRY_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
 const MCP_SUBSCRIPTION_RESTORE_TIMEOUT: Duration = Duration::from_secs(10);
-const REGISTRY_RUNNING: u8 = 0;
-const REGISTRY_SHUTTING_DOWN: u8 = 1;
-const REGISTRY_STOPPED: u8 = 2;
 
 #[derive(Clone)]
 struct McpPermissionState {
@@ -203,11 +200,6 @@ enum McpRegistryCommand {
     },
 }
 
-struct McpRegistryLifecycle {
-    state: AtomicU8,
-    stopped: Notify,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct McpRegistryDiff {
     pub(crate) revision: u64,
@@ -225,17 +217,12 @@ pub(crate) struct McpRegistryActor {
     client_identity_scope: Option<Arc<str>>,
     client_identities: Arc<StdMutex<HashMap<String, McpClientIdentity>>>,
     resource_subscriptions: Arc<StdMutex<HashMap<String, HashSet<String>>>>,
-    lifecycle: Arc<McpRegistryLifecycle>,
+    lifecycle: Arc<RegistryLifecycle>,
 }
 
 impl McpRegistryActor {
     fn ensure_running(&self) -> anyhow::Result<()> {
-        match self.lifecycle.state.load(Ordering::Acquire) {
-            REGISTRY_RUNNING => Ok(()),
-            REGISTRY_SHUTTING_DOWN => anyhow::bail!("MCP registry is shutting down"),
-            REGISTRY_STOPPED => anyhow::bail!("MCP registry is stopped"),
-            state => anyhow::bail!("MCP registry has invalid lifecycle state {state}"),
-        }
+        self.lifecycle.ensure_running()
     }
 
     #[cfg(test)]
@@ -268,10 +255,7 @@ impl McpRegistryActor {
         let revision = Arc::new(AtomicU64::new(0));
         let client_identities = Arc::new(StdMutex::new(HashMap::new()));
         let resource_subscriptions = Arc::new(StdMutex::new(HashMap::new()));
-        let lifecycle = Arc::new(McpRegistryLifecycle {
-            state: AtomicU8::new(REGISTRY_RUNNING),
-            stopped: Notify::new(),
-        });
+        let lifecycle = Arc::new(RegistryLifecycle::new());
         let (mailbox, mut receiver) = Adapter::bounded(DEFAULT_ADAPTER_CAPACITY);
 
         let actor_current = Arc::clone(&current);
@@ -320,7 +304,7 @@ impl McpRegistryActor {
                         bump_revision,
                         reply,
                     } => {
-                        if actor_lifecycle.state.load(Ordering::Acquire) != REGISTRY_RUNNING {
+                        if actor_lifecycle.state() != McpActorState::Running {
                             next_cancellation_token.cancel();
                             let cleanup =
                                 retire_generation(HashMap::new(), next_cancellation_token, manager)
@@ -408,9 +392,7 @@ impl McpRegistryActor {
                         let _ = reply.send(Ok(()));
                     }
                     McpRegistryCommand::Shutdown { reply } => {
-                        actor_lifecycle
-                            .state
-                            .store(REGISTRY_SHUTTING_DOWN, Ordering::Release);
+                        actor_lifecycle.drain();
                         if let Some(active_catalog_gate) = catalog_gate.take() {
                             active_catalog_gate.retire();
                         }
@@ -423,10 +405,7 @@ impl McpRegistryActor {
                             .await
                             .context("failed to shut down active MCP generation");
                         generation_shutdown = true;
-                        actor_lifecycle
-                            .state
-                            .store(REGISTRY_STOPPED, Ordering::Release);
-                        actor_lifecycle.stopped.notify_waiters();
+                        actor_lifecycle.stop();
                         let _ = reply.send(result);
                         break;
                     }
@@ -434,9 +413,7 @@ impl McpRegistryActor {
             }
 
             if !generation_shutdown {
-                actor_lifecycle
-                    .state
-                    .store(REGISTRY_SHUTTING_DOWN, Ordering::Release);
+                actor_lifecycle.drain();
                 if let Some(active_catalog_gate) = catalog_gate.take() {
                     active_catalog_gate.retire();
                 }
@@ -450,10 +427,7 @@ impl McpRegistryActor {
                 {
                     warn!(%error, "failed to shut down MCP registry after mailbox closure");
                 }
-                actor_lifecycle
-                    .state
-                    .store(REGISTRY_STOPPED, Ordering::Release);
-                actor_lifecycle.stopped.notify_waiters();
+                actor_lifecycle.stop();
             }
         });
 
@@ -665,13 +639,8 @@ impl McpRegistryActor {
     /// Stop accepting work, drain the active generation, and wait until every
     /// managed transport has completed bounded shutdown.
     pub(crate) async fn shutdown(&self) -> anyhow::Result<()> {
-        match self.lifecycle.state.compare_exchange(
-            REGISTRY_RUNNING,
-            REGISTRY_SHUTTING_DOWN,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => {
+        match self.lifecycle.begin_shutdown() {
+            McpActorState::Running => {
                 let (reply, response) = oneshot::channel();
                 mailbox::admit(
                     &self.mailbox,
@@ -685,24 +654,16 @@ impl McpRegistryActor {
                     .context("timed out waiting for MCP registry shutdown")?
                     .context("MCP registry actor dropped shutdown acknowledgement")?
             }
-            Err(REGISTRY_STOPPED) => Ok(()),
-            Err(REGISTRY_SHUTTING_DOWN) => self.wait_until_stopped().await,
-            Err(state) => anyhow::bail!("MCP registry has invalid lifecycle state {state}"),
+            McpActorState::Stopped => Ok(()),
+            McpActorState::Draining => self.wait_until_stopped().await,
         }
     }
 
     async fn wait_until_stopped(&self) -> anyhow::Result<()> {
-        tokio::time::timeout(MCP_REGISTRY_CONTROL_TIMEOUT, async {
-            loop {
-                let stopped = self.lifecycle.stopped.notified();
-                tokio::pin!(stopped);
-                stopped.as_mut().enable();
-                if self.lifecycle.state.load(Ordering::Acquire) == REGISTRY_STOPPED {
-                    return;
-                }
-                stopped.await;
-            }
-        })
+        tokio::time::timeout(
+            MCP_REGISTRY_CONTROL_TIMEOUT,
+            self.lifecycle.wait_until_stopped(),
+        )
         .await
         .context("timed out waiting for concurrent MCP registry shutdown")
     }

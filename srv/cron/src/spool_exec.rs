@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use chaos_abi::SpoolPhase;
+use chaos_abi::SpoolRecord;
 use chaos_abi::SpoolRegistry;
 use chaos_vfs::ChaosVfs;
 
@@ -36,7 +37,7 @@ pub(crate) fn spool_executor(
                 .map_err(|e| format!("load spool row {manifest_id}: {e}"))?
                 .ok_or_else(|| format!("spool row {manifest_id} not found"))?;
 
-            if is_terminal(&row.status) {
+            if SpoolRecord::is_terminal(&row.status) {
                 disable_cron_job(&cron_store, &job_id).await?;
                 return Ok(format!("spool {manifest_id} already {}", row.status));
             }
@@ -67,15 +68,13 @@ pub(crate) fn spool_executor(
                         .map_err(|e| format!("fetch {manifest_id}: {e}"))?;
                     let result_json = serde_json::to_string(&results)
                         .map_err(|e| format!("serialize results for {manifest_id}: {e}"))?;
-                    store
-                        .mark_terminal(
-                            &manifest_id,
-                            SpoolPhase::Completed,
-                            Some(&result_json),
-                            None,
-                        )
+                    let applied = store
+                        .mark_terminal(&row, SpoolPhase::Completed, Some(&result_json), None)
                         .await
                         .map_err(|e| format!("persist completion {manifest_id}: {e}"))?;
+                    if !applied {
+                        return Ok(superseded(&manifest_id, SpoolPhase::Completed, &row.status));
+                    }
                     disable_cron_job(&cron_store, &job_id).await?;
                     Ok(format!(
                         "spool {manifest_id} completed with {} results",
@@ -83,15 +82,13 @@ pub(crate) fn spool_executor(
                     ))
                 }
                 terminal @ (SpoolPhase::Failed | SpoolPhase::Expired | SpoolPhase::Cancelled) => {
-                    store
-                        .mark_terminal(
-                            &manifest_id,
-                            terminal,
-                            None,
-                            Some(&report.raw_provider_status),
-                        )
+                    let applied = store
+                        .mark_terminal(&row, terminal, None, Some(&report.raw_provider_status))
                         .await
                         .map_err(|e| format!("persist terminal {manifest_id}: {e}"))?;
+                    if !applied {
+                        return Ok(superseded(&manifest_id, terminal, &row.status));
+                    }
                     disable_cron_job(&cron_store, &job_id).await?;
                     Ok(format!("spool {manifest_id} {terminal:?}"))
                 }
@@ -118,8 +115,8 @@ async fn disable_cron_job(cron_store: &BackendCronStorage, job_id: &str) -> Resu
         .map_err(|e| format!("disable cron job {job_id}: {e}"))
 }
 
-fn is_terminal(status: &str) -> bool {
-    matches!(status, "Completed" | "Failed" | "Expired" | "Cancelled")
+fn superseded(manifest_id: &str, phase: SpoolPhase, loaded: &str) -> String {
+    format!("spool {manifest_id} {phase:?} not applied: row left {loaded} before the poll landed")
 }
 
 #[cfg(test)]

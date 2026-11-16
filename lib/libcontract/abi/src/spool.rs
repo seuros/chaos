@@ -25,6 +25,7 @@ state_machine! {
         }
         submit_failed {
             transition: { from: Queued, to: Failed }
+            transition: { from: InProgress, to: Failed }
         }
         poll {
             transition: { from: InProgress, internal: true }
@@ -61,7 +62,41 @@ pub struct SpoolRecord {
 
 impl SpoolRecord {
     pub fn is_terminal(state: &str) -> bool {
-        matches!(state, "Completed" | "Failed" | "Expired" | "Cancelled")
+        SpoolState::from_name(state)
+            .is_some_and(|state| DynamicSpool::new_init_state((), state).is_finished())
+    }
+}
+
+impl SpoolState {
+    pub fn from_name(name: &str) -> Option<Self> {
+        [
+            Self::Queued,
+            Self::InProgress,
+            Self::Completed,
+            Self::Failed,
+            Self::Expired,
+            Self::Cancelled,
+        ]
+        .into_iter()
+        .find(|state| state.name() == name)
+    }
+
+    pub fn after(self, event: SpoolEvent) -> Option<Self> {
+        let mut machine = DynamicSpool::new_init_state((), self);
+        machine.handle(event).ok()?;
+        Some(machine.current_state())
+    }
+}
+
+impl From<SpoolPhase> for SpoolEvent {
+    fn from(phase: SpoolPhase) -> Self {
+        match phase {
+            SpoolPhase::InProgress => Self::Poll,
+            SpoolPhase::Completed => Self::Finish,
+            SpoolPhase::Failed => Self::Fail,
+            SpoolPhase::Expired => Self::Expire,
+            SpoolPhase::Cancelled => Self::Cancel,
+        }
     }
 }
 

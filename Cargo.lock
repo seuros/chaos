@@ -1862,6 +1862,7 @@ version = "47.15.0"
 dependencies = [
  "serde",
  "serde_json",
+ "state-machines",
 ]
 
 [[package]]
@@ -2283,6 +2284,7 @@ dependencies = [
  "mcp-host",
  "serde",
  "serde_json",
+ "state-machines",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",

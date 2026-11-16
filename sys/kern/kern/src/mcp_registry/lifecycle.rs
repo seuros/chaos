@@ -1,6 +1,7 @@
 use state_machines::state_machine;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
@@ -33,6 +34,67 @@ state_machine! {
     }
 }
 
+fn lock(machine: &Mutex<DynamicMcpActor<()>>) -> MutexGuard<'_, DynamicMcpActor<()>> {
+    machine.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(super) struct RegistryLifecycle {
+    machine: Mutex<DynamicMcpActor<()>>,
+    stopped: Notify,
+}
+
+impl RegistryLifecycle {
+    pub fn new() -> Self {
+        Self {
+            machine: Mutex::new(McpActor::new(()).into_dynamic()),
+            stopped: Notify::new(),
+        }
+    }
+
+    pub fn state(&self) -> McpActorState {
+        lock(&self.machine).current_state()
+    }
+
+    pub fn ensure_running(&self) -> anyhow::Result<()> {
+        match self.state() {
+            McpActorState::Running => Ok(()),
+            McpActorState::Draining => anyhow::bail!("MCP registry is shutting down"),
+            McpActorState::Stopped => anyhow::bail!("MCP registry is stopped"),
+        }
+    }
+
+    pub fn begin_shutdown(&self) -> McpActorState {
+        let mut machine = lock(&self.machine);
+        let state = machine.current_state();
+        if state == McpActorState::Running {
+            assert!(machine.handle(McpActorEvent::Drain).is_ok());
+        }
+        state
+    }
+
+    pub fn drain(&self) {
+        let mut machine = lock(&self.machine);
+        assert!(machine.handle(McpActorEvent::Drain).is_ok());
+    }
+
+    pub fn stop(&self) {
+        assert!(lock(&self.machine).handle(McpActorEvent::Stop).is_ok());
+        self.stopped.notify_waiters();
+    }
+
+    pub async fn wait_until_stopped(&self) {
+        loop {
+            let stopped = self.stopped.notified();
+            tokio::pin!(stopped);
+            stopped.as_mut().enable();
+            if self.state() == McpActorState::Stopped {
+                return;
+            }
+            stopped.await;
+        }
+    }
+}
+
 pub(super) struct ActorLifecycle {
     machine: Mutex<DynamicMcpActor<()>>,
     shutdown_lock: tokio::sync::Mutex<()>,
@@ -51,28 +113,17 @@ impl ActorLifecycle {
     }
 
     pub fn accepting(&self) -> bool {
-        self.machine
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .current_state()
-            == McpActorState::Running
+        lock(&self.machine).current_state() == McpActorState::Running
     }
 
     fn begin_shutdown(&self) -> Option<Arc<ActorTask>> {
-        let mut machine = self
-            .machine
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut machine = lock(&self.machine);
         machine.handle(McpActorEvent::Drain).ok()?;
         machine.owned_data().cloned()
     }
 
     fn finish(&self) {
-        let mut machine = self
-            .machine
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        assert!(machine.handle(McpActorEvent::Stop).is_ok());
+        assert!(lock(&self.machine).handle(McpActorEvent::Stop).is_ok());
     }
 
     pub async fn shutdown(

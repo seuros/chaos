@@ -236,3 +236,80 @@ async fn spool_executor_persists_failure_and_error_message() {
     assert!(error.is_some());
     assert!(!cron_enabled(&pool, "job-1").await);
 }
+
+struct LatePollBackend {
+    pool: sqlx::SqlitePool,
+}
+
+impl SpoolBackend for LatePollBackend {
+    fn name(&self) -> &'static str {
+        "mock"
+    }
+
+    fn submit(
+        &self,
+        _items: Vec<(String, TurnRequest)>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, SpoolError>> + Send + '_>> {
+        Box::pin(async { Ok("mock-batch".into()) })
+    }
+
+    fn poll(
+        &self,
+        _batch_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<SpoolStatusReport, SpoolError>> + Send + '_>> {
+        Box::pin(async move {
+            sqlx::query(
+                "UPDATE spool_jobs SET status = 'Completed', result_json = '[]' \
+                 WHERE manifest_id = 'manifest-late'",
+            )
+            .execute(&self.pool)
+            .await
+            .expect("concurrent completion");
+            Ok(SpoolStatusReport {
+                phase: SpoolPhase::Expired,
+                raw_provider_status: "expired".into(),
+            })
+        })
+    }
+
+    fn fetch_results(
+        &self,
+        _batch_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<SpoolItem>, SpoolError>> + Send + '_>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn cancel(
+        &self,
+        _batch_id: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), SpoolError>> + Send + '_>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[tokio::test]
+async fn late_poll_cannot_rewrite_a_completed_row() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let provider = ChaosVfs::from_config(MountConfig::sqlite_home(tmp.path()))
+        .await
+        .expect("provider");
+    let pool = provider.sqlite_pool().expect("sqlite pool");
+    seed_row(&pool, "manifest-late").await;
+    seed_cron_row(&pool, "job-1", "manifest-late").await;
+
+    let mut registry = SpoolRegistry::new();
+    registry.register(Arc::new(LatePollBackend { pool: pool.clone() }));
+    let executor = spool_executor_from_provider(Arc::new(registry), &provider);
+    let job = fake_cron_job("manifest-late");
+
+    let msg = executor(&job).await.expect("tick ok");
+    assert!(msg.contains("not applied"), "msg={msg}");
+    let (status, result_json, error) = fetch_row(&pool, "manifest-late").await;
+    assert_eq!(status, "Completed");
+    assert_eq!(result_json.as_deref(), Some("[]"));
+    assert!(error.is_none());
+
+    let msg = executor(&job).await.expect("tick ok");
+    assert!(msg.contains("already Completed"), "msg={msg}");
+    assert!(!cron_enabled(&pool, "job-1").await);
+}

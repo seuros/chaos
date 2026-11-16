@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+mod lifecycle;
+pub use lifecycle::{DynamicGoalLifecycle, GoalLifecycle, GoalLifecycleEvent, GoalLifecycleState};
+
 pub const CAPABILITY: &str = "chaos/goals";
 pub const METHOD: &str = "chaos/goals";
 pub const VERSION: u32 = 2;

@@ -8,7 +8,7 @@ pub(in crate::sessions) mod durability;
 fn ready_session() -> (Arc<Session>, mpsc::Receiver<Command>) {
     let manager = SessionManager::new(1, Duration::from_secs(3600));
     let (session, commands) = manager.reserve(None).unwrap();
-    session.data.lock().unwrap().status = SessionStatus::Idle;
+    session.data.lock().unwrap().status = SessionLifecycleState::Idle;
     (session, commands)
 }
 
@@ -85,7 +85,7 @@ async fn retries_are_payload_bound_and_capacity_is_released_only_by_matching_ter
     submit_turn(&session, "first", "hello", &capacity);
     assert_eq!(capacity.available_permits(), 0);
     let repeated = submit_turn(&session, "first", "hello", &capacity);
-    assert_eq!(repeated.status, TurnStatus::Accepted);
+    assert_eq!(repeated.status, TurnLifecycleState::Accepted);
     assert_eq!(
         session
             .submit(
@@ -106,7 +106,7 @@ async fn retries_are_payload_bound_and_capacity_is_released_only_by_matching_ter
         session.turn("first").unwrap().result.as_deref(),
         Some("done")
     );
-    session.data.lock().unwrap().status = SessionStatus::Closed;
+    session.data.lock().unwrap().status = SessionLifecycleState::Closed;
     assert_eq!(
         session
             .submit(
@@ -117,7 +117,7 @@ async fn retries_are_payload_bound_and_capacity_is_released_only_by_matching_ter
             )
             .unwrap()
             .status,
-        TurnStatus::Completed
+        TurnLifecycleState::Completed
     );
 }
 
@@ -144,11 +144,11 @@ async fn controls_do_not_need_execution_capacity_and_stale_targets_are_rejected(
     );
     assert_eq!(
         session.interrupt("first".into()).unwrap().status,
-        TurnStatus::Interrupting
+        TurnLifecycleState::Interrupting
     );
     assert_eq!(
         session.interrupt("first".into()).unwrap().status,
-        TurnStatus::Interrupting
+        TurnLifecycleState::Interrupting
     );
     assert_eq!(capacity.available_permits(), 0);
     assert!(matches!(commands.recv().await, Some(Command::Interrupt(id)) if id == "first"));
@@ -163,7 +163,7 @@ async fn controls_do_not_need_execution_capacity_and_stale_targets_are_rejected(
     assert_eq!(capacity.available_permits(), 1);
     assert_eq!(
         session.turn("first").unwrap().status,
-        TurnStatus::Interrupted
+        TurnLifecycleState::Interrupted
     );
     assert!(session.interrupt("first".into()).is_err());
 }
@@ -196,7 +196,7 @@ fn retained_records_and_turn_tombstones_are_bounded() {
     let (session, _commands) = manager.reserve(None).unwrap();
     assert!(manager.reserve(None).is_err());
     assert!(manager.forget(&session.id).is_err());
-    session.data.lock().unwrap().status = SessionStatus::Closed;
+    session.data.lock().unwrap().status = SessionLifecycleState::Closed;
     manager.forget(&session.id).unwrap();
     assert!(manager.reserve(None).is_ok());
     assert!(manager.get(&session.id).is_err());
@@ -221,7 +221,7 @@ async fn foreground_completion_waits_for_kernel_background_quiescence() {
     session.observe_with_activity(&complete("first"), false);
     assert_eq!(
         session.turn("first").unwrap().status,
-        TurnStatus::WaitingBackground
+        TurnLifecycleState::WaitingBackground
     );
     assert_eq!(capacity.available_permits(), 0);
     assert!(
@@ -237,7 +237,10 @@ async fn foreground_completion_waits_for_kernel_background_quiescence() {
     assert!(session.steer("first".into(), "late".into()).await.is_err());
     session.data.lock().unwrap().maybe_finish(true);
     assert_eq!(capacity.available_permits(), 1);
-    assert_eq!(session.turn("first").unwrap().status, TurnStatus::Completed);
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Completed
+    );
 }
 
 #[tokio::test]
@@ -255,7 +258,10 @@ async fn errors_do_not_release_capacity_without_a_terminal_event() {
     assert_eq!(capacity.available_permits(), 0);
     session.observe(&complete("first"));
     assert_eq!(capacity.available_permits(), 1);
-    assert_eq!(session.turn("first").unwrap().status, TurnStatus::Failed);
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Failed
+    );
 }
 
 #[tokio::test]
@@ -297,7 +303,7 @@ async fn turn_history_cap_never_discards_deduplication_evidence() {
             )
             .unwrap()
             .status,
-        TurnStatus::Completed
+        TurnLifecycleState::Completed
     );
 }
 
@@ -307,7 +313,7 @@ fn resume_cannot_create_two_consumers_for_the_same_process() {
     let id = ProcessId::new();
     let (first, _commands) = manager.reserve(Some(id)).unwrap();
     assert!(matches!(manager.reserve(Some(id)), Err(error) if error.code == StatusCode::CONFLICT));
-    first.data.lock().unwrap().status = SessionStatus::Closed;
+    first.data.lock().unwrap().status = SessionLifecycleState::Closed;
     assert!(manager.reserve(Some(id)).is_ok());
 }
 
@@ -440,7 +446,7 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
         Some(Operation::Steer(id, text)) if id == "first" && text == "focus on tests"
     ));
     supervisor.events.send(complete("first")).unwrap();
-    wait_until(&session, |data| data.status == SessionStatus::Idle).await;
+    wait_until(&session, |data| data.status == SessionLifecycleState::Idle).await;
     submit_turn(&session, "second", "continue", &capacity);
     assert!(matches!(
         supervisor.operations.recv().await,
@@ -458,7 +464,7 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
         Some(Operation::Shutdown)
     ));
     supervisor.task.await.unwrap();
-    assert_eq!(session.snapshot().status, SessionStatus::Closed);
+    assert_eq!(session.snapshot().status, SessionLifecycleState::Closed);
     assert_eq!(capacity.available_permits(), 1);
 }
 
@@ -469,10 +475,10 @@ async fn cancellation_before_submission_skips_execution_and_cannot_interrupt_the
     submit_turn(&session, "first", "hello", &capacity);
     session.interrupt("first".into()).unwrap();
     let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
-    wait_until(&session, |data| data.status == SessionStatus::Idle).await;
+    wait_until(&session, |data| data.status == SessionLifecycleState::Idle).await;
     assert_eq!(
         session.turn("first").unwrap().status,
-        TurnStatus::Interrupted
+        TurnLifecycleState::Interrupted
     );
     submit_turn(&session, "second", "continue", &capacity);
     // In particular, no Execute(first) or Interrupt is allowed here.
@@ -494,8 +500,11 @@ async fn supervisor_owner_loss_marks_unknown_without_releasing_capacity() {
     let capacity = Arc::new(Semaphore::new(1));
     submit_turn(&session, "first", "hello", &capacity);
     drop(runtime::SupervisorGuard(session.clone()));
-    assert_eq!(session.snapshot().status, SessionStatus::Unknown);
-    assert_eq!(session.turn("first").unwrap().status, TurnStatus::Unknown);
+    assert_eq!(session.snapshot().status, SessionLifecycleState::Unknown);
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Unknown
+    );
     assert_eq!(capacity.available_permits(), 0);
 }
 
@@ -521,9 +530,15 @@ async fn timeout_with_unconfirmed_shutdown_keeps_reservation_and_does_not_replay
         supervisor.operations.recv().await,
         Some(Operation::Shutdown)
     ));
-    wait_until(&session, |data| data.status == SessionStatus::Unknown).await;
+    wait_until(&session, |data| {
+        data.status == SessionLifecycleState::Unknown
+    })
+    .await;
     assert_eq!(capacity.available_permits(), 0);
-    assert_eq!(session.turn("first").unwrap().status, TurnStatus::Unknown);
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Unknown
+    );
     assert!(
         session
             .submit(
@@ -542,7 +557,7 @@ async fn timeout_with_unconfirmed_shutdown_keeps_reservation_and_does_not_replay
             Duration::from_secs(1),
         )
         .unwrap();
-    assert_eq!(duplicate.status, TurnStatus::Unknown);
+    assert_eq!(duplicate.status, TurnLifecycleState::Unknown);
     assert!(supervisor.operations.try_recv().is_err());
     supervisor.task.abort();
     let _ = supervisor.task.await;
@@ -557,7 +572,7 @@ async fn idle_session_ttl_closes_backend() {
         Some(Operation::Shutdown)
     ));
     supervisor.task.await.unwrap();
-    assert_eq!(session.snapshot().status, SessionStatus::Closed);
+    assert_eq!(session.snapshot().status, SessionLifecycleState::Closed);
 }
 
 #[tokio::test]
@@ -624,7 +639,7 @@ async fn host_notices_are_bound_to_the_turn_that_posted_them() {
         StatusCode::BAD_REQUEST
     );
     supervisor.events.send(complete("first")).unwrap();
-    wait_until(&session, |data| data.status == SessionStatus::Idle).await;
+    wait_until(&session, |data| data.status == SessionLifecycleState::Idle).await;
     assert!(
         session
             .notice("first".into(), Some(notice("n3")), None)
@@ -684,11 +699,11 @@ async fn reused_turn_id_replays_same_payload_and_rejects_another() {
     );
     let replayed = submit_turn(&session, "first", "hello", &capacity);
     assert_eq!(replayed.turn_id, accepted.turn_id);
-    assert_eq!(replayed.status, TurnStatus::Accepted);
+    assert_eq!(replayed.status, TurnLifecycleState::Accepted);
     session.observe(&complete("first"));
     assert_eq!(
         submit_turn(&session, "first", "hello", &capacity).status,
-        TurnStatus::Completed
+        TurnLifecycleState::Completed
     );
     assert_eq!(
         session
@@ -726,6 +741,91 @@ async fn refused_admission_releases_the_turn_id() {
     session.observe(&complete("first"));
     assert_eq!(
         submit_turn(&session, "second", "hello", &capacity).status,
-        TurnStatus::Accepted
+        TurnLifecycleState::Accepted
+    );
+}
+
+fn started(id: &str) -> Event {
+    Event {
+        id: id.into(),
+        msg: EventMsg::TurnStarted(chaos_ipc::protocol::TurnStartedEvent {
+            turn_id: id.into(),
+            model_context_window: None,
+            collaboration_mode_kind: Default::default(),
+        }),
+    }
+}
+
+#[test]
+fn autonomous_turn_start_only_wakes_an_idle_session() {
+    for status in SessionLifecycleState::ALL {
+        let manager = SessionManager::new(1, Duration::from_secs(3600));
+        let (session, _commands) = manager.reserve(None).unwrap();
+        session.data.lock().unwrap().status = *status;
+        session.observe_with_activity(&started("autonomous"), false);
+        let expected = if *status == SessionLifecycleState::Idle {
+            SessionLifecycleState::Running
+        } else {
+            *status
+        };
+        assert_eq!(session.data.lock().unwrap().status, expected, "{status}");
+    }
+}
+
+#[test]
+fn stopped_sessions_refuse_unknown_and_close() {
+    for status in [SessionLifecycleState::Closed, SessionLifecycleState::Failed] {
+        let (session, mut commands) = ready_session();
+        session.data.lock().unwrap().status = status;
+        session.data.lock().unwrap().mark_unknown();
+        session.close().unwrap();
+        assert_eq!(session.data.lock().unwrap().status, status);
+        assert!(commands.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn admission_requires_an_idle_session() {
+    let capacity = Arc::new(Semaphore::new(4));
+    for status in SessionLifecycleState::ALL
+        .iter()
+        .filter(|status| **status != SessionLifecycleState::Idle)
+    {
+        let (session, mut commands) = ready_session();
+        session.data.lock().unwrap().status = *status;
+        let refused = session
+            .submit(
+                "turn".into(),
+                request("hello"),
+                &capacity,
+                Duration::from_secs(60),
+            )
+            .unwrap_err();
+        assert_eq!(refused.code, StatusCode::CONFLICT, "{status}");
+        assert_eq!(session.data.lock().unwrap().status, *status);
+        assert!(commands.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn settled_turns_cannot_be_interrupted_back_to_life() {
+    let (session, mut commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    submit_turn(&session, "first", "hello", &capacity);
+    let Ok(Command::Turn(_)) = commands.try_recv() else {
+        panic!("initial turn must be queued");
+    };
+    session.observe(&complete("first"));
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Completed
+    );
+    assert_eq!(
+        session.interrupt("first".into()).unwrap_err().code,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        session.turn("first").unwrap().status,
+        TurnLifecycleState::Completed
     );
 }

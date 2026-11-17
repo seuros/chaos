@@ -165,7 +165,10 @@ async fn recovery_rejects_ordinary_credentials_and_stale_or_unconfirmed_targets(
         );
     }
     assert_eq!(fixture.capacity.available_permits(), 0);
-    assert_eq!(fixture.session.snapshot().status, SessionStatus::Unknown);
+    assert_eq!(
+        fixture.session.snapshot().status,
+        SessionLifecycleState::Unknown
+    );
     assert!(matches!(
         fixture
             .store
@@ -231,7 +234,7 @@ async fn failed_resolution_rolls_back_audit_terminal_outcome_and_capacity_releas
     let id = request.expected_turn_id.unwrap().to_string();
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
-        ExecutionTurnState::Unknown
+        TurnLifecycleState::Unknown
     );
     assert!(matches!(
         fixture
@@ -260,7 +263,7 @@ async fn failed_resolution_rolls_back_audit_terminal_outcome_and_capacity_releas
     request.resolution_id = Uuid::new_v4();
     let record = recovered.resolve(request.clone()).await.unwrap();
     assert_eq!(capacity.available_permits(), 1);
-    assert_eq!(recovered.snapshot().status, SessionStatus::Closed);
+    assert_eq!(recovered.snapshot().status, SessionLifecycleState::Closed);
     // The previous owner may read the same committed resolution, not invent one.
     assert_eq!(fixture.session.resolve(request).await.unwrap(), record);
     assert_eq!(fixture.capacity.available_permits(), 1);
@@ -297,7 +300,7 @@ async fn disconnected_resolution_is_audited_retry_safe_and_never_replays_after_r
     let _ = caller.await;
     assert_eq!(fixture.manager.ingress.available_permits(), 15);
     write_lock.release().await;
-    status(&fixture.session, SessionStatus::Closed).await;
+    status(&fixture.session, SessionLifecycleState::Closed).await;
     assert_eq!(fixture.capacity.available_permits(), 1);
     let resolution: ResolveRequest = serde_json::from_value(body.clone()).unwrap();
     let record = fixture.session.resolve(resolution.clone()).await.unwrap();
@@ -321,7 +324,7 @@ async fn disconnected_resolution_is_audited_retry_safe_and_never_replays_after_r
             .await
             .unwrap()
             .status,
-        TurnStatus::Interrupted
+        TurnLifecycleState::Interrupted
     );
     assert!(
         restored
@@ -373,7 +376,7 @@ async fn no_turn_recovery_audits_and_releases_only_the_orphan_reservation() {
     assert_eq!(record.request.outcome, None);
     assert_eq!(fixture.capacity.available_permits(), 1);
     let (_manager, recovered, capacity) = fixture.restored().await;
-    assert_eq!(recovered.snapshot().status, SessionStatus::Closed);
+    assert_eq!(recovered.snapshot().status, SessionLifecycleState::Closed);
     assert_eq!(capacity.available_permits(), 1);
     fixture.db.close().await;
 }

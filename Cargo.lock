@@ -1649,6 +1649,7 @@ dependencies = [
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "state-machines",
  "strum",
  "strum_macros",
  "sys-locale",

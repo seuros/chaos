@@ -170,7 +170,7 @@ async fn changed_role_material_before_dispatch_contains_without_submitting() {
         matches!(operation(&mut supervisor).await, Operation::Shutdown),
         "drift between admission and dispatch cannot submit a prompt"
     );
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.capacity.available_permits(), 0);
     assert!(supervisor.operations.try_recv().is_err());
     supervisor.task.abort();
@@ -199,7 +199,7 @@ async fn recovery_only_never_boots_history_or_exposes_it_to_an_ordinary_caller()
     assert!(recovered.is_empty());
     let manager = Arc::new(manager);
     let session = manager.get(&fixture.session.id).unwrap();
-    assert_eq!(session.snapshot().status, SessionStatus::Unknown);
+    assert_eq!(session.snapshot().status, SessionLifecycleState::Unknown);
     assert_eq!(capacity.available_permits(), 0);
     let (_home, mut state) = crate::test_support::server_state(8192, false).await;
     let unique = Arc::get_mut(&mut state).unwrap();
@@ -314,7 +314,7 @@ async fn legacy_scope_requires_recovery_instead_of_unverified_policy_adoption() 
     assert!(recovered.is_empty());
     assert_eq!(
         manager.get(&id.to_string()).unwrap().snapshot().status,
-        SessionStatus::Closed
+        SessionLifecycleState::Closed
     );
     assert_eq!(capacity.available_permits(), 1);
     fixture.db.close().await;

@@ -9,6 +9,7 @@ pub mod backoff;
 pub mod config_types;
 pub mod custom_prompts;
 pub mod dynamic_tools;
+pub mod execution;
 mod git_pointer;
 pub mod hooks;
 pub mod items;

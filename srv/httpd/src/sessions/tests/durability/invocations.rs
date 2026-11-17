@@ -1,7 +1,8 @@
 use super::*;
+use chaos_ipc::execution::InvocationLifecycleState;
 use chaos_journald::{
     ExecutionAccounting, ExecutionInvocationRequest as InvocationRequest, InvocationPurpose,
-    InvocationReceipt, InvocationStart, InvocationState, InvocationTokenUsage,
+    InvocationReceipt, InvocationStart, InvocationTokenUsage,
 };
 
 pub(super) fn start(
@@ -168,7 +169,7 @@ async fn receipts_survive_takeover_and_compaction_without_cumulative_delta_billi
         after
             .invocations
             .iter()
-            .filter(|i| i.state == InvocationState::Completed)
+            .filter(|i| i.state == InvocationLifecycleState::Completed)
             .count(),
         3
     );
@@ -249,7 +250,10 @@ async fn failed_begin_or_receipt_is_not_free_usage_and_failed_writers_cannot_res
         let saved = accounting(&fixture, id).await;
         assert_eq!(saved.invocations.len(), usize::from(completion));
         if completion {
-            assert_eq!(saved.invocations[0].state, InvocationState::Started);
+            assert_eq!(
+                saved.invocations[0].state,
+                InvocationLifecycleState::Started
+            );
             assert!(saved.invocations[0].receipt.is_none());
         }
         assert_eq!(fixture.capacity.available_permits(), 0);
@@ -387,7 +391,7 @@ async fn invocation_limit_stops_before_dispatch_and_legacy_absence_is_not_zero()
         .call(ExecutionRequest::Finish {
             lease,
             turn_id: legacy,
-            state: ExecutionTurnState::Interrupted,
+            state: TurnLifecycleState::Interrupted,
             outcome: None,
         })
         .await

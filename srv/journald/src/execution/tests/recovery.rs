@@ -109,7 +109,7 @@ async fn assert_operator_resolution<S: JournalStore>(store: &S) {
     else {
         panic!("expected session")
     };
-    assert_eq!(session.state, ExecutionSessionState::Closed);
+    assert_eq!(session.state, SessionLifecycleState::Closed);
     assert_eq!(session.active_turn_id, None);
     assert_eq!(session.turn_count, 1);
     assert!(matches!(
@@ -121,7 +121,7 @@ async fn assert_operator_resolution<S: JournalStore>(store: &S) {
             .await
             .unwrap(),
         ExecutionResponse::Turn(ExecutionTurn {
-            state: ExecutionTurnState::Interrupted,
+            state: TurnLifecycleState::Interrupted,
             ..
         })
     ));
@@ -166,7 +166,7 @@ async fn assert_operator_resolution<S: JournalStore>(store: &S) {
     else {
         panic!("expected session")
     };
-    assert_eq!(unchanged.state, ExecutionSessionState::Unknown);
+    assert_eq!(unchanged.state, SessionLifecycleState::Unknown);
     assert_eq!(
         store
             .execution(ExecutionRequest::GetResolution {

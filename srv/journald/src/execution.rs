@@ -7,6 +7,7 @@
 //! caller to have independently established containment/quiescence.
 
 use chaos_ipc::ProcessId;
+use chaos_ipc::execution::{SessionLifecycleState, TurnLifecycleState};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -16,55 +17,14 @@ use crate::JournalError;
 pub const MAX_EXECUTION_TURNS: i64 = 256;
 pub const MAX_EXECUTION_OUTCOME_BYTES: usize = 32 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionSessionState {
-    Idle,
-    Active,
-    Unknown,
-    Closed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExecutionTurnState {
-    Accepted,
-    Running,
-    Completed,
-    Failed,
-    Interrupted,
-    TimedOut,
-    Unknown,
-}
-
-impl ExecutionTurnState {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Accepted => "accepted",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Interrupted => "interrupted",
-            Self::TimedOut => "timed_out",
-            Self::Unknown => "unknown",
-        }
-    }
-
-    pub fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Completed | Self::Failed | Self::Interrupted | Self::TimedOut
-        )
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionSession {
     pub session_id: Uuid,
     /// Server-selected configuration/tenant namespace, not caller billing input.
     pub scope: String,
     pub process_id: Option<ProcessId>,
-    pub state: ExecutionSessionState,
+    #[serde(with = "chaos_ipc::execution::ledger")]
+    pub state: SessionLifecycleState,
     pub active_turn_id: Option<Uuid>,
     pub turn_count: u64,
     /// Monotonic quarantine incarnation; stale containment assertions conflict.
@@ -86,7 +46,7 @@ pub struct ExecutionTurn {
     pub turn_id: Uuid,
     /// Lowercase SHA-256 of the normalized execution payload.
     pub fingerprint: String,
-    pub state: ExecutionTurnState,
+    pub state: TurnLifecycleState,
     pub outcome: Option<Value>,
 }
 
@@ -189,7 +149,7 @@ pub enum ExecutionRequest {
     Finish {
         lease: ExecutionLease,
         turn_id: Uuid,
-        state: ExecutionTurnState,
+        state: TurnLifecycleState,
         outcome: Option<Value>,
     },
     /// Quarantine the entire process, including autonomous work without an HTTP
@@ -310,7 +270,7 @@ impl ExecutionRequest {
                 return Err(invalid("fingerprint must be lowercase SHA-256 hex"));
             }
             Self::Finish { state, outcome, .. } => {
-                if !state.is_terminal() && *state != ExecutionTurnState::Unknown {
+                if !state.is_final() && *state != TurnLifecycleState::Unknown {
                     return Err(invalid("finish requires a terminal or unknown outcome"));
                 }
                 if let Some(outcome) = outcome
@@ -458,6 +418,21 @@ pub(crate) fn decode_state<T: serde::de::DeserializeOwned>(
     })
 }
 
+pub(crate) fn decode_session_state(value: String) -> Result<SessionLifecycleState, JournalError> {
+    chaos_ipc::execution::ledger::deserialize(Value::String(value)).map_err(|source| {
+        JournalError::Deserialize {
+            field: "execution state",
+            source,
+        }
+    })
+}
+
+pub(crate) fn ledger_state(state: SessionLifecycleState) -> Result<&'static str, JournalError> {
+    state
+        .ledger_str()
+        .ok_or_else(|| invalid("session state has no ledger form"))
+}
+
 pub(crate) fn parse_uuid(value: String) -> Result<Uuid, JournalError> {
     Uuid::parse_str(&value).map_err(|source| JournalError::InvalidProcessId { value, source })
 }
@@ -484,7 +459,7 @@ mod invocations;
 mod outbox;
 pub use invocations::{
     ExecutionAccounting, ExecutionInvocation, ExecutionInvocationRequest, InvocationPurpose,
-    InvocationReceipt, InvocationStart, InvocationState, InvocationSummary, InvocationTokenUsage,
+    InvocationReceipt, InvocationStart, InvocationSummary, InvocationTokenUsage,
     MAX_EXECUTION_INVOCATIONS,
 };
 mod storage;

@@ -41,7 +41,7 @@ pub(super) async fn terminal(fixture: &Fixture, id: Uuid) {
     owner
         .finish(TurnSnapshot {
             turn_id: id.to_string(),
-            status: TurnStatus::Completed,
+            status: TurnLifecycleState::Completed,
             result: Some("private result".into()),
             result_truncated: false,
             error: None,
@@ -67,8 +67,8 @@ async fn outbox_insert_failure_rolls_back_terminal_outcome_and_keeps_capacity() 
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
-    assert!(!fixture.persisted_turn(&id).await.state.is_terminal());
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
+    assert!(!fixture.persisted_turn(&id).await.state.is_final());
     assert!(deliveries(&fixture).await.is_empty());
     assert_eq!(fixture.capacity.available_permits(), 0);
     supervisor.task.abort();
@@ -243,7 +243,7 @@ async fn delivery_claims_are_fenced_and_closed_history_cannot_be_rerouted() {
         ExecutionResponse::Delivery(None)
     ));
     let event: ExecutionEvent = serde_json::from_str(&new.body_json).unwrap();
-    assert_eq!(event.turn.unwrap().state, ExecutionTurnState::Completed);
+    assert_eq!(event.turn.unwrap().state, TurnLifecycleState::Completed);
     fixture.db.close().await;
 }
 
@@ -258,7 +258,7 @@ async fn signed_webhook_retry_survives_lost_ack_and_never_follows_redirect_or_re
         Operation::Execute(_, _)
     ));
     supervisor.events.send(complete(&turn_id)).unwrap();
-    status(&fixture.session, SessionStatus::Idle).await;
+    status(&fixture.session, SessionLifecycleState::Idle).await;
     let event_id = deliveries(&fixture).await[0].event_id;
 
     let redirect = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

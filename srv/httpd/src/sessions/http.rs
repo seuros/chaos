@@ -6,8 +6,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::{
-    ApiError, CreateRequest, NoticeRequest, Session, SessionManager, SessionStatus, SteerRequest,
-    TurnRequest,
+    ApiError, CreateRequest, NoticeRequest, Session, SessionLifecycleState, SessionManager,
+    SteerRequest, TurnRequest,
 };
 use crate::ServerState;
 use crate::ingress;
@@ -179,16 +179,14 @@ async fn route(
             Method::GET => session_response(StatusCode::OK, manager, &session),
             Method::DELETE => {
                 let status = session.data.lock().unwrap().status;
-                if matches!(status, SessionStatus::Closed | SessionStatus::Failed)
-                    && manager.store.is_none()
-                {
+                if status.is_final() && manager.store.is_none() {
                     manager.forget(id)?;
                     response(
                         StatusCode::OK,
                         json!({"daemon_id": manager.daemon_id, "status": "forgotten"}),
                     )
                 } else {
-                    if status == SessionStatus::Closed && manager.store.is_some() {
+                    if status == SessionLifecycleState::Closed && manager.store.is_some() {
                         return Ok(session_response(StatusCode::OK, manager, &session));
                     }
                     session.close()?;

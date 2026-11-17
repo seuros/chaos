@@ -194,7 +194,7 @@ async fn assert_lineage_and_fencing<S: JournalStore>(store: &S) {
         .execution(ExecutionRequest::Finish {
             lease: turn.lease.clone(),
             turn_id: turn.turn_id,
-            state: ExecutionTurnState::Interrupted,
+            state: TurnLifecycleState::Interrupted,
             outcome: None,
         })
         .await
@@ -234,7 +234,7 @@ async fn assert_lineage_and_fencing<S: JournalStore>(store: &S) {
         .iter()
         .find(|record| record.request.invocation_id == pending.request.invocation_id)
         .unwrap();
-    assert_eq!(fenced.state, InvocationState::Unknown);
+    assert_eq!(fenced.state, InvocationLifecycleState::Unknown);
     assert!(fenced.receipt.is_none());
     assert_eq!(fenced.source_turn_id, pending.source_turn_id);
 
@@ -293,7 +293,7 @@ async fn assert_root_binding_and_capacity<S: JournalStore>(store: &S) {
         .execution(ExecutionRequest::Finish {
             lease: turn.lease.clone(),
             turn_id: old_turn,
-            state: ExecutionTurnState::Completed,
+            state: TurnLifecycleState::Completed,
             outcome: None,
         })
         .await

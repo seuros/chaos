@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::{JournalStore, SqliteJournalStore};
+use chaos_ipc::execution::InvocationLifecycleState;
 
 mod billing;
 mod descendants;
@@ -121,7 +122,7 @@ async fn assert_execution_idempotency<S: JournalStore>(store: &S) {
     let finish = ExecutionRequest::Finish {
         lease: lease.clone(),
         turn_id,
-        state: ExecutionTurnState::Completed,
+        state: TurnLifecycleState::Completed,
         outcome: Some(json!({"result": "done"})),
     };
     let finished = store.execution(finish.clone()).await.unwrap();
@@ -131,7 +132,7 @@ async fn assert_execution_idempotency<S: JournalStore>(store: &S) {
             .execution(ExecutionRequest::Finish {
                 lease: lease.clone(),
                 turn_id,
-                state: ExecutionTurnState::Failed,
+                state: TurnLifecycleState::Failed,
                 outcome: None,
             })
             .await,
@@ -147,7 +148,7 @@ async fn assert_execution_idempotency<S: JournalStore>(store: &S) {
         store.execution(accept(&lease, turn_id)).await.unwrap(),
         ExecutionResponse::Accepted {
             turn: ExecutionTurn {
-                state: ExecutionTurnState::Completed,
+                state: TurnLifecycleState::Completed,
                 ..
             },
             newly_accepted: false,
@@ -165,7 +166,7 @@ async fn assert_execution_idempotency<S: JournalStore>(store: &S) {
             .await
             .unwrap(),
     );
-    assert_eq!(reopened.state, ExecutionSessionState::Closed);
+    assert_eq!(reopened.state, SessionLifecycleState::Closed);
     assert!(store.execution(accept(&lease, turn_id)).await.is_err());
 }
 
@@ -226,7 +227,7 @@ async fn restart_at_acceptance_and_dispatch_boundaries_is_unknown_not_replayed()
                 .await
                 .unwrap(),
         );
-        assert_eq!(session.state, ExecutionSessionState::Unknown);
+        assert_eq!(session.state, SessionLifecycleState::Unknown);
         assert_eq!(session.active_turn_id, Some(turn_id));
         assert_ne!(lease.token, successor.token);
         assert!(matches!(
@@ -236,7 +237,7 @@ async fn restart_at_acceptance_and_dispatch_boundaries_is_unknown_not_replayed()
                 .unwrap(),
             ExecutionResponse::Accepted {
                 turn: ExecutionTurn {
-                    state: ExecutionTurnState::Unknown,
+                    state: TurnLifecycleState::Unknown,
                     ..
                 },
                 newly_accepted: false,
@@ -254,7 +255,7 @@ async fn restart_at_acceptance_and_dispatch_boundaries_is_unknown_not_replayed()
             ExecutionRequest::Finish {
                 lease: lease.clone(),
                 turn_id,
-                state: ExecutionTurnState::Completed,
+                state: TurnLifecycleState::Completed,
                 outcome: None,
             },
         ] {
@@ -289,7 +290,7 @@ async fn restart_at_acceptance_and_dispatch_boundaries_is_unknown_not_replayed()
             .execution(ExecutionRequest::Finish {
                 lease: successor.clone(),
                 turn_id,
-                state: ExecutionTurnState::Interrupted,
+                state: TurnLifecycleState::Interrupted,
                 outcome: Some(json!({"containment": "externally verified"})),
             })
             .await
@@ -356,7 +357,7 @@ async fn failed_acceptance_or_terminal_write_rolls_back_the_whole_transition() {
     let finish = ExecutionRequest::Finish {
         lease: lease.clone(),
         turn_id,
-        state: ExecutionTurnState::Completed,
+        state: TurnLifecycleState::Completed,
         outcome: Some(json!({"result": "done"})),
     };
     assert!(store.execution(finish.clone()).await.is_err());
@@ -369,7 +370,7 @@ async fn failed_acceptance_or_terminal_write_rolls_back_the_whole_transition() {
             .await
             .unwrap(),
         ExecutionResponse::Turn(ExecutionTurn {
-            state: ExecutionTurnState::Running,
+            state: TurnLifecycleState::Running,
             outcome: None,
             ..
         })
@@ -410,7 +411,7 @@ async fn terminal_commit_survives_restart_and_idle_process_mapping_is_retained()
         .execution(ExecutionRequest::Finish {
             lease: lease.clone(),
             turn_id,
-            state: ExecutionTurnState::Completed,
+            state: TurnLifecycleState::Completed,
             outcome: Some(json!({"result": "persisted"})),
         })
         .await
@@ -430,7 +431,7 @@ async fn terminal_commit_survives_restart_and_idle_process_mapping_is_retained()
             .await
             .unwrap(),
     );
-    assert_eq!(session.state, ExecutionSessionState::Idle);
+    assert_eq!(session.state, SessionLifecycleState::Idle);
     assert!(session.process_id.is_some());
     assert_eq!(
         store
@@ -522,7 +523,7 @@ async fn idle_owner_loss_and_autonomous_work_require_explicit_containment() {
             .await
             .unwrap(),
     );
-    assert_eq!(session.state, ExecutionSessionState::Unknown);
+    assert_eq!(session.state, SessionLifecycleState::Unknown);
     assert_eq!(session.active_turn_id, None);
     assert!(
         store
@@ -593,7 +594,7 @@ async fn idle_owner_loss_and_autonomous_work_require_explicit_containment() {
         store.execution(accept(&lease, turn_id)).await.unwrap(),
         ExecutionResponse::Accepted {
             turn: ExecutionTurn {
-                state: ExecutionTurnState::Unknown,
+                state: TurnLifecycleState::Unknown,
                 ..
             },
             newly_accepted: false,
@@ -603,7 +604,7 @@ async fn idle_owner_loss_and_autonomous_work_require_explicit_containment() {
         .execution(ExecutionRequest::Finish {
             lease: lease.clone(),
             turn_id,
-            state: ExecutionTurnState::Unknown,
+            state: TurnLifecycleState::Unknown,
             outcome: Some(json!({"partial": "uncertain"})),
         })
         .await
@@ -618,7 +619,7 @@ async fn idle_owner_loss_and_autonomous_work_require_explicit_containment() {
         .execution(ExecutionRequest::Finish {
             lease: lease.clone(),
             turn_id,
-            state: ExecutionTurnState::Interrupted,
+            state: TurnLifecycleState::Interrupted,
             outcome: None,
         })
         .await
@@ -701,7 +702,7 @@ async fn scope_process_ownership_and_storage_loss_fail_closed() {
             .execution(ExecutionRequest::Finish {
                 lease: lease.clone(),
                 turn_id,
-                state: ExecutionTurnState::Completed,
+                state: TurnLifecycleState::Completed,
                 outcome: None,
             })
             .await
@@ -744,7 +745,7 @@ async fn exhausted_turn_capacity_preserves_old_retry_tombstones() {
             .execution(ExecutionRequest::Finish {
                 lease: first.clone(),
                 turn_id,
-                state: ExecutionTurnState::Interrupted,
+                state: TurnLifecycleState::Interrupted,
                 outcome: None,
             })
             .await
@@ -766,4 +767,215 @@ async fn exhausted_turn_capacity_preserves_old_retry_tombstones() {
             ..
         }
     ));
+}
+
+#[tokio::test]
+async fn every_persisted_state_string_loads() {
+    let home = tempfile::tempdir().unwrap();
+    let store = SqliteJournalStore::open(&home.path().join("journal.sqlite"))
+        .await
+        .unwrap();
+    let lease = bound(&store).await;
+    let turn_id = Uuid::new_v4();
+    store.execution(accept(&lease, turn_id)).await.unwrap();
+    for (stored, expected) in [
+        ("idle", SessionLifecycleState::Idle),
+        ("active", SessionLifecycleState::Running),
+        ("unknown", SessionLifecycleState::Unknown),
+        ("closed", SessionLifecycleState::Closed),
+    ] {
+        let active = matches!(stored, "active" | "unknown").then(|| turn_id.to_string());
+        sqlx::query(
+            "UPDATE execution_sessions SET state = $1, active_turn_id = $2 WHERE session_id = $3",
+        )
+        .bind(stored)
+        .bind(active)
+        .bind(lease.session_id.to_string())
+        .execute(store.pool())
+        .await
+        .unwrap();
+        let ExecutionResponse::Session(session) = store
+            .execution(ExecutionRequest::GetSession {
+                session_id: lease.session_id,
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected a session");
+        };
+        assert_eq!(session.state, expected);
+        assert_eq!(expected.ledger_str(), Some(stored));
+        assert_eq!(
+            serde_json::to_value(&session).unwrap()["state"],
+            json!(stored)
+        );
+    }
+    for (stored, expected) in [
+        ("accepted", TurnLifecycleState::Accepted),
+        ("running", TurnLifecycleState::Running),
+        ("completed", TurnLifecycleState::Completed),
+        ("failed", TurnLifecycleState::Failed),
+        ("interrupted", TurnLifecycleState::Interrupted),
+        ("timed_out", TurnLifecycleState::TimedOut),
+        ("unknown", TurnLifecycleState::Unknown),
+    ] {
+        sqlx::query("UPDATE execution_turns SET state = $1 WHERE turn_id = $2")
+            .bind(stored)
+            .bind(turn_id.to_string())
+            .execute(store.pool())
+            .await
+            .unwrap();
+        let ExecutionResponse::Turn(turn) = store
+            .execution(ExecutionRequest::GetTurn {
+                session_id: lease.session_id,
+                turn_id,
+            })
+            .await
+            .unwrap()
+        else {
+            panic!("expected a turn");
+        };
+        assert_eq!(turn.state, expected);
+        assert_eq!(expected.as_str(), stored);
+    }
+    for (stored, expected) in [
+        ("started", InvocationLifecycleState::Started),
+        ("completed", InvocationLifecycleState::Completed),
+        ("unknown", InvocationLifecycleState::Unknown),
+    ] {
+        assert_eq!(
+            decode_state::<InvocationLifecycleState>(stored.into()).unwrap(),
+            expected
+        );
+        assert_eq!(expected.as_str(), stored);
+    }
+    assert!(decode_session_state("running".into()).is_err());
+}
+
+async fn session_state<S: JournalStore>(store: &S, session_id: Uuid) -> SessionLifecycleState {
+    let ExecutionResponse::Session(session) = store
+        .execution(ExecutionRequest::GetSession { session_id })
+        .await
+        .unwrap()
+    else {
+        panic!("expected a session");
+    };
+    session.state
+}
+
+#[tokio::test]
+async fn ledger_refuses_illegal_transitions_without_writing() {
+    let home = tempfile::tempdir().unwrap();
+    let store = SqliteJournalStore::open(&home.path().join("journal.sqlite"))
+        .await
+        .unwrap();
+    let lease = bound(&store).await;
+    let conflict = |result: Result<ExecutionResponse, JournalError>| {
+        assert!(
+            matches!(result, Err(JournalError::ExecutionConflict(_))),
+            "{result:?}"
+        );
+    };
+    conflict(
+        store
+            .execution(ExecutionRequest::ReconcileIdle {
+                lease: lease.clone(),
+            })
+            .await,
+    );
+    assert_eq!(
+        session_state(&store, lease.session_id).await,
+        SessionLifecycleState::Idle
+    );
+
+    let turn_id = Uuid::new_v4();
+    store.execution(accept(&lease, turn_id)).await.unwrap();
+    conflict(
+        store
+            .execution(ExecutionRequest::Finish {
+                lease: lease.clone(),
+                turn_id,
+                state: TurnLifecycleState::Completed,
+                outcome: None,
+            })
+            .await,
+    );
+    assert_eq!(
+        session_state(&store, lease.session_id).await,
+        SessionLifecycleState::Running
+    );
+    store
+        .execution(ExecutionRequest::Quarantine {
+            lease: lease.clone(),
+        })
+        .await
+        .unwrap();
+    conflict(
+        store
+            .execution(ExecutionRequest::Dispatch {
+                lease: lease.clone(),
+                turn_id,
+            })
+            .await,
+    );
+    conflict(
+        store
+            .execution(ExecutionRequest::Close {
+                lease: lease.clone(),
+            })
+            .await,
+    );
+    assert_eq!(
+        session_state(&store, lease.session_id).await,
+        SessionLifecycleState::Unknown
+    );
+    let ExecutionResponse::Turn(turn) = store
+        .execution(ExecutionRequest::GetTurn {
+            session_id: lease.session_id,
+            turn_id,
+        })
+        .await
+        .unwrap()
+    else {
+        panic!("expected a turn");
+    };
+    assert_eq!(turn.state, TurnLifecycleState::Unknown);
+
+    store
+        .execution(ExecutionRequest::Finish {
+            lease: lease.clone(),
+            turn_id,
+            state: TurnLifecycleState::Interrupted,
+            outcome: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        session_state(&store, lease.session_id).await,
+        SessionLifecycleState::Idle
+    );
+    store
+        .execution(ExecutionRequest::Close {
+            lease: lease.clone(),
+        })
+        .await
+        .unwrap();
+    store
+        .execution(ExecutionRequest::Close {
+            lease: lease.clone(),
+        })
+        .await
+        .unwrap();
+    conflict(
+        store
+            .execution(ExecutionRequest::Quarantine {
+                lease: lease.clone(),
+            })
+            .await,
+    );
+    conflict(store.execution(accept(&lease, Uuid::new_v4())).await);
+    assert_eq!(
+        session_state(&store, lease.session_id).await,
+        SessionLifecycleState::Closed
+    );
 }

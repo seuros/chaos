@@ -1,5 +1,6 @@
 //! Observed logical requests, never reconstructed deltas or provider invoices.
 use super::*;
+use chaos_ipc::execution::{InvocationLifecycleEvent, InvocationLifecycleState};
 
 pub const MAX_EXECUTION_INVOCATIONS: i64 = 128;
 
@@ -126,21 +127,13 @@ impl InvocationReceipt {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InvocationState {
-    Started,
-    Completed,
-    Unknown,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionInvocation {
     pub request: InvocationStart,
     /// Actual descendant-local turn; request.turn_id remains the root ledger turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_turn_id: Option<Uuid>,
-    pub state: InvocationState,
+    pub state: InvocationLifecycleState,
     pub started_at_ms: i64,
     pub finished_at_ms: Option<i64>,
     pub receipt: Option<InvocationReceipt>,
@@ -189,9 +182,9 @@ pub(super) fn accounting(
         };
         for invocation in &invocations {
             match invocation.state {
-                InvocationState::Started => summary.pending_invocations += 1,
-                InvocationState::Unknown => summary.unknown_invocations += 1,
-                InvocationState::Completed => {
+                InvocationLifecycleState::Started => summary.pending_invocations += 1,
+                InvocationLifecycleState::Unknown => summary.unknown_invocations += 1,
+                InvocationLifecycleState::Completed => {
                     if invocation.duplicate_receipt_of.is_some() {
                         summary.duplicate_receipts += 1;
                     } else if let Some(usage) = invocation
@@ -328,15 +321,26 @@ macro_rules! read_accounting {
 }
 pub(super) use read_accounting;
 
+pub(super) fn fenced_invocation() -> Result<(&'static str, &'static str), JournalError> {
+    let from = InvocationLifecycleState::Started;
+    let mut to = from;
+    to.fire(InvocationLifecycleEvent::Lose)
+        .map_err(|error| conflict(&error.to_string()))?;
+    Ok((from.as_str(), to.as_str()))
+}
+
 macro_rules! fence_invocations {
     ($tx:expr, $session_id:expr, $turn_id:expr, $now:expr) => {
+        let (from, to) = super::invocations::fenced_invocation()?;
         sqlx::query(
-            "UPDATE execution_invocations SET state = 'unknown', finished_at_ms = $1
-            WHERE session_id = $2 AND turn_id = $3 AND state = 'started'",
+            "UPDATE execution_invocations SET state = $1, finished_at_ms = $2
+            WHERE session_id = $3 AND turn_id = $4 AND state = $5",
         )
+        .bind(to)
         .bind($now)
         .bind($session_id)
         .bind($turn_id)
+        .bind(from)
         .execute(&mut *$tx)
         .await?;
     };
@@ -378,12 +382,15 @@ macro_rules! impl_invocations {
                     ExecutionInvocationRequest::RegisterDescendant { lease, root_turn_id, parent_process_id, process_id } => {
                         check_lease(&row, &lease, now)?;
                         let current = session(&row)?;
-                        if current.state != ExecutionSessionState::Active || current.active_turn_id != Some(root_turn_id)
+                        if current.state != SessionLifecycleState::Running
+                            || current.active_turn_id != Some(root_turn_id)
                             || process_id == parent_process_id || current.process_id == Some(process_id)
                         { return Err(conflict("descendant requires current active root execution")); }
                         let turn: (String, i32) = sqlx::query_as("SELECT state, accounting_enabled FROM execution_turns WHERE session_id = $1 AND turn_id = $2")
                             .bind(&session_id).bind(root_turn_id.to_string()).fetch_one(&mut *tx).await?;
-                        if turn.0 != "running" || turn.1 == 0 {
+                        let dispatched = decode_state::<TurnLifecycleState>(turn.0)?
+                            == TurnLifecycleState::Running;
+                        if !dispatched || turn.1 == 0 {
                             return Err(conflict("descendant requires dispatched metered execution"));
                         }
                         if current.process_id != Some(parent_process_id) {
@@ -437,7 +444,7 @@ macro_rules! impl_invocations {
                             ExecutionResponse::InvocationBegan { invocation: previous, newly_recorded: false }
                         } else {
                             let current = session(&row)?;
-                            if current.state != ExecutionSessionState::Active
+                            if current.state != SessionLifecycleState::Running
                                 || current.active_turn_id != Some(request.turn_id)
                             { return Err(conflict("invocation is not bound to the active process/turn")); }
                             if source_turn_id.is_some() {
@@ -451,18 +458,35 @@ macro_rules! impl_invocations {
                             let state = sqlx::query_as::<_, (String, i32)>(
                                 "SELECT state, accounting_enabled FROM execution_turns WHERE session_id = $1 AND turn_id = $2"
                             ).bind(&session_id).bind(request.turn_id.to_string()).fetch_one(&mut *tx).await?;
-                            if state.0 != "running" || state.1 == 0 { return Err(conflict("invocation requires dispatched metered execution")); }
+                            let dispatched = decode_state::<TurnLifecycleState>(state.0)?
+                                == TurnLifecycleState::Running;
+                            if !dispatched || state.1 == 0 {
+                                return Err(conflict(
+                                    "invocation requires dispatched metered execution",
+                                ));
+                            }
                             let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_invocations WHERE session_id = $1 AND turn_id = $2")
                                 .bind(&session_id).bind(request.turn_id.to_string()).fetch_one(&mut *tx).await?;
                             if count >= MAX_EXECUTION_INVOCATIONS { return Err(conflict("invocation limit reached before provider dispatch")); }
                             let json = serde_json::to_string(&request).map_err(|source| JournalError::Serialize { field: "invocation start", source })?;
                             sqlx::query("INSERT INTO execution_invocations
                                 (invocation_id, session_id, turn_id, request_json, started_at_ms, state, source_turn_id)
-                                VALUES ($1,$2,$3,$4,$5,'started',$6)")
+                                VALUES ($1,$2,$3,$4,$5,$6,$7)")
                                 .bind(request.invocation_id.to_string()).bind(&session_id).bind(request.turn_id.to_string())
-                                .bind(json).bind(now).bind(source_turn_id.map(|id| id.to_string())).execute(&mut *tx).await?;
+                                .bind(json)
+                                .bind(now)
+                                .bind(InvocationLifecycleState::default().as_str())
+                                .bind(source_turn_id.map(|id| id.to_string()))
+                                .execute(&mut *tx)
+                                .await?;
                             ExecutionResponse::InvocationBegan { invocation: ExecutionInvocation {
-                                request, source_turn_id, state: InvocationState::Started, started_at_ms: now, finished_at_ms: None, receipt: None, duplicate_receipt_of: None,
+                                request,
+                                source_turn_id,
+                                state: InvocationLifecycleState::default(),
+                                started_at_ms: now,
+                                finished_at_ms: None,
+                                receipt: None,
+                                duplicate_receipt_of: None,
                             }, newly_recorded: true }
                         }
                     }
@@ -476,17 +500,24 @@ macro_rules! impl_invocations {
                         if expected_process_id.is_some_and(|id| id != previous.request.process_id) {
                             return Err(conflict("descendant receipt process mismatch"));
                         }
-                        if previous.state != InvocationState::Started {
+                        if previous.state.is_final() {
                             let identical = previous.receipt.as_ref() == Some(&receipt)
-                                || previous.state == InvocationState::Unknown && previous.receipt.is_none() && receipt == InvocationReceipt::unknown();
+                                || previous.state == InvocationLifecycleState::Unknown
+                                    && previous.receipt.is_none()
+                                    && receipt == InvocationReceipt::unknown();
                             if !identical { return Err(conflict("invocation receipt is immutable")); }
                         } else {
                             check_lease(&row, &lease, now)?;
                             let current = session(&row)?;
                             if current.active_turn_id != Some(previous.request.turn_id)
-                                || current.state != ExecutionSessionState::Active
+                                || current.state != SessionLifecycleState::Running
                             { return Err(conflict("invocation writer no longer owns active execution")); }
-                            let state = if receipt.completed { "completed" } else { "unknown" };
+                            let from = previous.state;
+                            previous.state.fire(if receipt.completed {
+                                InvocationLifecycleEvent::Complete
+                            } else {
+                                InvocationLifecycleEvent::Lose
+                            }).map_err(|_| conflict("invocation receipt is immutable"))?;
                             let json = serde_json::to_string(&receipt).map_err(|source| JournalError::Serialize { field: "invocation receipt", source })?;
                             if let Some(response_id) = &receipt.response_id {
                                 // Domain-separated tuple, never an ambiguous joined string.
@@ -500,11 +531,22 @@ macro_rules! impl_invocations {
                                 let owner = parse_uuid(owner)?;
                                 previous.duplicate_receipt_of = (owner != invocation_id).then_some(owner);
                             }
-                            sqlx::query("UPDATE execution_invocations SET state = $1, receipt_json = $2, finished_at_ms = $3,
-                                duplicate_receipt_of = $4 WHERE invocation_id = $5")
-                                .bind(state).bind(json).bind(now).bind(previous.duplicate_receipt_of.map(|id| id.to_string()))
-                                .bind(invocation_id.to_string()).execute(&mut *tx).await?;
-                            previous.state = if receipt.completed { InvocationState::Completed } else { InvocationState::Unknown };
+                            let changed = sqlx::query(
+                                "UPDATE execution_invocations SET state = $1, receipt_json = $2,
+                                finished_at_ms = $3, duplicate_receipt_of = $4
+                                WHERE invocation_id = $5 AND state = $6",
+                            )
+                            .bind(previous.state.as_str())
+                            .bind(json)
+                            .bind(now)
+                            .bind(previous.duplicate_receipt_of.map(|id| id.to_string()))
+                            .bind(invocation_id.to_string())
+                            .bind(from.as_str())
+                            .execute(&mut *tx)
+                            .await?;
+                            if changed.rows_affected() != 1 {
+                                return Err(conflict("invocation receipt is immutable"));
+                            }
                             previous.receipt = Some(receipt);
                             previous.finished_at_ms = Some(now);
                         }

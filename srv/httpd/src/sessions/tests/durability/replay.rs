@@ -18,7 +18,7 @@ async fn lost_writer_cannot_publish_a_terminal_event_or_release_capacity() {
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.session.snapshot().last_event_id, 0);
     assert!(fixture.session.turn(&id).unwrap().result.is_none());
     assert!(
@@ -60,7 +60,7 @@ async fn terminal_event_is_not_exposed_before_replay_commit_or_used_as_completio
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     let batch = fixture.session.read_events(0).await.unwrap();
     assert_eq!(batch.events.len(), 1);
     assert!(batch.durable);
@@ -83,7 +83,7 @@ async fn terminal_event_is_not_exposed_before_replay_commit_or_used_as_completio
     );
     let restored = manager.get(&fixture.session.id).unwrap();
     assert_eq!(restored.read_events(0).await.unwrap().events[0].sequence, 1);
-    assert_eq!(restored.snapshot().status, SessionStatus::Unknown);
+    assert_eq!(restored.snapshot().status, SessionLifecycleState::Unknown);
     assert_eq!(capacity.available_permits(), 0);
     fixture.db.close().await;
 }

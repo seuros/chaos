@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use chaos_journald::{
     ErrorCode, ExecutionLease, ExecutionRequest as Request, ExecutionResponse as Response,
-    ExecutionSessionState, ExecutionTurn, ExecutionTurnState, JournalClient, JournalClientError,
+    ExecutionTurn, JournalClient, JournalClientError,
 };
 use lease_machines::{Cadence, FencingToken, Holder, HolderState};
 use rama::http::StatusCode;
@@ -19,8 +19,9 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 use super::{
-    ActiveTurn, ApiError, Command, CreateRequest, Session, SessionManager, SessionStatus,
-    TurnRecord, TurnRequest, TurnSnapshot, TurnStatus, bounded_text, fingerprint,
+    ActiveTurn, ApiError, Command, CreateRequest, Session, SessionLifecycleEvent,
+    SessionLifecycleState, SessionManager, TurnLifecycleEvent, TurnLifecycleState, TurnRecord,
+    TurnRequest, TurnSnapshot, bounded_text, fingerprint,
 };
 
 const LEASE_MS: u64 = 90_000;
@@ -445,30 +446,22 @@ fn parse_id(id: &str) -> Result<Uuid, ApiError> {
     Uuid::parse_str(id).map_err(|_| ApiError::bad_request("expected a UUID"))
 }
 
-fn persisted_state(status: TurnStatus) -> Result<ExecutionTurnState, ApiError> {
-    Ok(match status {
-        TurnStatus::Completed => ExecutionTurnState::Completed,
-        TurnStatus::Failed => ExecutionTurnState::Failed,
-        TurnStatus::Interrupted => ExecutionTurnState::Interrupted,
-        TurnStatus::TimedOut => ExecutionTurnState::TimedOut,
-        TurnStatus::Unknown => ExecutionTurnState::Unknown,
-        _ => return Err(unavailable()),
-    })
+fn persisted_state(status: TurnLifecycleState) -> Result<TurnLifecycleState, ApiError> {
+    if status.is_final() || status == TurnLifecycleState::Unknown {
+        Ok(status)
+    } else {
+        Err(unavailable())
+    }
 }
 
 fn snapshot(turn: &ExecutionTurn) -> Result<TurnSnapshot, ApiError> {
-    let status = match turn.state {
-        ExecutionTurnState::Accepted
-        | ExecutionTurnState::Running
-        | ExecutionTurnState::Unknown => {
-            // This function is used only for records with no live local turn.
-            TurnStatus::Unknown
-        }
-        ExecutionTurnState::Completed => TurnStatus::Completed,
-        ExecutionTurnState::Failed => TurnStatus::Failed,
-        ExecutionTurnState::Interrupted => TurnStatus::Interrupted,
-        ExecutionTurnState::TimedOut => TurnStatus::TimedOut,
-    };
+    let mut status = turn.state;
+    if !status.is_final() {
+        // This function is used only for records with no live local turn.
+        status
+            .fire(TurnLifecycleEvent::Lose)
+            .map_err(|_| unavailable())?;
+    }
     let mut snapshot = if let Some(outcome) = &turn.outcome {
         serde_json::from_value::<TurnSnapshot>(outcome.clone()).map_err(|_| unavailable())?
     } else {
@@ -576,7 +569,7 @@ impl SessionManager {
             for record in page {
                 let (session, commands) =
                     manager.reserve_id(record.process_id, record.session_id)?;
-                let (owner, mut record) = if record.state == ExecutionSessionState::Closed {
+                let (owner, mut record) = if record.state == SessionLifecycleState::Closed {
                     (Owner::new(store.clone(), record.session_id, None), record)
                 } else {
                     Owner::claim(store.clone(), record.session_id, manager.daemon_id.clone())
@@ -584,26 +577,32 @@ impl SessionManager {
                 };
                 // Boot requires a committed quarantine. An idle, unbound
                 // record cannot authorize manufacturing fresh history here.
-                if record.state == ExecutionSessionState::Idle && record.process_id.is_none() {
+                if record.state == SessionLifecycleState::Idle && record.process_id.is_none() {
                     owner.retire(false).await?;
-                    record.state = ExecutionSessionState::Closed;
+                    record
+                        .state
+                        .fire(SessionLifecycleEvent::Shut)
+                        .map_err(|_| unavailable())?;
                 }
-                if store.recovery_only && record.state == ExecutionSessionState::Idle {
+                if store.recovery_only && record.state == SessionLifecycleState::Idle {
                     owner.quarantine().await?;
-                    record.state = ExecutionSessionState::Unknown;
+                    record
+                        .state
+                        .fire(SessionLifecycleEvent::Lose)
+                        .map_err(|_| unavailable())?;
                 }
                 session.ledger.set(owner).map_err(|_| unavailable())?;
                 session.restore_replay().await?;
                 {
+                    let mut restored = record.state;
+                    if restored == SessionLifecycleState::Running {
+                        restored
+                            .fire(SessionLifecycleEvent::Lose)
+                            .map_err(|_| unavailable())?;
+                    }
                     let mut data = session.data.lock().unwrap();
-                    data.status = match record.state {
-                        ExecutionSessionState::Closed => SessionStatus::Closed,
-                        ExecutionSessionState::Idle => SessionStatus::Idle,
-                        ExecutionSessionState::Active | ExecutionSessionState::Unknown => {
-                            SessionStatus::Unknown
-                        }
-                    };
-                    if data.status == SessionStatus::Unknown {
+                    data.status = restored;
+                    if data.status == SessionLifecycleState::Unknown {
                         let permit = capacity.clone().try_acquire_owned().map_err(|_| {
                             ApiError::capacity(
                                 "uncontained recovered work exceeds execution capacity",
@@ -624,7 +623,7 @@ impl SessionManager {
                 if let Some(id) = record.active_turn_id {
                     session.load_turn(&id.to_string()).await?;
                 }
-                if record.state == ExecutionSessionState::Idle {
+                if record.state == SessionLifecycleState::Idle {
                     // A recovered process is started only on a fresh accepted
                     // turn. No old prompt is ever loaded for dispatch.
                     recovered.push((
@@ -696,13 +695,13 @@ impl SessionManager {
             let (owner, record) = match claim {
                 Ok(claim) => claim,
                 Err(error) => {
-                    session.data.lock().unwrap().status = SessionStatus::Unknown;
+                    session.data.lock().unwrap().mark_unknown();
                     return Err(error);
                 }
             };
             session.ledger.set(owner).map_err(|_| unavailable())?;
-            if record.process_id.is_some() || record.state != ExecutionSessionState::Idle {
-                session.data.lock().unwrap().status = SessionStatus::Unknown;
+            if record.process_id.is_some() || record.state != SessionLifecycleState::Idle {
+                session.data.lock().unwrap().mark_unknown();
                 return Err(ApiError::conflict(
                     "persisted session requires restart reconciliation",
                 ));
@@ -751,9 +750,7 @@ impl Session {
                     }
                     owner.abandon();
                     let mut data = session.data.lock().unwrap();
-                    if !matches!(data.status, SessionStatus::Closed | SessionStatus::Failed) {
-                        data.mark_unknown();
-                    }
+                    data.mark_unknown();
                     drop(data);
                     session.notify();
                     break;
@@ -832,9 +829,7 @@ impl Session {
             Err(error) if error.code == StatusCode::NOT_FOUND => {}
             Err(error) => return Err(error),
         }
-        if self.data.lock().unwrap().status != SessionStatus::Idle {
-            return Err(ApiError::conflict("session is not idle"));
-        }
+        self.data.lock().unwrap().admission()?;
         owner.check_turn_capacity().await?;
         let slot = self
             .commands
@@ -842,7 +837,7 @@ impl Session {
             .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
         let snapshot = TurnSnapshot {
             turn_id: id.clone(),
-            status: TurnStatus::Persisting,
+            status: TurnLifecycleState::default(),
             result: None,
             result_truncated: false,
             error: None,
@@ -850,9 +845,7 @@ impl Session {
         };
         {
             let mut data = self.data.lock().unwrap();
-            if data.status != SessionStatus::Idle || data.active.is_some() {
-                return Err(ApiError::conflict("session is not idle"));
-            }
+            let status = data.admission()?;
             let permit = capacity
                 .clone()
                 .try_acquire_owned()
@@ -871,7 +864,7 @@ impl Session {
                     snapshot: snapshot.clone(),
                 },
             );
-            data.status = SessionStatus::Running;
+            data.status = status;
         }
         self.notify();
         let mut acceptance = AcceptanceGuard {
@@ -898,9 +891,7 @@ impl Session {
                 let snapshot = {
                     let mut data = self.data.lock().unwrap();
                     let snapshot = &mut data.turns.get_mut(&id).unwrap().snapshot;
-                    if snapshot.status == TurnStatus::Persisting {
-                        snapshot.status = TurnStatus::Accepted;
-                    }
+                    let _ = snapshot.status.fire(TurnLifecycleEvent::Accept);
                     let snapshot = snapshot.clone();
                     // Publish steerability only after Turn is queued. A
                     // recovered lazy supervisor must see Turn before controls.
@@ -937,18 +928,17 @@ impl Session {
         let completion = {
             let data = self.data.lock().unwrap();
             data.active.as_ref().and_then(|active| {
-                active.completion_outcome.map(|status| {
-                    let mut snapshot = data.turns[&active.id].snapshot.clone();
-                    snapshot.status = status;
-                    snapshot
-                })
+                active
+                    .completion_outcome
+                    .map(|outcome| data.concluded(&active.id, outcome))
             })
         };
         if let Some(snapshot) = completion {
-            let snapshot = self.ledger.get().unwrap().finish(snapshot).await?;
+            let snapshot = self.ledger.get().unwrap().finish(snapshot?).await?;
             let mut data = self.data.lock().unwrap();
-            data.turns.get_mut(&snapshot.turn_id).unwrap().snapshot = snapshot.clone();
-            data.finish_turn(&snapshot.turn_id, snapshot.status);
+            let id = snapshot.turn_id.clone();
+            data.turns.get_mut(&id).unwrap().snapshot = snapshot;
+            data.settle_turn(&id);
             drop(data);
             self.notify();
         }

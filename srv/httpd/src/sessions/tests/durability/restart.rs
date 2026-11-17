@@ -1,9 +1,9 @@
 //! A real SIGKILL/reopen boundary, not task cancellation. SQLite only: the
 //! PostgreSQL matrix separately exercises production client fencing/failures.
 use super::*;
+use chaos_ipc::execution::InvocationLifecycleState;
 use chaos_journald::{
     ExecutionDelivery, ExecutionDeliveryRequest as DeliveryRequest, InvocationPurpose,
-    InvocationState,
 };
 use serde::{Deserialize, Serialize};
 use std::os::unix::process::ExitStatusExt;
@@ -184,7 +184,7 @@ async fn killed_process_cannot_replay_or_lose_pending_usage() {
     );
     assert_eq!(capacity.available_permits(), 0);
     let session = manager.get(&ready.session_id).unwrap();
-    assert_eq!(session.snapshot().status, SessionStatus::Unknown);
+    assert_eq!(session.snapshot().status, SessionLifecycleState::Unknown);
     assert_eq!(
         session
             .admit(
@@ -196,7 +196,7 @@ async fn killed_process_cannot_replay_or_lose_pending_usage() {
             .await
             .unwrap()
             .status,
-        TurnStatus::Unknown
+        TurnLifecycleState::Unknown
     );
     assert!(
         session
@@ -225,7 +225,10 @@ async fn killed_process_cannot_replay_or_lose_pending_usage() {
         accounting.invocations[0].request.invocation_id,
         ready.invocation_id
     );
-    assert_eq!(accounting.invocations[0].state, InvocationState::Unknown);
+    assert_eq!(
+        accounting.invocations[0].state,
+        InvocationLifecycleState::Unknown
+    );
     assert!(accounting.invocations[0].receipt.is_none());
     assert!(accounting.summary.unwrap().known_usage.is_none());
     assert!(

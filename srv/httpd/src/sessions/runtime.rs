@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::{
-    ApiError, CLEANUP_GRACE, Command, CreateRequest, NoticeChange, Session, SessionStatus,
-    TurnRequest, TurnStatus,
+    ApiError, CLEANUP_GRACE, Command, CreateRequest, NoticeChange, Session, SessionLifecycleEvent,
+    SessionLifecycleState, TurnLifecycleState, TurnRequest,
 };
 use crate::ServerState;
 
@@ -63,7 +63,7 @@ impl Drop for SupervisorGuard {
             self.0.notify();
             return;
         };
-        if matches!(data.status, SessionStatus::Closed | SessionStatus::Failed) {
+        if data.status.is_final() {
             return;
         }
         data.mark_unknown();
@@ -212,7 +212,12 @@ pub(crate) fn spawn(
                         Ok(())
                     };
                     if result.is_ok() {
-                        session.data.lock().unwrap().status = SessionStatus::Closed;
+                        let _ = session
+                            .data
+                            .lock()
+                            .unwrap()
+                            .status
+                            .fire(SessionLifecycleEvent::Shut);
                     }
                     session.notify();
                     return;
@@ -264,19 +269,22 @@ pub(crate) fn spawn(
                     .await
             }
         };
-        let started = match started {
-            Ok(started) => started,
-            Err(error) => {
-                warn!(session_id = %session.id, %error, "HTTP session startup failed");
-                session.data.lock().unwrap().status = if session.ledger.get().is_some() {
-                    SessionStatus::Unknown
-                } else {
-                    SessionStatus::Failed
-                };
-                session.notify();
-                return;
-            }
-        };
+        let started =
+            match started {
+                Ok(started) => started,
+                Err(error) => {
+                    warn!(session_id = %session.id, %error, "HTTP session startup failed");
+                    let _ = session.data.lock().unwrap().status.fire(
+                        if session.ledger.get().is_some() {
+                            SessionLifecycleEvent::Lose
+                        } else {
+                            SessionLifecycleEvent::Fail
+                        },
+                    );
+                    session.notify();
+                    return;
+                }
+            };
         let (process_id, process, configured) = started.into_parts();
         let backend = KernelBackend {
             activity: tokio::sync::Mutex::new(process.subscribe_activity()),
@@ -312,7 +320,7 @@ pub(crate) fn spawn(
                     &session,
                     &mut commands,
                     &backend,
-                    TurnStatus::Unknown,
+                    TurnLifecycleState::Unknown,
                     false,
                 )
                 .await;
@@ -335,7 +343,7 @@ pub(crate) fn spawn(
                 &session,
                 &mut commands,
                 &backend,
-                TurnStatus::Unknown,
+                TurnLifecycleState::Unknown,
                 false,
             )
             .await;
@@ -345,12 +353,10 @@ pub(crate) fn spawn(
             let mut data = session.data.lock().unwrap();
             data.orphan_permit = None;
             // A close request may already be queued during startup.
-            if data.status == SessionStatus::Starting {
-                data.status = if process.subscribe_activity().borrow().is_quiescent() {
-                    SessionStatus::Idle
-                } else {
-                    SessionStatus::Running
-                };
+            if data.status.fire(SessionLifecycleEvent::Ready).is_ok()
+                && !process.subscribe_activity().borrow().is_quiescent()
+            {
+                let _ = data.status.fire(SessionLifecycleEvent::Busy);
             }
         }
         session.notify();
@@ -390,20 +396,24 @@ async fn supervise_inner<B: Backend>(
             // Deadlines must not be starved by an always-ready event stream.
             biased;
             _ = session.ownership_lost() => {
-                terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                terminate(
+                    &session, &mut commands, &backend, TurnLifecycleState::Unknown, false,
+                ).await;
                 break;
             }
             _ = session.daemon_stopping() => {
                 terminate(
                     &session, &mut commands, &backend,
-                    TurnStatus::Interrupted, session.ledger.get().is_some(),
+                    TurnLifecycleState::Interrupted, session.ledger.get().is_some(),
                 ).await;
                 break;
             }
             _ = tokio::time::sleep_until(deadline) => {
                 // Failed containment never releases execution capacity. Continue
                 // accepting explicit close retries; don't replay the old turn.
-                terminate(&session, &mut commands, &backend, TurnStatus::TimedOut, false).await;
+                terminate(
+                    &session, &mut commands, &backend, TurnLifecycleState::TimedOut, false,
+                ).await;
                 break;
             }
             command = async {
@@ -418,14 +428,15 @@ async fn supervise_inner<B: Backend>(
                             let mut data = session.data.lock().unwrap();
                             let turn_deadline = data.active.as_ref().unwrap().deadline.min(expires);
                             let turn = data.turns.get_mut(&id).unwrap();
-                            let interrupted = turn.snapshot.status == TurnStatus::Interrupting;
+                            let interrupted =
+                                turn.snapshot.status == TurnLifecycleState::Interrupting;
                             (turn.request.take().unwrap(), turn_deadline, interrupted)
                         };
                         session.notify();
-                        if session.data.lock().unwrap().status == SessionStatus::Closing {
+                        if session.data.lock().unwrap().status == SessionLifecycleState::Closing {
                             terminate(
                                 &session, &mut commands, &backend,
-                                TurnStatus::Interrupted, false,
+                                TurnLifecycleState::Interrupted, false,
                             ).await;
                             break;
                         }
@@ -433,15 +444,16 @@ async fn supervise_inner<B: Backend>(
                             if !backend.confirm_quiescent().await {
                                 terminate(
                                     &session, &mut commands, &backend,
-                                    TurnStatus::Interrupted, false,
+                                    TurnLifecycleState::Interrupted, false,
                                 ).await;
                                 break;
                             }
                             session.data.lock().unwrap().active.as_mut().unwrap()
-                                .completion_outcome = Some(TurnStatus::Interrupted);
+                                .completion_outcome = Some(TurnLifecycleState::Interrupted);
                             if session.commit_completion(true).await.is_err() {
                                 terminate(
-                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                    &session, &mut commands, &backend,
+                                    TurnLifecycleState::Unknown, false,
                                 ).await;
                                 break;
                             }
@@ -453,7 +465,7 @@ async fn supervise_inner<B: Backend>(
                                 owner.dispatch(&id).await.map_err(|_| ())?;
                             }
                             if session.data.lock().unwrap().turns[&id].snapshot.status
-                                == TurnStatus::Interrupting
+                                == TurnLifecycleState::Interrupting
                             {
                                 return Ok(false);
                             }
@@ -469,22 +481,25 @@ async fn supervise_inner<B: Backend>(
                             if !backend.confirm_quiescent().await {
                                 terminate(
                                     &session, &mut commands, &backend,
-                                    TurnStatus::Interrupted, false,
+                                    TurnLifecycleState::Interrupted, false,
                                 ).await;
                                 break;
                             }
                             session.data.lock().unwrap().active.as_mut().unwrap()
-                                .completion_outcome = Some(TurnStatus::Interrupted);
+                                .completion_outcome = Some(TurnLifecycleState::Interrupted);
                             if session.commit_completion(true).await.is_err() {
                                 terminate(
-                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                    &session, &mut commands, &backend,
+                                    TurnLifecycleState::Unknown, false,
                                 ).await;
                                 break;
                             }
                         } else if !matches!(executed, Some(Ok(Ok(true)))) {
-                            let outcome = if suspend { TurnStatus::Interrupted }
-                                else if matches!(executed, Some(Err(_))) { TurnStatus::TimedOut }
-                                else { TurnStatus::Unknown };
+                            let outcome = if suspend { TurnLifecycleState::Interrupted }
+                                else if matches!(executed, Some(Err(_))) {
+                                    TurnLifecycleState::TimedOut
+                                }
+                                else { TurnLifecycleState::Unknown };
                             terminate(&session, &mut commands, &backend, outcome, suspend).await;
                             break;
                         }
@@ -549,7 +564,8 @@ async fn supervise_inner<B: Backend>(
                                 _ = session.daemon_stopping() => {
                                     terminate(
                                         &session, &mut commands, &backend,
-                                        TurnStatus::Interrupted, session.ledger.get().is_some(),
+                                        TurnLifecycleState::Interrupted,
+                                        session.ledger.get().is_some(),
                                     ).await;
                                     break;
                                 }
@@ -559,7 +575,8 @@ async fn supervise_inner<B: Backend>(
                             };
                             if !matches!(interrupted, Some(Ok(Ok(())))) {
                                 terminate(
-                                    &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                    &session, &mut commands, &backend,
+                                    TurnLifecycleState::Unknown, false,
                                 ).await;
                                 break;
                             }
@@ -568,7 +585,8 @@ async fn supervise_inner<B: Backend>(
                     command @ (Some(Command::Close) | Some(Command::Suspend) | None) => {
                         let suspend = matches!(command, Some(Command::Suspend));
                         terminate(
-                            &session, &mut commands, &backend, TurnStatus::Interrupted, suspend,
+                            &session, &mut commands, &backend,
+                            TurnLifecycleState::Interrupted, suspend,
                         ).await;
                         break;
                     }
@@ -582,7 +600,8 @@ async fn supervise_inner<B: Backend>(
                             .await.is_err()
                         {
                             terminate(
-                                &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                &session, &mut commands, &backend,
+                                TurnLifecycleState::Unknown, false,
                             ).await;
                             break;
                         }
@@ -594,14 +613,15 @@ async fn supervise_inner<B: Backend>(
                             || session.commit_completion(quiescent).await.is_err()
                         {
                             terminate(
-                                &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                                &session, &mut commands, &backend,
+                                TurnLifecycleState::Unknown, false,
                             ).await;
                             break;
                         }
                     }
                     Err(()) => {
                         terminate(
-                            &session, &mut commands, &backend, TurnStatus::Unknown, false,
+                            &session, &mut commands, &backend, TurnLifecycleState::Unknown, false,
                         ).await;
                         break;
                     }
@@ -609,7 +629,9 @@ async fn supervise_inner<B: Backend>(
             }
             activity = backend.activity_changed() => {
                 if activity.is_err() {
-                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                    terminate(
+                        &session, &mut commands, &backend, TurnLifecycleState::Unknown, false,
+                    ).await;
                     break;
                 }
                 let quiescent = backend.confirm_quiescent().await;
@@ -617,7 +639,9 @@ async fn supervise_inner<B: Backend>(
                     && session.data.lock().unwrap().active.is_none()
                     && !quiescent;
                 if autonomous || session.commit_completion(quiescent).await.is_err() {
-                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                    terminate(
+                        &session, &mut commands, &backend, TurnLifecycleState::Unknown, false,
+                    ).await;
                     break;
                 }
                 session.notify();
@@ -628,7 +652,9 @@ async fn supervise_inner<B: Backend>(
                 if session.data.lock().unwrap().active.as_ref()
                     .is_some_and(|active| active.completion_outcome.is_some()) => {
                 if session.commit_completion(backend.confirm_quiescent().await).await.is_err() {
-                    terminate(&session, &mut commands, &backend, TurnStatus::Unknown, false).await;
+                    terminate(
+                        &session, &mut commands, &backend, TurnLifecycleState::Unknown, false,
+                    ).await;
                     break;
                 }
             }
@@ -640,7 +666,7 @@ async fn terminate<B: Backend>(
     session: &Session,
     commands: &mut mpsc::Receiver<Command>,
     backend: &B,
-    outcome: TurnStatus,
+    outcome: TurnLifecycleState,
     suspend: bool,
 ) {
     if !stop(session, backend, outcome, suspend).await {
@@ -651,10 +677,15 @@ async fn terminate<B: Backend>(
 async fn stop<B: Backend>(
     session: &Session,
     backend: &B,
-    outcome: TurnStatus,
+    outcome: TurnLifecycleState,
     suspend: bool,
 ) -> bool {
-    session.data.lock().unwrap().status = SessionStatus::Closing;
+    let _ = session
+        .data
+        .lock()
+        .unwrap()
+        .status
+        .fire(SessionLifecycleEvent::Close);
     let stopped = matches!(
         tokio::time::timeout(CLEANUP_GRACE, backend.shutdown()).await,
         Ok(Ok(()))
@@ -663,15 +694,13 @@ async fn stop<B: Backend>(
         if let Some(owner) = session.ledger.get() {
             let active = {
                 let data = session.data.lock().unwrap();
-                data.active.as_ref().map(|active| {
-                    let mut snapshot = data.turns[&active.id].snapshot.clone();
-                    snapshot.status = outcome;
-                    snapshot
-                })
+                data.active
+                    .as_ref()
+                    .map(|active| data.concluded(&active.id, outcome))
             };
             let commit = async {
                 if let Some(snapshot) = active {
-                    let snapshot = owner.finish(snapshot).await?;
+                    let snapshot = owner.finish(snapshot?).await?;
                     let id = snapshot.turn_id.clone();
                     session
                         .data
@@ -681,7 +710,7 @@ async fn stop<B: Backend>(
                         .get_mut(&id)
                         .unwrap()
                         .snapshot = snapshot;
-                    if outcome == TurnStatus::Unknown {
+                    if outcome == TurnLifecycleState::Unknown {
                         return Err(ApiError::conflict(
                             "unknown turn requires explicit resolution",
                         ));
@@ -708,9 +737,13 @@ async fn stop<B: Backend>(
     let mut data = session.data.lock().unwrap();
     if committed {
         if let Some(id) = data.active.as_ref().map(|active| active.id.clone()) {
-            data.finish_turn(&id, outcome);
+            if session.ledger.get().is_some() {
+                data.settle_turn(&id);
+            } else {
+                data.finish_turn(&id, outcome);
+            }
         }
-        data.status = SessionStatus::Closed;
+        let _ = data.status.fire(SessionLifecycleEvent::Shut);
         data.orphan_permit = None;
     } else {
         data.mark_unknown();
@@ -728,7 +761,11 @@ async fn unknown_loop<B: Backend>(
 ) {
     while let Some(command) = commands.recv().await {
         match command {
-            Command::Close if stop(session, backend, TurnStatus::Interrupted, false).await => break,
+            Command::Close
+                if stop(session, backend, TurnLifecycleState::Interrupted, false).await =>
+            {
+                break;
+            }
             Command::Steer { reply, .. } => {
                 let _ = reply.send(Err(ApiError::conflict("session outcome is unknown")));
             }

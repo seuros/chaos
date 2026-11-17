@@ -7,6 +7,7 @@ use crate::{JournalStore, SqliteJournalStore};
 use chaos_ipc::execution::InvocationLifecycleState;
 
 mod billing;
+mod delivery;
 mod descendants;
 mod isolation;
 mod recovery;

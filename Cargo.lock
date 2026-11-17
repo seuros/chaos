@@ -2063,6 +2063,7 @@ dependencies = [
  "dirs",
  "jiff",
  "log",
+ "outbox-machines",
  "owo-colors",
  "pretty_assertions",
  "rama",
@@ -2487,6 +2488,7 @@ dependencies = [
  "journal-machines",
  "lease-machines",
  "libc",
+ "outbox-machines",
  "rama",
  "serde",
  "serde_json",
@@ -7927,6 +7929,15 @@ checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "outbox-machines"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5de29ec4bd770e0d1d401ede36ff802ce109ec81aee100c749bd8e2bc067b51d"
+dependencies = [
+ "periscope-machines",
 ]
 
 [[package]]

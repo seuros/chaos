@@ -155,10 +155,18 @@ async fn enabled_jobs_can_clear_next_run_at_after_running() {
         .await
         .expect("create cron job");
 
-    store
-        .mark_run(&job.id, None)
-        .await
-        .expect("mark job run without another occurrence");
+    assert!(
+        store
+            .mark_run(&job.id, job.next_run_at, None)
+            .await
+            .expect("mark job run without another occurrence")
+    );
+    assert!(
+        !store
+            .mark_run(&job.id, job.next_run_at, None)
+            .await
+            .expect("stale mark_run is refused")
+    );
 
     let refreshed = store
         .get(&job.id)
@@ -309,10 +317,18 @@ async fn postgres_store_round_trips_session_jobs_and_due_views() {
         params.execution_policy
     );
 
-    store
-        .mark_run(&job.id, None)
-        .await
-        .expect("mark postgres cron job run");
+    assert!(
+        !store
+            .mark_run(&job.id, job.next_run_at, None)
+            .await
+            .expect("stale postgres mark_run")
+    );
+    assert!(
+        store
+            .mark_run(&job.id, Some(0), None)
+            .await
+            .expect("mark postgres cron job run")
+    );
 
     let refreshed = store
         .get(&job.id)

@@ -1425,6 +1425,7 @@ dependencies = [
  "chaos-snitch",
  "chaos-traits",
  "chaos-vfs",
+ "chaos_journald",
  "dedup-machines",
  "inventory",
  "jiff",

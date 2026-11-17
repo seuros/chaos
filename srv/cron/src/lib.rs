@@ -19,6 +19,7 @@ pub(crate) use provider::BackendCronStorage;
 pub(crate) use provider::CronStorage;
 pub use schedule::Schedule;
 pub use scheduler::JobExecutor;
+pub use scheduler::JournalConnector;
 pub use scheduler::Scheduler;
 pub use scheduler::dispatch_executor;
 pub use scheduler::spawn_global as spawn_scheduler;

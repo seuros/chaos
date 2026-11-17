@@ -81,7 +81,11 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
         config.model_provider_id.clone(),
     );
 
-    let _ = chaos_cron::spawn_scheduler(vfs, scheduler_executor(vfs, config).await);
+    let _ = chaos_cron::spawn_scheduler(
+        vfs,
+        scheduler_executor(vfs, config).await,
+        Arc::new(|| Box::pin(crate::rollout::recorder::journal_client_for_mounted_backend())),
+    );
 
     // Install the shared ration usage store so adapters built later in
     // boot can attach sniffers via `chaos_libration::registry::sniffer_for`.

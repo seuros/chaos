@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     # Linux covers both default and optional workspace features; explicit CLI
     # feature checks also need room for additional kernel rebuilds.
-    timeout-minutes: ${{ (inputs.feature-checks || startsWith(inputs.runner, 'ubuntu-')) && 60 || 30 }}
+    timeout-minutes: ${{ (inputs.feature-checks || startsWith(inputs.runner, 'ubuntu-')) && 60 || 45 }}
     defaults:
       run:
         shell: bash

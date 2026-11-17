@@ -55,6 +55,11 @@ async fn controls_change_during_a_pending_prompt_without_replaying_or_widening_p
     }}))
     .await;
     peer.finish(&session, prompt, "cancelled").await;
+    assert_eq!(
+        requests.requests().len(),
+        1,
+        "a cancelled turn must not sample again"
+    );
     assert_eq!(std::fs::read_to_string(path).unwrap(), "before\n");
     let prompt = peer
         .prompt(&session, "continue with the new controls")

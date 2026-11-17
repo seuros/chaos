@@ -566,7 +566,7 @@ async fn real_daemon_steering_receipts_webhook_and_sigkill_recovery() -> Result<
         )
         .await?;
     tokio::time::timeout(WAIT, async {
-        while !tool.0.exists() {
+        while std::fs::read_to_string(&tool.0).map_or(true, |pid| pid.trim().is_empty()) {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })

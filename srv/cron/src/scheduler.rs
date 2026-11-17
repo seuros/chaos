@@ -13,10 +13,16 @@ use chaos_snitch::tracing::error;
 use chaos_snitch::tracing::info;
 use chaos_snitch::tracing::warn;
 use chaos_vfs::ChaosVfs;
+use lease::SchedulerLease;
 use tokio::sync::watch;
+
+pub use lease::JournalConnector;
+
+mod lease;
 
 /// Default tick interval for the scheduler (30 seconds).
 const DEFAULT_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+const DEFAULT_LEASE_TTL: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// Callback that receives a due job and executes it. Returns Ok(output) on
 /// success or Err(message) on failure. The scheduler logs the outcome either
@@ -56,6 +62,7 @@ static SCHEDULER_GUARD: OnceLock<watch::Sender<bool>> = OnceLock::new();
 pub fn spawn_global(
     provider: &ChaosVfs,
     executor: JobExecutor,
+    journal: JournalConnector,
 ) -> Option<&'static watch::Sender<bool>> {
     if SCHEDULER_GUARD.get().is_some() {
         return None;
@@ -67,7 +74,8 @@ pub fn spawn_global(
         return None;
     }
 
-    let scheduler = Scheduler::new(store, executor, DEFAULT_TICK_INTERVAL, shutdown_rx);
+    let lease = SchedulerLease::new(journal, DEFAULT_LEASE_TTL);
+    let scheduler = Scheduler::new(store, executor, lease, DEFAULT_TICK_INTERVAL, shutdown_rx);
     tokio::spawn(scheduler.run());
 
     SCHEDULER_GUARD.get()
@@ -78,6 +86,7 @@ pub fn spawn_global(
 pub struct Scheduler {
     store: BackendCronStorage,
     executor: JobExecutor,
+    lease: SchedulerLease,
     tick_interval: std::time::Duration,
     shutdown_rx: watch::Receiver<bool>,
 }
@@ -86,12 +95,14 @@ impl Scheduler {
     pub(crate) fn new(
         store: BackendCronStorage,
         executor: JobExecutor,
+        lease: SchedulerLease,
         tick_interval: std::time::Duration,
         shutdown_rx: watch::Receiver<bool>,
     ) -> Self {
         Self {
             store,
             executor,
+            lease,
             tick_interval,
             shutdown_rx,
         }
@@ -118,9 +129,13 @@ impl Scheduler {
                 }
             }
         }
+        self.lease.release().await;
     }
 
-    async fn tick(&self) {
+    async fn tick(&mut self) {
+        let Some(token) = self.lease.hold().await else {
+            return;
+        };
         let jobs = match self.store.due_now().await {
             Ok(jobs) => jobs,
             Err(err) => {
@@ -133,10 +148,14 @@ impl Scheduler {
             if *self.shutdown_rx.borrow() || self.shutdown_rx.is_closed() {
                 break;
             }
+            if self.lease.hold().await.as_deref() != Some(token.as_str()) {
+                warn!("cron scheduler lost its lease, leaving due jobs to the new holder");
+                break;
+            }
             info!(job_id = %job.id, name = %job.name, "executing cron job");
 
             // Execute the command before advancing next_run_at.
-            match (self.executor)(job).await {
+            match self.execute(job).await {
                 Ok(output) => {
                     if !output.is_empty() {
                         info!(job_id = %job.id, "cron job output: {output}");
@@ -151,8 +170,28 @@ impl Scheduler {
                 .and_then(|s| s.next_after(jiff::Timestamp::now()))
                 .ok();
 
-            if let Err(err) = self.store.mark_run(&job.id, next_run_at).await {
-                warn!(job_id = %job.id, "failed to mark job run: {err}");
+            match self
+                .store
+                .mark_run(&job.id, job.next_run_at, next_run_at)
+                .await
+            {
+                Ok(true) => {}
+                Ok(false) => warn!(job_id = %job.id, "cron job was advanced by another scheduler"),
+                Err(err) => warn!(job_id = %job.id, "failed to mark job run: {err}"),
+            }
+        }
+    }
+
+    async fn execute(&mut self, job: &CronJob) -> Result<String, String> {
+        let mut run = (self.executor)(job);
+        let every = self.lease.renew_every();
+        let mut renew = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+        loop {
+            tokio::select! {
+                outcome = &mut run => return outcome,
+                _ = renew.tick() => {
+                    self.lease.hold().await;
+                }
             }
         }
     }
@@ -162,3 +201,6 @@ impl Scheduler {
         watch::channel(false)
     }
 }
+
+#[cfg(test)]
+mod tests;

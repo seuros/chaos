@@ -88,7 +88,12 @@ impl BackendCronStorage {
 
     chaos_vfs::backend_dispatch! {
         pub async fn due_now(&self) -> anyhow::Result<Vec<CronJob>>;
-        pub async fn mark_run(&self, id: &str, next_run_at: Option<i64>) -> anyhow::Result<()>;
+        pub async fn mark_run(
+            &self,
+            id: &str,
+            expected: Option<i64>,
+            next_run_at: Option<i64>,
+        ) -> anyhow::Result<bool>;
         pub async fn delete_spool_jobs_for_manifest_except(
             &self,
             manifest_id: &str,

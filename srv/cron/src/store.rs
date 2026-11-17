@@ -153,15 +153,24 @@ impl CronStore {
 
     /// Record that a job just ran and set the next run time.
     /// The `cron_jobs_touch` trigger auto-updates `updated_at`.
-    pub async fn mark_run(&self, id: &str, next_run_at: Option<i64>) -> anyhow::Result<()> {
+    pub async fn mark_run(
+        &self,
+        id: &str,
+        expected: Option<i64>,
+        next_run_at: Option<i64>,
+    ) -> anyhow::Result<bool> {
         let now = jiff::Timestamp::now().as_second();
-        sqlx::query("UPDATE cron_jobs SET last_run_at = ?, next_run_at = ? WHERE id = ?")
-            .bind(now)
-            .bind(next_run_at)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        let result = sqlx::query(
+            "UPDATE cron_jobs SET last_run_at = ?, next_run_at = ? \
+             WHERE id = ? AND next_run_at IS ?",
+        )
+        .bind(now)
+        .bind(next_run_at)
+        .bind(id)
+        .bind(expected)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     /// Delete a job by ID.
@@ -384,15 +393,24 @@ impl PostgresCronStore {
         Ok(())
     }
 
-    pub async fn mark_run(&self, id: &str, next_run_at: Option<i64>) -> anyhow::Result<()> {
+    pub async fn mark_run(
+        &self,
+        id: &str,
+        expected: Option<i64>,
+        next_run_at: Option<i64>,
+    ) -> anyhow::Result<bool> {
         let now = jiff::Timestamp::now().as_second();
-        sqlx::query("UPDATE cron_jobs SET last_run_at = $1, next_run_at = $2 WHERE id = $3")
-            .bind(now)
-            .bind(next_run_at)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
+        let result = sqlx::query(
+            "UPDATE cron_jobs SET last_run_at = $1, next_run_at = $2 \
+             WHERE id = $3 AND next_run_at IS NOT DISTINCT FROM $4",
+        )
+        .bind(now)
+        .bind(next_run_at)
+        .bind(id)
+        .bind(expected)
+        .execute(&self.pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
     }
 
     pub async fn delete(&self, id: &str) -> anyhow::Result<()> {

@@ -21,6 +21,10 @@ should. There is no patch level; the build timestamp is the patch.
 - Upgrading fails any spool submit that was interrupted while compensating: its
   saved state cannot resume. The error names the batch to cancel by hand.
 
+### Fixed
+- A due cron job runs once, not once per chaos process sharing the runtime
+  database.
+
 ## [47.15.0] - 2026-11-16
 
 ### Added

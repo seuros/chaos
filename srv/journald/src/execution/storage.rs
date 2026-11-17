@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use lease_machines::{Decision, Rejection};
+use lease_machines::Refusal;
 
 use super::{
     ExecutionLease, ExecutionRequest, ExecutionResolutionRecord, ExecutionResponse,
@@ -137,10 +137,9 @@ pub(super) fn check_lease(
 ) -> Result<(), JournalError> {
     // Caller-provided expires_at_ms is informational, never an authority.
     let authority = ResourceLease::restore(&row.0, Some(&lease_row(row)?))?;
-    match authority.verify(&expected.owner_id, &expected.token, clock(now)?) {
-        None => Ok(()),
-        Some(_) => Err(fenced()),
-    }
+    authority
+        .verify(&expected.owner_id, &expected.token, clock(now)?)
+        .map_err(|_| fenced())
 }
 
 fn not_found() -> JournalError {
@@ -315,13 +314,13 @@ macro_rules! impl_storage {
                         let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
                         let ttl = Duration::from_millis(ttl_ms);
                         match authority.acquire(&owner_id, clock(now)?, ttl) {
-                            Decision::Rejected(Rejection::Occupied) if row.5 == owner_id => {
+                            Err(Refusal::Held) => {
                                 ExecutionResponse::Claimed { session: current, lease: lease(&row)? }
                             }
-                            Decision::Rejected(Rejection::Occupied) => {
+                            Err(Refusal::Occupied) => {
                                 return Err(conflict("execution session already has a live owner"));
                             }
-                            Decision::Granted(granted) => {
+                            Ok(granted) => {
                                 let expires = epoch_millis(granted.expires_at())?;
                                 if let Some(turn_id) = current.active_turn_id {
                                     super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
@@ -348,7 +347,7 @@ macro_rules! impl_storage {
                                 if row.3 == "unknown" {
                                     row.9 = next_epoch(&row)?;
                                 }
-                                let token = signed(&id, "lease_token", granted.token().value())?;
+                                let token = signed(&id, "lease_token", granted.token().raw())?;
                                 sqlx::query(
                                     "UPDATE execution_sessions SET owner_id = $1, lease_token = $2,
                                      last_issued = $2, expires_at_ms = $3, state = $4,
@@ -369,14 +368,14 @@ macro_rules! impl_storage {
                                 row.10 = token;
                                 ExecutionResponse::Claimed { session: session(&row)?, lease: lease(&row)? }
                             }
-                            other => {
+                            Err(other) => {
                                 return Err(conflict(&format!("execution claim produced no grant: {other:?}")));
                             }
                         }
                     }
                     ExecutionRequest::Heartbeat { lease: expected, ttl_ms } => {
                         let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
-                        let Decision::Renewed(renewed) = authority.renew(
+                        let Ok(renewed) = authority.renew(
                             &expected.owner_id,
                             &expected.token,
                             clock(now)?,
@@ -624,7 +623,7 @@ macro_rules! impl_storage {
                         let mut authority = ResourceLease::restore(&id, Some(&lease_row(&row)?))?;
                         let released =
                             authority.release(&expected.owner_id, &expected.token, clock(now)?);
-                        if released != Decision::Released {
+                        if released.is_err() {
                             return Err(fenced());
                         }
                         if current.active_turn_id.is_some() || current.state == ExecutionSessionState::Unknown {

@@ -15,6 +15,7 @@ chaos-kern = { workspace = true }
 chaos-services = { workspace = true }
 deadline-machines = { workspace = true }
 chaos-ipc = { workspace = true }
+chrono-machines = { workspace = true }
 rama = { workspace = true }
 jiff = { workspace = true }
 rand = { workspace = true }

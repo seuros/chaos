@@ -30,10 +30,6 @@ const CADENCE: Cadence = match Cadence::new(Duration::from_millis(LEASE_MS), HEA
     Some(cadence) => cadence,
     None => panic!("session heartbeat fits inside the lease"),
 };
-const FIRST_TOKEN: FencingToken = match FencingToken::new(1) {
-    Some(token) => token,
-    None => panic!("1 is a valid fencing token"),
-};
 
 #[derive(Clone)]
 pub(super) enum Client {
@@ -142,17 +138,23 @@ pub(super) struct Owner {
 
 struct Grant {
     lease: Option<ExecutionLease>,
-    holder: Holder,
+    holder: Option<Holder>,
 }
 
-fn fencing_token(lease: &ExecutionLease, previous: Option<FencingToken>) -> FencingToken {
+impl Grant {
+    fn fenced(&self) -> bool {
+        self.holder
+            .as_ref()
+            .is_none_or(|holder| holder.state() == HolderState::Fenced)
+    }
+}
+
+fn fencing_token(lease: &ExecutionLease) -> Option<FencingToken> {
     lease
         .token
         .parse::<u64>()
         .ok()
-        .and_then(FencingToken::new)
-        .or_else(|| FencingToken::new(previous.map_or(1, |token| token.value().saturating_add(1))))
-        .unwrap_or(FIRST_TOKEN)
+        .and_then(FencingToken::from_raw)
 }
 
 struct AcceptanceGuard<'a> {
@@ -175,16 +177,10 @@ impl Drop for AcceptanceGuard<'_> {
 impl Owner {
     fn new(store: Arc<Store>, id: Uuid, lease: Option<ExecutionLease>) -> Arc<Self> {
         let (lost, _) = watch::channel(false);
-        let mut holder = Holder::new(
-            lease
-                .as_ref()
-                .map_or(FIRST_TOKEN, |lease| fencing_token(lease, None)),
-            Duration::ZERO,
-            CADENCE,
-        );
-        if lease.is_none() {
-            holder.fence();
-        }
+        let holder = lease
+            .as_ref()
+            .and_then(fencing_token)
+            .map(|token| Holder::new(token, Duration::ZERO, CADENCE));
         Arc::new(Self {
             store,
             lease: Mutex::new(Grant { lease, holder }),
@@ -199,11 +195,13 @@ impl Owner {
     }
 
     pub(super) fn fenced(&self) -> bool {
-        self.lease.lock().unwrap().holder.state() == HolderState::Fenced
+        self.lease.lock().unwrap().fenced()
     }
 
     pub(super) fn fence(&self) {
-        self.lease.lock().unwrap().holder.fence();
+        if let Some(holder) = self.lease.lock().unwrap().holder.as_mut() {
+            holder.fence();
+        }
     }
 
     pub(super) async fn claim(
@@ -241,7 +239,7 @@ impl Owner {
             return Err(unavailable());
         }
         let grant = self.lease.lock().unwrap();
-        if grant.holder.state() == HolderState::Fenced {
+        if grant.fenced() {
             return Err(unavailable());
         }
         grant.lease.clone().ok_or_else(unavailable)
@@ -249,14 +247,26 @@ impl Owner {
 
     pub(super) fn start_renewal(&self) -> Result<ExecutionLease, ApiError> {
         let lease = self.lease()?;
-        self.lease.lock().unwrap().holder.refresh(self.elapsed());
-        Ok(lease)
+        let elapsed = self.elapsed();
+        let refreshed = self
+            .lease
+            .lock()
+            .unwrap()
+            .holder
+            .as_mut()
+            .map(|holder| holder.refresh(elapsed));
+        match refreshed {
+            Some(Ok(_)) => Ok(lease),
+            Some(Err(_)) | None => Err(unavailable()),
+        }
     }
 
     pub(super) fn confirm(&self, lease: ExecutionLease) -> bool {
+        let elapsed = self.elapsed();
         let mut grant = self.lease.lock().unwrap();
-        let token = fencing_token(&lease, Some(grant.holder.token()));
-        let confirmed = grant.holder.confirm(token, self.elapsed());
+        let confirmed = fencing_token(&lease)
+            .zip(grant.holder.as_mut())
+            .is_some_and(|(token, holder)| holder.confirm(token, elapsed).is_ok());
         if confirmed {
             grant.lease = Some(lease);
         }
@@ -274,8 +284,9 @@ impl Owner {
                 ttl_ms: LEASE_MS,
             })
             .await?;
-        if let Response::Lease(lease) = response {
-            self.confirm(lease);
+        if let Response::Lease(lease) = response
+            && self.confirm(lease)
+        {
             Ok(())
         } else {
             self.abandon();

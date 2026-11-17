@@ -16,14 +16,14 @@
 //! different credentials).
 
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 
 use breaker_machines::AsyncCircuitBreaker;
 use breaker_machines::CircuitError;
 use breaker_machines::PredicateClassifier;
 
-use crate::async_breaker::tokio_clock_storage;
+use crate::async_breaker::breaker_policy;
+use crate::async_breaker::tokio_clock;
 use crate::error::ChaosErr;
 
 /// Backoff window before a probe is allowed through. Kept short so a fresh
@@ -47,17 +47,14 @@ impl AuthBreaker {
     pub(crate) fn new(provider_id: &str) -> Self {
         // A single missing-credentials probe is enough to open: there is
         // nothing to retry until the user acts.
-        let breaker = AsyncCircuitBreaker::builder(format!("auth:{provider_id}"))
-            .failure_threshold(1)
-            .failure_window_secs(60.0)
-            .half_open_timeout_secs(AUTH_HALF_OPEN_TIMEOUT.as_secs_f64())
-            .success_threshold(1)
-            .storage(tokio_clock_storage())
-            .failure_classifier(Arc::new(PredicateClassifier::new(|ctx| {
+        let policy = breaker_policy(1, Duration::from_secs(60), AUTH_HALF_OPEN_TIMEOUT, 1);
+        let breaker = AsyncCircuitBreaker::builder(format!("auth:{provider_id}"), policy)
+            .clock(tokio_clock())
+            .classifier(PredicateClassifier::new(|ctx| {
                 ctx.error
                     .downcast_ref::<ChaosErr>()
                     .is_some_and(|err| matches!(err, ChaosErr::ProviderAuthMissing(_)))
-            })))
+            }))
             .build_async();
         Self { breaker }
     }
@@ -86,7 +83,9 @@ impl AuthBreaker {
     /// user connects an account) so the next turn probes the fresh state
     /// instead of waiting out the backoff window.
     pub(crate) fn reset(&self) {
-        self.breaker.reset();
+        if let Err(error) = self.breaker.reset() {
+            tracing::warn!("auth breaker refused to reset: {error}");
+        }
     }
 }
 

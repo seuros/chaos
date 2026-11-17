@@ -9,6 +9,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use chrono_machines::Exponential;
+use chrono_machines::Retry;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use sqlx::postgres::PgListener;
@@ -28,6 +30,7 @@ const PROBE: Duration = if cfg!(test) {
     Duration::from_secs(30)
 };
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const RECONNECT_MIN: Duration = Duration::from_secs(1);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
 const SILENCE: Duration = Duration::from_secs(30);
 /// Postgres refuses payloads of 8000 bytes or more.
@@ -181,13 +184,17 @@ async fn subscribe(storage_url: &str) -> Result<PgListener, sqlx::Error> {
 /// A fresh listening connection, waiting longer between attempts while the
 /// database stays out of reach.
 async fn resubscribe(storage_url: &str) -> PgListener {
-    let mut wait = Duration::from_secs(1);
+    let mut retry = Exponential::new(RECONNECT_MIN, 2.0, RECONNECT_MAX, 0.0)
+        .map(|shape| Retry::new(shape.into(), None));
     loop {
         if let Ok(listener) = subscribe(storage_url).await {
             return listener;
         }
+        let wait = retry
+            .as_mut()
+            .and_then(|retry| retry.failed(0).ok())
+            .unwrap_or(RECONNECT_MAX);
         tokio::time::sleep(wait).await;
-        wait = (wait * 2).min(RECONNECT_MAX);
     }
 }
 

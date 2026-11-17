@@ -199,17 +199,14 @@ async fn run_inserter(state_db: RuntimeDbHandle, mut receiver: mpsc::Receiver<Lo
                 match maybe_command {
                     Some(LogDbCommand::Entry(entry)) => {
                         match batch.push(now) {
-                            Admission::Buffered => buffer.push(entry),
-                            Admission::Flush(_) => {
+                            Ok(Admission::Buffered) => buffer.push(entry),
+                            Ok(Admission::Flush(_)) => {
                                 buffer.push(entry);
                                 flush(&state_db, &mut batch, &mut buffer, now).await;
                             }
-                            _ => {
+                            Err(_) => {
                                 flush(&state_db, &mut batch, &mut buffer, now).await;
-                                if matches!(
-                                    batch.push(now),
-                                    Admission::Buffered | Admission::Flush(_)
-                                ) {
+                                if batch.push(now).is_ok() {
                                     buffer.push(entry);
                                 }
                             }
@@ -245,8 +242,7 @@ async fn flush(
     buffer: &mut Vec<LogEntry>,
     now: Duration,
 ) {
-    batch.flush(now);
-    if buffer.is_empty() {
+    if batch.flush(now).is_err() || buffer.is_empty() {
         return;
     }
     let entries = buffer.split_off(0);

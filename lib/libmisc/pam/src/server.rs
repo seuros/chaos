@@ -17,6 +17,7 @@ use std::io::Write;
 use std::io::{self};
 use std::net::SocketAddr;
 use std::net::TcpStream;
+use std::num::NonZeroU8;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -26,6 +27,8 @@ use std::time::Duration;
 use crate::pkce::PkceCodes;
 use crate::pkce::generate_pkce;
 use base64::Engine;
+use chrono_machines::Constant;
+use chrono_machines::Retry;
 
 use chaos_client::ChaosHttpClient;
 use chaos_ipc::api::AuthMode;
@@ -531,15 +534,13 @@ fn send_cancel_request(port: u16) -> io::Result<()> {
 fn bind_server(port: u16) -> io::Result<Server> {
     let bind_address = format!("127.0.0.1:{port}");
     let mut cancel_attempted = false;
-    let mut attempts = 0;
-    const MAX_ATTEMPTS: u32 = 10;
-    const RETRY_DELAY: Duration = Duration::from_millis(200);
+    let mut retry = Constant::new(Duration::from_millis(200), 0.0)
+        .map(|shape| Retry::new(shape.into(), NonZeroU8::new(10)));
 
     loop {
         match Server::http(&bind_address) {
             Ok(server) => return Ok(server),
             Err(err) => {
-                attempts += 1;
                 let is_addr_in_use = err
                     .downcast_ref::<io::Error>()
                     .map(|io_err| io_err.kind() == io::ErrorKind::AddrInUse)
@@ -555,15 +556,13 @@ fn bind_server(port: u16) -> io::Result<Server> {
                         }
                     }
 
-                    thread::sleep(RETRY_DELAY);
-
-                    if attempts >= MAX_ATTEMPTS {
+                    let Some(delay) = retry.as_mut().and_then(|retry| retry.failed(0).ok()) else {
                         return Err(io::Error::new(
                             io::ErrorKind::AddrInUse,
                             format!("Port {bind_address} is already in use"),
                         ));
-                    }
-
+                    };
+                    thread::sleep(delay);
                     continue;
                 }
 

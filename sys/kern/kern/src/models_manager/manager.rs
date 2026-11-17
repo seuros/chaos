@@ -31,13 +31,12 @@ use chaos_parrot::RamaTransport;
 use chaos_parrot::RequestTelemetry;
 use chaos_parrot::TransportError;
 use chaos_snitch::TelemetryAuthMode;
-use chrono_machines::ExponentialBackoff;
-use chrono_machines::backoff::BackoffStrategy;
+use chrono_machines::Exponential;
+use chrono_machines::Retry;
 use jiff::Timestamp;
 use rama::http::{HeaderMap, StatusCode};
-use rand::make_rng;
-use rand::rngs::StdRng;
 use std::collections::HashMap;
+use std::num::NonZeroU8;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -816,26 +815,26 @@ impl ModelsManager {
         let _timer =
             chaos_snitch::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
 
-        let backoff = ExponentialBackoff::new()
-            .max_attempts(3)
-            .base_delay_ms(100)
-            .multiplier(2.0)
-            .max_delay_ms(5000);
-        let mut rng: StdRng = make_rng();
-        let mut attempt: u8 = 0;
+        let mut retry =
+            Exponential::new(Duration::from_millis(100), 2.0, Duration::from_secs(5), 1.0)
+                .map(|shape| Retry::new(shape.into(), NonZeroU8::new(3)))
+                .ok_or_else(|| {
+                    ChaosErr::Fatal("model catalog retry shape is invalid".to_string())
+                })?;
         let result = loop {
-            attempt += 1;
             match self.fetch_catalog().await {
                 ok @ Ok(_) => break ok,
-                Err(err) if backoff.should_retry(attempt) => {
-                    let delay_ms = backoff.delay(attempt, &mut rng).unwrap_or(100);
-                    warn!(
-                        attempt,
-                        delay_ms, "model catalog fetch failed, retrying: {err}"
-                    );
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                }
-                err => break err,
+                Err(err) => match retry.failed(chaos_ipc::backoff::draw()) {
+                    Ok(delay) => {
+                        warn!(
+                            attempt = retry.failures(),
+                            ?delay,
+                            "model catalog fetch failed, retrying: {err}"
+                        );
+                        tokio::time::sleep(delay).await;
+                    }
+                    Err(_) => break Err(err),
+                },
             }
         };
 

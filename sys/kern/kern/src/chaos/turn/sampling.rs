@@ -15,7 +15,8 @@ use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::groups::ToolGroupFilter;
 use crate::tools::parallel::ToolCallRuntime;
-use crate::util::backoff;
+use crate::util::stream_retry;
+use crate::util::stream_retry_delay;
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::SessionSource;
@@ -172,7 +173,8 @@ pub(super) async fn run_sampling_request(
         Arc::clone(&turn_context),
         Arc::clone(&turn_diff_tracker),
     );
-    let mut retries = 0;
+    let max_retries = turn_context.provider.stream_max_retries();
+    let mut retry = stream_retry(max_retries)?;
     let mut last_server_model: Option<String> = None;
     let history_len = prompt.input.len();
     prompt.request_local_start = Some(history_len);
@@ -184,7 +186,7 @@ pub(super) async fn run_sampling_request(
         // Request-local guidance and warnings are refreshed after tool batches
         // and retries. Never persist them in history, where they become stale.
         prompt.input.truncate(history_len);
-        if retries > 0 {
+        if retry.failures() > 0 {
             machine_input.clear();
             machine_warnings::append(
                 &mut machine_input,
@@ -281,40 +283,35 @@ pub(super) async fn run_sampling_request(
             return Err(err);
         }
 
-        // Use the configured provider-specific stream retry budget.
-        let max_retries = turn_context.provider.stream_max_retries();
-        if retries < max_retries {
-            if !lifecycle.try_retry(tool_runtime.call_count()) {
-                return Err(ChaosErr::Fatal(format!(
-                    "Sampling stream failed after tool dispatch; automatic retry refused \
-                     to avoid repeating actions. Inspect tool results before continuing: {err}"
-                )));
-            }
-            retries += 1;
-            let delay = match &err {
-                ChaosErr::Stream(_, requested_delay) => {
-                    requested_delay.unwrap_or_else(|| backoff(retries))
-                }
-                _ => backoff(retries),
-            };
-            warn!(
-                "stream disconnected - retrying sampling request \
-                 ({retries}/{max_retries} in {delay:?})...",
-            );
-
-            // Surface retry information to any UI/front-end so the
-            // user understands what is happening instead of staring
-            // at a seemingly frozen screen.
-            sess.notify_stream_error(
-                &turn_context,
-                format!("Reconnecting... {retries}/{max_retries}"),
-                err,
-            )
-            .await;
-            wait_for_retry(lifecycle, delay, &cancellation_token).await?;
-        } else {
+        let requested_delay = match &err {
+            ChaosErr::Stream(_, requested_delay) => *requested_delay,
+            _ => None,
+        };
+        let Ok(delay) = stream_retry_delay(&mut retry, requested_delay) else {
             return Err(err);
+        };
+        if !lifecycle.try_retry(tool_runtime.call_count()) {
+            return Err(ChaosErr::Fatal(format!(
+                "Sampling stream failed after tool dispatch; automatic retry refused \
+                 to avoid repeating actions. Inspect tool results before continuing: {err}"
+            )));
         }
+        let retries = retry.failures();
+        warn!(
+            "stream disconnected - retrying sampling request \
+             ({retries}/{max_retries} in {delay:?})...",
+        );
+
+        // Surface retry information to any UI/front-end so the
+        // user understands what is happening instead of staring
+        // at a seemingly frozen screen.
+        sess.notify_stream_error(
+            &turn_context,
+            format!("Reconnecting... {retries}/{max_retries}"),
+            err,
+        )
+        .await;
+        wait_for_retry(lifecycle, delay, &cancellation_token).await?;
     }
 }
 

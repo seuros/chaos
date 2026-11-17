@@ -14,3 +14,6 @@ mod execution_backend_tests;
 
 #[cfg(test)]
 mod cache_read_tokens_tests;
+
+#[cfg(test)]
+mod spool_saga_settlement_tests;

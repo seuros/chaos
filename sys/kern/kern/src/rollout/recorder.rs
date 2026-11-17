@@ -1,6 +1,7 @@
 //! Persist session history into the active journal backend for later replay.
 
 use std::io::Error as IoError;
+use std::num::NonZeroU8;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -21,7 +22,8 @@ use chaos_journald::JournalClient;
 use chaos_journald::JournalClientError;
 use chaos_journald::JournalEntry;
 use chaos_journald::JournalRpcClient;
-use chrono_machines::Policy;
+use chrono_machines::Exponential;
+use chrono_machines::Retry;
 use jiff::Timestamp;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
@@ -792,7 +794,7 @@ const JOURNAL_LEASE_TTL: Duration = Duration::from_secs(30);
 const JOURNAL_LEASE_REFRESH_INTERVAL: Duration = Duration::from_secs(10);
 const JOURNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
-const JOURNAL_APPEND_MAX_ATTEMPTS: usize = 8;
+const JOURNAL_APPEND_MAX_ATTEMPTS: u8 = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
 const JOURNAL_APPEND_RETRY_MAX_DELAY: Duration = Duration::from_millis(800);
 const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -1116,7 +1118,12 @@ impl ActiveJournalWriter {
                 client,
                 process_id: config.process_id,
                 owner_id: config.owner_id,
-                lease: Lease::new(&result.lease.lease_token, Instant::now()),
+                lease: Lease::new(&result.lease.lease_token, Instant::now()).ok_or_else(|| {
+                    format!(
+                        "initialize_process returned a malformed lease token {:?}",
+                        result.lease.lease_token
+                    )
+                })?,
                 lease_token: result.lease.lease_token,
                 next_seq: result.next_seq,
                 pending_items: Vec::new(),
@@ -1204,7 +1211,12 @@ impl ActiveJournalWriter {
             client,
             process_id: config.process_id,
             owner_id: config.owner_id.clone(),
-            lease: Lease::new(&lease.lease_token, Instant::now()),
+            lease: Lease::new(&lease.lease_token, Instant::now()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "acquire_lease returned a malformed lease token {:?}",
+                    lease.lease_token
+                )
+            })?,
             lease_token: lease.lease_token,
             next_seq: 0,
             pending_items: Vec::new(),
@@ -1229,7 +1241,8 @@ impl ActiveJournalWriter {
             return Ok(());
         }
 
-        let mut attempt = 0usize;
+        let mut retry = journal_append_retry()
+            .ok_or_else(|| "journal append retry shape is invalid".to_string())?;
         loop {
             self.ensure_lease().await?;
 
@@ -1302,7 +1315,9 @@ impl ActiveJournalWriter {
                 Err(JournalClientError::Remote(payload))
                     if payload.code == JournalErrorCode::LeaseExpired =>
                 {
-                    self.lease.expire();
+                    self.lease
+                        .expire()
+                        .map_err(|refusal| format!("journal lease expiry refused: {refusal}"))?;
                     return Err("journal lease expired; retaining batch for recovery".into());
                 }
                 Err(JournalClientError::Remote(payload))
@@ -1311,30 +1326,26 @@ impl ActiveJournalWriter {
                     self.lease.fence();
                     return Err("journal ownership lost during append; writer fenced".into());
                 }
-                Err(JournalClientError::Remote(payload))
-                    if payload.retryable && attempt + 1 < JOURNAL_APPEND_MAX_ATTEMPTS =>
-                {
+                Err(JournalClientError::Remote(payload)) if payload.retryable => {
+                    let Ok(delay) = retry.failed(0) else {
+                        health::set_persistence_health(PersistenceHealth::Failing);
+                        warn!(
+                            process_id = %self.process_id,
+                            max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
+                            error = ?payload,
+                            "journal append retry budget exhausted; retaining batch for next flush"
+                        );
+                        return Err("journal append retry budget exhausted".to_string());
+                    };
                     health::set_persistence_health(PersistenceHealth::Degraded);
-                    attempt += 1;
-                    let delay = retry_delay(attempt);
                     warn!(
                         process_id = %self.process_id,
-                        attempt,
+                        attempt = retry.failures(),
                         max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
                         error = ?payload,
                         "retrying journal append after retryable failure"
                     );
                     tokio::time::sleep(delay).await;
-                }
-                Err(JournalClientError::Remote(payload)) if payload.retryable => {
-                    health::set_persistence_health(PersistenceHealth::Failing);
-                    warn!(
-                        process_id = %self.process_id,
-                        max_attempts = JOURNAL_APPEND_MAX_ATTEMPTS,
-                        error = ?payload,
-                        "journal append retry budget exhausted; retaining batch for next flush"
-                    );
-                    return Err("journal append retry budget exhausted".to_string());
                 }
                 Err(err) => {
                     return Err(format!("append_batch failed: {err}"));
@@ -1361,12 +1372,15 @@ impl ActiveJournalWriter {
             return Ok(());
         }
 
-        self.lease.refresh(Instant::now());
+        self.lease
+            .refresh(Instant::now())
+            .map_err(|refusal| format!("journal lease refresh refused: {refusal}"))?;
         let result = tokio::time::timeout(JOURNAL_REQUEST_TIMEOUT, self.refresh_lease())
             .await
             .unwrap_or_else(|_| Err("journal lease refresh timed out; will retry".into()));
-        if result.is_ok() {
-            self.lease.confirm(&self.lease_token, Instant::now());
+        if result.is_ok() && !self.lease.confirm(&self.lease_token, Instant::now()) {
+            self.lease.fence();
+            return Err("journal lease renewal returned a stale token; writer fenced".into());
         }
         result
     }
@@ -1392,7 +1406,9 @@ impl ActiveJournalWriter {
             Err(JournalClientError::Remote(payload))
                 if payload.code == JournalErrorCode::LeaseExpired =>
             {
-                self.lease.expire();
+                self.lease
+                    .expire()
+                    .map_err(|refusal| format!("journal lease expiry refused: {refusal}"))?;
                 self.reacquire_lease().await
             }
             Err(err) => {
@@ -1478,14 +1494,14 @@ impl ActiveJournalWriter {
     }
 }
 
-fn retry_delay(attempt: usize) -> Duration {
-    let policy = Policy {
-        max_attempts: u8::MAX,
-        base_delay_ms: JOURNAL_APPEND_RETRY_BASE_DELAY.as_millis() as u64,
-        multiplier: 2.0,
-        max_delay_ms: JOURNAL_APPEND_RETRY_MAX_DELAY.as_millis() as u64,
-    };
-    Duration::from_millis(policy.calculate_delay(attempt.min(u8::MAX as usize) as u8, 0.0))
+fn journal_append_retry() -> Option<Retry> {
+    Exponential::new(
+        JOURNAL_APPEND_RETRY_BASE_DELAY,
+        2.0,
+        JOURNAL_APPEND_RETRY_MAX_DELAY,
+        0.0,
+    )
+    .map(|shape| Retry::new(shape.into(), NonZeroU8::new(JOURNAL_APPEND_MAX_ATTEMPTS)))
 }
 
 fn batch_matches_journal(loaded: &LoadedJournal, first_seq: i64, batch: &[RolloutItem]) -> bool {

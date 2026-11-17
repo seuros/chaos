@@ -85,12 +85,14 @@ impl UrlElicitations {
         };
         let mut ledger = self.ledger();
         let id = match ledger.admit(key.attempt(), uptime(), RETENTION) {
-            Claim::Completed(id) => id.clone(),
-            Claim::Acquired(claim) => {
-                let _ = ledger.abandon(claim);
+            Ok(Claim::Completed(id)) => id.clone(),
+            Ok(Claim::Acquired(claim)) => {
+                if let Err(refusal) = ledger.abandon(claim) {
+                    tracing::warn!(%refusal, "URL elicitation lookup claim was not released");
+                }
                 return None;
             }
-            _ => return None,
+            Ok(Claim::InProgress) | Err(_) => return None,
         };
         ledger.expire_where(|candidate| *candidate == key);
         Some(id)
@@ -110,26 +112,30 @@ impl Reservation {
     pub(crate) fn register(&mut self, id: &str) -> bool {
         let mut ledger = self.urls.ledger();
         match ledger.admit(self.key.attempt(), uptime(), RETENTION) {
-            Claim::Acquired(claim) => {
+            Ok(Claim::Acquired(claim)) => {
                 self.claim = Some(claim);
                 self.id = Some(id.into());
                 true
             }
-            _ => false,
+            Ok(Claim::InProgress | Claim::Completed(_)) | Err(_) => false,
         }
     }
 
     pub(crate) fn retain(&mut self) {
-        if let (Some(claim), Some(id)) = (self.claim.take(), self.id.take()) {
-            let _ = self.urls.ledger().complete_with(claim, id, uptime());
+        if let (Some(claim), Some(id)) = (self.claim.take(), self.id.take())
+            && let Err(refused) = self.urls.ledger().complete_with(claim, id, uptime())
+        {
+            tracing::warn!(refusal = %refused.refusal, "URL elicitation was not retained");
         }
     }
 }
 
 impl Drop for Reservation {
     fn drop(&mut self) {
-        if let Some(claim) = self.claim.take() {
-            let _ = self.urls.ledger().abandon(claim);
+        if let Some(claim) = self.claim.take()
+            && let Err(refusal) = self.urls.ledger().abandon(claim)
+        {
+            tracing::debug!(%refusal, "URL elicitation reservation already released");
         }
     }
 }

@@ -357,16 +357,16 @@ serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
 state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
-breaker-machines = { version = "0.24", features = ["async"] }
-chrono-machines = { version = "0.11", features = ["std"] }
-deadline-machines = { version = "0.4", features = ["tokio", "tokio-util"] }
-throttle-machines = { version = "0.5" }
-lease-machines = "0.3"
-dedup-machines = { version = "0.4", features = ["std"] }
-batch-machines = "0.3"
-saga-machines = "0.3.1"
-supervisor-machines = { version = "0.4", features = ["std"] }
-flow-machines = "0.2"
+breaker-machines = { version = "0.25", features = ["async"] }
+chrono-machines = "0.12"
+deadline-machines = { version = "0.5", features = ["tokio", "tokio-util"] }
+throttle-machines = { version = "0.6", features = ["std"] }
+lease-machines = "0.7"
+dedup-machines = { version = "0.8", features = ["std"] }
+batch-machines = "0.7"
+saga-machines = "0.6"
+supervisor-machines = "0.7"
+flow-machines = "0.4"
 serial_test = "4"
 sha1 = "0.11"
 sha2 = "0.11"

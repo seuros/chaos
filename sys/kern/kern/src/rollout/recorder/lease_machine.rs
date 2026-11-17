@@ -1,4 +1,4 @@
-use lease_machines::{Cadence, FencingToken, Holder, HolderState};
+use lease_machines::{Cadence, FencingToken, Holder, HolderState, Refusal};
 use std::time::{Duration, Instant};
 
 use super::{JOURNAL_LEASE_REFRESH_INTERVAL, JOURNAL_LEASE_TTL};
@@ -14,17 +14,8 @@ const CADENCE: Cadence = match Cadence::new(
     None => panic!("journal lease renewal fits inside its ttl"),
 };
 
-const FIRST_TOKEN: FencingToken = match FencingToken::new(1) {
-    Some(token) => token,
-    None => panic!("1 is a valid fencing token"),
-};
-
-fn fencing_token(raw: &str, previous: Option<FencingToken>) -> FencingToken {
-    raw.parse::<u64>()
-        .ok()
-        .and_then(FencingToken::new)
-        .or_else(|| FencingToken::new(previous.map_or(1, |token| token.value().saturating_add(1))))
-        .unwrap_or(FIRST_TOKEN)
+fn fencing_token(raw: &str) -> Option<FencingToken> {
+    raw.parse::<u64>().ok().and_then(FencingToken::from_raw)
 }
 
 #[derive(Debug)]
@@ -36,16 +27,16 @@ pub(super) struct Lease {
 #[cfg(test)]
 impl Default for Lease {
     fn default() -> Self {
-        Self::new("", Instant::now())
+        Self::new("1", Instant::now()).expect("1 is a fencing token")
     }
 }
 
 impl Lease {
-    pub(super) fn new(token: &str, confirmed_at: Instant) -> Self {
-        Self {
+    pub(super) fn new(token: &str, confirmed_at: Instant) -> Option<Self> {
+        Some(Self {
             epoch: confirmed_at,
-            holder: Holder::new(fencing_token(token, None), Duration::ZERO, CADENCE),
-        }
+            holder: Holder::new(fencing_token(token)?, Duration::ZERO, CADENCE),
+        })
     }
 
     fn offset(&self, at: Instant) -> Duration {
@@ -79,22 +70,22 @@ impl Lease {
         self.holder.at_risk(self.offset(now))
     }
 
-    pub(super) fn refresh(&mut self, now: Instant) {
-        self.holder.refresh(self.offset(now));
+    pub(super) fn refresh(&mut self, now: Instant) -> Result<(), Refusal> {
+        self.holder.refresh(self.offset(now)).map(|_| ())
     }
 
     pub(super) fn confirm(&mut self, token: &str, at: Instant) -> bool {
-        let token = fencing_token(token, Some(self.holder.token()));
-        self.holder.confirm(token, self.offset(at))
+        let at = self.offset(at);
+        fencing_token(token).is_some_and(|token| self.holder.confirm(token, at).is_ok())
     }
 
-    pub(super) fn expire(&mut self) {
-        self.holder.expire();
+    pub(super) fn expire(&mut self) -> Result<(), Refusal> {
+        self.holder.expire().map(|_| ())
     }
 
     pub(super) fn reacquire(&mut self, token: &str, at: Instant) -> bool {
-        let token = fencing_token(token, Some(self.holder.token()));
-        self.holder.reacquire(token, self.offset(at))
+        let at = self.offset(at);
+        fencing_token(token).is_some_and(|token| self.holder.reacquire(token, at).is_ok())
     }
 
     pub(super) fn fence(&mut self) {

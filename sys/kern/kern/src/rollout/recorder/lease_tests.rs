@@ -214,7 +214,7 @@ async fn recovery_never_steals_a_live_lease_or_skips_foreign_history() {
     let journal = TestJournal::new().await;
     let mut writer = journal.writer().await;
     journal.expire(writer.process_id).await;
-    writer.lease.expire();
+    writer.lease.expire().expect("an unfenced lease expires");
     let other = journal
         .client
         .acquire_lease(
@@ -402,7 +402,8 @@ async fn heartbeat_timeout_keeps_writer_retryable() {
         lease_token: "lease".into(),
         next_seq: 0,
         pending_items: vec![item("pending")],
-        lease: Lease::new("lease", Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL),
+        lease: Lease::new("1", Instant::now() - JOURNAL_LEASE_REFRESH_INTERVAL)
+            .expect("1 is a fencing token"),
     };
     let warning_at = writer.lease.warning_deadline();
     assert!(

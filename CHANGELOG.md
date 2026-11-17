@@ -7,6 +7,17 @@ Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR.TIMESTAMP`. A MAJOR
 entry means read this file before upgrading. A MINOR entry means you probably
 should. There is no patch level; the build timestamp is the patch.
 
+## [Unreleased]
+
+### Changed
+- A server's `Retry-After` longer than 30 seconds is cut to 30 seconds when a
+  model stream or remote compaction retries, and still counts against the
+  provider's retry budget.
+- Failed execution deliveries retry after a jittered delay instead of an exact
+  power of two, so a fleet of them no longer retries in lockstep.
+- Upgrading fails any spool submit that was interrupted while compensating: its
+  saved state cannot resume. The error names the batch to cancel by hand.
+
 ## [47.15.0] - 2026-11-16
 
 ### Added

@@ -2,10 +2,14 @@ use std::time::Duration;
 
 use chaos_ipc::ProcessId;
 use lease_machines::{
-    Checkpoint, ClockPolicy, Decision, FencingToken, Lease, LeaseAuthority, OwnerId, Rejection,
+    Accepting, Checkpoint, ClockPolicy, Fence, FencingToken, Lease, LeaseAuthority, OwnerId,
+    Refusal,
 };
 
 use crate::error::JournalError;
+
+const SCOPE: u16 = 0;
+const QUERY_TTL: Duration = Duration::from_nanos(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeaseRow {
@@ -22,16 +26,6 @@ pub(crate) struct Grant {
     pub(crate) expires_at: Duration,
 }
 
-impl From<Lease> for Grant {
-    fn from(lease: Lease) -> Self {
-        Self {
-            token: lease.token().value(),
-            last_issued: lease.token().value(),
-            expires_at: lease.expires_at(),
-        }
-    }
-}
-
 /// Stable FNV-1a digest; the authority only compares owners, the row keeps the string.
 pub(crate) fn owner(owner_id: &str) -> OwnerId {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
@@ -43,7 +37,7 @@ pub(crate) fn owner(owner_id: &str) -> OwnerId {
 }
 
 pub(crate) fn token(value: &str) -> Option<FencingToken> {
-    value.parse().ok().and_then(FencingToken::new)
+    value.parse().ok().and_then(FencingToken::from_raw)
 }
 
 pub(crate) fn column(resource: &str, name: &str, value: i64) -> Result<u64, JournalError> {
@@ -92,7 +86,7 @@ impl ResourceLease {
     pub(crate) fn restore(resource: &str, row: Option<&LeaseRow>) -> Result<Self, JournalError> {
         let Some(row) = row else {
             return Ok(Self {
-                authority: LeaseAuthority::new().with_clock_policy(ClockPolicy::Clamp),
+                authority: LeaseAuthority::with_scope(SCOPE).with_clock_policy(ClockPolicy::Clamp),
             });
         };
         let never_issued = || JournalError::LeaseHistory {
@@ -106,23 +100,40 @@ impl ResourceLease {
             None => None,
             Some(token) => Some(Lease::new(
                 owner(&row.owner_id),
-                FencingToken::new(token).ok_or_else(never_issued)?,
+                FencingToken::from_raw(token).ok_or_else(never_issued)?,
                 row.expires_at,
             )),
         };
-        let checkpoint =
-            Checkpoint::from_parts(FencingToken::new(row.last_issued), lease, Duration::ZERO)
-                .ok_or_else(never_issued)?;
-        Ok(Self {
-            authority: LeaseAuthority::restore(checkpoint).with_clock_policy(ClockPolicy::Clamp),
-        })
+        let checkpoint = Checkpoint::from_parts(SCOPE, row.last_issued, lease, Duration::ZERO)
+            .ok_or_else(never_issued)?;
+        let authority = LeaseAuthority::restored(SCOPE, checkpoint, ClockPolicy::Clamp)
+            .ok_or_else(never_issued)?;
+        Ok(Self { authority })
     }
 
-    pub(crate) fn acquire(&mut self, owner_id: &str, now: Duration, ttl: Duration) -> Decision {
+    pub(crate) fn grant(&self, lease: Lease) -> Grant {
+        Grant {
+            token: lease.token().raw(),
+            last_issued: self.authority.issued(),
+            expires_at: lease.expires_at(),
+        }
+    }
+
+    pub(crate) fn acquire(
+        &mut self,
+        owner_id: &str,
+        now: Duration,
+        ttl: Duration,
+    ) -> Result<Lease, Refusal> {
         self.authority.acquire(owner(owner_id), now, ttl)
     }
 
-    pub(crate) fn reacquire(&mut self, owner_id: &str, now: Duration, ttl: Duration) -> Decision {
+    pub(crate) fn reacquire(
+        &mut self,
+        owner_id: &str,
+        now: Duration,
+        ttl: Duration,
+    ) -> Result<Lease, Refusal> {
         self.authority.reacquire(owner(owner_id), now, ttl)
     }
 
@@ -132,33 +143,41 @@ impl ResourceLease {
         token: &str,
         now: Duration,
         ttl: Duration,
-    ) -> Decision {
-        match self::token(token) {
-            Some(token) => self.authority.renew(owner(owner_id), token, now, ttl),
-            None => Decision::Rejected(Rejection::StaleToken),
-        }
+    ) -> Result<Lease, Refusal> {
+        let token = self::token(token).ok_or(Refusal::StaleToken)?;
+        self.authority.renew(owner(owner_id), token, now, ttl)
     }
 
-    pub(crate) fn release(&mut self, owner_id: &str, token: &str, now: Duration) -> Decision {
-        match self::token(token) {
-            Some(token) => self.authority.release(owner(owner_id), token, now),
-            None => Decision::Rejected(Rejection::StaleToken),
-        }
+    pub(crate) fn release(
+        &mut self,
+        owner_id: &str,
+        token: &str,
+        now: Duration,
+    ) -> Result<Lease, Refusal> {
+        let token = self::token(token).ok_or(Refusal::StaleToken)?;
+        self.authority.release(owner(owner_id), token, now)
     }
 
-    /// Read-only credential check with the authority's own precedence.
-    pub(crate) fn verify(&self, owner_id: &str, token: &str, now: Duration) -> Option<Rejection> {
-        let Some(lease) = self.authority.checkpoint().lease() else {
-            return Some(Rejection::NoLease);
-        };
-        if lease.owner() != owner(owner_id) {
-            Some(Rejection::WrongOwner)
-        } else if self::token(token) != Some(lease.token()) {
-            Some(Rejection::StaleToken)
-        } else if now >= lease.expires_at() {
-            Some(Rejection::Expired)
-        } else {
-            None
+    /// Read-only credential check: the presented token must be the one in
+    /// force, held by `owner_id` and still live at `now`.
+    pub(crate) fn verify(&self, owner_id: &str, token: &str, now: Duration) -> Result<(), Refusal> {
+        let held = self
+            .authority
+            .checkpoint()
+            .lease()
+            .ok_or(Refusal::NoLease)?;
+        if held.owner() != owner(owner_id) {
+            return Err(Refusal::WrongOwner);
+        }
+        let presented = self::token(token).ok_or(Refusal::StaleToken)?;
+        let mut fence =
+            Fence::resumed(self.authority.scope(), Some(held.token())).ok_or(Refusal::Unknown)?;
+        if fence.accept(presented)? != Accepting::Current {
+            return Err(Refusal::StaleToken);
+        }
+        match self.authority.incumbent(now, QUERY_TTL)? {
+            Some(_) => Ok(()),
+            None => Err(Refusal::Expired),
         }
     }
 }
@@ -171,16 +190,12 @@ fn timestamp(at: Duration) -> Result<jiff::Timestamp, JournalError> {
     })
 }
 
-fn process_error(
-    rejection: Rejection,
-    process_id: &ProcessId,
-    row: Option<&LeaseRow>,
-) -> JournalError {
+fn process_error(refusal: Refusal, process_id: &ProcessId, row: Option<&LeaseRow>) -> JournalError {
     let invalid = || JournalError::InvalidLease {
         process_id: *process_id,
     };
-    match rejection {
-        Rejection::Occupied => match row {
+    match refusal {
+        Refusal::Occupied => match row {
             Some(row) => timestamp(row.expires_at).map_or_else(
                 |error| error,
                 |expires_at| JournalError::LeaseConflict {
@@ -191,10 +206,12 @@ fn process_error(
             ),
             None => invalid(),
         },
-        Rejection::Expired => JournalError::LeaseExpired {
+        Refusal::Expired => JournalError::LeaseExpired {
             process_id: *process_id,
         },
-        Rejection::NoLease | Rejection::WrongOwner | Rejection::StaleToken => invalid(),
+        Refusal::NoLease | Refusal::WrongOwner | Refusal::StaleToken | Refusal::Unknown => {
+            invalid()
+        }
         other => JournalError::InvalidRequest(format!("lease request rejected: {other:?}")),
     }
 }
@@ -207,14 +224,11 @@ pub(crate) fn acquire_process(
     now: Duration,
     ttl: Duration,
 ) -> Result<Grant, JournalError> {
-    let mut lease = ResourceLease::restore(&process_id.to_string(), row)?;
-    match lease.reacquire(owner_id, now, ttl) {
-        Decision::Granted(lease) => Ok(Grant::from(lease)),
-        Decision::Rejected(rejection) => Err(process_error(rejection, process_id, row)),
-        other => Err(JournalError::InvalidRequest(format!(
-            "unexpected lease decision: {other:?}"
-        ))),
-    }
+    let mut authority = ResourceLease::restore(&process_id.to_string(), row)?;
+    authority
+        .reacquire(owner_id, now, ttl)
+        .map(|lease| authority.grant(lease))
+        .map_err(|refusal| process_error(refusal, process_id, row))
 }
 
 /// Renewal keeps the token and never shortens the current expiration.
@@ -226,17 +240,11 @@ pub(crate) fn renew_process(
     now: Duration,
     ttl: Duration,
 ) -> Result<Grant, JournalError> {
-    let mut lease = ResourceLease::restore(&process_id.to_string(), row)?;
-    match lease.renew(owner_id, token, now, ttl) {
-        Decision::Renewed(lease) => Ok(Grant {
-            last_issued: row.map_or(lease.token().value(), |row| row.last_issued),
-            ..Grant::from(lease)
-        }),
-        Decision::Rejected(rejection) => Err(process_error(rejection, process_id, row)),
-        other => Err(JournalError::InvalidRequest(format!(
-            "unexpected lease decision: {other:?}"
-        ))),
-    }
+    let mut authority = ResourceLease::restore(&process_id.to_string(), row)?;
+    authority
+        .renew(owner_id, token, now, ttl)
+        .map(|lease| authority.grant(lease))
+        .map_err(|refusal| process_error(refusal, process_id, row))
 }
 
 pub(crate) fn release_process(
@@ -246,14 +254,11 @@ pub(crate) fn release_process(
     row: Option<&LeaseRow>,
     now: Duration,
 ) -> Result<(), JournalError> {
-    let mut lease = ResourceLease::restore(&process_id.to_string(), row)?;
-    match lease.release(owner_id, token, now) {
-        Decision::Released => Ok(()),
-        Decision::Rejected(rejection) => Err(process_error(rejection, process_id, row)),
-        other => Err(JournalError::InvalidRequest(format!(
-            "unexpected lease decision: {other:?}"
-        ))),
-    }
+    let mut authority = ResourceLease::restore(&process_id.to_string(), row)?;
+    authority
+        .release(owner_id, token, now)
+        .map(|_| ())
+        .map_err(|refusal| process_error(refusal, process_id, row))
 }
 
 /// Existing writers must present an unexpired lease with matching credentials.
@@ -264,11 +269,9 @@ pub(crate) fn verify_process(
     row: Option<&LeaseRow>,
     now: Duration,
 ) -> Result<(), JournalError> {
-    let lease = ResourceLease::restore(&process_id.to_string(), row)?;
-    match lease.verify(owner_id, token, now) {
-        None => Ok(()),
-        Some(rejection) => Err(process_error(rejection, process_id, row)),
-    }
+    ResourceLease::restore(&process_id.to_string(), row)?
+        .verify(owner_id, token, now)
+        .map_err(|refusal| process_error(refusal, process_id, row))
 }
 
 #[cfg(test)]

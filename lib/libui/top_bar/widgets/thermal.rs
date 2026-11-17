@@ -1,5 +1,5 @@
 use chaos_kern::machine_status::{MachineStatus, MachineWarning};
-use chaos_machine::{TemperatureKind, ThermalState};
+use vitals_machines::probe::{TemperatureKind, ThermalState};
 
 use super::super::machine::Source;
 use super::super::{BarWidget, Content, Tone};

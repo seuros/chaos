@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use chaos_kern::machine_status::{MachineStatus, MachineWarning};
-use chaos_machine::*;
 use tokio::sync::watch;
+use vitals_machines::probe::*;
 
 use super::{clock, refresh_all, render, text, widgets};
 use crate::top_bar::{BarWidget, Content, Side};

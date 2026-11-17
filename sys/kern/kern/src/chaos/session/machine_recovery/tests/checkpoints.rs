@@ -137,10 +137,10 @@ async fn recovery_checkpoint_tool_commits_and_resource_stays_readable_after_reco
     );
 
     tokio::time::pause();
-    sample(&session, chaos_machine::ThermalState::Normal).await;
+    sample(&session, vitals_machines::probe::ThermalState::Normal).await;
     for _ in 0..10 {
         tokio::time::advance(POLL_INTERVAL).await;
-        sample(&session, chaos_machine::ThermalState::Normal).await;
+        sample(&session, vitals_machines::probe::ThermalState::Normal).await;
     }
     tokio::time::resume();
     assert_eq!(

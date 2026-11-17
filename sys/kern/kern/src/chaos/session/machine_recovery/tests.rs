@@ -2,8 +2,8 @@ use super::*;
 
 mod checkpoints;
 
-fn observation(thermal: chaos_machine::ThermalState) -> MachineStatus {
-    use chaos_machine::*;
+fn observation(thermal: vitals_machines::probe::ThermalState) -> MachineStatus {
+    use vitals_machines::probe::*;
     let machine = MachineSnapshot {
         observed_at: SystemTime::now(),
         os: "test",
@@ -33,7 +33,7 @@ fn observation(thermal: chaos_machine::ThermalState) -> MachineStatus {
     }
 }
 
-async fn sample(session: &Session, thermal: chaos_machine::ThermalState) {
+async fn sample(session: &Session, thermal: vitals_machines::probe::ThermalState) {
     session
         .refresh_machine_recovery_with_observer(|_| async move { Ok(observation(thermal)) })
         .await
@@ -41,12 +41,12 @@ async fn sample(session: &Session, thermal: chaos_machine::ThermalState) {
 }
 
 async fn unresolved(session: &Session) {
-    sample(session, chaos_machine::ThermalState::Critical).await;
+    sample(session, vitals_machines::probe::ThermalState::Critical).await;
 }
 
 #[tokio::test]
 async fn indexing_resource_read_does_not_reset_recovery_context_or_wait() {
-    use chaos_machine::{IndexingObservation, IndexingSnapshot};
+    use vitals_machines::probe::{IndexingObservation, IndexingSnapshot};
 
     let (session, turn) = crate::chaos::make_session_and_context().await;
     unresolved(&session).await;
@@ -63,7 +63,7 @@ async fn indexing_resource_read_does_not_reset_recovery_context_or_wait() {
     let status = session
         .machine_resource_observation_with_observer(|request| {
             assert_eq!(request, base.clone().with_indexing());
-            let mut status = observation(chaos_machine::ThermalState::Critical);
+            let mut status = observation(vitals_machines::probe::ThermalState::Critical);
             status.indexing = Some(IndexingSnapshot {
                 observed_at: SystemTime::now(),
                 workspace: cwd,
@@ -87,7 +87,9 @@ async fn indexing_resource_read_does_not_reset_recovery_context_or_wait() {
     session
         .refresh_machine_recovery_with_observer(|request| {
             assert_eq!(request, base, "monitor keeps indexing probes disabled");
-            std::future::ready(Ok(observation(chaos_machine::ThermalState::Critical)))
+            std::future::ready(Ok(observation(
+                vitals_machines::probe::ThermalState::Critical,
+            )))
         })
         .await
         .unwrap();
@@ -203,7 +205,7 @@ async fn machine_recovery_cancellation_revokes_an_already_queued_success() {
 
 #[tokio::test]
 async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
-    use chaos_machine::ThermalState;
+    use vitals_machines::probe::ThermalState;
     for opted_in in [false, true] {
         let (session, turn) = crate::chaos::make_session_and_context().await;
         tokio::time::pause();
@@ -303,7 +305,7 @@ async fn machine_recovery_probe_timeout_resets_the_window() {
     let (session, _) = crate::chaos::make_session_and_context().await;
     tokio::time::pause();
     unresolved(&session).await;
-    sample(&session, chaos_machine::ThermalState::Normal).await;
+    sample(&session, vitals_machines::probe::ThermalState::Normal).await;
     let result = session
         .refresh_machine_recovery_with_observer(|_| std::future::pending())
         .await;
@@ -317,7 +319,7 @@ async fn machine_recovery_probe_timeout_resets_the_window() {
 async fn machine_recovery_after_session_resume_can_publish_a_wake() {
     use chaos_ipc::background_tasks::{TaskJournalEvent, WakePolicy};
     use chaos_ipc::protocol::RolloutItem;
-    use chaos_machine::ThermalState;
+    use vitals_machines::probe::ThermalState;
 
     let (session, turn) = crate::chaos::make_session_and_context().await;
     let session = Arc::new(session);

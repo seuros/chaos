@@ -1700,7 +1700,6 @@ dependencies = [
  "chaos-libration",
  "chaos-locate",
  "chaos-lsd",
- "chaos-machine",
  "chaos-mcp-protocol",
  "chaos-mcp-runtime",
  "chaos-minions",
@@ -1792,6 +1791,7 @@ dependencies = [
  "tracing-test",
  "url",
  "uuid",
+ "vitals-machines",
  "walkdir",
  "which",
  "wildmatch",
@@ -1848,18 +1848,6 @@ dependencies = [
 [[package]]
 name = "chaos-lsd"
 version = "47.15.0"
-
-[[package]]
-name = "chaos-machine"
-version = "47.15.0"
-dependencies = [
- "chaos-sysinfo",
- "libc",
- "objc2-foundation",
- "serde",
- "serde_json",
- "tempfile",
-]
 
 [[package]]
 name = "chaos-mcp-protocol"
@@ -3817,9 +3805,9 @@ dependencies = [
 
 [[package]]
 name = "feedback-machines"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27b8299a2c2c2f595a1d18ccb9a856b56e15b25759d794e8961bf63ae1b212da"
+checksum = "92cfc70539291faea66716a995a726ffcdcde90a42c6862b7bcb6d2132fa44e8"
 
 [[package]]
 name = "ff"
@@ -6593,7 +6581,6 @@ dependencies = [
  "chaos-jail-report",
  "chaos-kern",
  "chaos-locate",
- "chaos-machine",
  "chaos-realpath",
  "chaos-services",
  "chaos-session",
@@ -6646,6 +6633,7 @@ dependencies = [
  "unicode-width",
  "unicodeit",
  "url",
+ "vitals-machines",
  "vt100",
 ]
 
@@ -12163,6 +12151,19 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vitals-machines"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "870d471d65f2ef5ceb7899fd30f3a3df25b63adc509c352cf89b2cd01e1d3135"
+dependencies = [
+ "feedback-machines",
+ "libc",
+ "objc2-foundation",
+ "periscope-machines",
+ "serde",
+]
 
 [[package]]
 name = "vsimd"

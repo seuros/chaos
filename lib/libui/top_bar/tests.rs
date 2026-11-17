@@ -9,10 +9,10 @@ use crate::top_bar::widgets::sandbox;
 use crate::top_bar::widgets::storage;
 use chaos_kern::machine_status::MachineWarning;
 use chaos_kern::{PersistenceHealth, PersistenceStatus, RuntimeStorageBackend};
-use chaos_machine::{BatteryKind, PowerInfo, PowerSource};
 use chaos_sysinfo::SandboxKind;
 use chaos_sysinfo::terminal::Multiplexer;
 use tokio::sync::watch;
+use vitals_machines::probe::{BatteryKind, PowerInfo, PowerSource};
 
 pub(super) mod observations;
 use observations::{discharging, machine_status, snapshot};

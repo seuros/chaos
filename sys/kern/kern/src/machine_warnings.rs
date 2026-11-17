@@ -1,10 +1,10 @@
-//! Warning policy belongs to the kernel; chaos-machine only reports observations.
+//! Warning policy belongs to the kernel; vitals-machines only reports observations.
 
-use chaos_machine::{
+use serde::Serialize;
+use vitals_machines::probe::{
     BatteryKind, BatteryState, FilesystemId, MachineSnapshot, PowerSource, StorageRole,
     StorageSnapshot, StorageTarget, TemperatureKind, ThermalState,
 };
-use serde::Serialize;
 
 use crate::config::MachineWarningsConfig;
 

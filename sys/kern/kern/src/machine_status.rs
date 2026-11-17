@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chaos_machine::{MachineSnapshot, StorageRole, StorageSnapshot, StorageTarget};
 use serde::Serialize;
+use vitals_machines::probe::{MachineSnapshot, StorageRole, StorageSnapshot, StorageTarget};
 
 use crate::config::{Config, MachineWarningsConfig};
 use crate::machine_warnings;
@@ -16,7 +16,7 @@ pub struct MachineStatus {
     pub storage: StorageSnapshot,
     /// Collected only for explicit resource reads, not UI or warning polling.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub indexing: Option<chaos_machine::IndexingSnapshot>,
+    pub indexing: Option<vitals_machines::probe::IndexingSnapshot>,
     pub warnings: Vec<MachineWarning>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning_instruction: Option<String>,
@@ -63,12 +63,12 @@ impl ObservationRequest {
                 .map_err(|_| "machine observation gate closed".to_string())?;
             tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                let machine = chaos_machine::inspect_machine();
-                let storage = chaos_machine::inspect_storage(&targets);
+                let machine = vitals_machines::probe::inspect_machine();
+                let storage = vitals_machines::probe::inspect_storage(&targets);
                 let indexing = targets
                     .iter()
                     .find(|target| include_indexing && target.role == StorageRole::Workspace)
-                    .map(|target| chaos_machine::inspect_indexing(&target.path));
+                    .map(|target| vitals_machines::probe::inspect_indexing(&target.path));
                 let warnings = machine_warnings::evaluate(&policy, &machine, &storage);
                 let warning_instruction = machine_warnings::instructions(&warnings);
                 MachineStatus {

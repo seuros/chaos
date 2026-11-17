@@ -1,9 +1,9 @@
 use super::*;
-use chaos_machine::{
+use std::time::SystemTime;
+use vitals_machines::probe::{
     BatteryInfo, CpuTemperature, Filesystem, FilesystemBacking, MachineProfile, PowerInfo,
     ResolvedStorageTarget, TemperatureSource, ThermalInfo,
 };
-use std::time::SystemTime;
 
 fn machine() -> MachineSnapshot {
     MachineSnapshot {
@@ -193,13 +193,15 @@ fn missing_invalid_capacity_and_failed_probes_are_not_zero_free_space() {
     machine.power = PowerInfo::default();
     let mut snapshot = storage(0);
     snapshot.filesystems[0].total_bytes = 0;
-    snapshot.unavailable.push(chaos_machine::StorageFailure {
-        target: StorageTarget {
-            role: StorageRole::Output,
-            path: "/unavailable".into(),
-        },
-        reason: "unavailable".into(),
-    });
+    snapshot
+        .unavailable
+        .push(vitals_machines::probe::StorageFailure {
+            target: StorageTarget {
+                role: StorageRole::Output,
+                path: "/unavailable".into(),
+            },
+            reason: "unavailable".into(),
+        });
     assert!(evaluate(&MachineWarningsConfig::default(), &machine, &snapshot).is_empty());
     snapshot.filesystems[0].total_bytes = 10;
     snapshot.filesystems[0].available_bytes = 11;

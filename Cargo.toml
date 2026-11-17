@@ -88,7 +88,6 @@ members = [
     "lib/libmisc/init",
     "lib/libmisc/session",
     "lib/libmisc/sysinfo",
-    "lib/libmisc/machine",
     "lib/libtrace/snitch",
     "lib/libui",
     "lib/libui/chassis",
@@ -221,7 +220,6 @@ chaos-synopsis = { path = "lib/libmisc/synopsis" }
 chaos-coreboot = { path = "lib/libmisc/init" }
 chaos-session = { path = "lib/libmisc/session" }
 chaos-sysinfo = { path = "lib/libmisc/sysinfo" }
-chaos-machine = { path = "lib/libmisc/machine" }
 chaos-snitch = { path = "lib/libtrace/snitch" }
 libui = { path = "lib/libui" }
 chaos-chassis = { path = "lib/libui/chassis" }
@@ -371,6 +369,7 @@ saga-machines = "0.6"
 supervisor-machines = "0.7"
 flow-machines = "0.4"
 journal-machines = "0.9"
+vitals-machines = { version = "0.1", features = ["probe"] }
 serial_test = "4"
 sha1 = "0.11"
 sha2 = "0.11"

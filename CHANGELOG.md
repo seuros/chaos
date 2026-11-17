@@ -27,7 +27,8 @@ should. There is no patch level; the build timestamp is the patch.
 - A due cron job runs once, not once per chaos process sharing the runtime
   database.
 - An execution delivery that never succeeds dies after 32 attempts instead of
-  retrying hourly forever; deliveries list their state and why they died.
+  retrying hourly forever; deliveries list their state and why they died. A
+  dead delivery no longer blocks archiving its session.
 
 ## [47.15.0] - 2026-11-16
 

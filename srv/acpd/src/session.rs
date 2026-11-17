@@ -90,6 +90,7 @@ pub(crate) struct NativeSession {
     id: ProcessId,
     owner: OwnerGuard,
     active: Mutex<Option<CancellationToken>>,
+    interrupted: tokio::sync::Mutex<bool>,
     history: Mutex<Option<Vec<chaos_ipc::protocol::RolloutItem>>>,
 }
 
@@ -100,6 +101,7 @@ impl NativeSession {
             id,
             owner,
             active: Mutex::new(None),
+            interrupted: tokio::sync::Mutex::new(false),
             history: Mutex::new(None),
         }
     }
@@ -126,6 +128,10 @@ impl NativeSession {
         };
         let renaming = matches!(op, Op::SetProcessName { .. });
         let mut editor_scope = None;
+        let interrupted = self.interrupted.lock().await;
+        if *interrupted || context.is_cancelled() {
+            return Ok(PromptResponse::new(StopReason::Cancelled));
+        }
         let submission = if let Some(editor) = crate::files::Editor::negotiated(&context)? {
             let id = format!("acp-{}", ProcessId::new());
             editor_scope = Some(
@@ -152,15 +158,8 @@ impl NativeSession {
             )
             .await?
         };
+        drop(interrupted);
         let _editor_scope = editor_scope;
-        if context.is_cancelled() {
-            submit(
-                &self.process,
-                Op::Interrupt,
-                "native ACP interruption delivery failed",
-            )
-            .await?;
-        }
         let mut projection = Projection::default();
         let mut url_elicitations = std::collections::HashMap::new();
         loop {
@@ -312,6 +311,29 @@ impl NativeSession {
             }
         }
     }
+
+    async fn join_cancellation(&self) -> protocol::Result<()> {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let Some(active) = active else { return Ok(()) };
+        // The prompt is the only event consumer and signals its terminal
+        // observation. The host still holds the session busy while we join children.
+        active.cancelled().await;
+        let ids = self.owner.table.list_process_ids().await;
+        for id in ids.into_iter().filter(|id| *id != self.id) {
+            if let Ok(process) = self.owner.table.get_process(id).await {
+                tokio::time::timeout(CLEANUP_TIMEOUT, process.shutdown_and_wait())
+                    .await
+                    .map_err(|_| internal("native descendant shutdown timed out"))?
+                    .map_err(|_| internal("native descendant shutdown is unconfirmed"))?;
+                self.owner.table.remove_process(&id).await;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl AgentSession for NativeSession {
@@ -359,14 +381,18 @@ impl AgentSession for NativeSession {
         })
     }
 
-    fn cancel(&self) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+    fn interrupt(&self) -> protocol::BoxFuture<'_, protocol::Result<()>> {
         Box::pin(async move {
-            let active = self
+            let mut interrupted = self.interrupted.lock().await;
+            *interrupted = true;
+            if self
                 .active
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            let Some(active) = active else { return Ok(()) };
+                .is_none()
+            {
+                return Ok(());
+            }
             submit(
                 &self.process,
                 Op::CleanBackgroundTerminals,
@@ -379,20 +405,20 @@ impl AgentSession for NativeSession {
                 "native turn cancellation delivery failed",
             )
             .await?;
-            // The prompt is the only event consumer and signals its terminal
-            // observation. The host still holds the session busy while we join children.
-            active.cancelled().await;
-            let ids = self.owner.table.list_process_ids().await;
-            for id in ids.into_iter().filter(|id| *id != self.id) {
-                if let Ok(process) = self.owner.table.get_process(id).await {
-                    tokio::time::timeout(CLEANUP_TIMEOUT, process.shutdown_and_wait())
-                        .await
-                        .map_err(|_| internal("native descendant shutdown timed out"))?
-                        .map_err(|_| internal("native descendant shutdown is unconfirmed"))?;
-                    self.owner.table.remove_process(&id).await;
-                }
-            }
+            self.process
+                .subscribe_activity()
+                .wait_for(|activity| !activity.active_turn)
+                .await
+                .map_err(|_| internal("native turn interruption is unconfirmed"))?;
             Ok(())
+        })
+    }
+
+    fn cancel(&self) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+        Box::pin(async move {
+            let joined = self.join_cancellation().await;
+            *self.interrupted.lock().await = false;
+            joined
         })
     }
 

@@ -46,7 +46,8 @@ on other connections.
 Connection, session and turn lifecycles use explicit `state-machines` transitions.
 Transitions run synchronously under short locks, with I/O outside those locks.
 Cancellation delivery and prompt completion are separate: a session stays busy
-until its cancellation callback joins. Dropped live prompts and uncertain writes
+until its cancellation callback joins. The backend's `interrupt` runs before the
+turn is marked cancelled, so pending client requests never fail into live work. Dropped live prompts and uncertain writes
 invalidate the session instead of allowing another turn.
 
 `ClientHandle` offers typed, capability-checked editor text reads and writes,

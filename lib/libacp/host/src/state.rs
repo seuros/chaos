@@ -210,7 +210,7 @@ impl SessionContext {
         &self.client
     }
 
-    /// Whether interruption has been requested, not whether native work stopped.
+    /// Whether cancellation followed native interruption, not whether native work stopped.
     pub fn is_cancelled(&self) -> bool {
         self.client.turn.cancel.is_cancelled()
             || self

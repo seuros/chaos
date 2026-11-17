@@ -29,13 +29,12 @@ impl Closing {
         let state = &self.state;
         let slot = &self.slot;
         let cancel = slot.lock().request_cancel();
-        if let Some(turn) = cancel {
-            let result =
-                tokio::time::timeout(state.limits.shutdown_timeout, slot.native.cancel()).await;
-            turn.cancel_finished();
-            if !matches!(result, Ok(Ok(()))) {
-                return Err(error("ACP native cancellation is unconfirmed"));
-            }
+        if let Some(turn) = cancel
+            && !turn
+                .cancel_native(slot.native.as_ref(), state.limits.shutdown_timeout)
+                .await
+        {
+            return Err(error("ACP native cancellation is unconfirmed"));
         }
         let idle = async {
             loop {

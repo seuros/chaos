@@ -70,7 +70,7 @@ fn controls_coexist_with_prompts_but_not_opening_or_other_controls() {
     assert!(session.check(&control).is_ok());
     assert!(session.begin_control(Turn::new_operation(false)).is_err());
     assert!(Arc::ptr_eq(&session.request_cancel().unwrap(), &prompt));
-    assert!(prompt.cancel.is_cancelled());
+    assert!(!prompt.cancel.is_cancelled());
     assert!(!control.cancel.is_cancelled());
     session.release(&control);
     assert!(session.check(&control).is_err());

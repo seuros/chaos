@@ -140,7 +140,15 @@ pub trait AgentSession: Send + Sync + 'static {
         context: SessionContext,
     ) -> protocol::BoxFuture<'_, protocol::Result<PromptResponse>>;
 
-    /// Request interruption. Success is delivery, not proof of termination.
+    /// Interrupt native work; the turn is marked cancelled only after this resolves.
+    ///
+    /// Pending client requests fail as cancelled only once native work has
+    /// stopped acting on their replies.
+    fn interrupt(&self) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Join cancellation once the turn is marked cancelled after [`Self::interrupt`].
     fn cancel(&self) -> protocol::BoxFuture<'_, protocol::Result<()>>;
 
     /// Stop and join session-owned work, including descendants and tool execution.

@@ -32,6 +32,10 @@ const PROBE: Duration = if cfg!(test) {
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const RECONNECT_MIN: Duration = Duration::from_secs(1);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
+const RECONNECT: Exponential = match Exponential::new(RECONNECT_MIN, 2.0, RECONNECT_MAX, 0.0) {
+    Some(shape) => shape,
+    None => panic!("reconnect backoff shape is invalid"),
+};
 const SILENCE: Duration = Duration::from_secs(30);
 /// Postgres refuses payloads of 8000 bytes or more.
 const MAX_PAYLOAD: usize = 7900;
@@ -184,16 +188,12 @@ async fn subscribe(storage_url: &str) -> Result<PgListener, sqlx::Error> {
 /// A fresh listening connection, waiting longer between attempts while the
 /// database stays out of reach.
 async fn resubscribe(storage_url: &str) -> PgListener {
-    let mut retry = Exponential::new(RECONNECT_MIN, 2.0, RECONNECT_MAX, 0.0)
-        .map(|shape| Retry::new(shape.into(), None));
+    let mut retry = Retry::new(RECONNECT.into(), None);
     loop {
         if let Ok(listener) = subscribe(storage_url).await {
             return listener;
         }
-        let wait = retry
-            .as_mut()
-            .and_then(|retry| retry.failed(0).ok())
-            .unwrap_or(RECONNECT_MAX);
+        let wait = retry.failed(0).unwrap_or(RECONNECT_MAX);
         tokio::time::sleep(wait).await;
     }
 }

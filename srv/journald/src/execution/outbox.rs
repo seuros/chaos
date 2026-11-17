@@ -168,11 +168,18 @@ fn status(row: &DeliveryRow) -> Result<ExecutionDeliveryStatus, JournalError> {
 
 const DELIVERY_RETRY_BASE: Duration = Duration::from_secs(2);
 const DELIVERY_RETRY_CAP: Duration = Duration::from_secs(3600);
+const DELIVERY_RETRY: Exponential =
+    match Exponential::new(DELIVERY_RETRY_BASE, 2.0, DELIVERY_RETRY_CAP, 0.5) {
+        Some(shape) => shape,
+        None => panic!("delivery retry shape is invalid"),
+    };
 
-fn delivery_retry_delay(attempts: i64) -> Option<Duration> {
-    let attempt = NonZeroU8::new(u8::try_from(attempts.clamp(1, i64::from(u8::MAX))).ok()?)?;
-    Exponential::new(DELIVERY_RETRY_BASE, 2.0, DELIVERY_RETRY_CAP, 0.5)
-        .map(|shape| shape.delay(attempt, chaos_ipc::backoff::draw()))
+fn delivery_retry_delay(attempts: i64) -> Duration {
+    let attempt = u8::try_from(attempts.clamp(1, i64::from(u8::MAX)))
+        .ok()
+        .and_then(NonZeroU8::new)
+        .unwrap_or(NonZeroU8::MAX);
+    DELIVERY_RETRY.delay(attempt, chaos_ipc::backoff::draw())
 }
 
 fn lease_row(row: &DeliveryRow) -> Result<LeaseRow, JournalError> {
@@ -345,8 +352,7 @@ macro_rules! impl_outbox {
                                 sqlx::query("UPDATE execution_outbox SET delivered_at_ms = $1, expires_at_ms = 0
                                     WHERE event_id = $2").bind(now).bind(&row.0).execute(&mut *tx).await?;
                             } else {
-                                let backoff = delivery_retry_delay(row.5)
-                                    .ok_or_else(|| conflict("delivery retry backoff is invalid"))?;
+                                let backoff = delivery_retry_delay(row.5);
                                 let backoff_ms = epoch_millis(backoff)?;
                                 sqlx::query("UPDATE execution_outbox SET next_attempt_at_ms = $1,
                                     expires_at_ms = 0, lease_token = NULL, owner_id = '' WHERE event_id = $2")

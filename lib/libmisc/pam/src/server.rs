@@ -54,6 +54,10 @@ use tiny_http::StatusCode;
 
 const DEFAULT_ISSUER: &str = "https://auth.openai.com";
 const DEFAULT_PORT: u16 = 1455;
+const BIND_RETRY: Constant = match Constant::new(Duration::from_millis(200), 0.0) {
+    Some(shape) => shape,
+    None => panic!("bind retry shape is invalid"),
+};
 
 /// Options for launching the local login callback server.
 #[derive(Debug, Clone)]
@@ -534,8 +538,7 @@ fn send_cancel_request(port: u16) -> io::Result<()> {
 fn bind_server(port: u16) -> io::Result<Server> {
     let bind_address = format!("127.0.0.1:{port}");
     let mut cancel_attempted = false;
-    let mut retry = Constant::new(Duration::from_millis(200), 0.0)
-        .map(|shape| Retry::new(shape.into(), NonZeroU8::new(10)));
+    let mut retry = Retry::new(BIND_RETRY.into(), NonZeroU8::new(10));
 
     loop {
         match Server::http(&bind_address) {
@@ -556,7 +559,7 @@ fn bind_server(port: u16) -> io::Result<Server> {
                         }
                     }
 
-                    let Some(delay) = retry.as_mut().and_then(|retry| retry.failed(0).ok()) else {
+                    let Ok(delay) = retry.failed(0) else {
                         return Err(io::Error::new(
                             io::ErrorKind::AddrInUse,
                             format!("Port {bind_address} is already in use"),

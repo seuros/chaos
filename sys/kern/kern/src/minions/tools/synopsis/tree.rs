@@ -1,5 +1,6 @@
 //! Agent leaves on the upstream SDK tree; no agent-specific scheduler.
 use super::*;
+use crate::async_breaker::TREE_BRIDGE_BREAKER;
 use crate::chaos::{Session, TurnContext};
 use crate::run_observer::Observer;
 use chaos_synopsis::tree::{Domain, ValidatedTree, compile_workflow};
@@ -394,8 +395,8 @@ fn bridge_server() -> Server {
         // The bounded tree owns retries and the outer deadline, not the
         // registry's default 120s timeout or five-failure circuit breaker.
         .with_circuit_breaker(ToolBreakerConfig {
+            policy: TREE_BRIDGE_BREAKER,
             call_timeout_secs: 0.0,
-            failure_threshold: chaos_synopsis::tree::MAX_LEAF_ATTEMPTS + 1,
             ..Default::default()
         })
         .build()

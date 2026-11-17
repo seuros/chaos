@@ -174,7 +174,7 @@ pub(super) async fn run_sampling_request(
         Arc::clone(&turn_diff_tracker),
     );
     let max_retries = turn_context.provider.stream_max_retries();
-    let mut retry = stream_retry(max_retries)?;
+    let mut retry = stream_retry(max_retries);
     let mut last_server_model: Option<String> = None;
     let history_len = prompt.input.len();
     prompt.request_local_start = Some(history_len);

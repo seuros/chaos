@@ -10,8 +10,6 @@ use chrono_machines::Retry;
 use tracing::debug;
 use tracing::error;
 
-use crate::error::ChaosErr;
-use crate::error::Result as ChaosResult;
 use crate::parse_command::shlex_join;
 
 /// Emit structured feedback metadata as key/value pairs.
@@ -146,12 +144,17 @@ pub(crate) fn emit_feedback_auth_recovery_tags(
 
 const STREAM_RETRY_BASE: Duration = Duration::from_millis(200);
 const STREAM_RETRY_CAP: Duration = Duration::from_secs(30);
+const STREAM_RETRY_HINT_CEILING: Duration = Duration::from_secs(300);
+const STREAM_RETRY_SHAPE: Exponential =
+    match Exponential::new(STREAM_RETRY_BASE, 2.0, STREAM_RETRY_CAP, 1.0) {
+        Some(shape) => shape,
+        None => panic!("stream retry backoff shape is invalid"),
+    };
 
-pub(crate) fn stream_retry(max_retries: u64) -> ChaosResult<Retry> {
+pub(crate) fn stream_retry(max_retries: u64) -> Retry {
     let attempts = u8::try_from(max_retries.saturating_add(1)).unwrap_or(u8::MAX);
-    Exponential::new(STREAM_RETRY_BASE, 2.0, STREAM_RETRY_CAP, 1.0)
-        .map(|shape| Retry::new(shape.into(), NonZeroU8::new(attempts)))
-        .ok_or_else(|| ChaosErr::Fatal("stream retry backoff shape is invalid".to_string()))
+    Retry::new(STREAM_RETRY_SHAPE.into(), NonZeroU8::new(attempts))
+        .with_hint_ceiling(STREAM_RETRY_HINT_CEILING)
 }
 
 pub(crate) fn stream_retry_delay(
@@ -159,7 +162,7 @@ pub(crate) fn stream_retry_delay(
     requested: Option<Duration>,
 ) -> Result<Duration, Refusal> {
     match requested {
-        Some(delay) => retry.hinted(delay.min(STREAM_RETRY_CAP)),
+        Some(delay) => retry.hinted(delay),
         None => retry.failed(chaos_ipc::backoff::draw()),
     }
 }

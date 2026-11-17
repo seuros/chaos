@@ -277,13 +277,9 @@ async fn writer_actor_survives_outage_and_conflict() {
         .unwrap();
     let mut sink = JournalSink::pending(journal.config());
     sink.activate(active);
-    sink.breaker = AsyncCircuitBreaker::new(
-        "lease-test",
-        1,
-        Duration::from_secs(60),
-        Duration::from_millis(10),
-        1,
-    );
+    const LEASE_TEST_BREAKER: Policy =
+        breaker_policy(1, Duration::from_secs(60), Duration::from_millis(10), 1);
+    sink.breaker = AsyncCircuitBreaker::new("lease-test", LEASE_TEST_BREAKER);
     let (tx, rx) = mpsc::unbounded_channel();
     let (status, mut observed) = watch::channel(JournalWriterStatus::Ready);
     let actor = AbortOnDropHandle::new(tokio::spawn(rollout_writer(

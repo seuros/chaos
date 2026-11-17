@@ -69,7 +69,7 @@ async fn compaction_stream_requires_response_completed() {
 }
 
 fn retry_budget(max_retries: u64) -> Retry {
-    stream_retry(max_retries).expect("valid stream retry shape")
+    stream_retry(max_retries)
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn remote_compaction_capacity_retries_respect_provider_budget() {
 }
 
 #[test]
-fn remote_compaction_honours_server_requested_retry_delay_up_to_the_cap() {
+fn remote_compaction_honours_server_requested_retry_delay_up_to_the_ceiling() {
     let delay = Duration::from_secs(12);
     let error = ChaosErr::Stream("retry later".to_string(), Some(delay));
     assert_eq!(
@@ -125,10 +125,17 @@ fn remote_compaction_honours_server_requested_retry_delay_up_to_the_cap() {
         Some(delay)
     );
 
-    let error = ChaosErr::Stream("retry later".to_string(), Some(Duration::from_secs(42)));
+    let delay = Duration::from_secs(300);
+    let error = ChaosErr::Stream("retry later".to_string(), Some(delay));
     assert_eq!(
         remote_compaction_retry_delay(&error, &mut retry_budget(2)),
-        Some(Duration::from_secs(30))
+        Some(delay)
+    );
+
+    let error = ChaosErr::Stream("retry later".to_string(), Some(Duration::from_secs(301)));
+    assert_eq!(
+        remote_compaction_retry_delay(&error, &mut retry_budget(2)),
+        None
     );
 }
 

@@ -203,7 +203,7 @@ async fn request_remote_compaction_v2(
         )?
         .new_session();
     let max_retries = turn_context.provider.stream_max_retries();
-    let mut retry = stream_retry(max_retries)?;
+    let mut retry = stream_retry(max_retries);
 
     loop {
         match request_remote_compaction_v2_attempt(sess, turn_context, prompt, &mut client_session)
@@ -274,14 +274,17 @@ async fn request_remote_compaction_v2_attempt(
     Ok(output.item)
 }
 
+const OVERLOAD_RETRY: Constant = match Constant::new(Duration::from_secs(25), 0.4) {
+    Some(shape) => shape,
+    None => panic!("overload retry jitter is out of range"),
+};
+
 fn remote_compaction_retry_delay(err: &ChaosErr, retry: &mut Retry) -> Option<Duration> {
     let requested_delay = match err {
         // Capacity can recover without switching models. Jitter around 20s
         // (15–25s) instead of using the short connection-failure backoff.
         // The provider's retry budget still counts these attempts.
-        ChaosErr::ServerOverloaded => {
-            Some(Constant::new(Duration::from_secs(25), 0.4)?.delay(chaos_ipc::backoff::draw()))
-        }
+        ChaosErr::ServerOverloaded => Some(OVERLOAD_RETRY.delay(chaos_ipc::backoff::draw())),
         ChaosErr::Stream(_, requested_delay) if err.is_retryable() => *requested_delay,
         _ if err.is_retryable() => None,
         _ => return None,

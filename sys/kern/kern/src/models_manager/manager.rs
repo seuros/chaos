@@ -51,6 +51,11 @@ use tracing::warn;
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
+const CATALOG_RETRY: Exponential =
+    match Exponential::new(Duration::from_millis(100), 2.0, Duration::from_secs(5), 1.0) {
+        Some(shape) => shape,
+        None => panic!("model catalog retry shape is invalid"),
+    };
 
 /// Models available from a single configured provider.
 #[derive(Debug, Clone, PartialEq)]
@@ -815,12 +820,7 @@ impl ModelsManager {
         let _timer =
             chaos_snitch::start_global_timer("chaos.remote_models.fetch_update.duration_ms", &[]);
 
-        let mut retry =
-            Exponential::new(Duration::from_millis(100), 2.0, Duration::from_secs(5), 1.0)
-                .map(|shape| Retry::new(shape.into(), NonZeroU8::new(3)))
-                .ok_or_else(|| {
-                    ChaosErr::Fatal("model catalog retry shape is invalid".to_string())
-                })?;
+        let mut retry = Retry::new(CATALOG_RETRY.into(), NonZeroU8::new(3));
         let result = loop {
             match self.fetch_catalog().await {
                 ok @ Ok(_) => break ok,

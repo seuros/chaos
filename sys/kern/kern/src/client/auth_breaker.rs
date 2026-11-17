@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use breaker_machines::AsyncCircuitBreaker;
 use breaker_machines::CircuitError;
+use breaker_machines::Policy;
 use breaker_machines::PredicateClassifier;
 
 use crate::async_breaker::breaker_policy;
@@ -29,6 +30,7 @@ use crate::error::ChaosErr;
 /// Backoff window before a probe is allowed through. Kept short so a fresh
 /// login unlocks the next turn rather than stalling behind a long timeout.
 const AUTH_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(2);
+const AUTH_BREAKER: Policy = breaker_policy(1, Duration::from_secs(60), AUTH_HALF_OPEN_TIMEOUT, 1);
 
 /// A single provider/credential realm's auth breaker.
 pub(crate) struct AuthBreaker {
@@ -47,8 +49,7 @@ impl AuthBreaker {
     pub(crate) fn new(provider_id: &str) -> Self {
         // A single missing-credentials probe is enough to open: there is
         // nothing to retry until the user acts.
-        let policy = breaker_policy(1, Duration::from_secs(60), AUTH_HALF_OPEN_TIMEOUT, 1);
-        let breaker = AsyncCircuitBreaker::builder(format!("auth:{provider_id}"), policy)
+        let breaker = AsyncCircuitBreaker::builder(format!("auth:{provider_id}"), AUTH_BREAKER)
             .clock(tokio_clock())
             .classifier(PredicateClassifier::new(|ctx| {
                 ctx.error

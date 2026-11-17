@@ -12,6 +12,7 @@ use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::protocol::McpServerRefreshConfig;
 use breaker_machines::AsyncCircuitBreaker;
 use breaker_machines::CircuitError;
+use breaker_machines::Policy;
 use breaker_machines::PredicateClassifier;
 use breaker_machines::Refusal;
 use chaos_ipc::api::McpServerElicitationRequest;
@@ -39,6 +40,7 @@ use super::Session;
 use super::TurnContext;
 
 const HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const MCP_BREAKER: Policy = breaker_policy(5, Duration::from_secs(60), HALF_OPEN_TIMEOUT, 2);
 
 /// Whether a failed MCP operation should count against the circuit breaker.
 ///
@@ -78,8 +80,7 @@ fn mcp_circuit_breaker(server_name: &str) -> Arc<AsyncCircuitBreaker> {
 }
 
 fn build_mcp_circuit_breaker(server_name: &str) -> AsyncCircuitBreaker {
-    let policy = breaker_policy(5, Duration::from_secs(60), HALF_OPEN_TIMEOUT, 2);
-    AsyncCircuitBreaker::builder(server_name, policy)
+    AsyncCircuitBreaker::builder(server_name, MCP_BREAKER)
         .clock(tokio_clock())
         .classifier(PredicateClassifier::new(|ctx| {
             ctx.error

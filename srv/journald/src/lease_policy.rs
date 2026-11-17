@@ -2,14 +2,12 @@ use std::time::Duration;
 
 use chaos_ipc::ProcessId;
 use lease_machines::{
-    Accepting, Checkpoint, ClockPolicy, Fence, FencingToken, Lease, LeaseAuthority, OwnerId,
-    Refusal,
+    Checkpoint, ClockPolicy, FencingToken, Lease, LeaseAuthority, OwnerId, Refusal,
 };
 
 use crate::error::JournalError;
 
 const SCOPE: u16 = 0;
-const QUERY_TTL: Duration = Duration::from_nanos(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LeaseRow {
@@ -161,24 +159,10 @@ impl ResourceLease {
     /// Read-only credential check: the presented token must be the one in
     /// force, held by `owner_id` and still live at `now`.
     pub(crate) fn verify(&self, owner_id: &str, token: &str, now: Duration) -> Result<(), Refusal> {
-        let held = self
-            .authority
-            .checkpoint()
-            .lease()
-            .ok_or(Refusal::NoLease)?;
-        if held.owner() != owner(owner_id) {
-            return Err(Refusal::WrongOwner);
-        }
-        let presented = self::token(token).ok_or(Refusal::StaleToken)?;
-        let mut fence =
-            Fence::resumed(self.authority.scope(), Some(held.token())).ok_or(Refusal::Unknown)?;
-        if fence.accept(presented)? != Accepting::Current {
-            return Err(Refusal::StaleToken);
-        }
-        match self.authority.incumbent(now, QUERY_TTL)? {
-            Some(_) => Ok(()),
-            None => Err(Refusal::Expired),
-        }
+        let token = self::token(token).ok_or(Refusal::StaleToken)?;
+        self.authority
+            .check(owner(owner_id), token, now)
+            .map(|_| ())
     }
 }
 

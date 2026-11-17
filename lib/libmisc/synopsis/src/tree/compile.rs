@@ -43,7 +43,7 @@ fn compile(node: TreeNode) -> Result<Node<Step>, TreeError> {
         } => compile(*child)?.timeout(Duration::from_millis(timeout_ms)),
         TreeNode::Retry {
             attempts, child, ..
-        } => compile(*child)?.retry_until_successful(Limit::Times(attempts)),
+        } => compile(*child)?.retry_until_successful(Limit::Times(attempts as u64)),
         TreeNode::Condition {
             id,
             pointer,

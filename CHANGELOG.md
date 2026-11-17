@@ -10,9 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Changed
-- A server's `Retry-After` longer than 30 seconds is cut to 30 seconds when a
-  model stream or remote compaction retries, and still counts against the
-  provider's retry budget.
+- A model stream or remote compaction stops retrying when the server asks to
+  wait more than five minutes.
 - Failed execution deliveries retry after a jittered delay instead of an exact
   power of two, so a fleet of them no longer retries in lockstep.
 - Upgrading fails any spool submit that was interrupted while compensating: its

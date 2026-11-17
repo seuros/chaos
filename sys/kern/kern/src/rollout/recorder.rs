@@ -47,6 +47,7 @@ use super::policy::EventPersistenceMode;
 use super::policy::is_persisted_response_item;
 use crate::async_breaker::AsyncCircuitBreaker;
 use crate::async_breaker::BreakerError;
+use crate::async_breaker::breaker_policy;
 use crate::default_client::originator;
 use crate::error::ChaosErr;
 use crate::git_info::collect_git_info;
@@ -55,6 +56,7 @@ use crate::runtime_db;
 use crate::runtime_db::RuntimeDbHandle;
 use crate::truncate::TruncationPolicy;
 use crate::truncate::truncate_text;
+use breaker_machines::Policy;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::InitialHistory;
 use chaos_ipc::protocol::ProtectedContext;
@@ -797,7 +799,8 @@ const JOURNAL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const JOURNAL_APPEND_MAX_ATTEMPTS: u8 = 8;
 const JOURNAL_APPEND_RETRY_BASE_DELAY: Duration = Duration::from_millis(25);
 const JOURNAL_APPEND_RETRY_MAX_DELAY: Duration = Duration::from_millis(800);
-const JOURNAL_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const JOURNAL_BREAKER: Policy =
+    breaker_policy(1, Duration::from_secs(60), Duration::from_secs(30), 1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JournalSinkMode {
@@ -873,10 +876,7 @@ impl JournalSink {
             machine,
             breaker: AsyncCircuitBreaker::new(
                 format!("rollout-scribe:{process_id}"),
-                1,
-                Duration::from_secs(60),
-                JOURNAL_HALF_OPEN_TIMEOUT,
-                1,
+                JOURNAL_BREAKER,
             ),
         }
     }
@@ -1241,8 +1241,7 @@ impl ActiveJournalWriter {
             return Ok(());
         }
 
-        let mut retry = journal_append_retry()
-            .ok_or_else(|| "journal append retry shape is invalid".to_string())?;
+        let mut retry = journal_append_retry();
         loop {
             self.ensure_lease().await?;
 
@@ -1494,14 +1493,21 @@ impl ActiveJournalWriter {
     }
 }
 
-fn journal_append_retry() -> Option<Retry> {
-    Exponential::new(
-        JOURNAL_APPEND_RETRY_BASE_DELAY,
-        2.0,
-        JOURNAL_APPEND_RETRY_MAX_DELAY,
-        0.0,
+const JOURNAL_APPEND_RETRY: Exponential = match Exponential::new(
+    JOURNAL_APPEND_RETRY_BASE_DELAY,
+    2.0,
+    JOURNAL_APPEND_RETRY_MAX_DELAY,
+    0.0,
+) {
+    Some(shape) => shape,
+    None => panic!("journal append backoff shape is invalid"),
+};
+
+fn journal_append_retry() -> Retry {
+    Retry::new(
+        JOURNAL_APPEND_RETRY.into(),
+        NonZeroU8::new(JOURNAL_APPEND_MAX_ATTEMPTS),
     )
-    .map(|shape| Retry::new(shape.into(), NonZeroU8::new(JOURNAL_APPEND_MAX_ATTEMPTS)))
 }
 
 fn batch_matches_journal(loaded: &LoadedJournal, first_seq: i64, batch: &[RolloutItem]) -> bool {

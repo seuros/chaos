@@ -97,7 +97,7 @@ async fn run_distill_task_inner(
     let mut truncated_count = 0usize;
 
     let max_retries = turn_context.provider.stream_max_retries();
-    let mut retry = stream_retry(max_retries)?;
+    let mut retry = stream_retry(max_retries);
     let mut client_session = sess
         .services
         .model_client

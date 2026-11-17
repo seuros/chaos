@@ -5,6 +5,7 @@ mod process_id;
 pub use process_id::ProcessId;
 pub mod approvals;
 pub mod background_tasks;
+pub mod backoff;
 pub mod config_types;
 pub mod custom_prompts;
 pub mod dynamic_tools;

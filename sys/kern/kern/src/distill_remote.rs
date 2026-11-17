@@ -18,7 +18,8 @@ use crate::error::Result as ChaosResult;
 use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
-use crate::util::backoff;
+use crate::util::stream_retry;
+use crate::util::stream_retry_delay;
 use chaos_context::allotment::TruncationPolicy;
 use chaos_context::allotment::truncate_text;
 use chaos_context::distill::should_keep_compacted_history_item;
@@ -30,8 +31,8 @@ use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::TokenUsage;
-use chrono_machines::BackoffStrategy;
-use chrono_machines::ConstantBackoff;
+use chrono_machines::Constant;
+use chrono_machines::Retry;
 use rama::futures::Stream;
 use rama::futures::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -202,7 +203,7 @@ async fn request_remote_compaction_v2(
         )?
         .new_session();
     let max_retries = turn_context.provider.stream_max_retries();
-    let mut retries = 0;
+    let mut retry = stream_retry(max_retries);
 
     loop {
         match request_remote_compaction_v2_attempt(sess, turn_context, prompt, &mut client_session)
@@ -210,12 +211,10 @@ async fn request_remote_compaction_v2(
         {
             Ok(item) => return Ok(item),
             Err(err) => {
-                let next_retry = retries + 1;
-                let Some(delay) = remote_compaction_retry_delay(&err, next_retry, max_retries)
-                else {
+                let Some(delay) = remote_compaction_retry_delay(&err, &mut retry) else {
                     return Err(err);
                 };
-                retries = next_retry;
+                let retries = retry.failures();
                 warn!(
                     turn_id = %turn_context.sub_id,
                     retries,
@@ -275,36 +274,22 @@ async fn request_remote_compaction_v2_attempt(
     Ok(output.item)
 }
 
-fn remote_compaction_retry_delay(
-    err: &ChaosErr,
-    next_retry: u64,
-    max_retries: u64,
-) -> Option<Duration> {
-    if next_retry > max_retries {
-        return None;
-    }
+const OVERLOAD_RETRY: Constant = match Constant::new(Duration::from_secs(25), 0.4) {
+    Some(shape) => shape,
+    None => panic!("overload retry jitter is out of range"),
+};
 
-    if matches!(err, ChaosErr::ServerOverloaded) {
+fn remote_compaction_retry_delay(err: &ChaosErr, retry: &mut Retry) -> Option<Duration> {
+    let requested_delay = match err {
         // Capacity can recover without switching models. Jitter around 20s
         // (15–25s) instead of using the short connection-failure backoff.
-        // The provider's retry budget is enforced above.
-        return ConstantBackoff::new()
-            .delay_ms(25_000)
-            .jitter_factor(0.4)
-            .delay(1, &mut chrono_machines::rand::rng())
-            .map(Duration::from_millis);
-    }
-
-    if !err.is_retryable() {
-        return None;
-    }
-
-    Some(match err {
-        ChaosErr::Stream(_, requested_delay) => {
-            requested_delay.unwrap_or_else(|| backoff(next_retry))
-        }
-        _ => backoff(next_retry),
-    })
+        // The provider's retry budget still counts these attempts.
+        ChaosErr::ServerOverloaded => Some(OVERLOAD_RETRY.delay(chaos_ipc::backoff::draw())),
+        ChaosErr::Stream(_, requested_delay) if err.is_retryable() => *requested_delay,
+        _ if err.is_retryable() => None,
+        _ => return None,
+    };
+    stream_retry_delay(retry, requested_delay).ok()
 }
 
 async fn collect_compaction_output<S>(mut stream: S) -> ChaosResult<RemoteCompactionOutput>

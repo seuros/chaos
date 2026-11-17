@@ -1,4 +1,6 @@
 use std::sync::LazyLock;
+use std::time::Duration;
+use std::time::Instant;
 
 use chaos_ipc::models::BaseInstructions;
 use chaos_ipc::models::DeveloperInstructions;
@@ -6,7 +8,7 @@ use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::TokenCountEvent;
 use chaos_ipc::protocol::TokenUsage;
 use chaos_ipc::protocol::TokenUsageInfo;
-use throttle_machines::GcraParams;
+use throttle_machines::GcraPolicy;
 use throttle_machines::KeyedGcra;
 
 use crate::context_manager::TotalTokenUsageBreakdown;
@@ -15,6 +17,12 @@ use super::Session;
 use crate::chaos::TurnContext;
 
 pub(crate) const DISTILLATION_RESERVE_TOKENS: i64 = 20_000;
+
+const RATE_SNAPSHOT_POLICY: GcraPolicy =
+    match GcraPolicy::new(Duration::from_secs(1), Duration::ZERO) {
+        Some(policy) => policy,
+        None => panic!("one rate limit snapshot per second is a valid GCRA policy"),
+    };
 
 fn deferral_ceiling_for_windows(
     raw_context_window: i64,
@@ -384,14 +392,15 @@ impl Session {
         new_rate_limits: crate::protocol::RateLimitSnapshot,
     ) {
         if let Some(ref id) = new_rate_limits.limit_id {
-            static RATE_SNAPSHOTS: LazyLock<KeyedGcra<String>> =
-                LazyLock::new(|| KeyedGcra::new(GcraParams::from_rate(1.0, 1)));
+            static RATE_SNAPSHOTS: LazyLock<(Instant, KeyedGcra<String>)> =
+                LazyLock::new(|| (Instant::now(), KeyedGcra::new(RATE_SNAPSHOT_POLICY)));
 
-            let decision = RATE_SNAPSHOTS.check(id.as_str());
-            if !decision.allowed {
+            let (origin, snapshots) = &*RATE_SNAPSHOTS;
+            let now = origin.elapsed();
+            if snapshots.check(id.as_str(), now).is_err() {
                 tracing::warn!(
                     limit_id = %id,
-                    retry_after = decision.retry_after,
+                    retry_after = ?snapshots.retry_after(id.as_str(), now),
                     "rate limit snapshot arriving faster than 1 Hz"
                 );
             }

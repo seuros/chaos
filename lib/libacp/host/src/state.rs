@@ -94,7 +94,7 @@ impl State {
 
     pub fn admit_inbound(&self, reply: Option<RequestId>) -> bool {
         let mut inbound = self.inbound.lock().unwrap_or_else(PoisonError::into_inner);
-        if !inbound.window.try_acquire(ONE) {
+        if inbound.window.try_acquire(ONE).is_err() {
             return false;
         }
         if let Some(id) = reply {
@@ -109,7 +109,8 @@ impl State {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .window
-            .release(ONE);
+            .release(ONE)
+            .is_ok();
         self.settle(released, "ACP inbound credit released without admission");
     }
 
@@ -118,7 +119,7 @@ impl State {
         if !inbound.replies.remove(id) {
             return;
         }
-        let released = inbound.window.release(ONE);
+        let released = inbound.window.release(ONE).is_ok();
         drop(inbound);
         self.settle(released, "ACP inbound credit released without admission");
     }
@@ -128,7 +129,8 @@ impl State {
             .queued
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .release(ONE);
+            .release(ONE)
+            .is_ok();
         slot.queue_changed.notify_one();
         self.settle(released, "ACP update credit released without admission");
     }
@@ -173,6 +175,7 @@ impl Slot {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .try_acquire(ONE)
+            .is_ok()
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Session> {

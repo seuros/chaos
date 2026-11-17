@@ -26,7 +26,7 @@ fn owner_digest_is_stable_and_distinguishes_owners() {
 
 #[test]
 fn tokens_parse_only_positive_decimals() {
-    assert_eq!(token("7").map(FencingToken::value), Some(7));
+    assert_eq!(token("7").map(FencingToken::raw), Some(7));
     assert!(token("0").is_none());
     assert!(token("-1").is_none());
     assert!(token("stored-token").is_none());
@@ -96,6 +96,7 @@ fn restore_rejects_tokens_the_history_never_issued() {
     for corrupt in [
         row("writer", Some(5), 3, at(101)),
         row("writer", Some(0), 3, at(101)),
+        row("writer", Some(2), 3, at(101)),
     ] {
         std::assert_matches!(
             acquire_process(&ProcessId::new(), "writer", Some(&corrupt), at(100), at(30)),
@@ -175,13 +176,13 @@ fn validation_accepts_active_matching_lease() {
 #[test]
 fn renewal_keeps_token_and_high_water_and_never_shortens() {
     let process_id = ProcessId::new();
-    let stored = row("writer", Some(3), 7, at(150));
+    let stored = row("writer", Some(7), 7, at(150));
     let shorter =
-        renew_process(&process_id, "writer", "3", Some(&stored), at(100), at(10)).expect("renewal");
-    assert_eq!(shorter.token, 3);
+        renew_process(&process_id, "writer", "7", Some(&stored), at(100), at(10)).expect("renewal");
+    assert_eq!(shorter.token, 7);
     assert_eq!(shorter.last_issued, 7);
     assert_eq!(shorter.expires_at, at(150));
     let longer =
-        renew_process(&process_id, "writer", "3", Some(&stored), at(100), at(90)).expect("renewal");
+        renew_process(&process_id, "writer", "7", Some(&stored), at(100), at(90)).expect("renewal");
     assert_eq!(longer.expires_at, at(190));
 }

@@ -4,13 +4,8 @@ use std::sync::atomic::Ordering;
 
 #[tokio::test(start_paused = true)]
 async fn opens_after_failure_and_rejects_without_running_operation() {
-    let breaker = AsyncCircuitBreaker::new(
-        "test",
-        1,
-        Duration::from_secs(60),
-        Duration::from_secs(30),
-        1,
-    );
+    const POLICY: Policy = breaker_policy(1, Duration::from_secs(60), Duration::from_secs(30), 1);
+    let breaker = AsyncCircuitBreaker::new("test", POLICY);
     let calls = AtomicUsize::new(0);
 
     let first = breaker
@@ -33,21 +28,13 @@ async fn opens_after_failure_and_rejects_without_running_operation() {
 
 #[tokio::test(start_paused = true)]
 async fn timeout_allows_a_probe_that_closes_the_breaker() {
-    let breaker = AsyncCircuitBreaker::new(
-        "test-recovery",
-        1,
-        Duration::from_secs(60),
-        Duration::from_millis(10),
-        1,
-    );
+    const POLICY: Policy = breaker_policy(1, Duration::from_secs(60), Duration::from_millis(10), 1);
+    let breaker = AsyncCircuitBreaker::new("test-recovery", POLICY);
 
     let first = breaker.call(|| async { Err::<(), _>("down") }).await;
     std::assert_matches!(first, Err(BreakerError::Operation("down")));
     assert_eq!(breaker.retry_after(), Some(Duration::from_millis(10)));
-    assert_eq!(
-        breaker.retry_after().map(|delay| delay.as_secs_f64()),
-        breaker.breaker.retry_after()
-    );
+    assert_eq!(breaker.retry_after(), breaker.breaker.retry_after());
 
     tokio::time::advance(Duration::from_millis(9)).await;
     let rejected: Result<(), BreakerError<&str>> = breaker

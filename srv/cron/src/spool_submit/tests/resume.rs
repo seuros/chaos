@@ -8,6 +8,8 @@ use crate::provider::BackendCronStorage;
 use crate::spool_submit::saga::Direction;
 use crate::spool_submit::saga::STEP_INSERT_SUBMITTED;
 use crate::spool_submit::saga::STEP_SUBMIT;
+use crate::spool_submit::saga::SettledAction;
+use crate::spool_submit::saga::SettledOutcome;
 
 #[tokio::test]
 async fn restored_saga_past_submit_does_not_resubmit() {
@@ -32,6 +34,12 @@ async fn restored_saga_past_submit_does_not_resubmit() {
         direction: Direction::Forward,
         step: STEP_INSERT_SUBMITTED,
         attempt: 2,
+        settled: Some(SettledAction {
+            direction: Direction::Forward,
+            step: STEP_SUBMIT,
+            attempt: 2,
+            outcome: SettledOutcome::Success,
+        }),
         poll: Some(poll_wiring("resumed")),
         poll_cron_id: None,
         error: None,
@@ -104,6 +112,12 @@ async fn restored_saga_without_batch_id_compensates_instead_of_resubmitting() {
         direction: Direction::Forward,
         step: STEP_SUBMIT,
         attempt: 1,
+        settled: Some(SettledAction {
+            direction: Direction::Forward,
+            step: STEP_SUBMIT - 1,
+            attempt: 1,
+            outcome: SettledOutcome::Success,
+        }),
         poll: None,
         poll_cron_id: None,
         error: None,

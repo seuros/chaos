@@ -68,6 +68,10 @@ async fn compaction_stream_requires_response_completed() {
     assert!(error.to_string().contains("before response.completed"));
 }
 
+fn retry_budget(max_retries: u64) -> Retry {
+    stream_retry(max_retries)
+}
+
 #[test]
 fn remote_compaction_retries_transient_connection_failures_within_budget() {
     let error = ChaosErr::ConnectionFailed(ConnectionFailedError {
@@ -77,8 +81,10 @@ fn remote_compaction_retries_transient_connection_failures_within_budget() {
         )),
     });
 
-    assert!(remote_compaction_retry_delay(&error, 1, 2).is_some());
-    assert_eq!(remote_compaction_retry_delay(&error, 3, 2), None);
+    let mut retry = retry_budget(2);
+    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
+    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
+    assert_eq!(remote_compaction_retry_delay(&error, &mut retry), None);
 }
 
 #[test]
@@ -87,9 +93,10 @@ fn remote_compaction_retries_capacity_errors_with_jitter_around_twenty_seconds()
     let error = ChaosErr::ServerOverloaded;
     assert!(!error.is_retryable());
 
-    for retry in 1..=5 {
-        for _ in 0..32 {
-            let delay = remote_compaction_retry_delay(&error, retry, 5)
+    for _ in 0..32 {
+        let mut retry = retry_budget(5);
+        for _ in 1..=5 {
+            let delay = remote_compaction_retry_delay(&error, &mut retry)
                 .expect("capacity errors should retry within the provider budget");
             assert!((Duration::from_secs(15)..=Duration::from_secs(25)).contains(&delay));
         }
@@ -99,16 +106,37 @@ fn remote_compaction_retries_capacity_errors_with_jitter_around_twenty_seconds()
 #[test]
 fn remote_compaction_capacity_retries_respect_provider_budget() {
     let error = ChaosErr::ServerOverloaded;
-    assert_eq!(remote_compaction_retry_delay(&error, 1, 0), None);
-    assert!(remote_compaction_retry_delay(&error, 2, 2).is_some());
-    assert_eq!(remote_compaction_retry_delay(&error, 3, 2), None);
+    assert_eq!(
+        remote_compaction_retry_delay(&error, &mut retry_budget(0)),
+        None
+    );
+    let mut retry = retry_budget(2);
+    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
+    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
+    assert_eq!(remote_compaction_retry_delay(&error, &mut retry), None);
 }
 
 #[test]
-fn remote_compaction_preserves_server_requested_retry_delay() {
-    let delay = Duration::from_secs(42);
+fn remote_compaction_honours_server_requested_retry_delay_up_to_the_ceiling() {
+    let delay = Duration::from_secs(12);
     let error = ChaosErr::Stream("retry later".to_string(), Some(delay));
-    assert_eq!(remote_compaction_retry_delay(&error, 1, 2), Some(delay));
+    assert_eq!(
+        remote_compaction_retry_delay(&error, &mut retry_budget(2)),
+        Some(delay)
+    );
+
+    let delay = Duration::from_secs(300);
+    let error = ChaosErr::Stream("retry later".to_string(), Some(delay));
+    assert_eq!(
+        remote_compaction_retry_delay(&error, &mut retry_budget(2)),
+        Some(delay)
+    );
+
+    let error = ChaosErr::Stream("retry later".to_string(), Some(Duration::from_secs(301)));
+    assert_eq!(
+        remote_compaction_retry_delay(&error, &mut retry_budget(2)),
+        None
+    );
 }
 
 #[test]
@@ -119,7 +147,10 @@ fn remote_compaction_does_not_retry_permanent_errors() {
         ChaosErr::Fatal("invalid compaction output".to_string()),
         ChaosErr::TurnAborted,
     ] {
-        assert_eq!(remote_compaction_retry_delay(&error, 1, 2), None);
+        assert_eq!(
+            remote_compaction_retry_delay(&error, &mut retry_budget(2)),
+            None
+        );
     }
 }
 

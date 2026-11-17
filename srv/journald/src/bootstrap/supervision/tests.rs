@@ -7,13 +7,13 @@ use super::decide;
 use super::read_history;
 use super::write_history;
 
-const SECOND: u64 = 1_000_000_000;
+const SECOND: Duration = Duration::from_secs(1);
 
 #[test]
 fn sixth_restart_within_the_window_is_refused() {
     let mut history = Vec::new();
-    for n in 0..5 {
-        let decision = decide(history.clone(), n * SECOND);
+    for n in 0..5_u32 {
+        let decision = decide(history.clone(), n * SECOND).expect("decision");
         assert!(
             matches!(decision.verdict, Verdict::Spawn { .. }),
             "restart {n}"
@@ -22,23 +22,23 @@ fn sixth_restart_within_the_window_is_refused() {
     }
     assert_eq!(history.len(), 5);
 
-    let refused = decide(history.clone(), 5 * SECOND);
+    let refused = decide(history.clone(), 5 * SECOND).expect("decision");
     assert_eq!(refused.verdict, Verdict::Refuse { recent: 5 });
     assert_eq!(refused.history, history);
 }
 
 #[test]
 fn history_from_another_process_counts() {
-    let foreign: Vec<u64> = (1..=5).map(|n| n * SECOND).collect();
-    let decision = decide(foreign, 10 * SECOND);
+    let foreign: Vec<Duration> = (1..=5_u32).map(|n| n * SECOND).collect();
+    let decision = decide(foreign, 10 * SECOND).expect("decision");
     assert_eq!(decision.verdict, Verdict::Refuse { recent: 5 });
 }
 
 #[test]
 fn stale_history_outside_the_window_is_dropped() {
-    let stale: Vec<u64> = (1..=5).map(|n| n * SECOND).collect();
+    let stale: Vec<Duration> = (1..=5_u32).map(|n| n * SECOND).collect();
     let now = 200 * SECOND;
-    let decision = decide(stale, now);
+    let decision = decide(stale, now).expect("decision");
     assert_eq!(
         decision.verdict,
         Verdict::Spawn {
@@ -50,21 +50,21 @@ fn stale_history_outside_the_window_is_dropped() {
 
 #[test]
 fn repeated_restarts_back_off_exponentially() {
-    let first = decide(Vec::new(), 0);
+    let first = decide(Vec::new(), Duration::ZERO).expect("decision");
     assert_eq!(
         first.verdict,
         Verdict::Spawn {
             delay: Duration::ZERO
         }
     );
-    let second = decide(first.history, SECOND);
+    let second = decide(first.history, SECOND).expect("decision");
     assert_eq!(
         second.verdict,
         Verdict::Spawn {
             delay: BASE_DELAY * 2
         }
     );
-    let third = decide(second.history, 2 * SECOND);
+    let third = decide(second.history, 2 * SECOND).expect("decision");
     assert_eq!(
         third.verdict,
         Verdict::Spawn {
@@ -79,7 +79,7 @@ fn history_file_round_trips_and_tolerates_absence() {
     let path = dir.path().join(HISTORY_FILENAME);
     assert_eq!(
         read_history(&path).expect("missing file reads empty"),
-        Vec::<u64>::new()
+        Vec::<Duration>::new()
     );
 
     let history = vec![SECOND, 2 * SECOND, 3 * SECOND];

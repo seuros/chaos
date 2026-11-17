@@ -1,8 +1,12 @@
 use crate::error::TransportError;
-use chrono_machines::Policy;
+use chrono_machines::Exponential;
+use chrono_machines::Retry;
 use std::future::Future;
+use std::num::NonZeroU8;
 use std::time::Duration;
 use tokio::time::sleep;
+
+const RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
@@ -13,13 +17,15 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    fn to_chrono_policy(&self) -> Policy {
-        Policy {
-            max_attempts: self.max_attempts.min(u8::MAX as u64) as u8,
-            base_delay_ms: self.base_delay.as_millis() as u64,
-            multiplier: 2.0,
-            max_delay_ms: 30_000,
-        }
+    fn retry(&self) -> Option<Retry> {
+        let attempts = u8::try_from(self.max_attempts.saturating_add(1)).unwrap_or(u8::MAX);
+        Exponential::new(
+            self.base_delay.min(RETRY_MAX_DELAY),
+            2.0,
+            RETRY_MAX_DELAY,
+            1.0,
+        )
+        .map(|shape| Retry::new(shape.into(), NonZeroU8::new(attempts)))
     }
 }
 
@@ -31,10 +37,7 @@ pub struct RetryOn {
 }
 
 impl RetryOn {
-    pub fn should_retry(&self, err: &TransportError, attempt: u64, max_attempts: u64) -> bool {
-        if attempt >= max_attempts {
-            return false;
-        }
+    pub fn should_retry(&self, err: &TransportError) -> bool {
         match err {
             TransportError::Http { status, .. } => {
                 (self.retry_429 && status.as_u16() == 429)
@@ -55,22 +58,21 @@ where
     F: Fn(R, u64) -> Fut,
     Fut: Future<Output = Result<T, TransportError>>,
 {
-    let chrono_policy = policy.to_chrono_policy();
+    let Some(mut retry) = policy.retry() else {
+        return op(make_req(), 0).await;
+    };
 
-    for attempt in 0..=policy.max_attempts {
+    loop {
         let req = make_req();
-        match op(req, attempt).await {
+        match op(req, u64::from(retry.failures())).await {
             Ok(resp) => return Ok(resp),
-            Err(err)
-                if policy
-                    .retry_on
-                    .should_retry(&err, attempt, policy.max_attempts) =>
-            {
-                let delay_ms = chrono_policy.calculate_delay((attempt + 1) as u8, 1.0);
-                sleep(Duration::from_millis(delay_ms)).await;
+            Err(err) if policy.retry_on.should_retry(&err) => {
+                let Ok(delay) = retry.failed(chaos_ipc::backoff::draw()) else {
+                    return Err(err);
+                };
+                sleep(delay).await;
             }
             Err(err) => return Err(err),
         }
     }
-    Err(TransportError::RetryLimit)
 }

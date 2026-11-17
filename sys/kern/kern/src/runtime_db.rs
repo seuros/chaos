@@ -1,5 +1,6 @@
 use crate::async_breaker::AsyncCircuitBreaker;
 use crate::async_breaker::BreakerError;
+use crate::async_breaker::breaker_policy;
 use crate::config::Config;
 use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::health::RuntimeStorageBackend;
@@ -7,6 +8,7 @@ use crate::rollout::health::set_runtime_storage_backend;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ProcessSortKey;
 use crate::rollout::metadata;
+use breaker_machines::Policy;
 use chaos_ipc::ProcessId;
 use chaos_ipc::dynamic_tools::DynamicToolSpec;
 use chaos_ipc::protocol::RolloutItem;
@@ -32,7 +34,8 @@ use std::time::Duration;
 use tracing::warn;
 use uuid::Uuid;
 
-const RUNTIME_STORAGE_HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const RUNTIME_STORAGE_BREAKER: Policy =
+    breaker_policy(1, Duration::from_secs(60), Duration::from_secs(30), 1);
 const RUNTIME_DB_LOCATION_FILE: &str = "runtime-db-location";
 
 static RUNTIME_STORAGE_BREAKERS: LazyLock<Mutex<HashMap<PathBuf, Arc<AsyncCircuitBreaker>>>> =
@@ -47,10 +50,7 @@ fn runtime_storage_breaker(chaos_home: &Path) -> Arc<AsyncCircuitBreaker> {
     }
     let breaker = Arc::new(AsyncCircuitBreaker::new(
         format!("runtime-storage:{}", chaos_home.display()),
-        1,
-        Duration::from_secs(60),
-        RUNTIME_STORAGE_HALF_OPEN_TIMEOUT,
-        1,
+        RUNTIME_STORAGE_BREAKER,
     ));
     breakers.insert(chaos_home.to_path_buf(), Arc::clone(&breaker));
     breaker

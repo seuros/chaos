@@ -13,7 +13,8 @@ use std::time::Duration;
 use chaos_ipc::ProcessId;
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::{Event, EventMsg};
-use dedup_machines::{Claim, HashDedup};
+use chaos_snitch::tracing::warn;
+use dedup_machines::{Claim, HashDedup, Refusal};
 use rama::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -480,23 +481,23 @@ impl Session {
             uptime(),
             TURN_RETENTION,
         ) {
-            Claim::Acquired(claim) => claim,
-            Claim::InProgress | Claim::Completed(()) => {
+            Ok(Claim::Acquired(claim)) => claim,
+            Ok(Claim::InProgress | Claim::Completed(())) => {
                 return data
                     .turns
                     .get(&id)
                     .map(|turn| turn.snapshot.clone())
                     .ok_or(ApiError::new(StatusCode::NOT_FOUND, "turn not found"));
             }
-            Claim::Conflict => {
+            Err(Refusal::Conflict) => {
                 return Err(ApiError::conflict("turn id reused with different payload"));
             }
-            Claim::Full => {
+            Err(Refusal::Full) => {
                 return Err(ApiError::capacity(
                     "turn limit reached; create a new session",
                 ));
             }
-            _ => {
+            Err(_) => {
                 return Err(ApiError::new(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "turn ledger unavailable",
@@ -506,7 +507,9 @@ impl Session {
         let permit = match self.reserve_execution(&data, semaphore, &id) {
             Ok(permit) => permit,
             Err(error) => {
-                let _ = data.claims.abandon(claim);
+                if let Err(refusal) = data.claims.abandon(claim) {
+                    warn!(turn_id = %id, %refusal, "turn claim was not released");
+                }
                 return Err(error);
             }
         };

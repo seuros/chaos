@@ -1,7 +1,8 @@
 //! Terminal facts, not kernel event replay. Delivery leases never authorize execution.
+use std::num::NonZeroU8;
 use std::time::Duration;
 
-use lease_machines::Decision;
+use chrono_machines::Exponential;
 
 use super::*;
 use crate::lease_policy::{LeaseRow, ResourceLease, column, epoch_millis, signed, token};
@@ -165,6 +166,22 @@ fn status(row: &DeliveryRow) -> Result<ExecutionDeliveryStatus, JournalError> {
     })
 }
 
+const DELIVERY_RETRY_BASE: Duration = Duration::from_secs(2);
+const DELIVERY_RETRY_CAP: Duration = Duration::from_secs(3600);
+const DELIVERY_RETRY: Exponential =
+    match Exponential::new(DELIVERY_RETRY_BASE, 2.0, DELIVERY_RETRY_CAP, 0.5) {
+        Some(shape) => shape,
+        None => panic!("delivery retry shape is invalid"),
+    };
+
+fn delivery_retry_delay(attempts: i64) -> Duration {
+    let attempt = u8::try_from(attempts.clamp(1, i64::from(u8::MAX)))
+        .ok()
+        .and_then(NonZeroU8::new)
+        .unwrap_or(NonZeroU8::MAX);
+    DELIVERY_RETRY.delay(attempt, chaos_ipc::backoff::draw())
+}
+
 fn lease_row(row: &DeliveryRow) -> Result<LeaseRow, JournalError> {
     Ok(LeaseRow {
         owner_id: row.10.clone(),
@@ -280,14 +297,14 @@ macro_rules! impl_outbox {
                         if let Some(mut row) = row {
                             let mut authority =
                                 ResourceLease::restore(&row.0, Some(&lease_row(&row)?))?;
-                            let Decision::Granted(granted) = authority.acquire(
+                            let Ok(granted) = authority.acquire(
                                 owner_id,
                                 super::storage::clock(now)?,
                                 Duration::from_millis(*ttl_ms),
                             ) else {
                                 return Err(conflict("delivery event is still leased"));
                             };
-                            let token = signed(&row.0, "lease_token", granted.token().value())?;
+                            let token = signed(&row.0, "lease_token", granted.token().raw())?;
                             row.5 = row.5.saturating_add(1);
                             row.7 = epoch_millis(granted.expires_at())?;
                             row.12 = token;
@@ -315,7 +332,7 @@ macro_rules! impl_outbox {
                         )).bind(scope).bind(lease.event_id.to_string())
                             .fetch_optional(&mut *tx).await?.ok_or(JournalError::ExecutionNotFound)?;
                         let held = lease_row(&row)?;
-                        let presented = token(&lease.token).map(|token| token.value());
+                        let presented = token(&lease.token).map(|token| token.raw());
                         if held.owner_id != lease.owner_id || held.token != presented {
                             return Err(conflict("delivery writer was fenced"));
                         }
@@ -328,14 +345,15 @@ macro_rules! impl_outbox {
                                 &lease.token,
                                 super::storage::clock(now)?,
                             );
-                            if released != Decision::Released {
+                            if released.is_err() {
                                 return Err(conflict("delivery lease expired or event already acknowledged"));
                             }
                             if matches!(request, ExecutionDeliveryRequest::Acknowledge { .. }) {
                                 sqlx::query("UPDATE execution_outbox SET delivered_at_ms = $1, expires_at_ms = 0
                                     WHERE event_id = $2").bind(now).bind(&row.0).execute(&mut *tx).await?;
                             } else {
-                                let backoff_ms = (1_i64 << row.5.clamp(1,12)).min(3600) * 1000;
+                                let backoff = delivery_retry_delay(row.5);
+                                let backoff_ms = epoch_millis(backoff)?;
                                 sqlx::query("UPDATE execution_outbox SET next_attempt_at_ms = $1,
                                     expires_at_ms = 0, lease_token = NULL, owner_id = '' WHERE event_id = $2")
                                     .bind(now + backoff_ms).bind(&row.0).execute(&mut *tx).await?;

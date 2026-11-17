@@ -7,6 +7,7 @@ version.workspace = true
 
 [dependencies]
 chaos-abi = { workspace = true }
+chaos-ipc = { workspace = true }
 chrono-machines = { workspace = true }
 cookie_store = { workspace = true }
 deadline-machines = { workspace = true }

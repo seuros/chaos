@@ -2,11 +2,15 @@
 
 use crate::McpTask;
 use chaos_sysctl::types::McpServerTransportConfig;
+use chrono_machines::Exponential;
+use chrono_machines::Retry;
 use mcp_guest::protocol::TaskStatus;
 use std::future::Future;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+const UNAVAILABLE_MAX_DELAY: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
 pub enum TaskObservation {
@@ -52,6 +56,7 @@ where
     let (tx, rx) = mpsc::channel(1);
     tokio::spawn(async move {
         let mut delay = poll_delay(&initial);
+        let mut unavailable = unavailable_retry(delay);
         let mut terminal = is_terminal(initial.status);
         let mut next = TaskObservation::Status(initial);
         loop {
@@ -74,6 +79,7 @@ where
             next = match fetched {
                 Ok(task) => {
                     delay = poll_delay(&task);
+                    unavailable = unavailable_retry(delay);
                     terminal = is_terminal(task.status);
                     TaskObservation::Status(task)
                 }
@@ -85,7 +91,10 @@ where
                         terminal = true;
                         TaskObservation::Lost(error.to_string())
                     } else {
-                        delay = (delay * 2).min(Duration::from_secs(60));
+                        delay = unavailable
+                            .as_mut()
+                            .and_then(|retry| retry.failed(0).ok())
+                            .unwrap_or(UNAVAILABLE_MAX_DELAY);
                         TaskObservation::Unavailable(error.to_string())
                     }
                 }
@@ -93,6 +102,16 @@ where
         }
     });
     rx
+}
+
+fn unavailable_retry(poll: Duration) -> Option<Retry> {
+    Exponential::new(
+        poll.saturating_mul(2).min(UNAVAILABLE_MAX_DELAY),
+        2.0,
+        UNAVAILABLE_MAX_DELAY,
+        0.0,
+    )
+    .map(|shape| Retry::new(shape.into(), None))
 }
 
 fn poll_delay(task: &McpTask) -> Duration {

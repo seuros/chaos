@@ -113,7 +113,7 @@ pub async fn ensure_sqlite_journald_running(
 fn authorize_restart(paths: &BootstrapPaths) -> Result<Duration> {
     let history_path = paths.restart_history_path();
     let history = supervision::read_history(history_path.as_path())?;
-    let decision = supervision::decide(history, supervision::now_ns());
+    let decision = supervision::decide(history, supervision::now())?;
     supervision::write_history(history_path.as_path(), &decision.history)?;
     match decision.verdict {
         supervision::Verdict::Spawn { delay } => Ok(delay),

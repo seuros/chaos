@@ -25,6 +25,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 sys-locale = { workspace = true }
 rama = { workspace = true }
+rand = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7", "v4"] }
 
 [dev-dependencies]

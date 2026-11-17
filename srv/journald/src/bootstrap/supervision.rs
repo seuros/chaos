@@ -29,29 +29,26 @@ pub(super) enum Verdict {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RestartDecision {
     pub verdict: Verdict,
-    pub history: Vec<u64>,
+    pub history: Vec<Duration>,
 }
 
-fn intensity() -> Intensity {
-    Intensity::new(MAX_RESTARTS, duration_ns(WINDOW))
-}
-
-fn duration_ns(duration: Duration) -> u64 {
-    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
-}
-
-pub(super) fn decide(history: impl IntoIterator<Item = u64>, now_ns: u64) -> RestartDecision {
-    let mut supervisor =
-        RestartSupervisor::restore(Strategy::OneForOne, intensity(), history, now_ns);
-    let before: Vec<u64> = supervisor.history().collect();
-    match supervisor.stopped(0, Policy::Permanent, Exit::Abnormal, now_ns) {
+pub(super) fn decide(
+    history: impl IntoIterator<Item = Duration>,
+    now: Duration,
+) -> Result<RestartDecision> {
+    let mut supervisor = Intensity::new(MAX_RESTARTS, WINDOW)
+        .and_then(|intensity| {
+            RestartSupervisor::restore(Strategy::OneForOne, intensity, history, now)
+        })
+        .context("journald restart supervisor shape is invalid")?;
+    let before: Vec<Duration> = supervisor.history().collect();
+    let decision = supervisor
+        .stopped(0, Policy::Permanent, Exit::Abnormal, now)
+        .context("journald restart supervisor has no child 0")?;
+    Ok(match decision {
         Decision::Restart(_) => {
-            let delay = if supervisor.recent_restarts(now_ns) > 1 {
-                Duration::from_nanos(supervisor.restart_delay_ns(
-                    duration_ns(BASE_DELAY),
-                    duration_ns(MAX_DELAY),
-                    now_ns,
-                ))
+            let delay = if supervisor.recent_restarts(now) > 1 {
+                supervisor.restart_delay(BASE_DELAY, MAX_DELAY, now)
             } else {
                 Duration::ZERO
             };
@@ -60,23 +57,22 @@ pub(super) fn decide(history: impl IntoIterator<Item = u64>, now_ns: u64) -> Res
                 history: supervisor.history().collect(),
             }
         }
-        Decision::Escalate | Decision::Ignore => RestartDecision {
+        Decision::Escalate | Decision::AlreadyEscalated | Decision::Ignore => RestartDecision {
             verdict: Verdict::Refuse {
-                recent: supervisor.recent_restarts(now_ns).saturating_sub(1),
+                recent: supervisor.recent_restarts(now).saturating_sub(1),
             },
             history: before,
         },
-    }
+    })
 }
 
-pub(super) fn now_ns() -> u64 {
+pub(super) fn now() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(duration_ns)
-        .unwrap_or(0)
+        .unwrap_or(Duration::ZERO)
 }
 
-pub(super) fn read_history(path: &Path) -> Result<Vec<u64>> {
+pub(super) fn read_history(path: &Path) -> Result<Vec<Duration>> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -87,13 +83,14 @@ pub(super) fn read_history(path: &Path) -> Result<Vec<u64>> {
     Ok(text
         .lines()
         .filter_map(|line| line.trim().parse::<u64>().ok())
+        .map(Duration::from_nanos)
         .collect())
 }
 
-pub(super) fn write_history(path: &Path, history: &[u64]) -> Result<()> {
+pub(super) fn write_history(path: &Path, history: &[Duration]) -> Result<()> {
     let mut text = String::new();
-    for at_ns in history {
-        text.push_str(&at_ns.to_string());
+    for at in history {
+        text.push_str(&at.as_nanos().to_string());
         text.push('\n');
     }
     std::fs::write(path, text).with_context(|| format!("write restart history {}", path.display()))

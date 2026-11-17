@@ -3,16 +3,19 @@
 
 use std::time::Duration;
 
+use chaos_snitch::tracing::warn;
 use dedup_machines::Claim;
 use dedup_machines::ClaimId;
 use dedup_machines::Dedup;
 use saga_machines::Action;
 use saga_machines::ActionKey;
+use saga_machines::AttemptId;
 use saga_machines::Kind;
 use saga_machines::Outcome;
 use saga_machines::Progress;
 use saga_machines::Saga;
 use saga_machines::SagaId;
+use saga_machines::Settlement;
 use saga_machines::Snapshot;
 use serde::Deserialize;
 use serde::Serialize;
@@ -32,6 +35,7 @@ const STEP_RETIRE_POLL_ROWS: usize = 4;
 const LEDGER_SLOTS: usize = STEPS * 2;
 const LEDGER_TTL: Duration = Duration::from_secs(3600);
 const COMPENSATION_RETRIES: u32 = 3;
+const SAGA_SCOPE: u16 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,12 +44,71 @@ pub(super) enum Direction {
     Compensating,
 }
 
+impl Direction {
+    fn kind(self) -> Kind {
+        match self {
+            Self::Forward => Kind::Forward,
+            Self::Compensating => Kind::Compensate,
+        }
+    }
+
+    fn of(kind: Kind) -> Self {
+        match kind {
+            Kind::Forward => Self::Forward,
+            Kind::Compensate => Self::Compensating,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum SettledOutcome {
+    Success,
+    Failure,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct SettledAction {
+    pub(super) direction: Direction,
+    pub(super) step: usize,
+    pub(super) attempt: u64,
+    pub(super) outcome: SettledOutcome,
+}
+
+impl SettledAction {
+    fn of(settlement: Settlement) -> Self {
+        let action = settlement.action;
+        Self {
+            direction: Direction::of(action.kind()),
+            step: action.step(),
+            attempt: action.attempt().raw(),
+            outcome: match settlement.outcome {
+                Outcome::Success => SettledOutcome::Success,
+                Outcome::Failure => SettledOutcome::Failure,
+            },
+        }
+    }
+
+    fn settlement(self, id: SagaId) -> Option<Settlement> {
+        let key = ActionKey::new(id, self.step, self.direction.kind());
+        Some(Settlement {
+            action: Action::new(key, AttemptId::from_raw(self.attempt)?),
+            outcome: match self.outcome {
+                SettledOutcome::Success => Outcome::Success,
+                SettledOutcome::Failure => Outcome::Failure,
+            },
+        })
+    }
+}
+
 /// Persisted shape of `spool_jobs.saga_json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SagaState {
     pub(super) direction: Direction,
     pub(super) step: usize,
     pub(super) attempt: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) settled: Option<SettledAction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) poll: Option<PollWiring>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,31 +119,32 @@ pub(crate) struct SagaState {
 
 impl SagaState {
     fn from_snapshot(snapshot: Snapshot, run: &SubmitRun) -> Option<Self> {
-        let (direction, step) = match snapshot.progress {
+        let (direction, step) = match snapshot.progress() {
             Progress::Forward(step) => (Direction::Forward, step),
             Progress::Compensating(step) => (Direction::Compensating, step),
-            _ => return None,
+            Progress::Complete | Progress::Aborted => return None,
         };
         Some(Self {
             direction,
             step,
-            attempt: snapshot.attempt,
+            attempt: snapshot.issued(),
+            settled: snapshot.settled().map(SettledAction::of),
             poll: run.poll.clone(),
             poll_cron_id: run.poll_cron_id.clone(),
             error: run.error.clone(),
         })
     }
 
-    fn snapshot(&self, id: SagaId) -> Snapshot {
+    fn snapshot(&self, id: SagaId) -> Option<Snapshot> {
         let progress = match self.direction {
             Direction::Forward => Progress::Forward(self.step),
             Direction::Compensating => Progress::Compensating(self.step),
         };
-        Snapshot {
-            id: id.raw(),
-            progress,
-            attempt: self.attempt,
-        }
+        let settled = match self.settled {
+            Some(settled) => Some(settled.settlement(id)?),
+            None => None,
+        };
+        Snapshot::new(id, SAGA_SCOPE, progress, self.attempt, settled)
     }
 }
 
@@ -99,7 +163,7 @@ pub(super) struct SubmitRun {
 impl SubmitRun {
     pub(super) fn fresh(manifest_id: &str, poll: Option<PollWiring>) -> Self {
         Self::with_saga(
-            Saga::new(SagaId::from_bytes(manifest_id.as_bytes()).raw()),
+            Saga::with_scope(SagaId::from_bytes(manifest_id.as_bytes()), SAGA_SCOPE),
             poll,
             None,
         )
@@ -114,7 +178,9 @@ impl SubmitRun {
         let state: SagaState = serde_json::from_str(saga_json)
             .map_err(|e| format!("decode saga for {manifest_id}: {e}"))?;
         let id = SagaId::from_bytes(manifest_id.as_bytes());
-        let saga = Saga::restore(state.snapshot(id))
+        let saga = state
+            .snapshot(id)
+            .and_then(|snapshot| Saga::restored(snapshot, SAGA_SCOPE))
             .ok_or_else(|| format!("saga for {manifest_id} does not fit {STEPS} steps"))?;
         let mut run = Self::with_saga(saga, state.poll, row.batch_id.clone());
         run.poll_cron_id = state.poll_cron_id;
@@ -146,12 +212,16 @@ pub(super) async fn drive<E: SubmitEffects>(
     mut run: SubmitRun,
 ) -> Result<SubmitReceipt, String> {
     let mut compensation_failures = 0;
-    while let Some(action) = run.saga.next_action() {
+    while let Some(action) = run
+        .saga
+        .next_action()
+        .map_err(|refusal| format!("submit saga cannot issue its next action: {refusal}"))?
+    {
         let now = run.now();
-        let ticket = match action.claim(&mut run.ledger, now, LEDGER_TTL) {
-            Claim::Acquired(id) => Ticket::Fresh(id),
-            Claim::Completed(_) => Ticket::Done,
-            _ => Ticket::Refused,
+        let ticket = match action.claim_in(&mut run.ledger, now, LEDGER_TTL) {
+            Ok(Claim::Acquired(id)) => Ticket::Fresh(id),
+            Ok(Claim::Completed(())) => Ticket::Done,
+            Ok(Claim::InProgress) | Err(_) => Ticket::Refused,
         };
         let outcome = match ticket {
             Ticket::Done => Outcome::Success,
@@ -164,11 +234,16 @@ pub(super) async fn drive<E: SubmitEffects>(
             }
             Ticket::Fresh(claim) => match execute(effects, &mut run, action).await {
                 Ok(()) => {
-                    let _ = run.ledger.complete(claim, run.now());
+                    let now = run.now();
+                    if let Err(refusal) = run.ledger.complete(claim, now) {
+                        warn!(step = action.step(), %refusal, "submit saga ledger kept no record");
+                    }
                     Outcome::Success
                 }
                 Err(error) => {
-                    let _ = run.ledger.abandon(claim);
+                    if let Err(refusal) = run.ledger.abandon(claim) {
+                        warn!(step = action.step(), %refusal, "submit saga ledger kept its claim");
+                    }
                     if action.kind() == Kind::Forward {
                         run.error = Some(error);
                     } else {
@@ -185,9 +260,9 @@ pub(super) async fn drive<E: SubmitEffects>(
                 }
             },
         };
-        if !run.saga.resolve(action, outcome) {
-            return Err("submit saga rejected its own attempt".to_string());
-        }
+        run.saga
+            .resolve(action, outcome)
+            .map_err(|refusal| format!("submit saga rejected its own attempt: {refusal}"))?;
         persist(effects, &run).await?;
     }
     match run.saga.progress() {

@@ -16,6 +16,7 @@ lease-machines = { workspace = true }
 libc = { workspace = true }
 rama = { workspace = true }
 chaos-snitch = { workspace = true }
+chrono-machines = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

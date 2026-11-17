@@ -174,5 +174,5 @@ pub enum ValidationError {
     EmptyComposite(CompositeKind),
     /// The upstream behavior-tree compiler rejected the definition.
     #[error("invalid behavior tree: {0}")]
-    TreeBuild(#[from] mcp_host::bt::BuildError),
+    TreeBuild(#[from] mcp_host::bt::Refusal),
 }

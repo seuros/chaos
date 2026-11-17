@@ -1,9 +1,12 @@
+use std::num::NonZeroU8;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
-use chrono_machines::Policy;
+use chrono_machines::Exponential;
+use chrono_machines::Refusal;
+use chrono_machines::Retry;
 use tracing::debug;
 use tracing::error;
 
@@ -139,14 +142,29 @@ pub(crate) fn emit_feedback_auth_recovery_tags(
     );
 }
 
-pub fn backoff(attempt: u64) -> Duration {
-    let policy = Policy {
-        max_attempts: 10,
-        base_delay_ms: 200,
-        multiplier: 2.0,
-        max_delay_ms: 30_000,
+const STREAM_RETRY_BASE: Duration = Duration::from_millis(200);
+const STREAM_RETRY_CAP: Duration = Duration::from_secs(30);
+const STREAM_RETRY_HINT_CEILING: Duration = Duration::from_secs(300);
+const STREAM_RETRY_SHAPE: Exponential =
+    match Exponential::new(STREAM_RETRY_BASE, 2.0, STREAM_RETRY_CAP, 1.0) {
+        Some(shape) => shape,
+        None => panic!("stream retry backoff shape is invalid"),
     };
-    Duration::from_millis(policy.calculate_delay(attempt as u8, 1.0))
+
+pub(crate) fn stream_retry(max_retries: u64) -> Retry {
+    let attempts = u8::try_from(max_retries.saturating_add(1)).unwrap_or(u8::MAX);
+    Retry::new(STREAM_RETRY_SHAPE.into(), NonZeroU8::new(attempts))
+        .with_hint_ceiling(STREAM_RETRY_HINT_CEILING)
+}
+
+pub(crate) fn stream_retry_delay(
+    retry: &mut Retry,
+    requested: Option<Duration>,
+) -> Result<Duration, Refusal> {
+    match requested {
+        Some(delay) => retry.hinted(delay),
+        None => retry.failed(chaos_ipc::backoff::draw()),
+    }
 }
 
 pub(crate) fn error_or_panic(message: impl std::string::ToString) {

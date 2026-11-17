@@ -77,7 +77,7 @@ async fn half_open_admits_a_single_probe_after_cooldown() {
         breaker.is_open(),
         "a success admitted before the trip cannot close the circuit"
     );
-    assert_eq!(breaker.retry_after(), Some(HALF_OPEN_TIMEOUT.as_secs_f64()));
+    assert_eq!(breaker.retry_after(), Some(HALF_OPEN_TIMEOUT));
 
     tokio::time::advance(HALF_OPEN_TIMEOUT).await;
     let (probe_started_tx, probe_started_rx) = oneshot::channel();

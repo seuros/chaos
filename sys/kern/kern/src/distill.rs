@@ -16,7 +16,8 @@ use crate::protocol::CompactedItem;
 use crate::protocol::EventMsg;
 use crate::protocol::TurnStartedEvent;
 use crate::protocol::WarningEvent;
-use crate::util::backoff;
+use crate::util::stream_retry;
+use crate::util::stream_retry_delay;
 use chaos_ipc::items::ContextCompactionItem;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::ResponseInputItem;
@@ -96,7 +97,7 @@ async fn run_distill_task_inner(
     let mut truncated_count = 0usize;
 
     let max_retries = turn_context.provider.stream_max_retries();
-    let mut retries = 0;
+    let mut retry = stream_retry(max_retries);
     let mut client_session = sess
         .services
         .model_client
@@ -165,7 +166,7 @@ async fn run_distill_task_inner(
                     );
                     history.remove_first_item();
                     truncated_count += 1;
-                    retries = 0;
+                    retry.succeeded();
                     continue;
                 }
                 sess.set_total_tokens_full(turn_context.as_ref()).await;
@@ -174,12 +175,10 @@ async fn run_distill_task_inner(
                 return Err(e);
             }
             Err(e) => {
-                if retries < max_retries {
-                    retries += 1;
-                    let delay = backoff(retries);
+                if let Ok(delay) = stream_retry_delay(&mut retry, None) {
                     sess.notify_stream_error(
                         turn_context.as_ref(),
-                        format!("Reconnecting... {retries}/{max_retries}"),
+                        format!("Reconnecting... {}/{max_retries}", retry.failures()),
                         e,
                     )
                     .await;

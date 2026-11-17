@@ -40,17 +40,18 @@ impl UrlLedger {
             .ledger
             .claim((session, id), self.now(), URL_ELICITATION_TTL)
         {
-            Claim::Acquired(claim) => Some(claim),
-            _ => None,
+            Ok(Claim::Acquired(claim)) => Some(claim),
+            Ok(Claim::InProgress | Claim::Completed(_)) | Err(_) => None,
         }
     }
 
     pub fn retain(&mut self, claim: ClaimId) -> bool {
-        self.ledger.complete(claim, self.now())
+        let now = self.now();
+        self.ledger.complete(claim, now).is_ok()
     }
 
     pub fn release(&mut self, claim: ClaimId) -> bool {
-        self.ledger.abandon(claim)
+        self.ledger.abandon(claim).is_ok()
     }
 
     pub fn complete(&mut self, session: &SessionId, id: &ElicitationId) -> bool {

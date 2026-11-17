@@ -4,14 +4,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::SandboxState;
-use crate::async_breaker::tokio_clock_storage;
+use crate::async_breaker::breaker_policy;
+use crate::async_breaker::tokio_clock;
 use crate::config::types::McpServerConfig;
 use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::oauth_types::OAuthCredentialsStoreMode;
 use crate::protocol::McpServerRefreshConfig;
 use breaker_machines::AsyncCircuitBreaker;
 use breaker_machines::CircuitError;
+use breaker_machines::Policy;
 use breaker_machines::PredicateClassifier;
+use breaker_machines::Refusal;
 use chaos_ipc::api::McpServerElicitationRequest;
 use chaos_ipc::api::McpServerElicitationRequestParams;
 use chaos_ipc::approvals::ElicitationRequestEvent;
@@ -37,6 +40,7 @@ use super::Session;
 use super::TurnContext;
 
 const HALF_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
+const MCP_BREAKER: Policy = breaker_policy(5, Duration::from_secs(60), HALF_OPEN_TIMEOUT, 2);
 
 /// Whether a failed MCP operation should count against the circuit breaker.
 ///
@@ -76,17 +80,13 @@ fn mcp_circuit_breaker(server_name: &str) -> Arc<AsyncCircuitBreaker> {
 }
 
 fn build_mcp_circuit_breaker(server_name: &str) -> AsyncCircuitBreaker {
-    AsyncCircuitBreaker::builder(server_name)
-        .failure_threshold(5)
-        .failure_window_secs(60.0)
-        .half_open_timeout_secs(HALF_OPEN_TIMEOUT.as_secs_f64())
-        .success_threshold(2)
-        .storage(tokio_clock_storage())
-        .failure_classifier(Arc::new(PredicateClassifier::new(|ctx| {
+    AsyncCircuitBreaker::builder(server_name, MCP_BREAKER)
+        .clock(tokio_clock())
+        .classifier(PredicateClassifier::new(|ctx| {
             ctx.error
                 .downcast_ref::<anyhow::Error>()
                 .is_some_and(is_transient)
-        })))
+        }))
         .build_async()
 }
 
@@ -110,7 +110,10 @@ where
     match breaker.call(op).await {
         Ok(value) => Ok(value),
         Err(CircuitError::Execution(error)) => Err(error),
-        Err(CircuitError::Open { .. } | CircuitError::HalfOpenLimitReached { .. }) => {
+        Err(CircuitError::Refused {
+            refusal: Refusal::Open | Refusal::Busy | Refusal::Full,
+            ..
+        }) => {
             anyhow::bail!(
                 "MCP server '{server}' circuit open — too many recent failures, backing off"
             )

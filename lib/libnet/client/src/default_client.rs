@@ -20,9 +20,8 @@ use crate::http_client::{RamaClient, raw_http_client, with_http_policies};
 use crate::request::Response;
 use crate::telemetry::inject_trace_headers;
 use deadline_machines::Deadline;
-use deadline_machines::tokio_support::{
-    TimeoutError as DeadlineTimeoutError, TokioClock, deadline_after, timeout as timeout_at,
-};
+use deadline_machines::Refusal;
+use deadline_machines::tokio_support::{TokioClock, timeout as timeout_at};
 
 /// HTTP client wrapper backed by rama. Provides convenience methods
 /// (.get, .post, .send) with OpenTelemetry trace header injection.
@@ -159,7 +158,7 @@ impl ChaosRequestBuilder {
         let deadline_clock = TokioClock::new();
         let deadline = self
             .timeout
-            .map(|timeout| deadline_after(&deadline_clock, timeout))
+            .map(|timeout| Deadline::after(deadline_clock.now(), timeout))
             .unwrap_or_else(Deadline::never);
         let mut headers = self.default_headers;
         for (key, value) in &self.headers {
@@ -304,12 +303,7 @@ async fn within_deadline<T>(
 ) -> Result<T, ChaosClientError> {
     timeout_at(clock, deadline, future)
         .await
-        .map_err(|error| match error {
-            DeadlineTimeoutError::Elapsed => ChaosClientError::Timeout,
-            DeadlineTimeoutError::OutOfRange => {
-                ChaosClientError::Build("request timeout exceeds Tokio's supported range".into())
-            }
-        })?
+        .map_err(|_: Refusal| ChaosClientError::Timeout)?
 }
 
 #[cfg(test)]

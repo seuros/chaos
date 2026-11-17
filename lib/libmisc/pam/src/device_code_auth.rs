@@ -2,9 +2,8 @@ use chaos_client::ChaosHttpClient;
 use chaos_ipc::product::CHAOS_VERSION;
 use chaos_ipc::product::OS_NAME;
 use chaos_ipc::product::display_name;
-use deadline_machines::Clock;
+use deadline_machines::Deadline;
 use deadline_machines::tokio_support::TokioClock;
-use deadline_machines::tokio_support::deadline_after;
 use rama::http::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
@@ -114,8 +113,8 @@ async fn poll_for_token(
 ) -> std::io::Result<CodeSuccessResp> {
     let url = format!("{auth_base_url}/deviceauth/token");
     let clock = TokioClock::new();
-    let deadline = deadline_after(&clock, budget);
-    let interval_ns = interval.saturating_mul(deadline_machines::NS_PER_SECOND);
+    let deadline = Deadline::after(clock.now(), budget);
+    let interval = Duration::from_secs(interval);
 
     loop {
         let now = clock.now();
@@ -133,9 +132,7 @@ async fn poll_for_token(
             .post(&url)
             .header("Content-Type", "application/json")
             .body(body)
-            .timeout(Duration::from_nanos(
-                deadline.remaining_ns(now).unwrap_or(u64::MAX),
-            ))
+            .timeout(deadline.remaining(now).unwrap_or(Duration::MAX))
             .send()
             .await
             .map_err(std::io::Error::other)?;
@@ -147,8 +144,7 @@ async fn poll_for_token(
         }
 
         if status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND {
-            let sleep_ns = deadline.clamp_sleep_ns(clock.now(), interval_ns);
-            tokio::time::sleep(Duration::from_nanos(sleep_ns)).await;
+            tokio::time::sleep(deadline.clamp_sleep(clock.now(), interval)).await;
             continue;
         }
 

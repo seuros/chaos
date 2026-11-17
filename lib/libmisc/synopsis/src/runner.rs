@@ -5,9 +5,10 @@ use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Poll;
+use std::time::Duration;
 
 use futures::FutureExt;
-use mcp_host::bt::{self, Job, Leaf, Node as BtNode, Scope, Status, Threshold, Time, Tree};
+use mcp_host::bt::{self, HeapTree, Job, Leaf, Node as BtNode, Scope, Status, Threshold};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -43,7 +44,7 @@ pub enum RunError {
 ///
 /// A runner is single-use. Each action ID may be launched at most once.
 pub struct Runner<A> {
-    tree: Tree<ActionLeaf>,
+    tree: HeapTree<ActionLeaf>,
     context: Context<A>,
 }
 
@@ -71,7 +72,7 @@ struct ActionState<A> {
 struct ActionLeaf(usize);
 
 impl<A: Send + 'static> Leaf<Context<A>> for ActionLeaf {
-    fn tick(&self, context: &mut Context<A>, _now: Time) -> Status {
+    fn tick(&self, context: &mut Context<A>, _now: Duration) -> Status {
         // A panic is a runner error, never a recoverable fallback result.
         // Scope may have polled multiple jobs before this tick.
         if lock_error(&context.error).is_some() {
@@ -159,7 +160,7 @@ impl<A: Send + 'static> Runner<A> {
         let mut actions = Vec::new();
         let root = compile_node(synopsis.into_root(), &mut actions);
         Ok(Self {
-            tree: Tree::new(root)?,
+            tree: HeapTree::new(root)?,
             context: Context {
                 actions,
                 executor,

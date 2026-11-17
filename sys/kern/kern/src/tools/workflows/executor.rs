@@ -1,6 +1,7 @@
 //! One policy-aware executor for native and attached MCP calls.
 
 use super::{RunArgs, dispatch, external, failure, interactions, observer};
+use crate::async_breaker::TREE_BRIDGE_BREAKER;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
 use chaos_synopsis::runs::{RunKind, RunOutcome, RunRegistry, RunSnapshot};
@@ -79,8 +80,8 @@ pub(crate) async fn run(
         // Private adapters only: the tree owns its timeout/retry budget.
         // Downstream tools retain the ordinary kernel/driver protections.
         .with_circuit_breaker(ToolBreakerConfig {
+            policy: TREE_BRIDGE_BREAKER,
             call_timeout_secs: 0.0,
-            failure_threshold: chaos_synopsis::tree::MAX_LEAF_ATTEMPTS + 1,
             ..Default::default()
         })
         .build();

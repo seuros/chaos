@@ -13,6 +13,7 @@ chaos-ipc = { workspace = true }
 chaos-pwd = { workspace = true }
 jiff = { workspace = true }
 lease-machines = { workspace = true }
+journal-machines = { workspace = true }
 libc = { workspace = true }
 rama = { workspace = true }
 chaos-snitch = { workspace = true }

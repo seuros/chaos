@@ -9,6 +9,10 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+### Added
+- Independently publishable `mcp-goals` 0.1.0: the `chaos/goals` wire types
+  and goal lifecycle, shared by chaos and helmsman.
+
 ### Changed
 - A model stream or remote compaction stops retrying when the server asks to
   wait more than five minutes.

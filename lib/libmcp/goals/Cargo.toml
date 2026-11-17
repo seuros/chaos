@@ -1,0 +1,22 @@
+[package]
+name = "mcp-goals"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = ["crates-io"]
+description = "Wire types and lifecycle state machine for the chaos/goals MCP extension"
+repository = "https://github.com/seuros/chaos"
+documentation = "https://docs.rs/mcp-goals"
+readme = "README.md"
+keywords = ["mcp", "goals", "state-machine", "protocol"]
+categories = ["api-bindings", "data-structures"]
+include = ["src/**", "Cargo.toml", "README.md"]
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+state-machines = { version = "0.34", features = ["dynamic"] }
+
+[lints]
+workspace = true

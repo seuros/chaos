@@ -1,5 +1,5 @@
 //! The transition graph is separate from evidence/authorization predicates.
-use super::Status;
+use crate::Status;
 use state_machines::state_machine;
 
 state_machine! {
@@ -47,16 +47,36 @@ impl<C, S> GoalLifecycle<C, S> {
     }
 }
 
+impl From<Status> for GoalLifecycleState {
+    fn from(status: Status) -> Self {
+        match status {
+            Status::Active => Self::Active,
+            Status::Checking => Self::Checking,
+            Status::Complete => Self::Complete,
+            Status::Paused => Self::Paused,
+        }
+    }
+}
+
+impl From<GoalLifecycleState> for Status {
+    fn from(state: GoalLifecycleState) -> Self {
+        match state {
+            GoalLifecycleState::Active => Self::Active,
+            GoalLifecycleState::Checking => Self::Checking,
+            GoalLifecycleState::Complete => Self::Complete,
+            GoalLifecycleState::Paused => Self::Paused,
+        }
+    }
+}
+
 impl Status {
+    pub fn next(self, event: GoalLifecycleEvent) -> Option<Self> {
+        let mut machine = DynamicGoalLifecycle::new_init_state((), self.into());
+        machine.handle(event).ok()?;
+        Some(machine.current_state().into())
+    }
+
     pub fn accepts(self, event: GoalLifecycleEvent) -> bool {
-        let state = match self {
-            Self::Active => GoalLifecycleState::Active,
-            Self::Checking => GoalLifecycleState::Checking,
-            Self::Complete => GoalLifecycleState::Complete,
-            Self::Paused => GoalLifecycleState::Paused,
-        };
-        DynamicGoalLifecycle::new_init_state((), state)
-            .handle(event)
-            .is_ok()
+        self.next(event).is_some()
     }
 }

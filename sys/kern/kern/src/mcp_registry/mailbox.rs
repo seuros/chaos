@@ -14,13 +14,13 @@ pub(super) async fn admit<Command: Send>(
         .context(unavailable_context)
 }
 
-impl McpRegistryLifecycle {
+impl RegistryLifecycle {
     pub(super) fn running_reply<T>(
         &self,
         reply: oneshot::Sender<anyhow::Result<T>>,
         rejection: impl Display,
     ) -> Option<oneshot::Sender<anyhow::Result<T>>> {
-        if self.state.load(Ordering::Acquire) == REGISTRY_RUNNING {
+        if self.state() == McpActorState::Running {
             return Some(reply);
         }
         // The caller may already have cancelled its wait during shutdown.

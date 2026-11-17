@@ -45,6 +45,7 @@ pub use spool::SpoolItem;
 pub use spool::SpoolPhase;
 pub use spool::SpoolRecord;
 pub use spool::SpoolRegistry;
+pub use spool::SpoolState;
 pub use spool::SpoolStatusReport;
 pub use spool::set_shared_spool_registry;
 pub use spool::shared_spool_registry;

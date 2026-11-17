@@ -1,5 +1,5 @@
 //! The transition graph is separate from evidence/authorization predicates.
-use chaos_mcp_protocol::goals::Status;
+use super::Status;
 use state_machines::state_machine;
 
 state_machine! {
@@ -47,14 +47,16 @@ impl<C, S> GoalLifecycle<C, S> {
     }
 }
 
-pub(super) fn accepts(status: Status, event: GoalLifecycleEvent) -> bool {
-    let state = match status {
-        Status::Active => GoalLifecycleState::Active,
-        Status::Checking => GoalLifecycleState::Checking,
-        Status::Complete => GoalLifecycleState::Complete,
-        Status::Paused => GoalLifecycleState::Paused,
-    };
-    DynamicGoalLifecycle::new_init_state((), state)
-        .handle(event)
-        .is_ok()
+impl Status {
+    pub fn accepts(self, event: GoalLifecycleEvent) -> bool {
+        let state = match self {
+            Self::Active => GoalLifecycleState::Active,
+            Self::Checking => GoalLifecycleState::Checking,
+            Self::Complete => GoalLifecycleState::Complete,
+            Self::Paused => GoalLifecycleState::Paused,
+        };
+        DynamicGoalLifecycle::new_init_state((), state)
+            .handle(event)
+            .is_ok()
+    }
 }

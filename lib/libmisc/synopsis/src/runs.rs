@@ -5,6 +5,8 @@
 //! last registry cancels owned work; there is deliberately no restore API.
 
 mod budget;
+mod run_lifecycle;
+mod step_lifecycle;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
@@ -13,7 +15,6 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -201,7 +202,7 @@ struct State {
 struct Entry {
     snapshot: RunSnapshot,
     cancellation: CancellationToken,
-    finished: Option<Instant>,
+    lifecycle: run_lifecycle::Run,
     budget: budget::PayloadBudget,
 }
 
@@ -276,7 +277,7 @@ impl RunRegistry {
         if state
             .runs
             .values()
-            .filter(|entry| entry.finished.is_none())
+            .filter(|entry| entry.lifecycle.is_active())
             .count()
             >= MAX_ACTIVE_RUNS
         {
@@ -296,7 +297,7 @@ impl RunRegistry {
                     truncated: false,
                 },
                 cancellation: cancellation.clone(),
-                finished: None,
+                lifecycle: run_lifecycle::Run::new(),
                 budget: budget::PayloadBudget::default(),
             },
         );
@@ -324,10 +325,7 @@ impl RunRegistry {
         let mut state = self.inner.lock();
         state.purge();
         let entry = state.runs.get_mut(&id).ok_or(RunError::UnknownRun(id))?;
-        if entry.finished.is_none() {
-            entry.snapshot.status = RunStatus::Cancelling;
-            entry.cancellation.cancel();
-        }
+        entry.cancel();
         Ok(entry.snapshot.clone())
     }
 
@@ -338,10 +336,7 @@ impl RunRegistry {
         let mut state = self.inner.lock();
         state.closed = true;
         for entry in state.runs.values_mut() {
-            if entry.finished.is_none() {
-                entry.snapshot.status = RunStatus::Cancelling;
-                entry.cancellation.cancel();
-            }
+            entry.cancel();
         }
     }
 
@@ -403,7 +398,7 @@ impl RunRecorder {
             .runs
             .get_mut(&self.id)
             .ok_or(RunError::UnknownRun(self.id))?;
-        if entry.finished.is_some() {
+        if !entry.lifecycle.is_active() {
             return Err(RunError::AlreadyTerminal);
         }
         f(entry)
@@ -431,9 +426,7 @@ impl RunRecorder {
                 .rev()
                 .find(|step| step.node_id == node_id);
             if let Some(previous) = previous {
-                if previous.attempt + 1 != attempt
-                    || !matches!(previous.status, StepStatus::Terminal(_))
-                {
+                if previous.attempt + 1 != attempt || !previous.status.is_terminal() {
                     return Err(RunError::InvalidTransition);
                 }
             } else if attempt != 1 {
@@ -457,10 +450,7 @@ impl RunRecorder {
                 return Err(RunError::Cancelling);
             }
             let step = entry.step(node_id, attempt)?;
-            if matches!(step.status, StepStatus::Terminal(_)) {
-                return Err(RunError::InvalidTransition);
-            }
-            step.status = StepStatus::WaitingForInput;
+            step.status = step.status.wait()?;
             Ok(())
         })
     }
@@ -475,16 +465,11 @@ impl RunRecorder {
         detail: Option<Value>,
     ) -> Result<(), RunError> {
         self.update(|entry| {
-            if matches!(
-                entry.step(node_id, attempt)?.status,
-                StepStatus::Terminal(_)
-            ) {
-                return Err(RunError::InvalidTransition);
-            }
+            let status = entry.step(node_id, attempt)?.status.finish(outcome)?;
             let (detail, truncated) = entry.budget.take(detail);
             entry.snapshot.truncated |= truncated;
             let step = entry.step(node_id, attempt)?;
-            step.status = StepStatus::Terminal(outcome);
+            step.status = status;
             step.detail = detail;
             step.truncated = truncated;
             Ok(())
@@ -506,18 +491,15 @@ impl RunLease {
             .runs
             .get_mut(&self.id)
             .ok_or(RunError::UnknownRun(self.id))?;
-        if entry.finished.is_some() {
-            return Err(RunError::AlreadyTerminal);
-        }
         if entry
             .snapshot
             .steps
             .iter()
-            .any(|step| !matches!(step.status, StepStatus::Terminal(_)))
+            .any(|step| !step.status.is_terminal())
         {
             return Err(RunError::ActiveSteps);
         }
-        entry.terminate(outcome, result);
+        entry.terminate(outcome, result)?;
         let snapshot = entry.snapshot.clone();
         state.terminal_order.push_back(self.id);
         state.purge();
@@ -537,14 +519,13 @@ impl Drop for RunLease {
         };
         let mut state = registry.lock();
         if let Some(entry) = state.runs.get_mut(&self.id)
-            && entry.finished.is_none()
+            && entry.terminate(RunOutcome::Interrupted, None).is_ok()
         {
             for step in &mut entry.snapshot.steps {
-                if !matches!(step.status, StepStatus::Terminal(_)) {
-                    step.status = StepStatus::Terminal(StepOutcome::Cancelled);
+                if let Ok(cancelled) = step.status.finish(StepOutcome::Cancelled) {
+                    step.status = cancelled;
                 }
             }
-            entry.terminate(RunOutcome::Interrupted, None);
             state.terminal_order.push_back(self.id);
             state.purge();
         }
@@ -575,13 +556,21 @@ impl Entry {
             .ok_or(RunError::UnknownStep)
     }
 
-    fn terminate(&mut self, outcome: RunOutcome, result: Option<Value>) {
+    fn cancel(&mut self) {
+        if self.lifecycle.cancel() {
+            self.snapshot.status = self.lifecycle.status();
+            self.cancellation.cancel();
+        }
+    }
+
+    fn terminate(&mut self, outcome: RunOutcome, result: Option<Value>) -> Result<(), RunError> {
+        self.lifecycle.terminate(outcome)?;
         self.cancellation.cancel();
-        self.finished = Some(Instant::now());
-        self.snapshot.status = RunStatus::Terminal(outcome);
+        self.snapshot.status = self.lifecycle.status();
         let (result, truncated) = self.budget.take(result);
         self.snapshot.result = result;
         self.snapshot.truncated |= truncated;
+        Ok(())
     }
 }
 
@@ -591,8 +580,8 @@ impl State {
             let expired = self
                 .runs
                 .get(id)
-                .and_then(|entry| entry.finished)
-                .is_none_or(|finished| finished.elapsed() >= TERMINAL_RETENTION);
+                .and_then(|entry| entry.lifecycle.ended())
+                .is_none_or(|ended| ended.at.elapsed() >= TERMINAL_RETENTION);
             if self.terminal_order.len() <= MAX_TERMINAL_RUNS && !expired {
                 break;
             }

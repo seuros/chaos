@@ -107,6 +107,7 @@ state-machines = { workspace = true, features = ["dynamic", "async"] }
 breaker-machines = { workspace = true }
 chrono-machines = { workspace = true }
 lease-machines = { workspace = true }
+suspect-machines = { workspace = true }
 throttle-machines = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }

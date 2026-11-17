@@ -2,9 +2,10 @@
 //! database: each NOTIFYs its activity, and residents LISTEN.
 //!
 //! A notification carries the origin and one event, or none as a heartbeat;
-//! a resident that hears nothing from an origin for `SILENCE` takes it as
-//! gone. A process notifies only while some resident listens, so a fleet
-//! nobody watches costs the database nothing.
+//! a resident takes an origin as gone once its heartbeats are overdue by
+//! their own measured rhythm, or after `SILENCE` while that is still unknown.
+//! A process notifies only while some resident listens, so a fleet nobody
+//! watches costs the database nothing.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,6 +15,7 @@ use chrono_machines::Retry;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use sqlx::postgres::PgListener;
+use suspect_machines::{Config, Distribution, Normal, Roster, Suspect, Threshold};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::Instant;
 
@@ -37,6 +39,36 @@ const RECONNECT: Exponential = match Exponential::new(RECONNECT_MIN, 2.0, RECONN
     None => panic!("reconnect backoff shape is invalid"),
 };
 const SILENCE: Duration = Duration::from_secs(30);
+const JITTER: Duration = Duration::from_secs(1);
+const WARM_UP: usize = 3;
+const WINDOW: usize = 16;
+const PEERS: usize = 256;
+const SUSPECTS: usize = 32;
+const GONE: Threshold = match Threshold::new(8.0) {
+    Some(threshold) => threshold,
+    None => panic!("the departure threshold is invalid"),
+};
+const POLICY: Config = {
+    let Ok(normal) = Normal::new(JITTER) else {
+        panic!("the jitter floor is invalid")
+    };
+    let Ok(config) = Config::new(Distribution::Normal(normal), WARM_UP) else {
+        panic!("the warm-up is invalid")
+    };
+    let Ok(config) = config.with_acceptable_pause(HEARTBEAT) else {
+        panic!("the acceptable pause is invalid")
+    };
+    let Ok(config) = config.with_warm_up_ceiling(SILENCE) else {
+        panic!("the warm-up ceiling is invalid")
+    };
+    config
+};
+static ROSTER: Roster<PEERS, WINDOW> = match Roster::new(POLICY) {
+    Ok(roster) => roster,
+    Err(_) => panic!("the warm-up does not fit the window"),
+};
+const HEARD: u64 = 0;
+const BEATING: u64 = 1;
 /// Postgres refuses payloads of 8000 bytes or more.
 const MAX_PAYLOAD: usize = 7900;
 
@@ -45,6 +77,76 @@ struct Notice {
     origin: Origin,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     event: Option<ActivityEvent>,
+}
+
+struct Presence {
+    roster: Roster<PEERS, WINDOW>,
+    ids: HashMap<Origin, u64>,
+    origins: HashMap<u64, Origin>,
+    next: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Heard {
+    Joined,
+    Present,
+    Unheard,
+}
+
+impl Presence {
+    fn new() -> Self {
+        Self {
+            roster: ROSTER.clone(),
+            ids: HashMap::new(),
+            origins: HashMap::new(),
+            next: 0,
+        }
+    }
+
+    fn heard(&mut self, origin: &Origin, heartbeat: bool, now: Duration) -> Heard {
+        let known = self.ids.get(origin).copied();
+        let id = known.unwrap_or(self.next);
+        let beat = match (heartbeat, known) {
+            (true, _) => self.roster.heartbeat(id, BEATING, now),
+            (false, None) => self.roster.heartbeat(id, HEARD, now),
+            (false, Some(_)) => return Heard::Present,
+        };
+        match (known, beat) {
+            (Some(_), _) => Heard::Present,
+            (None, Ok(_)) => {
+                self.ids.insert(origin.clone(), id);
+                self.origins.insert(id, origin.clone());
+                self.next += 1;
+                Heard::Joined
+            }
+            (None, Err(refusal)) => {
+                tracing::warn!(?origin, %refusal, "fleet origin not tracked");
+                Heard::Unheard
+            }
+        }
+    }
+
+    fn sweep(&mut self, now: Duration) -> Vec<Origin> {
+        let mut overdue = Vec::new();
+        let mut found = [Suspect::default(); SUSPECTS];
+        let mut cursor = Some(0);
+        while let Some(from) = cursor {
+            let Ok(scan) = self.roster.scan(now, GONE, from, &mut found) else {
+                break;
+            };
+            overdue.extend(found.iter().take(scan.suspects()).map(Suspect::peer));
+            cursor = scan.next();
+        }
+        let mut gone = Vec::with_capacity(overdue.len());
+        for id in overdue {
+            _ = self.roster.forget(id);
+            if let Some(origin) = self.origins.remove(&id) {
+                self.ids.remove(&origin);
+                gone.push(origin);
+            }
+        }
+        gone
+    }
 }
 
 /// Whether `storage_url` names a Postgres database, so residents can listen.
@@ -108,11 +210,12 @@ pub(super) async fn forward(pool: PgPool, origin: Origin) {
 /// Listen for every process notifying this database. Its own connection, so
 /// the shared pool keeps all of its slots.
 pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sqlx::Error> {
+    let mut presence = Presence::new();
     let mut listener = subscribe(storage_url).await?;
     let storage_url = storage_url.to_string();
     let (tx, rx) = mpsc::channel(1024);
     tokio::spawn(async move {
-        let mut seen: HashMap<Origin, Instant> = HashMap::new();
+        let epoch = Instant::now();
         let mut sweep = tokio::time::interval(HEARTBEAT);
         let mut probe = tokio::time::interval_at(Instant::now() + PROBE, PROBE);
         loop {
@@ -142,14 +245,7 @@ pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sql
                     None
                 }
                 _ = sweep.tick() => {
-                    let now = Instant::now();
-                    let gone: Vec<Origin> = seen
-                        .iter()
-                        .filter(|(_, at)| now.duration_since(**at) > SILENCE)
-                        .map(|(origin, _)| origin.clone())
-                        .collect();
-                    for origin in gone {
-                        seen.remove(&origin);
+                    for origin in presence.sweep(epoch.elapsed()) {
                         if tx.send(FleetEvent::Left(origin)).await.is_err() {
                             return;
                         }
@@ -158,7 +254,11 @@ pub async fn listen(storage_url: &str) -> Result<mpsc::Receiver<FleetEvent>, sql
                 }
             };
             let Some(notice) = heard else { continue };
-            if seen.insert(notice.origin.clone(), Instant::now()).is_none()
+            let heard = presence.heard(&notice.origin, notice.event.is_none(), epoch.elapsed());
+            if heard == Heard::Unheard {
+                continue;
+            }
+            if heard == Heard::Joined
                 && tx
                     .send(FleetEvent::Joined(notice.origin.clone()))
                     .await

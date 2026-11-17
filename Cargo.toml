@@ -364,6 +364,7 @@ chrono-machines = "0.13"
 deadline-machines = { version = "0.5", features = ["tokio", "tokio-util"] }
 throttle-machines = { version = "0.6", features = ["std"] }
 lease-machines = "0.8"
+suspect-machines = "0.7"
 dedup-machines = { version = "0.8", features = ["std"] }
 batch-machines = "0.7"
 saga-machines = "0.6"

@@ -2,7 +2,7 @@
 //! ownership, crash boundaries and duplicate side effects belong here.
 use super::*;
 use crate::sessions::durable::{Client, Owner, Store};
-use chaos_journald::{ExecutionRequest, ExecutionResponse, ExecutionTurnState};
+use chaos_journald::{ExecutionRequest, ExecutionResponse};
 
 mod descendants;
 mod invocations;
@@ -73,7 +73,7 @@ impl Fixture {
         .unwrap();
         owner.bind_new(process_id).await.unwrap();
         session.ledger.set(owner).ok().unwrap();
-        session.data.lock().unwrap().status = SessionStatus::Idle;
+        session.data.lock().unwrap().status = SessionLifecycleState::Idle;
         Self {
             _home: home,
             db,
@@ -128,7 +128,7 @@ async fn operation(supervisor: &mut SupervisorFixture) -> Operation {
         .unwrap()
 }
 
-async fn status(session: &Session, expected: SessionStatus) {
+async fn status(session: &Session, expected: SessionLifecycleState) {
     tokio::time::timeout(
         Duration::from_secs(5),
         wait_until(session, |data| data.status == expected),
@@ -161,11 +161,11 @@ async fn failed_acceptance_never_dispatches_and_retains_the_reservation() {
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.capacity.available_permits(), 0);
     assert_eq!(
         fixture.admit(&id).await.unwrap().status,
-        TurnStatus::Unknown
+        TurnLifecycleState::Unknown
     );
     assert!(
         supervisor.operations.try_recv().is_err(),
@@ -191,7 +191,7 @@ async fn cancellation_during_dispatch_commit_never_submits_or_interrupts_another
     .unwrap();
     fixture.session.interrupt(id).unwrap();
     write_lock.release().await;
-    status(&fixture.session, SessionStatus::Idle).await;
+    status(&fixture.session, SessionLifecycleState::Idle).await;
     assert_eq!(fixture.capacity.available_permits(), 1);
     assert!(
         supervisor.operations.try_recv().is_err(),
@@ -217,7 +217,7 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
     );
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
-        ExecutionTurnState::Running
+        TurnLifecycleState::Running
     );
     fixture.db.fail_transition("idle").await;
     supervisor.events.send(complete(&id)).unwrap();
@@ -225,11 +225,11 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.capacity.available_permits(), 0);
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
-        ExecutionTurnState::Running
+        TurnLifecycleState::Running
     );
     supervisor.task.abort();
     let _ = supervisor.task.await;
@@ -261,7 +261,7 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
             .await
             .unwrap()
             .status,
-        TurnStatus::Unknown
+        TurnLifecycleState::Unknown
     );
     assert_eq!(
         session
@@ -298,7 +298,7 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
         matches!(operation(&mut supervisor).await, Operation::Execute(turn, _, _) if turn == first)
     );
     supervisor.events.send(complete(&first)).unwrap();
-    status(&fixture.session, SessionStatus::Idle).await;
+    status(&fixture.session, SessionLifecycleState::Idle).await;
     assert_eq!(fixture.capacity.available_permits(), 1);
     fixture.manager.close_all();
     assert!(matches!(
@@ -332,7 +332,7 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
         )
         .await
         .unwrap();
-    assert_eq!(old.status, TurnStatus::Completed);
+    assert_eq!(old.status, TurnLifecycleState::Completed);
     assert_eq!(old.result.as_deref(), Some("done"));
     assert!(
         commands.try_recv().is_err(),
@@ -353,7 +353,7 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
         matches!(operation(&mut resumed).await, Operation::Execute(turn, _, _) if turn == second)
     );
     resumed.events.send(complete(&second)).unwrap();
-    status(&session, SessionStatus::Idle).await;
+    status(&session, SessionLifecycleState::Idle).await;
     session.close().unwrap();
     assert!(matches!(operation(&mut resumed).await, Operation::Shutdown));
     resumed.task.await.unwrap();
@@ -378,16 +378,13 @@ async fn a_fenced_supervisor_contains_work_without_releasing_unknown_capacity() 
     )
     .await
     .unwrap();
-    assert_eq!(
-        successor.state,
-        chaos_journald::ExecutionSessionState::Unknown
-    );
+    assert_eq!(successor.state, SessionLifecycleState::Unknown);
     assert!(fixture.session.ledger.get().unwrap().renew().await.is_err());
     assert!(matches!(
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.capacity.available_permits(), 0);
     assert!(fixture.admit(&Uuid::new_v4().to_string()).await.is_err());
     assert!(supervisor.operations.try_recv().is_err());
@@ -430,9 +427,9 @@ async fn restart_during_creation_or_boot_cannot_manufacture_or_resume_work() {
         assert_eq!(
             session.snapshot().status,
             if booted {
-                SessionStatus::Unknown
+                SessionLifecycleState::Unknown
             } else {
-                SessionStatus::Closed
+                SessionLifecycleState::Closed
             }
         );
         assert_eq!(capacity.available_permits(), usize::from(!booted));
@@ -489,7 +486,7 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
         matches!(operation(&mut supervisor).await, Operation::Execute(turn, _, _) if turn == id)
     );
     supervisor.events.send(complete(&id)).unwrap();
-    status(&fixture.session, SessionStatus::Idle).await;
+    status(&fixture.session, SessionLifecycleState::Idle).await;
     fixture.session.close().unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,

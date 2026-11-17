@@ -1,7 +1,5 @@
 //! Operator-only reconciliation, never an executor restart or a force-unlock.
-use chaos_journald::{
-    ExecutionResolution, ExecutionResolutionRecord, ExecutionSession, ExecutionSessionState,
-};
+use chaos_journald::{ExecutionResolution, ExecutionResolutionRecord, ExecutionSession};
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -79,13 +77,13 @@ impl Session {
         if let Some(record) = &resolution {
             // Resolution closes permanently. If it committed between these
             // reads, don't present its audit alongside a stale unknown state.
-            session.state = ExecutionSessionState::Closed;
+            let _ = session.state.fire(SessionLifecycleEvent::Resolve);
             session.active_turn_id = None;
             session.recovery_epoch = record.request.expected_recovery_epoch;
         }
         let supervisor_stopped = self.commands.is_closed();
         let can_resolve = supervisor_stopped
-            && session.state == ExecutionSessionState::Unknown
+            && session.state == SessionLifecycleState::Unknown
             && owner.lease().is_ok();
         Ok(RecoveryView {
             session,
@@ -123,7 +121,7 @@ impl Session {
             record
         } else {
             let persisted = owner.session_record().await?;
-            if persisted.state != ExecutionSessionState::Unknown
+            if persisted.state != SessionLifecycleState::Unknown
                 || persisted.process_id != request.expected_process_id
                 || persisted.active_turn_id != request.expected_turn_id
                 || persisted.recovery_epoch != request.expected_recovery_epoch
@@ -135,10 +133,13 @@ impl Session {
             let outcome = if let Some(id) = request.expected_turn_id {
                 let turn = owner.get_turn(&id.to_string()).await?;
                 let mut snapshot = snapshot(&turn)?;
-                snapshot.status = TurnStatus::Interrupted;
+                snapshot
+                    .status
+                    .conclude(TurnLifecycleState::Interrupted)
+                    .map_err(|_| ApiError::conflict("resolution turn is not quarantined"))?;
                 let snapshot = bounded_snapshot(snapshot).unwrap_or_else(|_| TurnSnapshot {
                     turn_id: id.to_string(),
-                    status: TurnStatus::Interrupted,
+                    status: TurnLifecycleState::Interrupted,
                     result: None,
                     result_truncated: true,
                     error: Some(
@@ -169,7 +170,7 @@ impl Session {
         let turn = if let Some(id) = record.request.expected_turn_id {
             let turn = owner.get_turn(&id.to_string()).await?;
             let snapshot = snapshot(&turn)?;
-            if snapshot.status != TurnStatus::Interrupted {
+            if snapshot.status != TurnLifecycleState::Interrupted {
                 return Err(unavailable());
             }
             Some((id.to_string(), turn, snapshot))
@@ -197,7 +198,7 @@ impl Session {
         data.active = None;
         data.orphan_permit = None;
         data.process_id = record.request.expected_process_id.map(|id| id.to_string());
-        data.status = SessionStatus::Closed;
+        let _ = data.status.fire(SessionLifecycleEvent::Resolve);
         owner.fence();
         drop(data);
         self.notify();

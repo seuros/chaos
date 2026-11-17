@@ -112,7 +112,7 @@ async fn turn_http_contract_is_retry_safe_and_controls_bypass_busy_execution_cap
     let (_home, state) = fixture(1024).await;
     let manager = state.sessions.as_ref().unwrap();
     let (session, mut commands) = manager.reserve(None).unwrap();
-    session.data.lock().unwrap().status = SessionStatus::Idle;
+    session.data.lock().unwrap().status = SessionLifecycleState::Idle;
     let turn_id = Uuid::new_v4().to_string();
     let path = format!("/api/sessions/{}/turns/{turn_id}", session.id);
     let submit = |text| request("POST", &path, Some(&manager.daemon_id), Body::from(text));
@@ -235,7 +235,7 @@ async fn event_sse_replays_a_cursor_and_closes_after_session_shutdown() {
             ),
         });
     }
-    session.data.lock().unwrap().status = SessionStatus::Closed;
+    session.data.lock().unwrap().status = SessionLifecycleState::Closed;
     let mut value = request(
         "GET",
         &format!("/api/sessions/{}/events", session.id),
@@ -275,7 +275,7 @@ async fn daemon_shutdown_closes_unknown_streams_without_claiming_containment() {
     let (_home, state) = fixture(1024).await;
     let manager = state.sessions.as_ref().unwrap();
     let (session, _commands) = manager.reserve(None).unwrap();
-    session.data.lock().unwrap().status = SessionStatus::Unknown;
+    session.data.lock().unwrap().status = SessionLifecycleState::Unknown;
     manager.shutdown.send_replace(true);
     let mut value = request(
         "GET",
@@ -311,7 +311,7 @@ async fn notice_ids_share_one_url_safe_alphabet_on_post_and_delete() {
     let (_home, state) = fixture(1024).await;
     let manager = state.sessions.as_ref().unwrap();
     let (session, mut commands) = manager.reserve(None).unwrap();
-    session.data.lock().unwrap().status = SessionStatus::Idle;
+    session.data.lock().unwrap().status = SessionLifecycleState::Idle;
     let turn_id = Uuid::new_v4().to_string();
     let path = format!("/api/sessions/{}/turns/{turn_id}", session.id);
     let value = send(

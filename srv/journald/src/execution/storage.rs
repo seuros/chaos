@@ -1,11 +1,14 @@
 use std::time::Duration;
 
+use chaos_ipc::execution::{
+    SessionLifecycleEvent, SessionLifecycleState, TurnLifecycleEvent, TurnLifecycleState,
+};
 use lease_machines::Refusal;
 
 use super::{
     ExecutionLease, ExecutionRequest, ExecutionResolutionRecord, ExecutionResponse,
-    ExecutionSession, ExecutionSessionState, ExecutionTurn, ExecutionTurnState,
-    MAX_EXECUTION_TURNS, conflict, decode, decode_state, invalid, parse_uuid,
+    ExecutionSession, ExecutionTurn, MAX_EXECUTION_TURNS, conflict, decode, decode_session_state,
+    decode_state, invalid, ledger_state, parse_uuid,
 };
 use crate::JournalError;
 use crate::lease_policy::{LeaseRow, ResourceLease, column, epoch_millis, signed};
@@ -69,7 +72,7 @@ pub(super) fn session(row: &SessionRow) -> Result<ExecutionSession, JournalError
                 })
             })
             .transpose()?,
-        state: decode_state(row.3.clone())?,
+        state: decode_session_state(row.3.clone())?,
         active_turn_id: row.4.clone().map(parse_uuid).transpose()?,
         turn_count: u64::try_from(row.8).map_err(|_| invalid("negative execution turn count"))?,
         recovery_epoch: u64::try_from(row.9)
@@ -144,6 +147,42 @@ pub(super) fn check_lease(
 
 fn not_found() -> JournalError {
     JournalError::ExecutionNotFound
+}
+
+macro_rules! guarded {
+    ($query:expr, $tx:expr) => {
+        if $query.execute(&mut *$tx).await?.rows_affected() != 1 {
+            return Err(conflict("execution state changed concurrently"));
+        }
+    };
+}
+
+macro_rules! lose_active_turn {
+    ($tx:expr, $id:expr, $turn_id:expr) => {{
+        let mut active = turn(
+            sqlx::query_as::<_, TurnRow>(SELECT_TURN)
+                .bind($id)
+                .bind($turn_id.to_string())
+                .fetch_one(&mut *$tx)
+                .await?,
+        )?;
+        let from = active.state;
+        active
+            .state
+            .fire(TurnLifecycleEvent::Lose)
+            .map_err(|_| conflict("execution turn is not active"))?;
+        guarded!(
+            sqlx::query(
+                "UPDATE execution_turns SET state = $1
+                 WHERE session_id = $2 AND turn_id = $3 AND state = $4",
+            )
+            .bind(active.state.as_str())
+            .bind($id)
+            .bind($turn_id.to_string())
+            .bind(from.as_str()),
+            $tx
+        );
+    }};
 }
 
 fn unique_error(error: sqlx::Error, message: &str) -> JournalError {
@@ -282,16 +321,20 @@ macro_rules! impl_storage {
                     if binding != claim_policy {
                         return Err(conflict("execution scope policy does not match"));
                     }
+                    let mut born = SessionLifecycleState::default();
+                    born.fire(SessionLifecycleEvent::Ready)
+                        .map_err(|_| invalid("a new execution session cannot become idle"))?;
                     // ON CONFLICT waits for a competing creator on PostgreSQL.
                     // Lease acquisition still happens only under the row lock.
                     sqlx::query(
                         "INSERT INTO execution_sessions
                          (session_id, scope, state, owner_id, expires_at_ms)
-                         VALUES ($1, $2, 'idle', '', 0)
+                         VALUES ($1, $2, $3, '', 0)
                          ON CONFLICT(session_id) DO NOTHING",
                     )
                     .bind(&id)
                     .bind(scope)
+                    .bind(ledger_state(born)?)
                     .execute(&mut *tx)
                     .await?;
                 }
@@ -322,17 +365,12 @@ macro_rules! impl_storage {
                             }
                             Ok(granted) => {
                                 let expires = epoch_millis(granted.expires_at())?;
+                                let mut state = current.state;
                                 if let Some(turn_id) = current.active_turn_id {
                                     super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
-                                    sqlx::query(
-                                        "UPDATE execution_turns SET state = 'unknown'
-                                         WHERE session_id = $1 AND turn_id = $2",
-                                    )
-                                    .bind(&id)
-                                    .bind(turn_id.to_string())
-                                    .execute(&mut *tx)
-                                    .await?;
-                                    row.3 = "unknown".into();
+                                    lose_active_turn!(tx, &id, turn_id);
+                                    state.fire(SessionLifecycleEvent::Lose)
+                                        .map_err(|_| conflict("execution turn is not active"))?;
                                 }
                                 // An expired owner may have launched autonomous
                                 // work even without an HTTP turn. Only an orderly
@@ -340,28 +378,31 @@ macro_rules! impl_storage {
                                 // idle handoff safe without explicit containment.
                                 if row.7 != 0
                                     && current.process_id.is_some()
-                                    && current.state == ExecutionSessionState::Idle
+                                    && state == SessionLifecycleState::Idle
                                 {
-                                    row.3 = "unknown".into();
+                                    state.fire(SessionLifecycleEvent::Lose)
+                                        .map_err(|_| {
+                                            conflict("idle execution cannot be quarantined")
+                                        })?;
                                 }
-                                if row.3 == "unknown" {
+                                if state == SessionLifecycleState::Unknown {
                                     row.9 = next_epoch(&row)?;
                                 }
                                 let token = signed(&id, "lease_token", granted.token().raw())?;
-                                sqlx::query(
+                                guarded!(sqlx::query(
                                     "UPDATE execution_sessions SET owner_id = $1, lease_token = $2,
                                      last_issued = $2, expires_at_ms = $3, state = $4,
                                      recovery_epoch = $5
-                                     WHERE session_id = $6",
+                                     WHERE session_id = $6 AND state = $7",
                                 )
                                 .bind(&owner_id)
                                 .bind(token)
                                 .bind(expires)
-                                .bind(&row.3)
+                                .bind(ledger_state(state)?)
                                 .bind(row.9)
                                 .bind(&id)
-                                .execute(&mut *tx)
-                                .await?;
+                                .bind(ledger_state(current.state)?), tx);
+                                row.3 = ledger_state(state)?.into();
                                 row.5 = owner_id;
                                 row.6 = Some(token);
                                 row.7 = expires;
@@ -422,8 +463,8 @@ macro_rules! impl_storage {
                                 return Err(conflict("execution process mapping is immutable"));
                             }
                         } else {
-                            if current.state != ExecutionSessionState::Idle
-                                && !(current.state == ExecutionSessionState::Unknown
+                            if current.state != SessionLifecycleState::Idle
+                                && !(current.state == SessionLifecycleState::Unknown
                                     && current.active_turn_id.is_none())
                             {
                                 return Err(conflict("only an idle or quarantined startup can bind a process"));
@@ -453,9 +494,17 @@ macro_rules! impl_storage {
                             }
                             ExecutionResponse::Accepted { turn: previous, newly_accepted: false }
                         } else {
-                            if current.state != ExecutionSessionState::Idle || current.process_id.is_none() {
+                            let mut state = current.state;
+                            if current.process_id.is_none() {
                                 return Err(conflict("execution session is not idle with a bound process"));
                             }
+                            state.fire(SessionLifecycleEvent::Busy)
+                                .map_err(|_| {
+                                    conflict("execution session is not idle with a bound process")
+                                })?;
+                            let mut accepted = TurnLifecycleState::default();
+                            accepted.fire(TurnLifecycleEvent::Accept)
+                                .map_err(|_| invalid("a new execution turn cannot be accepted"))?;
                             let count: i64 = sqlx::query_scalar(
                                 "SELECT COUNT(*) FROM execution_turns WHERE session_id = $1",
                             )
@@ -467,32 +516,40 @@ macro_rules! impl_storage {
                             }
                             sqlx::query(
                                 "INSERT INTO execution_turns (session_id, turn_id, fingerprint, state, accounting_enabled, accounting_coverage)
-                                 VALUES ($1, $2, $3, 'accepted', $4, $5)",
+                                 VALUES ($1, $2, $3, $4, $5, $6)",
                             )
                             .bind(&id)
                             .bind(turn_id.to_string())
                             .bind(&fingerprint)
+                            .bind(accepted.as_str())
                             .bind(i32::from(metered))
                             .bind(if metered { "root_and_descendant_logical_sampling_and_compaction" } else { "unmetered" })
                             .execute(&mut *tx)
                             .await?;
-                            sqlx::query(
-                                "UPDATE execution_sessions SET state = 'active', active_turn_id = $1
-                                 WHERE session_id = $2",
+                            guarded!(sqlx::query(
+                                "UPDATE execution_sessions SET state = $1, active_turn_id = $2
+                                 WHERE session_id = $3 AND state = $4",
                             )
+                            .bind(ledger_state(state)?)
                             .bind(turn_id.to_string())
                             .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
+                            .bind(ledger_state(current.state)?), tx);
                             ExecutionResponse::Accepted {
-                                turn: ExecutionTurn { turn_id, fingerprint, state: ExecutionTurnState::Accepted, outcome: None },
+                                turn: ExecutionTurn {
+                                    turn_id,
+                                    fingerprint,
+                                    state: accepted,
+                                    outcome: None,
+                                },
                                 newly_accepted: true,
                             }
                         }
                     }
                     ExecutionRequest::Dispatch { lease: expected, turn_id } => {
                         check_lease(&row, &expected, now)?;
-                        if current.state != ExecutionSessionState::Active || current.active_turn_id != Some(turn_id) {
+                        if current.state != SessionLifecycleState::Running
+                            || current.active_turn_id != Some(turn_id)
+                        {
                             return Err(conflict("execution turn is not active"));
                         }
                         let previous = sqlx::query_as::<_, TurnRow>(SELECT_TURN)
@@ -501,20 +558,19 @@ macro_rules! impl_storage {
                             .fetch_one(&mut *tx)
                             .await?;
                         let mut previous = turn(previous)?;
-                        let newly_dispatched = match previous.state {
-                            ExecutionTurnState::Accepted => true,
-                            ExecutionTurnState::Running => false,
-                            _ => return Err(conflict("execution turn cannot be dispatched")),
-                        };
+                        let newly_dispatched = previous.state != TurnLifecycleState::Running;
                         if newly_dispatched {
-                            sqlx::query(
-                                "UPDATE execution_turns SET state = 'running' WHERE session_id = $1 AND turn_id = $2",
+                            let from = previous.state;
+                            previous.state.fire(TurnLifecycleEvent::Start)
+                                .map_err(|_| conflict("execution turn cannot be dispatched"))?;
+                            guarded!(sqlx::query(
+                                "UPDATE execution_turns SET state = $1
+                                 WHERE session_id = $2 AND turn_id = $3 AND state = $4",
                             )
+                            .bind(previous.state.as_str())
                             .bind(&id)
                             .bind(turn_id.to_string())
-                            .execute(&mut *tx)
-                            .await?;
-                            previous.state = ExecutionTurnState::Running;
+                            .bind(from.as_str()), tx);
                         }
                         ExecutionResponse::Dispatched { turn: previous, newly_dispatched }
                     }
@@ -527,7 +583,7 @@ macro_rules! impl_storage {
                             .await?
                             .ok_or_else(not_found)?;
                         let mut previous = turn(previous)?;
-                        if previous.state.is_terminal() {
+                        if previous.state.is_final() {
                             if previous.state != state || previous.outcome != outcome {
                                 return Err(conflict("execution terminal outcome is immutable"));
                             }
@@ -535,37 +591,44 @@ macro_rules! impl_storage {
                             if current.active_turn_id != Some(turn_id) {
                                 return Err(conflict("execution turn is not active"));
                             }
-                            if previous.state == ExecutionTurnState::Accepted
-                                && matches!(state, ExecutionTurnState::Completed | ExecutionTurnState::Failed)
-                            {
-                                return Err(conflict("undispatched execution cannot complete"));
-                            }
+                            let from = previous.state;
+                            previous.state.conclude(state)
+                                .map_err(|_| conflict("undispatched execution cannot complete"))?;
+                            let mut session_state = current.state;
+                            session_state.fire(if !state.is_final() {
+                                SessionLifecycleEvent::Lose
+                            } else if session_state == SessionLifecycleState::Unknown {
+                                SessionLifecycleEvent::Reconcile
+                            } else {
+                                SessionLifecycleEvent::Settle
+                            }).map_err(|_| conflict("execution turn is not active"))?;
                             let outcome_json = outcome.as_ref().map(serde_json::to_string).transpose()
                                 .map_err(|source| JournalError::Serialize { field: "execution outcome", source })?;
-                            sqlx::query(
+                            guarded!(sqlx::query(
                                 "UPDATE execution_turns SET state = $1, outcome_json = $2
-                                 WHERE session_id = $3 AND turn_id = $4",
+                                 WHERE session_id = $3 AND turn_id = $4 AND state = $5",
                             )
-                            .bind(state.as_str())
+                            .bind(previous.state.as_str())
                             .bind(outcome_json)
                             .bind(&id)
                             .bind(turn_id.to_string())
-                            .execute(&mut *tx)
-                            .await?;
-                            sqlx::query(
+                            .bind(from.as_str()), tx);
+                            guarded!(sqlx::query(
                                 "UPDATE execution_sessions SET state = $1, active_turn_id = $2,
-                                 recovery_epoch = $3 WHERE session_id = $4",
+                                 recovery_epoch = $3 WHERE session_id = $4 AND state = $5",
                             )
-                            .bind(if state.is_terminal() { "idle" } else { "unknown" })
-                            .bind(if state.is_terminal() { None } else { Some(turn_id.to_string()) })
-                            .bind(if state == ExecutionTurnState::Unknown { next_epoch(&row)? } else { row.9 })
+                            .bind(ledger_state(session_state)?)
+                            .bind(if state.is_final() { None } else { Some(turn_id.to_string()) })
+                            .bind(if state == TurnLifecycleState::Unknown {
+                                next_epoch(&row)?
+                            } else {
+                                row.9
+                            })
                             .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
-                            previous.state = state;
+                            .bind(ledger_state(current.state)?), tx);
                             previous.outcome = outcome;
                             super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
-                            if state.is_terminal() {
+                            if state.is_final() {
                                 super::outbox::enqueue!(tx, &current, Some(previous.clone()), None, now);
                             }
                         }
@@ -573,50 +636,65 @@ macro_rules! impl_storage {
                     }
                     ExecutionRequest::Quarantine { lease: expected } => {
                         check_lease(&row, &expected, now)?;
-                        if current.state == ExecutionSessionState::Closed {
-                            return Err(conflict("closed execution cannot be quarantined"));
-                        }
+                        let mut state = current.state;
+                        state.fire(SessionLifecycleEvent::Lose)
+                            .map_err(|_| conflict("closed execution cannot be quarantined"))?;
                         if let Some(turn_id) = current.active_turn_id {
                             super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
-                            sqlx::query(
-                                "UPDATE execution_turns SET state = 'unknown' WHERE session_id = $1 AND turn_id = $2",
-                            )
-                            .bind(&id)
-                            .bind(turn_id.to_string())
-                            .execute(&mut *tx)
-                            .await?;
+                            lose_active_turn!(tx, &id, turn_id);
                         }
                         row.9 = next_epoch(&row)?;
-                        sqlx::query("UPDATE execution_sessions SET state = 'unknown', recovery_epoch = $1 WHERE session_id = $2")
-                            .bind(row.9)
-                            .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
-                        row.3 = "unknown".into();
+                        guarded!(sqlx::query(
+                            "UPDATE execution_sessions SET state = $1, recovery_epoch = $2
+                             WHERE session_id = $3 AND state = $4",
+                        )
+                        .bind(ledger_state(state)?)
+                        .bind(row.9)
+                        .bind(&id)
+                        .bind(ledger_state(current.state)?), tx);
+                        row.3 = ledger_state(state)?.into();
                         ExecutionResponse::Session(session(&row)?)
                     }
                     ExecutionRequest::ReconcileIdle { lease: expected } => {
                         check_lease(&row, &expected, now)?;
-                        if current.state != ExecutionSessionState::Unknown || current.active_turn_id.is_some() {
-                            return Err(conflict("only an unknown session without an active turn can reconcile idle"));
+                        let refused = || {
+                            conflict(
+                                "only an unknown session without an active turn can reconcile idle",
+                            )
+                        };
+                        if current.active_turn_id.is_some() {
+                            return Err(refused());
                         }
-                        sqlx::query("UPDATE execution_sessions SET state = 'idle' WHERE session_id = $1")
-                            .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
-                        row.3 = "idle".into();
+                        let mut state = current.state;
+                        state.fire(SessionLifecycleEvent::Reconcile).map_err(|_| refused())?;
+                        guarded!(sqlx::query(
+                            "UPDATE execution_sessions SET state = $1
+                             WHERE session_id = $2 AND state = $3",
+                        )
+                        .bind(ledger_state(state)?)
+                        .bind(&id)
+                        .bind(ledger_state(current.state)?), tx);
+                        row.3 = ledger_state(state)?.into();
                         ExecutionResponse::Session(session(&row)?)
                     }
                     ExecutionRequest::Close { lease: expected } => {
                         check_lease(&row, &expected, now)?;
-                        if current.active_turn_id.is_some() || current.state == ExecutionSessionState::Unknown {
+                        if current.active_turn_id.is_some() {
                             return Err(conflict("unfinished execution cannot be closed"));
                         }
-                        sqlx::query("UPDATE execution_sessions SET state = 'closed' WHERE session_id = $1")
+                        if !current.state.is_final() {
+                            let mut state = current.state;
+                            state.fire(SessionLifecycleEvent::Shut)
+                                .map_err(|_| conflict("unfinished execution cannot be closed"))?;
+                            guarded!(sqlx::query(
+                                "UPDATE execution_sessions SET state = $1
+                                 WHERE session_id = $2 AND state = $3",
+                            )
+                            .bind(ledger_state(state)?)
                             .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
-                        row.3 = "closed".into();
+                            .bind(ledger_state(current.state)?), tx);
+                            row.3 = ledger_state(state)?.into();
+                        }
                         ExecutionResponse::Session(session(&row)?)
                     }
                     ExecutionRequest::Release { lease: expected } => {
@@ -626,7 +704,9 @@ macro_rules! impl_storage {
                         if released.is_err() {
                             return Err(fenced());
                         }
-                        if current.active_turn_id.is_some() || current.state == ExecutionSessionState::Unknown {
+                        if current.active_turn_id.is_some()
+                            || current.state == SessionLifecycleState::Unknown
+                        {
                             return Err(conflict("unfinished execution cannot release ownership"));
                         }
                         sqlx::query("UPDATE execution_sessions SET expires_at_ms = 0, lease_token = NULL WHERE session_id = $1")
@@ -650,31 +730,47 @@ macro_rules! impl_storage {
                             ExecutionResponse::Resolved(previous)
                         } else {
                             check_lease(&row, &expected, now)?;
-                            if current.state != ExecutionSessionState::Unknown
-                                || current.process_id != requested.expected_process_id
+                            let retargeted =
+                                || conflict("resolution target changed or is not quarantined");
+                            if current.process_id != requested.expected_process_id
                                 || current.active_turn_id != requested.expected_turn_id
                                 || current.recovery_epoch != requested.expected_recovery_epoch
                             {
-                                return Err(conflict("resolution target changed or is not quarantined"));
+                                return Err(retargeted());
                             }
+                            let mut state = current.state;
+                            state.fire(SessionLifecycleEvent::Resolve).map_err(|_| retargeted())?;
                             if let Some(turn_id) = current.active_turn_id {
                                 super::invocations::fence_invocations!(tx, &id, turn_id.to_string(), now);
+                                let quarantined = || conflict("resolution turn is not quarantined");
+                                let mut resolved = turn(sqlx::query_as::<_, TurnRow>(SELECT_TURN)
+                                    .bind(&id)
+                                    .bind(turn_id.to_string())
+                                    .fetch_one(&mut *tx)
+                                    .await?)?;
+                                if resolved.state != TurnLifecycleState::Unknown {
+                                    return Err(quarantined());
+                                }
+                                resolved.state.conclude(TurnLifecycleState::Interrupted)
+                                    .map_err(|_| quarantined())?;
                                 let outcome = requested.outcome.as_ref()
                                     .map(serde_json::to_string).transpose()
                                     .map_err(|source| JournalError::Serialize {
                                         field: "execution resolution outcome", source
                                     })?;
                                 let changed = sqlx::query(
-                                    "UPDATE execution_turns SET state = 'interrupted', outcome_json = $1
-                                     WHERE session_id = $2 AND turn_id = $3 AND state = 'unknown'",
+                                    "UPDATE execution_turns SET state = $1, outcome_json = $2
+                                     WHERE session_id = $3 AND turn_id = $4 AND state = $5",
                                 )
+                                .bind(resolved.state.as_str())
                                 .bind(outcome)
                                 .bind(&id)
                                 .bind(turn_id.to_string())
+                                .bind(TurnLifecycleState::Unknown.as_str())
                                 .execute(&mut *tx)
                                 .await?;
                                 if changed.rows_affected() != 1 {
-                                    return Err(conflict("resolution turn is not quarantined"));
+                                    return Err(quarantined());
                                 }
                             }
                             let resolved_turn = if let Some(turn_id) = current.active_turn_id {
@@ -682,13 +778,14 @@ macro_rules! impl_storage {
                                     .bind(&id).bind(turn_id.to_string()).fetch_one(&mut *tx).await?)?)
                             } else { None };
                             super::outbox::enqueue!(tx, &current, resolved_turn, Some(requested.resolution_id), now);
-                            sqlx::query(
-                                "UPDATE execution_sessions SET state = 'closed',
-                                 active_turn_id = NULL, expires_at_ms = 0 WHERE session_id = $1",
+                            guarded!(sqlx::query(
+                                "UPDATE execution_sessions SET state = $1,
+                                 active_turn_id = NULL, expires_at_ms = 0
+                                 WHERE session_id = $2 AND state = $3",
                             )
+                            .bind(ledger_state(state)?)
                             .bind(&id)
-                            .execute(&mut *tx)
-                            .await?;
+                            .bind(ledger_state(current.state)?), tx);
                             let request_json = serde_json::to_string(&requested)
                                 .map_err(|source| JournalError::Serialize {
                                     field: "execution resolution", source

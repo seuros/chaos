@@ -5,7 +5,7 @@ use std::time::Duration;
 use rama::futures::async_stream::stream_fn;
 use rama::http::{Body, HeaderValue, Response};
 
-use super::{Session, SessionStatus};
+use super::Session;
 
 pub(super) fn response(
     session: Arc<Session>,
@@ -50,11 +50,7 @@ pub(super) fn response(
             cursor = batch.next_cursor;
             let snapshot = session.snapshot();
             let shutting_down = *shutdown.borrow_and_update();
-            let terminal = shutting_down
-                || matches!(
-                    snapshot.status,
-                    SessionStatus::Closed | SessionStatus::Failed
-                );
+            let terminal = shutting_down || snapshot.status.is_final();
             yielder
                 .yield_item(Ok(format!(
                     "event: session\ndata: {}\n\n",

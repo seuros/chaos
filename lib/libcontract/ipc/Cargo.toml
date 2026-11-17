@@ -21,6 +21,7 @@ icu_provider = { workspace = true, features = ["sync"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+state-machines = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 sys-locale = { workspace = true }

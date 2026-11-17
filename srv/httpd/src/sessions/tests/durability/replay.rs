@@ -18,7 +18,7 @@ async fn lost_writer_cannot_publish_a_terminal_event_or_release_capacity() {
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     assert_eq!(fixture.session.snapshot().last_event_id, 0);
     assert!(fixture.session.turn(&id).unwrap().result.is_none());
     assert!(
@@ -60,7 +60,7 @@ async fn terminal_event_is_not_exposed_before_replay_commit_or_used_as_completio
         operation(&mut supervisor).await,
         Operation::Shutdown
     ));
-    status(&fixture.session, SessionStatus::Unknown).await;
+    status(&fixture.session, SessionLifecycleState::Unknown).await;
     let batch = fixture.session.read_events(0).await.unwrap();
     assert_eq!(batch.events.len(), 1);
     assert!(batch.durable);
@@ -83,7 +83,7 @@ async fn terminal_event_is_not_exposed_before_replay_commit_or_used_as_completio
     );
     let restored = manager.get(&fixture.session.id).unwrap();
     assert_eq!(restored.read_events(0).await.unwrap().events[0].sequence, 1);
-    assert_eq!(restored.snapshot().status, SessionStatus::Unknown);
+    assert_eq!(restored.snapshot().status, SessionLifecycleState::Unknown);
     assert_eq!(capacity.available_permits(), 0);
     fixture.db.close().await;
 }
@@ -109,6 +109,16 @@ async fn bounded_replay_survives_takeover_and_sse_cannot_fall_back_to_memory() {
     let byte_limited = fixture.session.read_events(0).await.unwrap();
     assert!(byte_limited.gap);
     assert!(byte_limited.events.len() < 20);
+    let floor = byte_limited.events[0].sequence;
+    assert!(!fixture.session.read_events(floor - 1).await.unwrap().gap);
+    assert!(fixture.session.read_events(floor - 2).await.unwrap().gap);
+    assert!(
+        fixture
+            .session
+            .read_events(byte_limited.next_cursor + 1)
+            .await
+            .is_err()
+    );
     for _ in 0..270 {
         fixture
             .session
@@ -144,7 +154,6 @@ async fn bounded_replay_survives_takeover_and_sse_cannot_fall_back_to_memory() {
     {
         let mut data = fixture.session.data.lock().unwrap();
         data.events.clear();
-        data.replay_bytes = 0;
     }
     assert_eq!(
         fixture.session.read_events(0).await.unwrap().events.len(),
@@ -170,6 +179,20 @@ async fn bounded_replay_survives_takeover_and_sse_cannot_fall_back_to_memory() {
         "daemon_restart_unobserved_events_possible"
     );
     assert!(restored.read_events(after.next_cursor + 1).await.is_err());
+    {
+        let data = restored.data.lock().unwrap();
+        assert_eq!(data.window.next_offset(), after.next_cursor + 1);
+        assert_eq!(data.events.front().unwrap().sequence, data.window.floor());
+        assert_eq!(data.events.len(), data.window.len());
+    }
+    assert_eq!(
+        restored.events(after.next_cursor - 1).unwrap().gap,
+        restored
+            .read_events(after.next_cursor - 1)
+            .await
+            .unwrap()
+            .gap
+    );
     assert_eq!(
         capacity.available_permits(),
         0,

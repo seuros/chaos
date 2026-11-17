@@ -7,14 +7,19 @@ mod stream;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::num::NonZeroU64;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 use chaos_ipc::ProcessId;
+use chaos_ipc::execution::{
+    SessionLifecycleEvent, SessionLifecycleState, TurnLifecycleEvent, TurnLifecycleState,
+};
 use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::{Event, EventMsg};
 use chaos_snitch::tracing::warn;
 use dedup_machines::{Claim, HashDedup, Refusal};
+use journal_machines::{Coverage, ReplayWindow};
 use rama::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -28,7 +33,7 @@ const MAX_TURNS: usize = 256;
 const TURN_RETENTION: Duration = Duration::from_secs(u32::MAX as u64);
 const MAX_EVENTS: usize = 256;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
-const MAX_REPLAY_BYTES: usize = 1024 * 1024;
+const MAX_REPLAY_BYTES: NonZeroU64 = NonZeroU64::new(1024 * 1024).expect("nonzero budget");
 const MAX_RESULT_BYTES: usize = 16 * 1024;
 const CLEANUP_GRACE: Duration = Duration::from_secs(30);
 
@@ -80,9 +85,7 @@ impl SessionManager {
         if let Some(resume) = &resume {
             for session in sessions.values() {
                 let data = session.data.lock().unwrap();
-                if data.process_id.as_ref() == Some(resume)
-                    && !matches!(data.status, SessionStatus::Closed | SessionStatus::Failed)
-                {
+                if data.process_id.as_ref() == Some(resume) && !data.status.is_final() {
                     return Err(ApiError::conflict(
                         "process is already owned by a retained session",
                     ));
@@ -145,7 +148,7 @@ impl SessionManager {
             .get(id)
             .ok_or(ApiError::new(StatusCode::NOT_FOUND, "session not found"))?;
         let data = session.data.lock().unwrap();
-        if !matches!(data.status, SessionStatus::Closed | SessionStatus::Failed) {
+        if !data.status.is_final() {
             return Err(ApiError::conflict("session has not stopped"));
         }
         drop(data);
@@ -161,11 +164,10 @@ impl SessionManager {
             if session.ledger.get().is_some() {
                 let mut data = session.data.lock().unwrap();
                 if session.commands.is_closed()
-                    || matches!(data.status, SessionStatus::Closed | SessionStatus::Failed)
+                    || data.status.fire(SessionLifecycleEvent::Close).is_err()
                 {
                     continue;
                 }
-                data.status = SessionStatus::Closing;
                 drop(data);
                 let _ = session.commands.try_send(Command::Suspend);
             } else {
@@ -253,37 +255,10 @@ pub(crate) struct NoticeRequest {
     pub expires_at: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum SessionStatus {
-    Starting,
-    Idle,
-    Running,
-    Closing,
-    Closed,
-    Failed,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum TurnStatus {
-    Persisting,
-    Accepted,
-    Running,
-    Completed,
-    Failed,
-    WaitingBackground,
-    Interrupting,
-    Interrupted,
-    TimedOut,
-    Unknown,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SessionSnapshot {
     pub session_id: String,
-    status: SessionStatus,
+    status: SessionLifecycleState,
     process_id: Option<String>,
     active_turn_id: Option<String>,
     last_event_id: u64,
@@ -292,7 +267,7 @@ pub(crate) struct SessionSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct TurnSnapshot {
     pub turn_id: String,
-    status: TurnStatus,
+    status: TurnLifecycleState,
     result: Option<String>,
     result_truncated: bool,
     error: Option<String>,
@@ -310,7 +285,7 @@ struct TurnRecord {
 struct ActiveTurn {
     id: String,
     deadline: Instant,
-    completion_outcome: Option<TurnStatus>,
+    completion_outcome: Option<TurnLifecycleState>,
     // Held until a matching terminal event or confirmed session shutdown.
     _permit: OwnedSemaphorePermit,
 }
@@ -327,14 +302,13 @@ pub(crate) struct Session {
 }
 
 struct SessionData {
-    status: SessionStatus,
+    status: SessionLifecycleState,
     process_id: Option<String>,
     turns: BTreeMap<String, TurnRecord>,
     claims: HashDedup<String, ()>,
     active: Option<ActiveTurn>,
     events: VecDeque<ReplayEvent>,
-    replay_bytes: usize,
-    sequence: u64,
+    window: Window,
     // Recovered unknown work may have no HTTP turn but still reserves capacity.
     orphan_permit: Option<OwnedSemaphorePermit>,
 }
@@ -343,8 +317,37 @@ struct SessionData {
 struct ReplayEvent {
     sequence: u64,
     event: serde_json::Value,
-    #[serde(skip)]
-    bytes: usize,
+}
+
+type Window = ReplayWindow<MAX_EVENTS>;
+
+impl EventBatch {
+    fn read<'a>(
+        window: &Window,
+        events: impl IntoIterator<Item = &'a ReplayEvent>,
+        after: u64,
+        durable: bool,
+    ) -> Result<Self, ApiError> {
+        let coverage = after
+            .checked_add(1)
+            .map_or(Coverage::Ahead, |cursor| window.coverage(cursor));
+        if coverage == Coverage::Ahead {
+            return Err(ApiError::bad_request(
+                "event cursor is ahead of this session",
+            ));
+        }
+        Ok(Self {
+            events: events
+                .into_iter()
+                .filter(|event| event.sequence > after)
+                .cloned()
+                .collect(),
+            gap: matches!(coverage, Coverage::Behind { .. }),
+            next_cursor: window.next_offset() - 1,
+            observation_only: true,
+            durable,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -451,7 +454,7 @@ impl Session {
             status: data.status,
             process_id: data.process_id.clone(),
             active_turn_id: data.active.as_ref().map(|turn| turn.id.clone()),
-            last_event_id: data.sequence,
+            last_event_id: data.window.next_offset() - 1,
         }
     }
 
@@ -472,6 +475,10 @@ impl Session {
     ) -> Result<TurnSnapshot, ApiError> {
         request.validate()?;
         let fingerprint = fingerprint(&request);
+        let mut accepted = TurnLifecycleState::default();
+        accepted.fire(TurnLifecycleEvent::Accept).map_err(|_| {
+            ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "turn ledger unavailable")
+        })?;
         let mut data = self.lock_data()?;
         // Test retry identity BEFORE admission: retries don't consume capacity,
         // even after the session has closed.
@@ -504,8 +511,8 @@ impl Session {
                 ));
             }
         };
-        let permit = match self.reserve_execution(&data, semaphore, &id) {
-            Ok(permit) => permit,
+        let (permit, status) = match self.reserve_execution(&data, semaphore, &id) {
+            Ok(reserved) => reserved,
             Err(error) => {
                 if let Err(refusal) = data.claims.abandon(claim) {
                     warn!(turn_id = %id, %refusal, "turn claim was not released");
@@ -515,7 +522,7 @@ impl Session {
         };
         let snapshot = TurnSnapshot {
             turn_id: id.clone(),
-            status: TurnStatus::Accepted,
+            status: accepted,
             result: None,
             result_truncated: false,
             error: None,
@@ -535,7 +542,7 @@ impl Session {
             completion_outcome: None,
             _permit: permit,
         });
-        data.status = SessionStatus::Running;
+        data.status = status;
         drop(data);
         self.notify();
         Ok(snapshot)
@@ -546,10 +553,8 @@ impl Session {
         data: &SessionData,
         semaphore: &Arc<Semaphore>,
         id: &str,
-    ) -> Result<OwnedSemaphorePermit, ApiError> {
-        if data.status != SessionStatus::Idle || data.active.is_some() {
-            return Err(ApiError::conflict("session is not idle"));
-        }
+    ) -> Result<(OwnedSemaphorePermit, SessionLifecycleState), ApiError> {
+        let status = data.admission()?;
         let permit = semaphore
             .clone()
             .try_acquire_owned()
@@ -557,7 +562,7 @@ impl Session {
         self.commands
             .try_send(Command::Turn(id.to_owned()))
             .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
-        Ok(permit)
+        Ok((permit, status))
     }
 
     async fn steer(&self, id: String, text: String) -> Result<(), ApiError> {
@@ -635,7 +640,11 @@ impl Session {
                 "active turn record unavailable",
             )
         })?;
-        if turn.snapshot.status != TurnStatus::Interrupting {
+        if turn.snapshot.status != TurnLifecycleState::Interrupting {
+            let mut status = turn.snapshot.status;
+            status
+                .fire(TurnLifecycleEvent::Interrupt)
+                .map_err(|_| ApiError::conflict("expected turn is not active"))?;
             // Before the supervisor takes the request, cancellation is local.
             // In durable mode it may still be committing admission; queuing an
             // interrupt then could precede Turn and wake a lazy recovery boot.
@@ -644,7 +653,7 @@ impl Session {
                     .try_send(Command::Interrupt(id.clone()))
                     .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
             }
-            turn.snapshot.status = TurnStatus::Interrupting;
+            turn.snapshot.status = status;
         }
         let snapshot = turn.snapshot.clone();
         drop(data);
@@ -654,12 +663,13 @@ impl Session {
 
     fn close(&self) -> Result<(), ApiError> {
         let mut data = self.lock_data()?;
-        if matches!(
-            data.status,
-            SessionStatus::Closing | SessionStatus::Closed | SessionStatus::Failed
-        ) {
+        if data.status == SessionLifecycleState::Closing || data.status.is_final() {
             return Ok(());
         }
+        let mut status = data.status;
+        status
+            .fire(SessionLifecycleEvent::Close)
+            .map_err(|_| ApiError::conflict("session cannot close"))?;
         if self.commands.is_closed() {
             return Err(ApiError::conflict(
                 "recovered unknown work requires independent containment",
@@ -668,7 +678,7 @@ impl Session {
         self.commands
             .try_send(Command::Close)
             .map_err(|_| ApiError::capacity("session command queue unavailable"))?;
-        data.status = SessionStatus::Closing;
+        data.status = status;
         drop(data);
         self.notify();
         Ok(())
@@ -676,51 +686,51 @@ impl Session {
 
     fn events(&self, after: u64) -> Result<EventBatch, ApiError> {
         let data = self.lock_data()?;
-        if after > data.sequence {
-            return Err(ApiError::bad_request(
-                "event cursor is ahead of this session",
-            ));
-        }
-        let oldest = data.events.front().map(|event| event.sequence);
-        Ok(EventBatch {
-            events: data
-                .events
-                .iter()
-                .filter(|event| event.sequence > after)
-                .cloned()
-                .collect(),
-            gap: oldest.is_some_and(|oldest| after < oldest - 1),
-            next_cursor: data.sequence,
-            observation_only: true,
-            durable: false,
-        })
+        EventBatch::read(&data.window, &data.events, after, false)
     }
 }
 
 impl SessionData {
     fn mark_unknown(&mut self) {
-        self.status = SessionStatus::Unknown;
-        if let Some(id) = self.active.as_ref().map(|active| active.id.as_str()) {
-            self.turns.get_mut(id).unwrap().snapshot.status = TurnStatus::Unknown;
+        if self.status.fire(SessionLifecycleEvent::Lose).is_err() {
+            return;
         }
+        if let Some(id) = self.active.as_ref().map(|active| active.id.as_str())
+            && let Err(refusal) = self
+                .turns
+                .get_mut(id)
+                .unwrap()
+                .snapshot
+                .status
+                .fire(TurnLifecycleEvent::Lose)
+        {
+            warn!(turn_id = %id, %refusal, "turn keeps its committed outcome");
+        }
+    }
+
+    fn admission(&self) -> Result<SessionLifecycleState, ApiError> {
+        let mut status = self.status;
+        if self.active.is_some() || status.fire(SessionLifecycleEvent::Busy).is_err() {
+            return Err(ApiError::conflict("session is not idle"));
+        }
+        Ok(status)
     }
 
     fn new() -> Self {
         Self {
-            status: SessionStatus::Starting,
+            status: SessionLifecycleState::default(),
             process_id: None,
             turns: BTreeMap::new(),
             claims: HashDedup::with_capacity(MAX_TURNS),
             active: None,
             events: VecDeque::new(),
-            replay_bytes: 0,
-            sequence: 0,
+            window: Window::new(Some(MAX_REPLAY_BYTES), 1),
             orphan_permit: None,
         }
     }
 
     fn require_active(&self, id: &str) -> Result<(), ApiError> {
-        if self.status != SessionStatus::Running
+        if self.status != SessionLifecycleState::Running
             || self.active.as_ref().map(|turn| turn.id.as_str()) != Some(id)
         {
             return Err(ApiError::conflict("expected turn is not active"));
@@ -728,22 +738,42 @@ impl SessionData {
         Ok(())
     }
 
-    fn finish_turn(&mut self, id: &str, status: TurnStatus) {
+    fn finish_turn(&mut self, id: &str, outcome: TurnLifecycleState) {
         if self.active.as_ref().map(|turn| turn.id.as_str()) != Some(id) {
             return;
         }
-        self.turns.get_mut(id).unwrap().snapshot.status = status;
-        self.active = None;
-        if self.status == SessionStatus::Running {
-            self.status = SessionStatus::Idle;
+        let status = &mut self.turns.get_mut(id).unwrap().snapshot.status;
+        if let Err(refusal) = status.conclude(outcome) {
+            warn!(turn_id = %id, %refusal, "turn outcome refused; recording it as unknown");
+            let _ = status.fire(TurnLifecycleEvent::Lose);
         }
+        self.settle_turn(id);
+    }
+
+    fn settle_turn(&mut self, id: &str) {
+        if self.active.as_ref().map(|turn| turn.id.as_str()) != Some(id) {
+            return;
+        }
+        self.active = None;
+        let _ = self.status.fire(SessionLifecycleEvent::Settle);
+    }
+
+    fn concluded(&self, id: &str, outcome: TurnLifecycleState) -> Result<TurnSnapshot, ApiError> {
+        let mut snapshot = self.turns[id].snapshot.clone();
+        snapshot.status.conclude(outcome).map_err(|_| {
+            ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "turn outcome refused by its lifecycle",
+            )
+        })?;
+        Ok(snapshot)
     }
 
     fn require_steerable(&self, id: &str) -> Result<(), ApiError> {
         self.require_active(id)?;
         if !matches!(
             self.turns[id].snapshot.status,
-            TurnStatus::Accepted | TurnStatus::Running
+            TurnLifecycleState::Accepted | TurnLifecycleState::Running
         ) {
             return Err(ApiError::conflict("foreground turn is no longer steerable"));
         }
@@ -759,8 +789,8 @@ impl SessionData {
                 let id = active.id.clone();
                 self.finish_turn(&id, outcome);
             }
-        } else if self.status == SessionStatus::Running {
-            self.status = SessionStatus::Idle;
+        } else {
+            let _ = self.status.fire(SessionLifecycleEvent::Settle);
         }
     }
 
@@ -770,9 +800,7 @@ impl SessionData {
             let turn = &mut self.turns.get_mut(&id).unwrap().snapshot;
             match &event.msg {
                 EventMsg::TurnStarted(started) if started.turn_id == id => {
-                    if turn.status == TurnStatus::Accepted {
-                        turn.status = TurnStatus::Running;
-                    }
+                    let _ = turn.status.fire(TurnLifecycleEvent::Start);
                 }
                 EventMsg::TurnComplete(completed) if completed.turn_id == id => {
                     let text = completed.last_agent_message.as_deref().unwrap_or("");
@@ -780,16 +808,16 @@ impl SessionData {
                     turn.result = Some(text);
                     turn.result_truncated = truncated;
                     let status = if turn.error.is_some() {
-                        TurnStatus::Failed
+                        TurnLifecycleState::Failed
                     } else {
-                        TurnStatus::Completed
+                        TurnLifecycleState::Completed
                     };
                     active.completion_outcome = Some(status);
-                    turn.status = TurnStatus::WaitingBackground;
+                    let _ = turn.status.fire(TurnLifecycleEvent::Settle);
                 }
                 EventMsg::TurnAborted(aborted) if aborted.turn_id.as_deref() == Some(&id) => {
-                    active.completion_outcome = Some(TurnStatus::Interrupted);
-                    turn.status = TurnStatus::WaitingBackground;
+                    active.completion_outcome = Some(TurnLifecycleState::Interrupted);
+                    let _ = turn.status.fire(TurnLifecycleEvent::Settle);
                 }
                 EventMsg::Error(_) if event.id == id => {
                     // An error alone is not proof of termination.
@@ -809,20 +837,25 @@ impl SessionData {
             }
         }
         if self.active.is_none() && matches!(event.msg, EventMsg::TurnStarted(_)) {
-            self.status = SessionStatus::Running;
+            let _ = self.status.fire(SessionLifecycleEvent::Busy);
         }
         self.maybe_finish(quiescent);
-        self.sequence += 1;
         let (value, bytes) = replay_value(event);
-        while self.events.len() >= MAX_EVENTS || self.replay_bytes + bytes > MAX_REPLAY_BYTES {
-            self.replay_bytes -= self.events.pop_front().unwrap().bytes;
-        }
-        self.replay_bytes += bytes;
+        let Ok(appended) = self.window.append(bytes as u64) else {
+            warn!("replay sequence exhausted; observation not retained");
+            return;
+        };
         self.events.push_back(ReplayEvent {
-            sequence: self.sequence,
+            sequence: appended.offset(),
             event: value,
-            bytes,
         });
+        while self
+            .events
+            .front()
+            .is_some_and(|event| event.sequence < appended.floor())
+        {
+            self.events.pop_front();
+        }
     }
 }
 

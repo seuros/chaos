@@ -26,20 +26,20 @@ async fn root_completion_waits_for_descendant_quiet_without_a_root_activity_noti
     assert_eq!(fixture.capacity.available_permits(), 0);
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
-        ExecutionTurnState::Running
+        TurnLifecycleState::Running
     );
     assert_ne!(
         fixture.session.turn(&id).unwrap().status,
-        TurnStatus::Completed
+        TurnLifecycleState::Completed
     );
     // Child exit need not change the root activity watch. The supervisor must
     // independently re-confirm the tree, not release from root TurnComplete.
     supervisor.tree_quiet.store(true, Ordering::SeqCst);
-    status(&fixture.session, SessionStatus::Idle).await;
+    status(&fixture.session, SessionLifecycleState::Idle).await;
     assert_eq!(fixture.capacity.available_permits(), 1);
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
-        ExecutionTurnState::Completed
+        TurnLifecycleState::Completed
     );
     fixture.session.close().unwrap();
     assert!(matches!(

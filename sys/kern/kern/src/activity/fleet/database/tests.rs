@@ -108,3 +108,72 @@ async fn a_probed_resident_still_looks_like_it_is_listening() {
         "processes stop forwarding when the probe hides the LISTEN"
     );
 }
+
+fn peer(pid: u32) -> Origin {
+    Origin {
+        kind: OriginKind::Exec,
+        pid,
+        host: "silica".into(),
+    }
+}
+
+fn at(seconds: u64) -> Duration {
+    Duration::from_secs(seconds)
+}
+
+#[test]
+fn a_peer_beating_on_time_stays_present() {
+    let mut presence = Presence::new();
+    let origin = peer(1);
+    assert_eq!(presence.heard(&origin, true, at(0)), Heard::Joined);
+    for beat in 1..=60 {
+        let now = at(beat * 10);
+        assert_eq!(presence.heard(&origin, true, now), Heard::Present);
+        assert!(presence.sweep(now + at(9)).is_empty());
+    }
+}
+
+#[test]
+fn a_peer_that_falls_silent_leaves() {
+    let mut presence = Presence::new();
+    let origin = peer(2);
+    for beat in 0..=10 {
+        presence.heard(&origin, true, at(beat * 10));
+    }
+    assert!(presence.sweep(at(115)).is_empty());
+    assert_eq!(presence.sweep(at(140)), vec![origin.clone()]);
+    assert!(presence.sweep(at(150)).is_empty());
+    assert_eq!(presence.heard(&origin, true, at(160)), Heard::Joined);
+}
+
+#[test]
+fn a_peer_heard_once_leaves_after_the_silence() {
+    let mut presence = Presence::new();
+    let origin = peer(3);
+    assert_eq!(presence.heard(&origin, true, at(0)), Heard::Joined);
+    assert!(presence.sweep(at(30)).is_empty());
+    assert_eq!(presence.sweep(at(31)), vec![origin]);
+}
+
+#[test]
+fn activity_alone_neither_times_nor_keeps_a_peer() {
+    let mut presence = Presence::new();
+    let origin = peer(4);
+    assert_eq!(presence.heard(&origin, false, at(0)), Heard::Joined);
+    for second in 1..=20 {
+        assert_eq!(presence.heard(&origin, false, at(second)), Heard::Present);
+    }
+    assert_eq!(presence.sweep(at(31)), vec![origin]);
+}
+
+#[test]
+fn a_full_roster_leaves_new_peers_unheard() {
+    let mut presence = Presence::new();
+    for pid in 0..u32::try_from(PEERS).unwrap() {
+        assert_eq!(presence.heard(&peer(pid), true, at(0)), Heard::Joined);
+    }
+    let late = peer(u32::MAX);
+    assert_eq!(presence.heard(&late, true, at(1)), Heard::Unheard);
+    assert_eq!(presence.sweep(at(31)).len(), PEERS);
+    assert_eq!(presence.heard(&late, true, at(32)), Heard::Joined);
+}

@@ -1772,6 +1772,7 @@ dependencies = [
  "similar 3.2.1",
  "sqlx",
  "state-machines",
+ "suspect-machines",
  "syntect",
  "tempfile",
  "test-case",
@@ -10928,6 +10929,12 @@ name = "supports-hyperlinks"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e396b6523b11ccb83120b115a0b7366de372751aa6edf19844dfb13a6af97e91"
+
+[[package]]
+name = "suspect-machines"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f08c56a0062f3fbff925963e44ff867107a4068a6b10211ba84d01cfb8017d7b"
 
 [[package]]
 name = "svgtypes"

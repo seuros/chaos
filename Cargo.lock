@@ -1736,6 +1736,7 @@ dependencies = [
  "core_test_support",
  "csv",
  "ctor",
+ "deadline-machines",
  "encoding_rs",
  "env-flags",
  "futures",

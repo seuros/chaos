@@ -51,7 +51,7 @@ pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 pub struct Chaos {
     /// Forwarding facades must not count the same native submission twice.
     pub(crate) tracks_submissions: bool,
-    pub(crate) tx_sub: Sender<Submission>,
+    pub(crate) tx_sub: Sender<Submitted>,
     pub(crate) rx_event: Receiver<Event>,
     // Last known status of the agent.
     pub(crate) agent_status: watch::Receiver<AgentStatus>,
@@ -59,6 +59,21 @@ pub struct Chaos {
     // Shared future for the background submission loop completion so multiple
     // callers can wait for shutdown.
     pub(crate) session_loop_termination: SessionLoopTermination,
+}
+
+#[derive(Debug)]
+pub(crate) struct Submitted {
+    pub(crate) sub: Submission,
+    pub(crate) scope: crate::TurnScope,
+}
+
+impl From<Submission> for Submitted {
+    fn from(sub: Submission) -> Self {
+        Self {
+            sub,
+            scope: crate::TurnScope::never(),
+        }
+    }
 }
 
 /// Wrapper returned by [`Chaos::spawn`] containing the spawned [`Chaos`],
@@ -405,7 +420,12 @@ impl Chaos {
 
     /// Use sparingly: prefer `submit()` so Chaos is responsible for generating
     /// unique IDs for each submission.
-    pub async fn submit_with_id(&self, mut sub: Submission) -> ChaosResult<()> {
+    pub async fn submit_with_id(&self, sub: Submission) -> ChaosResult<()> {
+        self.submit_scoped(sub.into()).await
+    }
+
+    pub(crate) async fn submit_scoped(&self, submitted: Submitted) -> ChaosResult<()> {
+        let Submitted { mut sub, scope } = submitted;
         if sub.trace.is_none() {
             sub.trace = current_span_w3c_trace_context();
         }
@@ -415,7 +435,7 @@ impl Chaos {
                 .services
                 .model_client
                 .reserve_submission(&sub.op)?;
-        if self.tx_sub.send(sub).await.is_err() {
+        if self.tx_sub.send(Submitted { sub, scope }).await.is_err() {
             if reserved {
                 self.session.services.model_client.release_submission();
             }

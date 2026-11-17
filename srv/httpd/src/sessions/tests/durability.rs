@@ -212,7 +212,9 @@ async fn failed_terminal_commit_stays_unknown_across_restart_and_cannot_replay()
     let mut supervisor = fixture.start();
     let id = Uuid::new_v4().to_string();
     fixture.admit(&id).await.unwrap();
-    assert!(matches!(operation(&mut supervisor).await, Operation::Execute(turn, _) if turn == id));
+    assert!(
+        matches!(operation(&mut supervisor).await, Operation::Execute(turn, _, _) if turn == id)
+    );
     assert_eq!(
         fixture.persisted_turn(&id).await.state,
         ExecutionTurnState::Running
@@ -293,7 +295,7 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
     let first = Uuid::new_v4().to_string();
     fixture.admit(&first).await.unwrap();
     assert!(
-        matches!(operation(&mut supervisor).await, Operation::Execute(turn, _) if turn == first)
+        matches!(operation(&mut supervisor).await, Operation::Execute(turn, _, _) if turn == first)
     );
     supervisor.events.send(complete(&first)).unwrap();
     status(&fixture.session, SessionStatus::Idle).await;
@@ -347,7 +349,9 @@ async fn orderly_handoff_restores_outcomes_and_only_dispatches_a_fresh_turn() {
         .await
         .unwrap();
     let mut resumed = start_supervisor(&session, commands, false, Duration::from_secs(3600));
-    assert!(matches!(operation(&mut resumed).await, Operation::Execute(turn, _) if turn == second));
+    assert!(
+        matches!(operation(&mut resumed).await, Operation::Execute(turn, _, _) if turn == second)
+    );
     resumed.events.send(complete(&second)).unwrap();
     status(&session, SessionStatus::Idle).await;
     session.close().unwrap();
@@ -364,7 +368,7 @@ async fn a_fenced_supervisor_contains_work_without_releasing_unknown_capacity() 
     fixture.admit(&id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(_, _)
+        Operation::Execute(_, _, _)
     ));
     fixture.db.expire(&fixture.session.id).await;
     let (_, successor) = Owner::claim(
@@ -481,7 +485,9 @@ async fn http_disconnect_cannot_cancel_the_acceptance_owner_or_free_its_ingress_
     let _ = caller.await;
     assert_eq!(fixture.manager.ingress.available_permits(), 15);
     write_lock.release().await;
-    assert!(matches!(operation(&mut supervisor).await, Operation::Execute(turn, _) if turn == id));
+    assert!(
+        matches!(operation(&mut supervisor).await, Operation::Execute(turn, _, _) if turn == id)
+    );
     supervisor.events.send(complete(&id)).unwrap();
     status(&fixture.session, SessionStatus::Idle).await;
     fixture.session.close().unwrap();

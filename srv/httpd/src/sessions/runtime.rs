@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chaos_ipc::protocol::{Event, EventMsg, Op, Submission};
 use chaos_ipc::user_input::UserInput;
-use chaos_kern::{Process, ProcessTable};
+use chaos_kern::{Process, ProcessTable, TurnScope};
 use chaos_snitch::tracing::warn;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -22,6 +22,7 @@ pub(super) trait Backend: Send + Sync + 'static {
         &self,
         id: String,
         request: TurnRequest,
+        scope: TurnScope,
     ) -> impl Future<Output = Result<(), ()>> + Send;
     fn steer(&self, id: String, text: String) -> impl Future<Output = Result<(), ApiError>> + Send;
     fn interrupt(&self) -> impl Future<Output = Result<(), ()>> + Send;
@@ -87,7 +88,7 @@ impl Backend for KernelBackend {
         self.process.next_event().await.map_err(|_| ())
     }
 
-    async fn execute(&self, id: String, request: TurnRequest) -> Result<(), ()> {
+    async fn execute(&self, id: String, request: TurnRequest, scope: TurnScope) -> Result<(), ()> {
         if !self.confirm_quiescent().await {
             // Never merge a newly admitted HTTP turn into autonomous work
             // that raced admission. There has been no prompt submission yet.
@@ -118,11 +119,14 @@ impl Backend for KernelBackend {
             }
         }
         self.process
-            .submit_with_id(Submission {
-                id,
-                op,
-                trace: None,
-            })
+            .submit_scoped(
+                Submission {
+                    id,
+                    op,
+                    trace: None,
+                },
+                scope,
+            )
             .await
             .map_err(|_| ())
     }
@@ -448,6 +452,7 @@ async fn supervise_inner<B: Backend>(
                             session.notify();
                             continue;
                         }
+                        let scope = TurnScope::until(turn_deadline);
                         let execution = async {
                             if let Some(owner) = session.ledger.get() {
                                 owner.dispatch(&id).await.map_err(|_| ())?;
@@ -457,12 +462,12 @@ async fn supervise_inner<B: Backend>(
                             {
                                 return Ok(false);
                             }
-                            backend.execute(id, request).await.map(|_| true)
+                            backend.execute(id, request, scope.clone()).await.map(|_| true)
                         };
                         let (executed, suspend) = tokio::select! {
                             _ = session.ownership_lost() => (None, false),
                             _ = session.daemon_stopping() => (None, true),
-                            result = tokio::time::timeout_at(turn_deadline, execution) =>
+                            result = scope.run(execution) =>
                                 (Some(result), false),
                         };
                         if matches!(executed, Some(Ok(Ok(false)))) {

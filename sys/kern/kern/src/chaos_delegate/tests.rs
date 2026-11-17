@@ -81,7 +81,7 @@ async fn forward_events_cancelled_while_send_blocked_shuts_down_delegate() {
     assert_eq!("full", received.id);
     let mut ops = Vec::new();
     while let Ok(sub) = rx_sub.try_recv() {
-        ops.push(sub.op);
+        ops.push(sub.sub.op);
     }
     assert!(
         ops.iter().any(|op| matches!(op, Op::Interrupt)),
@@ -121,16 +121,16 @@ async fn forward_ops_preserves_submission_trace_context() {
             tracestate: Some("vendor=state".to_string()),
         }),
     };
-    tx_ops.send(submission.clone()).await.unwrap();
+    tx_ops.send(submission.clone().into()).await.unwrap();
     drop(tx_ops);
 
     let forwarded = timeout(Duration::from_secs(1), rx_sub.recv())
         .await
         .expect("forward_ops hung")
         .expect("forwarded submission missing");
-    assert_eq!(submission.id, forwarded.id);
-    assert_eq!(submission.op, forwarded.op);
-    assert_eq!(submission.trace, forwarded.trace);
+    assert_eq!(submission.id, forwarded.sub.id);
+    assert_eq!(submission.op, forwarded.sub.op);
+    assert_eq!(submission.trace, forwarded.sub.trace);
 
     timeout(Duration::from_secs(1), forward)
         .await
@@ -219,7 +219,7 @@ async fn handle_request_permissions_uses_tool_call_id_for_round_trip() {
         .expect("request_permissions response timed out")
         .expect("request_permissions response missing");
     assert_eq!(
-        submission.op,
+        submission.sub.op,
         Op::RequestPermissionsResponse {
             id: call_id,
             response: expected_response,

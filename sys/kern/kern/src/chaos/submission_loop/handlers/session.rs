@@ -51,7 +51,7 @@ pub async fn set_dynamic_parent_effort(sess: &Session, sub_id: String, enabled: 
     .await;
 }
 
-pub async fn user_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
+pub async fn user_turn(sess: &Arc<Session>, sub_id: String, op: Op, scope: crate::TurnScope) {
     let (items, updates) = match op {
         Op::UserTurn {
             cwd,
@@ -97,7 +97,10 @@ pub async fn user_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
         }
         _ => unreachable!(),
     };
-    let Ok(current_context) = sess.new_turn_with_sub_id(sub_id, updates).await else {
+    let Ok(current_context) = sess
+        .new_scoped_turn_with_sub_id(sub_id, updates, scope)
+        .await
+    else {
         return;
     };
     current_context.session_telemetry.user_prompt(&items);

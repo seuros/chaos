@@ -8,7 +8,7 @@ async fn registration_fixture(
     Chaos,
     ProcessId,
     crate::file_watcher::WatchRegistration,
-    async_channel::Receiver<chaos_ipc::protocol::Submission>,
+    async_channel::Receiver<crate::chaos::Submitted>,
 ) {
     // Offline native-session fixture: no model process or provider request.
     let (session, turn) = make_session_and_context().await;

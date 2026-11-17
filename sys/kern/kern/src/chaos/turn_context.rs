@@ -96,6 +96,7 @@ pub(crate) struct TurnContext {
     pub(crate) dynamic_tools: Vec<chaos_ipc::dynamic_tools::DynamicToolSpec>,
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
+    pub(crate) scope: crate::TurnScope,
 }
 
 impl TurnContext {
@@ -228,6 +229,7 @@ impl TurnContext {
             dynamic_tools: self.dynamic_tools.clone(),
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
+            scope: self.scope.clone(),
         }
     }
 
@@ -612,5 +614,6 @@ pub(super) fn make_turn_context(
         dynamic_tools: session_configuration.dynamic_tools.clone(),
         turn_metadata_state,
         turn_timing_state: Arc::new(TurnTimingState::default()),
+        scope: crate::TurnScope::never(),
     }
 }

@@ -458,8 +458,8 @@ async fn read_json<T: DeserializeOwned>(
     request: Request,
 ) -> Result<T, ApiError> {
     ingress::validate_json_headers(&request, state.body_limit)?;
-    let deadline = tokio::time::Instant::now() + state.timeout;
-    let bytes = ingress::read_body(request.into_body(), state.body_limit, deadline).await?;
+    let scope = chaos_kern::TurnScope::after(state.timeout);
+    let bytes = ingress::read_body(request.into_body(), state.body_limit, &scope).await?;
     serde_json::from_slice(&bytes).map_err(|_| ApiError::bad_request("invalid JSON request"))
 }
 

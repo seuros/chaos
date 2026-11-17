@@ -9,7 +9,7 @@ async fn root_completion_waits_for_descendant_quiet_without_a_root_activity_noti
     fixture.admit(&id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(turn, _) if turn == id
+        Operation::Execute(turn, _, _) if turn == id
     ));
     supervisor.tree_quiet.store(false, Ordering::SeqCst);
     supervisor.events.send(complete(&id)).unwrap();

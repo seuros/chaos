@@ -195,7 +195,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
             &ApiErrorResponse::error("session execution policy unavailable or changed"),
         );
     }
-    let deadline = tokio::time::Instant::now() + state.timeout;
+    let scope = chaos_kern::TurnScope::after(state.timeout);
 
     if let Err(error) = ingress::validate_json_headers(&request, state.body_limit) {
         return body_error_response(error);
@@ -213,8 +213,7 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         }
     };
 
-    let body_bytes = match ingress::read_body(request.into_body(), state.body_limit, deadline).await
-    {
+    let body_bytes = match ingress::read_body(request.into_body(), state.body_limit, &scope).await {
         Ok(bytes) => bytes,
         Err(error) => return body_error_response(error),
     };
@@ -302,36 +301,33 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
             );
         }
         // Body reading, process start, and execution share one deadline.
-        let started =
-            match tokio::time::timeout_at(deadline, runner::start(&process_table, config, auth))
-                .await
-            {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    error!(error = %e, "failed to start trigger process");
-                    return json_response(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        &ApiErrorResponse::error(INTERNAL_SERVER_ERROR).with_caller_fields(
-                            caller_session_id.clone(),
-                            Some(conversation_id.clone()),
-                        ),
-                    );
-                }
-                Err(_) => {
-                    warn!(
-                        "trigger timed out after {}s (during start)",
+        let started = match scope.run(runner::start(&process_table, config, auth)).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                error!(error = %e, "failed to start trigger process");
+                return json_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &ApiErrorResponse::error(INTERNAL_SERVER_ERROR).with_caller_fields(
+                        caller_session_id.clone(),
+                        Some(conversation_id.clone()),
+                    ),
+                );
+            }
+            Err(_) => {
+                warn!(
+                    "trigger timed out after {}s (during start)",
+                    timeout.as_secs()
+                );
+                return json_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    &ApiErrorResponse::timeout(format!(
+                        "execution exceeded {}s deadline",
                         timeout.as_secs()
-                    );
-                    return json_response(
-                        StatusCode::GATEWAY_TIMEOUT,
-                        &ApiErrorResponse::timeout(format!(
-                            "execution exceeded {}s deadline",
-                            timeout.as_secs()
-                        ))
-                        .with_caller_fields(caller_session_id, Some(conversation_id)),
-                    );
-                }
-            };
+                    ))
+                    .with_caller_fields(caller_session_id, Some(conversation_id)),
+                );
+            }
+        };
         state.monitor.publish(
             monitor::MonitorEventKind::ProcessStarted,
             Some(conversation_id.clone()),
@@ -342,15 +338,16 @@ async fn handle_trigger(state: Arc<ServerState>, request: Request) -> Response {
         tracing::Span::current().record("process_id", started.process_id.to_string());
 
         // Execute under the same deadline (remaining time).
-        let response = match tokio::time::timeout_at(deadline, async {
-            if let Some(manager) = &state.sessions {
-                manager.check_execution().map_err(|_| {
-                    anyhow::anyhow!("session execution policy unavailable or changed")
-                })?;
-            }
-            runner::execute(&started, &trigger_req, &conversation_id).await
-        })
-        .await
+        let response = match scope
+            .run(async {
+                if let Some(manager) = &state.sessions {
+                    manager.check_execution().map_err(|_| {
+                        anyhow::anyhow!("session execution policy unavailable or changed")
+                    })?;
+                }
+                runner::execute(&started, &trigger_req, &conversation_id, scope.clone()).await
+            })
+            .await
         {
             Ok(Ok(outcome)) => {
                 if outcome.is_error {

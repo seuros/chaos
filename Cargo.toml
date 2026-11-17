@@ -48,6 +48,7 @@ members = [
     "srv/acpd",
     "lib/libacp/host",
     "lib/libacp/guest",
+    "lib/libmcp/goals",
     "lib/libmcp/runtime",
     "srv/arsenal",
     "srv/journald",
@@ -179,6 +180,7 @@ chaos-model-catalog = { path = "lib/libmodel/catalog" }
 chaos-mcpd = { path = "srv/mcpd" }
 chaos-acpd = { path = "srv/acpd" }
 acp-host = { path = "lib/libacp/host", version = "0.1.0" }
+mcp-goals = { path = "lib/libmcp/goals", version = "0.1.0" }
 mcp-guest = "0.17.1"
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }

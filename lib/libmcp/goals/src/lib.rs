@@ -1,4 +1,5 @@
-//! Acknowledged goal checkpoints; identities come from the transport.
+//! The `chaos/goals` MCP extension: acknowledged goal checkpoints and the
+//! lifecycle both host and driver enforce. Identities come from the transport.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

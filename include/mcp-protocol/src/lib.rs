@@ -10,7 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 
-pub mod goals;
+pub use mcp_goals as goals;
 
 /// Inbox wake notification method.
 pub const FLEET_INBOX_NOTIFICATION: &str = "notifications/chaos/fleet/inbox";

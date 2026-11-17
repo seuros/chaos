@@ -313,7 +313,7 @@ fn resume_cannot_create_two_consumers_for_the_same_process() {
 
 #[derive(Debug)]
 enum Operation {
-    Execute(String, TurnRequest),
+    Execute(String, TurnRequest, chaos_kern::TurnScope),
     Steer(String, String),
     PostNotice(chaos_kern::host_notice::HostNotice),
     WithdrawNotice(Option<String>),
@@ -335,9 +335,14 @@ impl Backend for FakeBackend {
     async fn next_event(&self) -> Result<Event, ()> {
         self.events.lock().await.recv().await.ok_or(())
     }
-    async fn execute(&self, id: String, request: TurnRequest) -> Result<(), ()> {
+    async fn execute(
+        &self,
+        id: String,
+        request: TurnRequest,
+        scope: chaos_kern::TurnScope,
+    ) -> Result<(), ()> {
         self.operations
-            .send(Operation::Execute(id, request))
+            .send(Operation::Execute(id, request, scope))
             .unwrap();
         Ok(())
     }
@@ -420,7 +425,7 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
     submit_turn(&session, "first", "hello", &capacity);
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Execute(id, request))
+        Some(Operation::Execute(id, request, _))
             if id == "first" && request.request == "hello"
     ));
     // A streaming HTTP subscriber observes a separate replay buffer, never
@@ -444,7 +449,7 @@ async fn supervisor_keeps_one_backend_across_turns_and_steers_without_stopping_i
     submit_turn(&session, "second", "continue", &capacity);
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Execute(id, _)) if id == "second"
+        Some(Operation::Execute(id, _, _)) if id == "second"
     ));
     session.interrupt("second".into()).unwrap();
     assert!(matches!(
@@ -478,7 +483,7 @@ async fn cancellation_before_submission_skips_execution_and_cannot_interrupt_the
     // In particular, no Execute(first) or Interrupt is allowed here.
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Execute(id, _)) if id == "second"
+        Some(Operation::Execute(id, _, _)) if id == "second"
     ));
     session.close().unwrap();
     assert!(matches!(
@@ -514,7 +519,7 @@ async fn timeout_with_unconfirmed_shutdown_keeps_reservation_and_does_not_replay
         .unwrap();
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Execute(_, _))
+        Some(Operation::Execute(_, _, _))
     ));
     tokio::time::advance(Duration::from_secs(1)).await;
     assert!(matches!(
@@ -544,6 +549,29 @@ async fn timeout_with_unconfirmed_shutdown_keeps_reservation_and_does_not_replay
         .unwrap();
     assert_eq!(duplicate.status, TurnStatus::Unknown);
     assert!(supervisor.operations.try_recv().is_err());
+    supervisor.task.abort();
+    let _ = supervisor.task.await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_turn_deadline_reaches_the_kernel_turn() {
+    let (session, commands) = ready_session();
+    let capacity = Arc::new(Semaphore::new(1));
+    let mut supervisor = start_supervisor(&session, commands, false, Duration::from_secs(3600));
+    session
+        .submit(
+            "first".into(),
+            request("hello"),
+            &capacity,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+    let Some(Operation::Execute(_, _, scope)) = supervisor.operations.recv().await else {
+        panic!("expected the turn to execute");
+    };
+    let started = Instant::now();
+    assert!(scope.run(std::future::pending::<()>()).await.is_err());
+    assert!(started.elapsed() <= Duration::from_secs(1));
     supervisor.task.abort();
     let _ = supervisor.task.await;
 }
@@ -636,7 +664,7 @@ async fn host_notices_are_bound_to_the_turn_that_posted_them() {
     submit_turn(&session, "second", "continue", &capacity);
     assert!(matches!(
         supervisor.operations.recv().await,
-        Some(Operation::Execute(id, _)) if id == "second"
+        Some(Operation::Execute(id, _, _)) if id == "second"
     ));
     assert!(
         session

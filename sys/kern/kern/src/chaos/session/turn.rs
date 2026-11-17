@@ -43,6 +43,16 @@ impl Session {
         sub_id: String,
         updates: SessionSettingsUpdate,
     ) -> crate::config::ConstraintResult<Arc<TurnContext>> {
+        self.new_scoped_turn_with_sub_id(sub_id, updates, crate::TurnScope::never())
+            .await
+    }
+
+    pub(crate) async fn new_scoped_turn_with_sub_id(
+        &self,
+        sub_id: String,
+        updates: SessionSettingsUpdate,
+        scope: crate::TurnScope,
+    ) -> crate::config::ConstraintResult<Arc<TurnContext>> {
         let config = self.get_config().await;
         // Database-backed sessions fail closed when storage is unavailable.
         if config.config_layer_stack.get_user_layer().is_some()
@@ -123,6 +133,7 @@ impl Session {
                 sub_id,
                 session_configuration,
                 updates.final_output_json_schema,
+                scope,
             )
             .await)
     }
@@ -132,15 +143,17 @@ impl Session {
         sub_id: String,
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<serde_json::Value>>,
+        scope: crate::TurnScope,
     ) -> Arc<TurnContext> {
-        let turn_context = Arc::new(
-            self.build_turn_context_from_configuration(
+        let mut turn_context = self
+            .build_turn_context_from_configuration(
                 sub_id,
                 session_configuration,
                 final_output_json_schema,
             )
-            .await,
-        );
+            .await;
+        turn_context.scope = scope;
+        let turn_context = Arc::new(turn_context);
         self.permission_actor
             .register_turn(&turn_context)
             .await
@@ -255,6 +268,7 @@ impl Session {
             sub_id,
             session_configuration,
             /*final_output_json_schema*/ None,
+            crate::TurnScope::never(),
         )
         .await
     }

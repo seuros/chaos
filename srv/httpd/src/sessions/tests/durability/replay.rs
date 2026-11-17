@@ -10,7 +10,7 @@ async fn lost_writer_cannot_publish_a_terminal_event_or_release_capacity() {
     fixture.admit(&id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(_, _)
+        Operation::Execute(_, _, _)
     ));
     fixture.db.expire(&fixture.session.id).await;
     supervisor.events.send(complete(&id)).unwrap();
@@ -44,7 +44,7 @@ async fn terminal_event_is_not_exposed_before_replay_commit_or_used_as_completio
     fixture.admit(&id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(_, _)
+        Operation::Execute(_, _, _)
     ));
     fixture.db.fail_transition("idle").await;
     let lock = fixture.db.lock(&fixture.session.id).await;

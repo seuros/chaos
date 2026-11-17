@@ -206,11 +206,11 @@ pub(crate) async fn run_chaos_process_one_shot(
             let _ = tx_bridge.send(event).await;
             if should_shutdown {
                 let _ = ops_tx
-                    .send(Submission {
+                    .send(crate::chaos::Submitted::from(Submission {
                         id: "shutdown".to_string(),
                         op: Op::Shutdown {},
                         trace: None,
-                    })
+                    }))
                     .await;
                 child_cancel.cancel();
                 break;
@@ -415,7 +415,7 @@ async fn forward_event_or_shutdown(
 /// Forward ops from a caller to a sub-agent, respecting cancellation.
 async fn forward_ops(
     chaos: Arc<Chaos>,
-    rx_ops: Receiver<Submission>,
+    rx_ops: Receiver<crate::chaos::Submitted>,
     cancel_token_ops: CancellationToken,
 ) {
     loop {
@@ -423,7 +423,7 @@ async fn forward_ops(
             Ok(Ok(submission)) => submission,
             Ok(Err(_)) | Err(_) => break,
         };
-        let _ = chaos.submit_with_id(submission).await;
+        let _ = chaos.submit_scoped(submission).await;
     }
 }
 

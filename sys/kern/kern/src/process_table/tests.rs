@@ -272,7 +272,7 @@ async fn insert_live_descendant(
     session.services.internal_task_store.set_active(true).await;
     let session = Arc::new(session);
     let id = session.conversation_id;
-    let (tx_sub, rx_sub) = async_channel::bounded::<chaos_ipc::protocol::Submission>(8);
+    let (tx_sub, rx_sub) = async_channel::bounded::<crate::chaos::Submitted>(8);
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Notify::new());
     let task = tokio::spawn({
@@ -280,7 +280,7 @@ async fn insert_live_descendant(
         let entered = entered.clone();
         let release = release.clone();
         async move {
-            assert!(matches!(rx_sub.recv().await.unwrap().op, Op::Shutdown));
+            assert!(matches!(rx_sub.recv().await.unwrap().sub.op, Op::Shutdown));
             entered.notify_one();
             release.notified().await;
             session.services.internal_task_store.set_active(false).await;

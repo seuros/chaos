@@ -54,7 +54,7 @@ impl ShellHandler {
         ExecParams {
             command: params.command.clone(),
             cwd: turn_context.resolve_path(params.workdir.clone()),
-            expiration: params.timeout_ms.into(),
+            expiration: turn_context.scope.exec_expiration(params.timeout_ms),
             env: create_env(&turn_context.shell_environment_policy, Some(process_id)),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
@@ -100,7 +100,7 @@ impl ShellCommandHandler {
         Ok(ExecParams {
             command,
             cwd: turn_context.resolve_path(params.workdir.clone()),
-            expiration: params.timeout_ms.into(),
+            expiration: turn_context.scope.exec_expiration(params.timeout_ms),
             env: create_env(&turn_context.shell_environment_policy, Some(process_id)),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),

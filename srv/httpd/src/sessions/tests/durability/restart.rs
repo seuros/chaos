@@ -98,7 +98,7 @@ async fn crash_child() {
     active.admit(&turn_id.to_string()).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(turn, _) if turn == turn_id.to_string()
+        Operation::Execute(turn, _, _) if turn == turn_id.to_string()
     ));
     let invocation = invocations::start(&active, turn_id, InvocationPurpose::Sampling);
     assert!(

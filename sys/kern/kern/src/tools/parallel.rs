@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use chaos_traits::router::Adapter;
 use chaos_traits::router::DEFAULT_ADAPTER_CAPACITY;
+use deadline_machines::Refusal;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -90,6 +91,8 @@ impl ToolCallRuntime {
         let tracker = Arc::clone(&self.tracker);
         let scheduler = self.scheduler;
         let started = Instant::now();
+        let scope = turn.scope.clone();
+        let expired_call = call.clone();
 
         let dispatch_span = trace_span!(
             "dispatch_tool_call",
@@ -99,7 +102,8 @@ impl ToolCallRuntime {
             aborted = false,
         );
 
-        let dispatch = async move {
+        let deadline_span = dispatch_span.clone();
+        let guarded = async move {
             let acquire = async {
                 if is_container {
                     Ok(None)
@@ -150,6 +154,16 @@ impl ToolCallRuntime {
                         } => result,
                     };
                     result
+                }
+            }
+        };
+        let dispatch = async move {
+            match scope.run(guarded).await {
+                Ok(result) => result,
+                Err(refusal) => {
+                    let secs = started.elapsed().as_secs_f32().max(0.1);
+                    deadline_span.record("aborted", true);
+                    Ok(Self::refused_response(&expired_call, secs, refusal))
                 }
             }
         };
@@ -375,6 +389,30 @@ impl ToolCallRuntime {
             result: Box::new(AbortedToolOutput {
                 message: Self::abort_message(call, secs),
             }),
+        }
+    }
+
+    fn refused_response(call: &ToolCall, secs: f32, refusal: Refusal) -> AnyToolResult {
+        AnyToolResult {
+            call_id: call.call_id.clone(),
+            tool_name: call.tool_name.clone(),
+            payload: call.payload.clone(),
+            result: Box::new(AbortedToolOutput {
+                message: Self::refusal_message(call, secs, refusal),
+            }),
+        }
+    }
+
+    fn refusal_message(call: &ToolCall, secs: f32, refusal: Refusal) -> String {
+        let reason = match refusal {
+            Refusal::Exceeded => "turn deadline exceeded",
+            Refusal::Cancelled => "turn scope cancelled",
+        };
+        match call.tool_name.as_str() {
+            "shell" | "container.exec" | "local_shell" | "shell_command" | "exec_command" => {
+                format!("Wall time: {secs:.1} seconds\n{reason}")
+            }
+            _ => format!("{reason} after {secs:.1}s"),
         }
     }
 

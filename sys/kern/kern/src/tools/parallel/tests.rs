@@ -285,3 +285,67 @@ fn releasing_a_call_dispatches_the_next_call() {
         Some(&ToolExecutionMode::Exclusive)
     );
 }
+
+async fn dispatch_sleeping_tool(
+    deadline: Option<std::time::Duration>,
+    sleep_ms: u64,
+) -> Result<(String, std::time::Duration), Box<dyn std::error::Error + Send + Sync>> {
+    let (session, mut turn) = crate::chaos::make_session_and_context().await;
+    turn.tools_config
+        .experimental_supported_tools
+        .push("test_sync_tool".into());
+    let session = Arc::new(session);
+    session.services.tool_group_catalog.set_groups_enabled(
+        &session.services.tool_group_state,
+        [crate::tools::groups::SESSION],
+        true,
+    )?;
+    let turn = Arc::new(turn);
+    let cancellation = CancellationToken::new();
+    let router = crate::chaos::built_tools(&session, &turn, &[], &cancellation).await?;
+    let tracker = Arc::new(tokio::sync::Mutex::new(
+        crate::turn_diff_tracker::TurnDiffTracker::new(),
+    ));
+    tokio::time::pause();
+    let mut scoped = (*turn).clone();
+    scoped.scope = deadline.map_or_else(crate::TurnScope::never, crate::TurnScope::after);
+    let runtime = ToolCallRuntime::new(router, session, Arc::new(scoped), tracker);
+    let started = tokio::time::Instant::now();
+    let response = runtime
+        .handle_tool_call(
+            ToolCall {
+                tool_name: "test_sync_tool".into(),
+                tool_namespace: None,
+                call_id: "slow-leaf".into(),
+                payload: ToolPayload::Function {
+                    arguments: format!(r#"{{"sleep_before_ms":{sleep_ms}}}"#),
+                },
+            },
+            cancellation,
+        )
+        .await?;
+    Ok((format!("{response:?}"), started.elapsed()))
+}
+
+#[tokio::test]
+async fn a_bounded_turn_cuts_a_running_tool_at_its_deadline() -> TestResult {
+    let deadline = std::time::Duration::from_secs(5);
+    let (text, elapsed) = dispatch_sleeping_tool(Some(deadline), 60_000).await?;
+    assert!(text.contains("turn deadline exceeded"), "{text}");
+    assert!(
+        elapsed >= deadline && elapsed < deadline * 2,
+        "cut after {elapsed:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unbounded_turn_lets_the_tool_finish() -> TestResult {
+    let (text, elapsed) = dispatch_sleeping_tool(None, 60_000).await?;
+    assert!(!text.contains("deadline"), "{text}");
+    assert!(
+        elapsed >= std::time::Duration::from_secs(60),
+        "finished after {elapsed:?}"
+    );
+    Ok(())
+}

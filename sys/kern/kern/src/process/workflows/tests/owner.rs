@@ -8,7 +8,7 @@ use serde_json::json;
 /// A dedicated native process's real admission loop, without a model turn.
 struct NativeProcess {
     session: Arc<Session>,
-    tx: async_channel::Sender<Submission>,
+    tx: async_channel::Sender<crate::chaos::Submitted>,
     task: AbortOnDropHandle<()>,
 }
 
@@ -66,11 +66,11 @@ impl NativeProcess {
 
     async fn shutdown(self) {
         self.tx
-            .send(Submission {
+            .send(crate::chaos::Submitted::from(Submission {
                 id: "shutdown".into(),
                 op: Op::Shutdown,
                 trace: None,
-            })
+            }))
             .await
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), self.task)

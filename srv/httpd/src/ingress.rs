@@ -1,10 +1,10 @@
 //! Shared JSON ingress boundaries. Callers own authentication/admission order
 //! and wire responses; body collection always uses the caller's deadline.
+use chaos_kern::TurnScope;
 use chaos_snitch::tracing::error;
 use rama::bytes::Bytes;
 use rama::http::body::util::{BodyExt, LengthLimitError};
 use rama::http::{Body, Request, StatusCode};
-use tokio::time::Instant;
 
 pub(crate) enum BodyError {
     ContentType,
@@ -63,10 +63,10 @@ pub(crate) fn validate_json_headers(request: &Request, limit: usize) -> Result<(
 pub(crate) async fn read_body(
     body: Body,
     limit: usize,
-    deadline: Instant,
+    scope: &TurnScope,
 ) -> Result<Bytes, BodyError> {
     // Stop polling on the first overflowing frame, including chunked bodies.
-    match tokio::time::timeout_at(deadline, body.limited(limit).collect()).await {
+    match scope.run(body.limited(limit).collect()).await {
         Ok(Ok(collected)) => Ok(collected.to_bytes()),
         Ok(Err(error))
             if matches!(

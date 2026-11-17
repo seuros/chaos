@@ -59,7 +59,7 @@ async fn outbox_insert_failure_rolls_back_terminal_outcome_and_keeps_capacity() 
     fixture.admit(&id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(_, _)
+        Operation::Execute(_, _, _)
     ));
     fixture.db.fail_outbox(false).await;
     supervisor.events.send(complete(&id)).unwrap();
@@ -255,7 +255,7 @@ async fn signed_webhook_retry_survives_lost_ack_and_never_follows_redirect_or_re
     fixture.admit(&turn_id).await.unwrap();
     assert!(matches!(
         operation(&mut supervisor).await,
-        Operation::Execute(_, _)
+        Operation::Execute(_, _, _)
     ));
     supervisor.events.send(complete(&turn_id)).unwrap();
     status(&fixture.session, SessionStatus::Idle).await;

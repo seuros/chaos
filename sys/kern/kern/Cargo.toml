@@ -31,6 +31,7 @@ chaos-synopsis = { workspace = true }
 chaos-sysinfo = { workspace = true }
 chaos-machine = { workspace = true }
 chardetng = { workspace = true }
+deadline-machines = { workspace = true }
 jiff = { workspace = true }
 chaos-parrot = { workspace = true }
 chaos-reflex = { workspace = true }

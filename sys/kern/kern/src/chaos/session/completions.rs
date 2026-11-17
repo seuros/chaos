@@ -274,7 +274,7 @@ impl Session {
 
     pub(crate) async fn admit_completion_turn_with_input(
         self: &Arc<Self>,
-        input: Option<&async_channel::Receiver<chaos_ipc::protocol::Submission>>,
+        input: Option<&async_channel::Receiver<crate::chaos::Submitted>>,
     ) {
         let owner_pending = || input.is_some_and(|receiver| !receiver.is_empty());
         if *self.out_of_band_elicitation_paused.borrow()

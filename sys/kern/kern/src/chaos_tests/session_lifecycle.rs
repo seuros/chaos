@@ -132,7 +132,7 @@ async fn update_permissions_changes_running_turn_without_waiting_for_completion(
             })
             .await;
         tx_sub
-            .send(Submission {
+            .send(crate::chaos::Submitted::from(Submission {
                 id: "permissions".to_string(),
                 op: Op::UpdatePermissions {
                     scope: PermissionUpdateScope::Session,
@@ -142,7 +142,7 @@ async fn update_permissions_changes_running_turn_without_waiting_for_completion(
                     grants: PermissionGrantUpdate::Unchanged,
                 },
                 trace: None,
-            })
+            }))
             .await
             .expect("submit live permission update");
 
@@ -646,7 +646,7 @@ async fn submit_with_id_captures_current_span_trace_context() {
     .await;
 
     let submitted = rx_sub.recv().await.expect("submission");
-    assert_eq!(submitted.trace, Some(expected_trace));
+    assert_eq!(submitted.sub.trace, Some(expected_trace));
 }
 
 #[tokio::test]

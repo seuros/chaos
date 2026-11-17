@@ -9,6 +9,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use chaos_ipc::ProcessId;
+use chaos_kern::TurnScope;
 use chaos_kern::inference::Inference;
 use chaos_kern::inference::InferenceError;
 use chaos_kern::inference::InferenceInput;
@@ -20,7 +21,6 @@ use lsd_protocol::InferenceResponseChunk;
 use rama::futures::StreamExt;
 use rama::futures::async_stream::stream_fn;
 use rama::http::{Body, HeaderValue, Request, Response, StatusCode};
-use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::ServerState;
@@ -29,14 +29,14 @@ use convert::Projection;
 use convert::Step;
 
 pub(crate) async fn handle(state: Arc<ServerState>, request: Request) -> Response {
-    let deadline = Instant::now() + state.timeout;
+    let scope = TurnScope::after(state.timeout);
     if let Err(error) = ingress::validate_json_headers(&request, state.body_limit) {
         return error_response(body_code(&error), error.message());
     }
     let Ok(permit) = state.semaphore.clone().try_acquire_owned() else {
         return error_response(ErrorCode::RateLimited, "too many concurrent requests");
     };
-    let bytes = match ingress::read_body(request.into_body(), state.body_limit, deadline).await {
+    let bytes = match ingress::read_body(request.into_body(), state.body_limit, &scope).await {
         Ok(bytes) => bytes,
         Err(error) => return error_response(body_code(&error), error.message()),
     };
@@ -76,16 +76,14 @@ pub(crate) async fn handle(state: Arc<ServerState>, request: Request) -> Respons
         summary: turn.summary,
         output_schema: wire.output_schema.clone(),
     };
-    let started = tokio::time::timeout_at(
-        deadline,
-        chaos_kern::inference::infer(
+    let started = scope
+        .run(chaos_kern::inference::infer(
             &state.config,
             &state.process_table,
             &state.auth_manager,
             input,
-        ),
-    )
-    .await;
+        ))
+        .await;
     let inference = match started {
         Err(_) => return error_response(ErrorCode::Timeout, "inference deadline exceeded"),
         Ok(Err(InferenceError::UnknownTarget(message))) => {
@@ -103,7 +101,7 @@ pub(crate) async fn handle(state: Arc<ServerState>, request: Request) -> Respons
         inference_id: Uuid::new_v4(),
         trip_id,
         variant_name: format!("{}::{}", inference.provider_id, inference.model),
-        deadline,
+        scope,
     };
     if wire.streams() {
         reply.stream(inference, permit)
@@ -132,7 +130,7 @@ struct Reply {
     inference_id: Uuid,
     trip_id: Uuid,
     variant_name: String,
-    deadline: Instant,
+    scope: TurnScope,
 }
 
 impl Reply {
@@ -155,7 +153,7 @@ impl Reply {
             let _permit = permit;
             let mut projection = Projection::default();
             loop {
-                let next = match tokio::time::timeout_at(self.deadline, events.next()).await {
+                let next = match self.scope.run(events.next()).await {
                     Err(_) => Some(Err(ErrorBody::new(
                         ErrorCode::Timeout,
                         "inference deadline exceeded",
@@ -218,7 +216,7 @@ impl Reply {
         let mut events = inference.stream;
         let mut projection = Projection::default();
         loop {
-            let event = match tokio::time::timeout_at(self.deadline, events.next()).await {
+            let event = match self.scope.run(events.next()).await {
                 Err(_) => return error_response(ErrorCode::Timeout, "inference deadline exceeded"),
                 Ok(None) => {
                     return error_response(

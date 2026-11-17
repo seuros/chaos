@@ -22,6 +22,7 @@ use crate::tools::spec::ToolsConfigParams;
 
 use super::Session;
 use super::SessionSettingsUpdate;
+use super::Submitted;
 use super::TurnContext;
 
 pub(crate) mod handlers;
@@ -69,7 +70,7 @@ pub(crate) fn initial_replay_event_msgs(
 pub(crate) async fn submission_loop(
     sess: Arc<Session>,
     config: Arc<Config>,
-    rx_sub: Receiver<Submission>,
+    rx_sub: Receiver<Submitted>,
 ) {
     // To break out of this loop, send Op::Shutdown.
     sess.start_machine_recovery_monitor();
@@ -88,7 +89,7 @@ pub(crate) async fn submission_loop(
     let mut journal_paused = false;
     let mut interrupted_turn = None;
     loop {
-        let sub = tokio::select! {
+        let (sub, scope) = tokio::select! {
             biased;
             changed = writer_status.changed(), if status_open => {
                 status_open = changed.is_ok();
@@ -135,7 +136,7 @@ pub(crate) async fn submission_loop(
                 continue;
             },
             sub = rx_sub.recv() => match sub {
-                Ok(sub) => sub,
+                Ok(Submitted { sub, scope }) => (sub, scope),
                 Err(_) => {
                     // Dropping the last client is also a process exit. Session
                     // tasks can retain the recorder, so dropping `sess` alone
@@ -325,7 +326,7 @@ pub(crate) async fn submission_loop(
                     false
                 }
                 Op::UserTurn { .. } => {
-                    handlers::user_turn(&sess, sub.id.clone(), sub.op).await;
+                    handlers::user_turn(&sess, sub.id.clone(), sub.op, scope).await;
                     false
                 }
                 Op::ExecApproval {
@@ -702,6 +703,7 @@ pub(super) async fn spawn_review_thread(
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
         turn_timing_state: Arc::new(TurnTimingState::default()),
+        scope: parent_turn_context.scope.clone(),
     };
 
     // Seed the child task with the review prompt as the initial user message.

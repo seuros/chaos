@@ -31,6 +31,7 @@ pub(crate) use spawn::ChaosSpawnArgs;
 pub(crate) use spawn::ChaosSpawnOk;
 pub(crate) use spawn::INITIAL_SUBMIT_ID;
 pub(crate) use spawn::SUBMISSION_CHANNEL_CAPACITY;
+pub(crate) use spawn::Submitted;
 
 // Session
 pub(crate) use permissions::PermissionSnapshot;

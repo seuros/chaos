@@ -20,6 +20,8 @@ should. There is no patch level; the build timestamp is the patch.
   power of two, so a fleet of them no longer retries in lockstep.
 - Upgrading fails any spool submit that was interrupted while compensating: its
   saved state cannot resume. The error names the batch to cancel by hand.
+- A `chaos serve` turn's tool calls stop at the request deadline, and shell
+  timeouts never outlive it. Interactive turns keep their own timeouts.
 
 ## [47.15.0] - 2026-11-16
 

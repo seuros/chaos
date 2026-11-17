@@ -5,7 +5,10 @@ use serde_json::json;
 
 async fn runner(
     session: &Arc<Session>,
-) -> (async_channel::Sender<Submission>, AbortOnDropHandle<()>) {
+) -> (
+    async_channel::Sender<crate::chaos::Submitted>,
+    AbortOnDropHandle<()>,
+) {
     let (tx, rx) = async_channel::bounded(8);
     let task = AbortOnDropHandle::new(tokio::spawn(
         crate::chaos::submission_loop::submission_loop(
@@ -17,12 +20,12 @@ async fn runner(
     (tx, task)
 }
 
-async fn shutdown(tx: async_channel::Sender<Submission>, task: AbortOnDropHandle<()>) {
-    tx.send(Submission {
+async fn shutdown(tx: async_channel::Sender<crate::chaos::Submitted>, task: AbortOnDropHandle<()>) {
+    tx.send(crate::chaos::Submitted::from(Submission {
         id: "shutdown".into(),
         op: Op::Shutdown,
         trace: None,
-    })
+    }))
     .await
     .unwrap();
     tokio::time::timeout(Duration::from_secs(5), task)
@@ -259,7 +262,7 @@ async fn model_free_operation_uses_real_approval_mailbox_and_close_aborts_waiter
     .await?;
     assert_eq!(event.turn_id, turn.sub_id);
     assert_eq!(event.call_id, "first");
-    tx.send(Submission {
+    tx.send(crate::chaos::Submitted::from(Submission {
         id: "decision".into(),
         op: Op::ExecApproval {
             id: event.call_id,
@@ -267,7 +270,7 @@ async fn model_free_operation_uses_real_approval_mailbox_and_close_aborts_waiter
             decision: ReviewDecision::Denied,
         },
         trace: None,
-    })
+    }))
     .await?;
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(5), pending).await?,

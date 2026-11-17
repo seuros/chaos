@@ -49,6 +49,7 @@ pub(crate) async fn execute(
     started: &StartedProcess,
     request: &TriggerRequest,
     conversation_id: &str,
+    scope: chaos_kern::TurnScope,
 ) -> Result<TriggerOutcome, anyhow::Error> {
     let prompt = request.request.clone().unwrap_or_default();
     let process_id = started.process_id;
@@ -64,11 +65,14 @@ pub(crate) async fn execute(
         )
         .await;
     process
-        .submit_with_id(Submission {
-            id: conversation_id.to_string(),
-            op,
-            trace: None,
-        })
+        .submit_scoped(
+            Submission {
+                id: conversation_id.to_string(),
+                op,
+                trace: None,
+            },
+            scope,
+        )
         .await?;
 
     // Drain events.

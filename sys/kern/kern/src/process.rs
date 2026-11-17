@@ -145,6 +145,12 @@ impl Process {
         self.chaos.submit_with_id(sub).await
     }
 
+    pub async fn submit_scoped(&self, sub: Submission, scope: crate::TurnScope) -> ChaosResult<()> {
+        self.chaos
+            .submit_scoped(crate::chaos::Submitted { sub, scope })
+            .await
+    }
+
     pub async fn next_event(&self) -> ChaosResult<Event> {
         self.chaos.next_event().await
     }

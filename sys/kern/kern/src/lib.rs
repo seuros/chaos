@@ -146,6 +146,7 @@ pub mod spawn;
 mod tools;
 pub mod turn_diff_tracker;
 mod turn_metadata;
+mod turn_scope;
 mod turn_timing;
 pub use rollout::INTERACTIVE_SESSION_SOURCES;
 pub use rollout::ProcessItem;
@@ -168,6 +169,7 @@ pub use rollout::list::Cursor;
 pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;
 pub use rollout::recorder::journal_client_for_mounted_backend;
+pub use turn_scope::TurnScope;
 /// Returns the built-in persona catalog (excludes operational roles like default/scout/task).
 pub fn list_personas() -> &'static std::collections::BTreeMap<String, config::AgentRoleConfig> {
     minions::role::built_in::personas()

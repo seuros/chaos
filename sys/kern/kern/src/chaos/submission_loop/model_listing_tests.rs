@@ -37,11 +37,11 @@ async fn assert_catalog_submission(models: Vec<ModelInfo>) {
         receiver,
     ));
     submissions
-        .send(Submission {
+        .send(crate::chaos::Submitted::from(Submission {
             id: "catalog-request".into(),
             op: Op::ListModels,
             trace: None,
-        })
+        }))
         .await
         .expect("submit model listing");
 

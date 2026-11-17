@@ -7,6 +7,7 @@ mod stream;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::num::NonZeroU64;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
@@ -18,6 +19,7 @@ use chaos_ipc::openai_models::ReasoningEffort;
 use chaos_ipc::protocol::{Event, EventMsg};
 use chaos_snitch::tracing::warn;
 use dedup_machines::{Claim, HashDedup, Refusal};
+use journal_machines::{Coverage, ReplayWindow};
 use rama::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -31,7 +33,7 @@ const MAX_TURNS: usize = 256;
 const TURN_RETENTION: Duration = Duration::from_secs(u32::MAX as u64);
 const MAX_EVENTS: usize = 256;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
-const MAX_REPLAY_BYTES: usize = 1024 * 1024;
+const MAX_REPLAY_BYTES: NonZeroU64 = NonZeroU64::new(1024 * 1024).expect("nonzero budget");
 const MAX_RESULT_BYTES: usize = 16 * 1024;
 const CLEANUP_GRACE: Duration = Duration::from_secs(30);
 
@@ -306,8 +308,7 @@ struct SessionData {
     claims: HashDedup<String, ()>,
     active: Option<ActiveTurn>,
     events: VecDeque<ReplayEvent>,
-    replay_bytes: usize,
-    sequence: u64,
+    window: Window,
     // Recovered unknown work may have no HTTP turn but still reserves capacity.
     orphan_permit: Option<OwnedSemaphorePermit>,
 }
@@ -316,8 +317,37 @@ struct SessionData {
 struct ReplayEvent {
     sequence: u64,
     event: serde_json::Value,
-    #[serde(skip)]
-    bytes: usize,
+}
+
+type Window = ReplayWindow<MAX_EVENTS>;
+
+impl EventBatch {
+    fn read<'a>(
+        window: &Window,
+        events: impl IntoIterator<Item = &'a ReplayEvent>,
+        after: u64,
+        durable: bool,
+    ) -> Result<Self, ApiError> {
+        let coverage = after
+            .checked_add(1)
+            .map_or(Coverage::Ahead, |cursor| window.coverage(cursor));
+        if coverage == Coverage::Ahead {
+            return Err(ApiError::bad_request(
+                "event cursor is ahead of this session",
+            ));
+        }
+        Ok(Self {
+            events: events
+                .into_iter()
+                .filter(|event| event.sequence > after)
+                .cloned()
+                .collect(),
+            gap: matches!(coverage, Coverage::Behind { .. }),
+            next_cursor: window.next_offset() - 1,
+            observation_only: true,
+            durable,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -424,7 +454,7 @@ impl Session {
             status: data.status,
             process_id: data.process_id.clone(),
             active_turn_id: data.active.as_ref().map(|turn| turn.id.clone()),
-            last_event_id: data.sequence,
+            last_event_id: data.window.next_offset() - 1,
         }
     }
 
@@ -656,24 +686,7 @@ impl Session {
 
     fn events(&self, after: u64) -> Result<EventBatch, ApiError> {
         let data = self.lock_data()?;
-        if after > data.sequence {
-            return Err(ApiError::bad_request(
-                "event cursor is ahead of this session",
-            ));
-        }
-        let oldest = data.events.front().map(|event| event.sequence);
-        Ok(EventBatch {
-            events: data
-                .events
-                .iter()
-                .filter(|event| event.sequence > after)
-                .cloned()
-                .collect(),
-            gap: oldest.is_some_and(|oldest| after < oldest - 1),
-            next_cursor: data.sequence,
-            observation_only: true,
-            durable: false,
-        })
+        EventBatch::read(&data.window, &data.events, after, false)
     }
 }
 
@@ -711,8 +724,7 @@ impl SessionData {
             claims: HashDedup::with_capacity(MAX_TURNS),
             active: None,
             events: VecDeque::new(),
-            replay_bytes: 0,
-            sequence: 0,
+            window: Window::new(Some(MAX_REPLAY_BYTES), 1),
             orphan_permit: None,
         }
     }
@@ -828,17 +840,22 @@ impl SessionData {
             let _ = self.status.fire(SessionLifecycleEvent::Busy);
         }
         self.maybe_finish(quiescent);
-        self.sequence += 1;
         let (value, bytes) = replay_value(event);
-        while self.events.len() >= MAX_EVENTS || self.replay_bytes + bytes > MAX_REPLAY_BYTES {
-            self.replay_bytes -= self.events.pop_front().unwrap().bytes;
-        }
-        self.replay_bytes += bytes;
+        let Ok(appended) = self.window.append(bytes as u64) else {
+            warn!("replay sequence exhausted; observation not retained");
+            return;
+        };
         self.events.push_back(ReplayEvent {
-            sequence: self.sequence,
+            sequence: appended.offset(),
             event: value,
-            bytes,
         });
+        while self
+            .events
+            .front()
+            .is_some_and(|event| event.sequence < appended.floor())
+        {
+            self.events.pop_front();
+        }
     }
 }
 

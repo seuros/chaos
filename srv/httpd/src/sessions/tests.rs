@@ -187,7 +187,65 @@ fn replay_is_bounded_reports_gaps_and_does_not_expose_oversized_events() {
     session.observe(&oversized);
     let last = session.events(replay.next_cursor).unwrap();
     assert_eq!(last.events[0].event["msg"]["type"], "http_event_omitted");
-    assert!(session.data.lock().unwrap().replay_bytes <= MAX_REPLAY_BYTES);
+    let budget = u128::from(MAX_REPLAY_BYTES.get());
+    assert!(session.data.lock().unwrap().window.bytes() <= budget);
+}
+
+#[test]
+fn byte_eviction_keeps_events_aligned_with_the_window() {
+    let (session, _commands) = ready_session();
+    let mut large = complete("turn");
+    if let EventMsg::TurnComplete(event) = &mut large.msg {
+        event.last_agent_message = Some("a".repeat(60 * 1024));
+    }
+    for _ in 0..20 {
+        session.observe(&large);
+    }
+    let data = session.data.lock().unwrap();
+    assert!(data.events.len() < 20);
+    assert_eq!(data.events.len(), data.window.len());
+    assert_eq!(data.events.front().unwrap().sequence, data.window.floor());
+    assert_eq!(data.events.back().unwrap().sequence, 20);
+    assert!(data.window.bytes() <= u128::from(MAX_REPLAY_BYTES.get()));
+    let floor = data.window.floor();
+    drop(data);
+    assert!(session.events(0).unwrap().gap);
+    let covered = session.events(floor - 1).unwrap();
+    assert!(!covered.gap);
+    assert_eq!(covered.events[0].sequence, floor);
+    assert!(!session.events(20).unwrap().gap);
+    assert!(session.events(21).is_err());
+    assert!(session.events(u64::MAX).is_err());
+}
+
+#[test]
+fn a_record_over_the_byte_budget_is_evicted_and_signalled_as_a_gap() {
+    let mut window = Window::new(NonZeroU64::new(10), 1);
+    let events: Vec<ReplayEvent> = [4, 4, 50]
+        .into_iter()
+        .map(|size| ReplayEvent {
+            sequence: window.append(size).unwrap().offset(),
+            event: serde_json::Value::Null,
+        })
+        .collect();
+    let retained = events
+        .iter()
+        .filter(|event| event.sequence >= window.floor());
+    let batch = EventBatch::read(&window, retained.clone(), 0, false).unwrap();
+    assert!(batch.gap);
+    assert!(batch.events.is_empty());
+    assert_eq!(batch.next_cursor, 3);
+    assert!(
+        EventBatch::read(&window, retained.clone(), 2, false)
+            .unwrap()
+            .gap
+    );
+    assert!(
+        !EventBatch::read(&window, retained.clone(), 3, false)
+            .unwrap()
+            .gap
+    );
+    assert!(EventBatch::read(&window, retained, 4, false).is_err());
 }
 
 #[test]

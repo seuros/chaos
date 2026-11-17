@@ -1,10 +1,11 @@
 //! Commit observations before state publication; replay never drives execution.
 use super::*;
+use crate::sessions::{EventBatch, MAX_REPLAY_BYTES, ReplayEvent, Window};
 use chaos_journald::{ExecutionReplayRequest, ExecutionReplayResponse};
 
 impl Owner {
-    async fn replay(&self, after: u64) -> Result<super::super::EventBatch, ApiError> {
-        let Response::Replay(ExecutionReplayResponse::Batch(mut batch)) = self
+    async fn stored(&self) -> Result<(Window, Vec<ReplayEvent>), ApiError> {
+        let Response::Replay(ExecutionReplayResponse::Batch(batch)) = self
             .store
             .call(Request::Replay {
                 request: ExecutionReplayRequest::Read {
@@ -16,36 +17,36 @@ impl Owner {
         else {
             return Err(unavailable());
         };
-        if after > batch.next_cursor {
-            return Err(ApiError::bad_request(
-                "event cursor is ahead of this session",
-            ));
-        }
-        batch.gap = batch
+        let sizes: Vec<u64> = batch
             .events
-            .first()
-            .map_or(after < batch.next_cursor, |event| {
-                after < event.sequence - 1
-            });
-        batch.events.retain(|event| event.sequence > after);
-        Ok(super::super::EventBatch {
-            events: batch
-                .events
-                .into_iter()
-                .map(|event| {
-                    let bytes = event.event.to_string().len();
-                    super::super::ReplayEvent {
-                        sequence: event.sequence,
-                        event: event.event,
-                        bytes,
-                    }
-                })
-                .collect(),
-            gap: batch.gap,
-            next_cursor: batch.next_cursor,
-            observation_only: true,
-            durable: true,
-        })
+            .iter()
+            .map(|event| event.event.to_string().len() as u64)
+            .collect();
+        let window = batch
+            .next_cursor
+            .checked_add(1)
+            .and_then(|next| Window::restored(Some(MAX_REPLAY_BYTES), 1, next, &sizes))
+            .filter(|window| {
+                batch
+                    .events
+                    .first()
+                    .is_none_or(|event| event.sequence == window.floor())
+            })
+            .ok_or_else(unavailable)?;
+        let events = batch
+            .events
+            .into_iter()
+            .map(|event| ReplayEvent {
+                sequence: event.sequence,
+                event: event.event,
+            })
+            .collect();
+        Ok((window, events))
+    }
+
+    async fn replay(&self, after: u64) -> Result<EventBatch, ApiError> {
+        let (window, events) = self.stored().await?;
+        EventBatch::read(&window, &events, after, true)
     }
 }
 
@@ -53,7 +54,7 @@ impl Session {
     pub(in crate::sessions) async fn read_events(
         &self,
         after: u64,
-    ) -> Result<super::super::EventBatch, ApiError> {
+    ) -> Result<EventBatch, ApiError> {
         match self.ledger.get() {
             Some(owner) => owner.replay(after).await,
             None => self.events(after),
@@ -62,7 +63,7 @@ impl Session {
 
     pub(super) async fn restore_replay(&self) -> Result<(), ApiError> {
         let owner = self.ledger.get().ok_or_else(unavailable)?;
-        let mut batch = owner.replay(0).await?;
+        let (mut window, mut events) = owner.stored().await?;
         if !owner.fenced() {
             let event = serde_json::json!({
                 "id": "",
@@ -75,7 +76,7 @@ impl Session {
                 .write(Request::Replay {
                     request: ExecutionReplayRequest::Append {
                         lease: owner.lease()?,
-                        after: batch.next_cursor,
+                        after: window.next_offset() - 1,
                         event,
                     },
                 })
@@ -84,16 +85,15 @@ impl Session {
                 owner.abandon();
                 return Err(unavailable());
             };
-            if sequence != batch.next_cursor + 1 {
+            if sequence != window.next_offset() {
                 owner.abandon();
                 return Err(unavailable());
             }
-            batch = owner.replay(0).await?;
+            (window, events) = owner.stored().await?;
         }
         let mut data = self.data.lock().unwrap();
-        data.sequence = batch.next_cursor;
-        data.replay_bytes = batch.events.iter().map(|event| event.bytes).sum();
-        data.events = batch.events.into();
+        data.window = window;
+        data.events = events.into();
         Ok(())
     }
 
@@ -103,7 +103,7 @@ impl Session {
         quiescent: bool,
     ) -> Result<(), ApiError> {
         if let Some(owner) = self.ledger.get() {
-            let after = self.data.lock().unwrap().sequence;
+            let after = self.data.lock().unwrap().window.next_offset() - 1;
             let response = owner
                 .write(Request::Replay {
                     request: ExecutionReplayRequest::Append {

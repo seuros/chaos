@@ -10,6 +10,7 @@ mod billing;
 mod descendants;
 mod isolation;
 mod recovery;
+mod replay;
 
 fn claim_request(id: Uuid, owner: &str) -> ExecutionRequest {
     ExecutionRequest::Claim {

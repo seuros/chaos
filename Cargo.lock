@@ -1614,6 +1614,7 @@ dependencies = [
  "dedup-machines",
  "hmac 0.13.0",
  "jiff",
+ "journal-machines",
  "lease-machines",
  "lsd-protocol",
  "mcp-host",
@@ -2480,6 +2481,7 @@ dependencies = [
  "chaos-test-fixtures",
  "chrono-machines",
  "jiff",
+ "journal-machines",
  "lease-machines",
  "libc",
  "rama",
@@ -6361,6 +6363,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "journal-machines"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a04fa1b59ab350e53847ff7a81de92a74d108945ee994a7e79faba257d0c8a21"
+dependencies = [
+ "offset-machines",
+ "periscope-machines",
+]
+
+[[package]]
 name = "js-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7668,6 +7680,12 @@ checksum = "dd229a0361b9d0d4396176e02d65897f487eebeab7caa6d443855ee152ca0b9c"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "offset-machines"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41d5e7a0879d8875861b4042ea94e3126413ebe022ea0cd017f6cd80bb8ef1e5"
 
 [[package]]
 name = "oid-registry"

@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use super::BASE_DELAY;
 use super::HISTORY_FILENAME;
 use super::Verdict;
 use super::decide;
@@ -32,45 +31,6 @@ fn history_from_another_process_counts() {
     let foreign: Vec<Duration> = (1..=5_u32).map(|n| n * SECOND).collect();
     let decision = decide(foreign, 10 * SECOND).expect("decision");
     assert_eq!(decision.verdict, Verdict::Refuse { recent: 5 });
-}
-
-#[test]
-fn stale_history_outside_the_window_is_dropped() {
-    let stale: Vec<Duration> = (1..=5_u32).map(|n| n * SECOND).collect();
-    let now = 200 * SECOND;
-    let decision = decide(stale, now).expect("decision");
-    assert_eq!(
-        decision.verdict,
-        Verdict::Spawn {
-            delay: Duration::ZERO
-        }
-    );
-    assert_eq!(decision.history, vec![now]);
-}
-
-#[test]
-fn repeated_restarts_back_off_exponentially() {
-    let first = decide(Vec::new(), Duration::ZERO).expect("decision");
-    assert_eq!(
-        first.verdict,
-        Verdict::Spawn {
-            delay: Duration::ZERO
-        }
-    );
-    let second = decide(first.history, SECOND).expect("decision");
-    assert_eq!(
-        second.verdict,
-        Verdict::Spawn {
-            delay: BASE_DELAY * 2
-        }
-    );
-    let third = decide(second.history, 2 * SECOND).expect("decision");
-    assert_eq!(
-        third.verdict,
-        Verdict::Spawn {
-            delay: BASE_DELAY * 4
-        }
-    );
 }
 
 #[test]

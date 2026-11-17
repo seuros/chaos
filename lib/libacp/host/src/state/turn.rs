@@ -1,8 +1,10 @@
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 
 use super::Slot;
+use crate::AgentSession;
 use crate::lifecycle::TurnState;
 
 #[derive(Debug)]
@@ -33,11 +35,20 @@ impl Turn {
             .lifecycle
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if !lifecycle.request_cancel() {
-            return false;
-        }
+        lifecycle.request_cancel()
+    }
+
+    pub async fn cancel_native(&self, native: &dyn AgentSession, limit: Duration) -> bool {
+        let result = tokio::time::timeout(limit, async {
+            let interrupted = native.interrupt().await;
+            self.cancel.cancel();
+            interrupted?;
+            native.cancel().await
+        })
+        .await;
         self.cancel.cancel();
-        true
+        self.cancel_finished();
+        matches!(result, Ok(Ok(())))
     }
 
     pub fn cancel_finished(&self) {

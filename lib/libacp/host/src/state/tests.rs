@@ -117,7 +117,7 @@ fn racing_cancellations_claim_exactly_one_native_hook() {
         }
     });
     assert_eq!(claims.load(Ordering::SeqCst), 1);
-    assert!(guard.turn.cancel.is_cancelled());
+    assert!(!guard.turn.cancel.is_cancelled());
     guard.turn.cancel_finished();
     assert!(!guard.complete());
     drop(guard);

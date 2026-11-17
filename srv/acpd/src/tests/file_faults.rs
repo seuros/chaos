@@ -87,7 +87,7 @@ async fn cancelled_editor_read_ignores_late_text_and_allows_a_fresh_turn() {
             "read_file",
             &json!({"file_path":file}).to_string(),
         )),
-        2..=3,
+        2..=2,
     )
     .await;
     let (mut peer, session) = open(&fixture, true).await;

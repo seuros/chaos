@@ -34,6 +34,8 @@ mod saved;
 struct Observations {
     shutdowns: AtomicUsize,
     cancels: AtomicUsize,
+    interrupts: AtomicUsize,
+    cancelled_before_interrupt: AtomicBool,
     context: Mutex<Option<SessionContext>>,
     slow_cancel: AtomicBool,
     cancel_release: tokio::sync::Notify,
@@ -47,6 +49,7 @@ struct Backend(Arc<Observations>);
 struct NativeSession {
     observations: Arc<Observations>,
     prompts: AtomicUsize,
+    context: Mutex<Option<SessionContext>>,
 }
 
 impl AgentBackend for Backend {
@@ -58,6 +61,7 @@ impl AgentBackend for Backend {
             Ok(Arc::new(NativeSession {
                 observations: self.0.clone(),
                 prompts: AtomicUsize::new(0),
+                context: Mutex::default(),
             }) as Arc<dyn AgentSession>)
         })
     }
@@ -88,6 +92,7 @@ impl AgentSession for NativeSession {
         Box::pin(async move {
             let count = self.prompts.fetch_add(1, Ordering::SeqCst) + 1;
             *self.observations.context.lock().unwrap() = Some(context.clone());
+            *self.context.lock().unwrap() = Some(context.clone());
             let text = request
                 .prompt
                 .iter()
@@ -172,6 +177,19 @@ impl AgentSession for NativeSession {
                 .client()
                 .update(message(format!("{count}:{text}")))?;
             Ok(PromptResponse::new(StopReason::EndTurn))
+        })
+    }
+
+    fn interrupt(&self) -> protocol::BoxFuture<'_, protocol::Result<()>> {
+        Box::pin(async {
+            self.observations.interrupts.fetch_add(1, Ordering::SeqCst);
+            let context = self.context.lock().unwrap().clone();
+            if context.is_some_and(|context| context.is_cancelled()) {
+                self.observations
+                    .cancelled_before_interrupt
+                    .store(true, Ordering::SeqCst);
+            }
+            Ok(())
         })
     }
 
@@ -329,6 +347,12 @@ async fn busy_rejection_keeps_cancellation_and_other_sessions_responsive() {
         StopReason::Cancelled
     );
     assert_eq!(observations.cancels.load(Ordering::SeqCst), 1);
+    assert_eq!(observations.interrupts.load(Ordering::SeqCst), 1);
+    assert!(
+        !observations
+            .cancelled_before_interrupt
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(
         client
             .request(prompt(&first, "after"))

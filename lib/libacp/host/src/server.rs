@@ -398,15 +398,10 @@ impl AgentServer {
                         if let Some(turn) = active {
                             let state = cancelling.clone();
                             cx.spawn(async move {
-                                let result = tokio::time::timeout(
-                                    state.limits.shutdown_timeout,
-                                    slot.native.cancel(),
-                                )
-                                .await;
-                                if !matches!(result, Ok(Ok(()))) {
+                                let limit = state.limits.shutdown_timeout;
+                                if !turn.cancel_native(slot.native.as_ref(), limit).await {
                                     state.fail("ACP native cancellation is unconfirmed");
                                 }
-                                turn.cancel_finished();
                                 Ok(())
                             })?;
                         }

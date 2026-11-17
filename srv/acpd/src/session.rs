@@ -23,6 +23,18 @@ pub(crate) async fn submit(
     process.submit(op).await.map_err(|_| internal(message))
 }
 
+pub(crate) async fn resolve(
+    process: &Process,
+    context: &SessionContext,
+    op: Op,
+    message: &'static str,
+) -> protocol::Result<String> {
+    if context.is_cancelled() {
+        submit(process, Op::Interrupt, message).await?;
+    }
+    submit(process, op, message).await
+}
+
 async fn shutdown_native(table: &ProcessTable) -> protocol::Result<()> {
     let report = table.shutdown_all_processes_bounded(CLEANUP_TIMEOUT).await;
     if !report.submit_failed.is_empty()
@@ -183,8 +195,9 @@ impl NativeSession {
                         crate::elicitation::url_id(&context, &request.server_name, elicitation_id),
                     );
                 }
-                submit(
+                resolve(
                     &self.process,
+                    &context,
                     Op::ResolveElicitation {
                         server_name: request.server_name.clone(),
                         request_id: request.id.clone(),
@@ -222,8 +235,9 @@ impl NativeSession {
                 }
                 EventMsg::RequestUserInput(request) => {
                     let response = crate::elicitation::user_input(&context, request).await;
-                    submit(
+                    resolve(
                         &self.process,
+                        &context,
                         Op::UserInputAnswer {
                             id: request.turn_id.clone(),
                             response,
@@ -233,8 +247,9 @@ impl NativeSession {
                     .await?;
                 }
                 EventMsg::RequestPermissions(request) => {
-                    submit(
+                    resolve(
                         &self.process,
+                        &context,
                         Op::RequestPermissionsResponse {
                             id: request.call_id.clone(),
                             response: chaos_ipc::request_permissions::RequestPermissionsResponse {
@@ -247,8 +262,9 @@ impl NativeSession {
                     .await?;
                 }
                 EventMsg::DynamicToolCallRequest(request) => {
-                    submit(
+                    resolve(
                         &self.process,
+                        &context,
                         Op::DynamicToolResponse {
                             id: request.call_id.clone(),
                             response: chaos_ipc::dynamic_tools::DynamicToolResponse {

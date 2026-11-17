@@ -10,7 +10,7 @@ use protocol::schema::v1::{
     ToolCallUpdate, ToolKind,
 };
 
-use crate::{projection::Projection, session::submit};
+use crate::{projection::Projection, session::resolve};
 
 async fn decision(
     context: &SessionContext,
@@ -61,8 +61,9 @@ pub(crate) async fn exec(
         .effective_available_decisions()
         .contains(&ReviewDecision::Approved);
     let decision = decision(context, update, may_allow).await;
-    submit(
+    resolve(
         process,
+        context,
         Op::ExecApproval {
             id: event.effective_approval_id(),
             turn_id: Some(event.turn_id.clone()),
@@ -90,8 +91,9 @@ pub(crate) async fn patch(
     )?;
     // Never grant a persistent root even when the native request offers one.
     let decision = decision(context, update, true).await;
-    submit(
+    resolve(
         process,
+        context,
         Op::PatchApproval {
             id: event.call_id.clone(),
             decision,

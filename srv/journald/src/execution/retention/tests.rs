@@ -31,7 +31,10 @@ macro_rules! retention_scenario {
              VALUES ($1,$1,$2,$3,$4,'turn.terminal',1,'{\"signed\":\"exact bytes\"}',1)"
         ).bind(&event).bind(&scope).bind(&id).bind(&turn).execute(&$pool).await.unwrap();
         assert!(matches!($execute(&$pool, &export).await, Err(JournalError::ExecutionConflict(_))));
-        sqlx::query("UPDATE execution_outbox SET delivered_at_ms = 42 WHERE event_id = $1")
+        sqlx::query(
+            "UPDATE execution_outbox SET delivered_at_ms = 42, delivery_state = 'confirmed'
+             WHERE event_id = $1",
+        )
             .bind(&event).execute(&$pool).await.unwrap();
         sqlx::query(
             "INSERT INTO execution_invocations (invocation_id,session_id,turn_id,request_json,started_at_ms,state)
@@ -57,7 +60,8 @@ macro_rules! retention_scenario {
         ).bind(&child).bind(&id).bind(&turn).bind(&process).execute(&$pool).await.unwrap();
         sqlx::query("UPDATE execution_invocations SET source_turn_id = $1 WHERE invocation_id = $2")
             .bind(&source_turn).bind(&invocation).execute(&$pool).await.unwrap();
-        sqlx::raw_sql($export_fault).execute(&$pool).await.unwrap();
+        let fault = $export_fault.replace("{session}", &id);
+        sqlx::raw_sql(sqlx::AssertSqlSafe(fault)).execute(&$pool).await.unwrap();
         assert!($execute(&$pool, &export).await.is_err());
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_archives WHERE session_id = $1")
             .bind(&id).fetch_one(&$pool).await.unwrap();
@@ -72,6 +76,7 @@ macro_rules! retention_scenario {
         assert_eq!(contents["turns"][0]["fingerprint"], "immutable-fingerprint");
         assert_eq!(contents["turns"][0]["accounting_coverage"], "direct_logical_sampling_and_compaction");
         assert_eq!(contents["events"][0]["body_json"], "{\"signed\":\"exact bytes\"}");
+        assert!(contents["events"][0].get("delivery_state").is_none());
         assert_eq!(contents["invocations"][0]["receipt_json"], "{\"usage\":null}");
         assert_eq!(contents["invocations"][0]["source_turn_id"], source_turn);
         assert_eq!(contents["descendants"][0]["process_id"], child);
@@ -161,7 +166,8 @@ macro_rules! retention_scenario {
             scope: scope.clone(), session_id, manifest_digest: latest_digest,
             archive_reference: "offline-backup:operator-copy-2".into(), actor: "operator".into(),
         };
-        sqlx::raw_sql($seal_fault).execute(&$pool).await.unwrap();
+        let fault = $seal_fault.replace("{session}", &id);
+        sqlx::raw_sql(sqlx::AssertSqlSafe(fault)).execute(&$pool).await.unwrap();
         assert!($execute(&$pool, &seal).await.is_err());
         assert_eq!($execute(&$pool, &read).await.unwrap(), first, "failed seal commit must preserve the unsealed export");
         sqlx::raw_sql($seal_clear).execute(&$pool).await.unwrap();
@@ -201,6 +207,106 @@ macro_rules! retention_scenario {
     }};
 }
 
+macro_rules! dead_delivery_scenario {
+    ($pool:ident, $execute:ident) => {{
+        let session_id = Uuid::new_v4();
+        let id = session_id.to_string();
+        let scope = format!("archive-{session_id}");
+        let event = Uuid::new_v4().to_string();
+        sqlx::query("INSERT INTO execution_scopes (scope) VALUES ($1)")
+            .bind(&scope)
+            .execute(&$pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO execution_sessions (session_id,scope,state,owner_id,expires_at_ms)
+             VALUES ($1,$2,'closed','',0)",
+        )
+        .bind(&id)
+        .bind(&scope)
+        .execute(&$pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO execution_outbox (event_id,event_key,scope,session_id,kind,
+             created_at_ms,body_json,next_attempt_at_ms)
+             VALUES ($1,$1,$2,$3,'session.resolved',1,'{}',1)",
+        )
+        .bind(&event)
+        .bind(&scope)
+        .bind(&id)
+        .execute(&$pool)
+        .await
+        .unwrap();
+        let export = ExecutionRetentionRequest::Export {
+            scope: scope.clone(),
+            session_id,
+        };
+        for unsettled in ["pending", "claimed"] {
+            sqlx::query("UPDATE execution_outbox SET delivery_state = $1 WHERE event_id = $2")
+                .bind(unsettled)
+                .bind(&event)
+                .execute(&$pool)
+                .await
+                .unwrap();
+            assert!(
+                matches!(
+                    $execute(&$pool, &export).await,
+                    Err(JournalError::ExecutionConflict(_))
+                ),
+                "a {unsettled} delivery still blocks archiving"
+            );
+        }
+        sqlx::query(
+            "UPDATE execution_outbox SET delivery_state = 'dead', attempts = 32,
+             dead_at_ms = 77, dead_reason = 'attempts exhausted' WHERE event_id = $1",
+        )
+        .bind(&event)
+        .execute(&$pool)
+        .await
+        .unwrap();
+        let exported = $execute(&$pool, &export).await.unwrap();
+        let manifest = exported.manifest.as_ref().unwrap();
+        let contents: Value = serde_json::from_str(&manifest.json).unwrap();
+        let recorded = &contents["events"][0];
+        assert_eq!(recorded["delivered_at_ms"], Value::Null);
+        assert_eq!(recorded["delivery_state"], "dead");
+        assert_eq!(recorded["dead_at_ms"], 77);
+        assert_eq!(recorded["dead_reason"], "attempts exhausted");
+        let seal = ExecutionRetentionRequest::Seal {
+            scope,
+            session_id,
+            manifest_digest: manifest.sha256.clone(),
+            archive_reference: "offline-backup:dead-delivery".into(),
+            actor: "operator".into(),
+        };
+        let sealed = $execute(&$pool, &seal).await.unwrap();
+        assert!(sealed.archive.as_ref().unwrap().sealed_at_ms.is_some());
+        assert_eq!($execute(&$pool, &export).await.unwrap(), sealed);
+    }};
+}
+
+#[tokio::test]
+async fn sqlite_dead_delivery_settles_archiving() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = crate::SqliteJournalStore::open(&dir.path().join("dead.sqlite"))
+        .await
+        .unwrap();
+    let pool = store.pool().clone();
+    dead_delivery_scenario!(pool, execute_retention_sqlite);
+}
+
+#[tokio::test]
+async fn postgres_dead_delivery_settles_archiving() {
+    let Ok(url) = std::env::var("TEST_DATABASE_URL") else {
+        return;
+    };
+    let pool = chaos_proc::open_runtime_db_postgres_url(&url)
+        .await
+        .unwrap();
+    dead_delivery_scenario!(pool, execute_retention_postgres);
+}
+
 #[tokio::test]
 async fn sqlite_archive_is_explicit_atomic_scoped_and_non_destructive() {
     let dir = tempfile::tempdir().unwrap();
@@ -236,12 +342,14 @@ async fn postgres_archive_is_explicit_atomic_scoped_and_non_destructive() {
         "CREATE FUNCTION retention_test_fail_export() RETURNS trigger LANGUAGE plpgsql AS
          $$ BEGIN RAISE EXCEPTION 'injected export failure'; END $$;
          CREATE TRIGGER retention_test_fail_export BEFORE INSERT ON execution_archives
-         FOR EACH ROW EXECUTE FUNCTION retention_test_fail_export()",
+         FOR EACH ROW WHEN (NEW.session_id = '{session}')
+         EXECUTE FUNCTION retention_test_fail_export()",
         "DROP TRIGGER retention_test_fail_export ON execution_archives; DROP FUNCTION retention_test_fail_export()",
         "CREATE FUNCTION retention_test_fail_seal() RETURNS trigger LANGUAGE plpgsql AS
          $$ BEGIN RAISE EXCEPTION 'injected seal failure'; END $$;
          CREATE TRIGGER retention_test_fail_seal BEFORE UPDATE ON execution_archives
-         FOR EACH ROW EXECUTE FUNCTION retention_test_fail_seal()",
+         FOR EACH ROW WHEN (NEW.session_id = '{session}')
+         EXECUTE FUNCTION retention_test_fail_seal()",
         "DROP TRIGGER retention_test_fail_seal ON execution_archives; DROP FUNCTION retention_test_fail_seal()"
     );
 }

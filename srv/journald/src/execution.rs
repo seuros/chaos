@@ -464,8 +464,8 @@ pub use invocations::{
 };
 mod storage;
 pub use outbox::{
-    ExecutionDelivery, ExecutionDeliveryLease, ExecutionDeliveryRequest, ExecutionDeliveryStatus,
-    ExecutionEvent,
+    ExecutionDelivery, ExecutionDeliveryLease, ExecutionDeliveryRequest, ExecutionDeliveryState,
+    ExecutionDeliveryStatus, ExecutionEvent,
 };
 
 #[cfg(test)]

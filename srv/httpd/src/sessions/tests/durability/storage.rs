@@ -137,7 +137,9 @@ impl Database {
     }
 
     pub(super) async fn make_delivery_due(&self, event_id: Uuid) {
-        let sql = "UPDATE execution_outbox SET expires_at_ms = 1, next_attempt_at_ms = 1 WHERE event_id = $1";
+        let sql = "UPDATE execution_outbox SET next_attempt_at_ms = 1, failed_after_ms = NULL,
+            expires_at_ms = CASE WHEN delivery_state = 'claimed' THEN 2 ELSE 1 END,
+            observed_at_ms = 2 WHERE event_id = $1";
         match self {
             Self::Sqlite(db) => {
                 sqlx::query(sql)

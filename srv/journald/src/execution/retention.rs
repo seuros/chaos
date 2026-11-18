@@ -135,6 +135,39 @@ fn archive_response(session_id: Uuid, row: Option<ArchiveRow>) -> ExecutionReten
     }
 }
 
+#[derive(sqlx::FromRow)]
+struct OutboxEvidence {
+    event_id: String,
+    event_key: String,
+    turn_id: Option<String>,
+    kind: String,
+    created_at_ms: i64,
+    body_json: String,
+    attempts: i64,
+    delivered_at_ms: Option<i64>,
+    delivery_state: String,
+    dead_at_ms: Option<i64>,
+    dead_reason: Option<String>,
+}
+
+impl OutboxEvidence {
+    fn into_json(self) -> Value {
+        let mut event = serde_json::json!({
+            "event_id": self.event_id, "event_key": self.event_key, "turn_id": self.turn_id,
+            "kind": self.kind, "created_at_ms": self.created_at_ms, "body_json": self.body_json,
+            "attempts": self.attempts, "delivered_at_ms": self.delivered_at_ms
+        });
+        if let (Value::Object(fields), "dead") = (&mut event, self.delivery_state.as_str()) {
+            fields.extend([
+                ("delivery_state".to_owned(), Value::from("dead")),
+                ("dead_at_ms".to_owned(), Value::from(self.dead_at_ms)),
+                ("dead_reason".to_owned(), Value::from(self.dead_reason)),
+            ]);
+        }
+        event
+    }
+}
+
 /// All queries execute under the execution-session writer lock. Do not include
 /// renewable lease credentials or global mutable process transcripts in exports.
 macro_rules! financial_snapshot {
@@ -188,8 +221,9 @@ macro_rules! snapshot {
             "SELECT resolution_id, request_json, resolved_at_ms FROM execution_resolutions
              WHERE session_id = $1 ORDER BY resolution_id"
         ).bind(&$session_id).fetch_all(&mut *$tx).await?;
-        let events = sqlx::query_as::<_, (String, String, Option<String>, String, i64, String, i64, Option<i64>)>(
-            "SELECT event_id, event_key, turn_id, kind, created_at_ms, body_json, attempts, delivered_at_ms
+        let events = sqlx::query_as::<_, OutboxEvidence>(
+            "SELECT event_id, event_key, turn_id, kind, created_at_ms, body_json, attempts,
+             delivered_at_ms, delivery_state, dead_at_ms, dead_reason
              FROM execution_outbox WHERE session_id = $1 ORDER BY event_id"
         ).bind(&$session_id).fetch_all(&mut *$tx).await?;
         let invocations = sqlx::query_as::<_, (String, String, String, i64, String, Option<String>, Option<String>, Option<i64>, Option<String>)>(
@@ -240,11 +274,7 @@ macro_rules! snapshot {
             "resolutions": resolutions.into_iter().map(|(resolution_id, request_json, resolved_at_ms)| serde_json::json!({
                 "resolution_id": resolution_id, "request_json": request_json, "resolved_at_ms": resolved_at_ms
             })).collect::<Vec<_>>(),
-            "events": events.into_iter().map(|(event_id, event_key, turn_id, kind, created_at_ms, body_json, attempts, delivered_at_ms)| serde_json::json!({
-                "event_id": event_id, "event_key": event_key, "turn_id": turn_id, "kind": kind,
-                "created_at_ms": created_at_ms, "body_json": body_json,
-                "attempts": attempts, "delivered_at_ms": delivered_at_ms
-            })).collect::<Vec<_>>(),
+            "events": events.into_iter().map(OutboxEvidence::into_json).collect::<Vec<_>>(),
             "invocations": invocations.into_iter().map(|(invocation_id, turn_id, request_json, started_at_ms, state, receipt_json, duplicate_receipt_of, finished_at_ms, source_turn_id)| serde_json::json!({
                 "invocation_id": invocation_id, "turn_id": turn_id, "request_json": request_json,
                 "started_at_ms": started_at_ms, "state": state, "receipt_json": receipt_json,
@@ -307,11 +337,15 @@ macro_rules! impl_retention {
             if row.2 != "closed" { return Err(conflict("only closed sessions can be archived")); }
             let unready: i64 = sqlx::query_scalar(
                 "SELECT
-                    (SELECT COUNT(*) FROM execution_outbox WHERE session_id = $1 AND delivered_at_ms IS NULL) +
+                    (SELECT COUNT(*) FROM execution_outbox
+                     WHERE session_id = $1 AND delivery_state NOT IN ('confirmed','dead')) +
                     (SELECT COUNT(*) FROM execution_invocations WHERE session_id = $1 AND state != 'completed') +
                     (SELECT COUNT(*) FROM execution_turns WHERE session_id = $1 AND state NOT IN ('completed','failed','interrupted','timed_out'))"
             ).bind(&id).fetch_one(&mut *tx).await?;
-            if unready != 0 { return Err(conflict("archive requires acknowledged deliveries and terminal known execution evidence")); }
+            if unready != 0 {
+                let reason = "archive requires settled deliveries and terminal execution evidence";
+                return Err(conflict(reason));
+            }
             let snapshot = snapshot!($backend, tx, id, scope, row.1, row.3);
             let json = serde_json::to_string(&snapshot).map_err(|source| JournalError::Serialize { field: "archive manifest", source })?;
             if json.len() > MAX_EXECUTION_ARCHIVE_BYTES {

@@ -1,4 +1,8 @@
 use super::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
+
+use crate::machine_recovery::Clock;
 
 mod checkpoints;
 
@@ -38,6 +42,18 @@ async fn sample(session: &Session, thermal: vitals_machines::probe::ThermalState
         .refresh_machine_recovery_with_observer(|_| async move { Ok(observation(thermal)) })
         .await
         .unwrap();
+}
+
+async fn manual_clock(session: &Session) -> Arc<AtomicU64> {
+    let seconds = Arc::new(AtomicU64::new(0));
+    let now = seconds.clone();
+    session.state.lock().await.machine_recovery.clock =
+        Clock::from_fn(move || Duration::from_secs(now.load(Ordering::Relaxed)));
+    seconds
+}
+
+fn advance(clock: &AtomicU64) {
+    clock.fetch_add(POLL_INTERVAL.as_secs(), Ordering::Relaxed);
 }
 
 async fn unresolved(session: &Session) {
@@ -208,7 +224,7 @@ async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
     use vitals_machines::probe::ThermalState;
     for opted_in in [false, true] {
         let (session, turn) = crate::chaos::make_session_and_context().await;
-        tokio::time::pause();
+        let clock = manual_clock(&session).await;
         unresolved(&session).await;
         if opted_in {
             session
@@ -231,7 +247,7 @@ async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
         }
         sample(&session, ThermalState::Normal).await;
         for _ in 0..9 {
-            tokio::time::advance(POLL_INTERVAL).await;
+            advance(&clock);
             sample(&session, ThermalState::Normal).await;
             assert!(
                 session
@@ -242,7 +258,7 @@ async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
                     .is_empty()
             );
         }
-        tokio::time::advance(POLL_INTERVAL).await;
+        advance(&clock);
         sample(&session, ThermalState::Normal).await;
         assert_eq!(
             session.machine_recovery_status().await.phase,
@@ -273,7 +289,7 @@ async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
             );
             sample(&session, ThermalState::Normal).await;
             for _ in 0..10 {
-                tokio::time::advance(POLL_INTERVAL).await;
+                advance(&clock);
                 sample(&session, ThermalState::Normal).await;
             }
             assert_eq!(
@@ -296,7 +312,6 @@ async fn machine_recovery_monitor_only_completes_opted_in_waits_once() {
             );
             assert_eq!(session.services.internal_task_store.list().await.len(), 1);
         }
-        tokio::time::resume();
     }
 }
 
@@ -348,7 +363,7 @@ async fn machine_recovery_after_session_resume_can_publish_a_wake() {
             .is_cancelled()
     );
 
-    tokio::time::pause();
+    let clock = manual_clock(&session).await;
     unresolved(&session).await;
     session
         .state
@@ -360,7 +375,7 @@ async fn machine_recovery_after_session_resume_can_publish_a_wake() {
     session.finish_machine_wait_request(&turn, 1).await;
     sample(&session, ThermalState::Normal).await;
     for _ in 0..10 {
-        tokio::time::advance(POLL_INTERVAL).await;
+        advance(&clock);
         sample(&session, ThermalState::Normal).await;
     }
     assert_eq!(

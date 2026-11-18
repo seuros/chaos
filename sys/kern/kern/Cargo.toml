@@ -30,7 +30,8 @@ chaos-minions = { workspace = true }
 chaos-synopsis = { workspace = true }
 chaos-sysinfo = { workspace = true }
 chardetng = { workspace = true }
-deadline-machines = { workspace = true }
+deadline-machines = { workspace = true, features = ["continuous"] }
+feedback-machines = { workspace = true }
 vitals-machines = { workspace = true }
 jiff = { workspace = true }
 chaos-parrot = { workspace = true }

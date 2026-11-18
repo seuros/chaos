@@ -243,6 +243,7 @@ Recovery requires the greater of the capped percentage-with-margin reserve
 (rounded up) and the warning reserve plus the byte margin, then a stable window.
 Defaults cap warnings at 20 GiB and require 21 GiB for recovery on large disks.
 Impossible recovery targets stay blocked; this is not a capacity guarantee.
+Every condition keeps its recovery headroom until its warning threshold fires again.
 
 ### Opt-in recovery wake
 

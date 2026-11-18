@@ -1,10 +1,13 @@
 //! Session-local hysteresis and opt-in recovery. Absence of a warning is not recovery.
 use std::collections::VecDeque;
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
+use std::time::Duration;
 
+use deadline_machines::continuous::ContinuousClock;
+use feedback_machines::{Band, Hysteresis, Thresholds};
 use serde::Serialize;
-use tokio::time::Instant;
 use vitals_machines::probe::{BatteryKind, PowerSource, ThermalState};
+use vitals_machines::{Episode, Sample};
 
 use crate::config::MachineWarningsConfig;
 use crate::machine_status::{MachineStatus, ObservationRequest};
@@ -13,11 +16,12 @@ use crate::machine_warnings::disk::DiskThresholds;
 
 pub(crate) const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const MAX_GAP: Duration = Duration::from_secs(60);
+const HOUR: Duration = Duration::from_secs(3600);
 
 mod identity;
 mod lifecycle;
 use identity::same_condition;
-use lifecycle::{Observation, RecoveryObservationEvent, Wait};
+use lifecycle::Wait;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,6 +33,20 @@ pub(crate) enum Phase {
     Recovered,
     Unavailable,
     Blocked,
+}
+
+impl From<vitals_machines::Phase> for Phase {
+    fn from(phase: vitals_machines::Phase) -> Self {
+        use vitals_machines::Phase as Vitals;
+        match phase {
+            Vitals::Healthy => Self::Healthy,
+            Vitals::Warning => Self::Warning,
+            Vitals::Stabilizing => Self::Stabilizing,
+            Vitals::Recovered => Self::Recovered,
+            Vitals::Unavailable => Self::Unavailable,
+            Vitals::Blocked => Self::Blocked,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,23 +69,104 @@ pub(crate) struct Interruption {
     pub count: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone)]
+pub(crate) struct Clock(Arc<dyn Fn() -> Duration + Send + Sync>);
+
+impl Default for Clock {
+    fn default() -> Self {
+        let clock = ContinuousClock::new();
+        Self(Arc::new(move || clock.now()))
+    }
+}
+
+impl Clock {
+    pub(crate) fn now(&self) -> Duration {
+        (self.0)()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_fn(now: impl Fn() -> Duration + Send + Sync + 'static) -> Self {
+        Self(Arc::new(now))
+    }
+}
+
+struct Outstanding {
+    side: Band,
+    warning: MachineWarning,
+}
+
+impl Outstanding {
+    fn new(warning: MachineWarning) -> Self {
+        Self {
+            side: alarmed(&warning),
+            warning,
+        }
+    }
+}
+
 pub(crate) struct Recovery {
-    pub probe: std::sync::Arc<tokio::sync::Mutex<()>>,
-    pub checkpoint_writer: std::sync::Arc<tokio::sync::Mutex<()>>,
+    pub probe: Arc<tokio::sync::Mutex<()>>,
+    pub checkpoint_writer: Arc<tokio::sync::Mutex<()>>,
     pub owner_revision: u64,
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
-    pub generation: u64,
+    pub clock: Clock,
+    scope: u16,
+    episodes: vitals_machines::Recovery,
     recovery_id: Option<i64>,
-    observation: Observation,
+    outstanding: Vec<Outstanding>,
+    blocked_reason: Option<String>,
     wait: Wait,
-    interruptions: VecDeque<(Instant, Vec<&'static str>)>,
+    interruptions: VecDeque<(Duration, Vec<&'static str>)>,
+}
+
+impl Default for Recovery {
+    fn default() -> Self {
+        Self::in_scope(0)
+    }
 }
 
 impl Recovery {
+    fn in_scope(scope: u16) -> Self {
+        Self {
+            probe: Arc::default(),
+            checkpoint_writer: Arc::default(),
+            owner_revision: 0,
+            sample_revision: 0,
+            context: None,
+            clock: Clock::default(),
+            scope,
+            episodes: vitals_machines::Recovery::with_scope(scope, MAX_GAP),
+            recovery_id: None,
+            outstanding: Vec::new(),
+            blocked_reason: None,
+            wait: Wait::default(),
+            interruptions: VecDeque::new(),
+        }
+    }
+
+    /// A slow checkpoint must not bind to an episode of the new context.
+    pub fn replace_context(&mut self, context: ObservationRequest) {
+        let mut next = Self::in_scope(self.scope.wrapping_add(1));
+        next.probe = self.probe.clone();
+        next.checkpoint_writer = self.checkpoint_writer.clone();
+        next.owner_revision = self.owner_revision;
+        next.sample_revision = self.sample_revision;
+        next.clock = self.clock.clone();
+        next.context = Some(context);
+        *self = next;
+    }
+
+    pub fn now(&self) -> Duration {
+        self.clock.now()
+    }
+
     pub fn phase(&self) -> Phase {
-        self.observation.phase()
+        self.episodes.phase().into()
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.episodes.episode().map_or(0, Episode::raw)
     }
 
     pub fn wait_id(&self) -> Option<&str> {
@@ -89,11 +188,9 @@ impl Recovery {
     /// What the outstanding warnings are about, in a fixed vocabulary.
     pub fn causes(&self) -> Vec<&'static str> {
         let mut causes: Vec<_> = self
-            .observation
-            .data()
             .outstanding
             .iter()
-            .map(cause)
+            .map(|item| cause(&item.warning))
             .collect();
         causes.sort_unstable();
         causes.dedup();
@@ -101,30 +198,32 @@ impl Recovery {
     }
 
     pub fn unresolved(&self) -> bool {
-        !self.observation.data().outstanding.is_empty() && self.phase() != Phase::Recovered
+        self.episodes.unresolved()
     }
 
-    pub fn checkpoint_recovery_id(&self) -> Result<Option<i64>, String> {
+    pub fn checkpoint_recovery_id(&self) -> Result<(Episode, Option<i64>), String> {
         if self.owner_revision != self.sample_revision {
             return Err(
                 "Operator input superseded this model response; checkpoint rejected.".into(),
             );
         }
-        if !self.unresolved() {
+        let Some(episode) = self.episodes.episode().filter(|_| self.unresolved()) else {
             return Err(
                 "Recovery checkpoints can only be saved during an unresolved machine warning."
                     .into(),
             );
-        }
+        };
         if self.wait_id().is_some() {
             return Err("Save the checkpoint before requesting a recovery wait.".into());
         }
-        Ok(self.recovery_id)
+        Ok((episode, self.recovery_id))
     }
 
-    pub fn bind_checkpoint_recovery(&mut self, generation: u64, recovery_id: i64) {
-        // A slow commit must not attach its identity to a newer warning episode.
-        if self.generation == generation && self.unresolved() && self.recovery_id.is_none() {
+    pub fn bind_checkpoint_recovery(&mut self, episode: Episode, recovery_id: i64) {
+        if self.episodes.episode() == Some(episode)
+            && self.unresolved()
+            && self.recovery_id.is_none()
+        {
             self.recovery_id = Some(recovery_id);
         }
     }
@@ -160,120 +259,81 @@ impl Recovery {
         &mut self,
         observation: &Result<MachineStatus, String>,
         config: &MachineWarningsConfig,
-        now: Instant,
-        wall: SystemTime,
+        now: Duration,
     ) {
         self.interruptions
-            .retain(|(at, _)| now.duration_since(*at) < Duration::from_secs(3600));
-        let gap = self
-            .observation
-            .data()
-            .last_sample
-            .is_some_and(|(last, last_wall)| {
-                now.duration_since(last) > MAX_GAP
-                    || wall
-                        .duration_since(last_wall)
-                        .map_or(true, |elapsed| elapsed > MAX_GAP)
-            });
-        self.observation.data_mut().last_sample = Some((now, wall));
-        if gap {
-            self.observation.reset_stability();
-        }
-        self.observation.data_mut().blocked_reason = None;
-        let Ok(status) = observation else {
-            if !self.observation.data().outstanding.is_empty() {
-                self.observation
-                    .observe(RecoveryObservationEvent::Unavailable);
-            }
+            .retain(|(at, _)| now.saturating_sub(*at) < HOUR);
+        self.blocked_reason = None;
+        let sample = match observation {
+            Err(_) => Sample::Unavailable,
+            Ok(status) => match self.evidence(status, config) {
+                _ if !status.warnings.is_empty() => Sample::Warning,
+                Err(reason) => {
+                    self.blocked_reason = Some(reason.into());
+                    if blocks(reason) {
+                        Sample::Blocked
+                    } else {
+                        Sample::Unavailable
+                    }
+                }
+                Ok(false) => Sample::Short,
+                Ok(true) => Sample::Headroom {
+                    required: Duration::from_secs(self.required_seconds(config)),
+                },
+            },
+        };
+        let Ok(observed) = self.episodes.observe(now, sample) else {
             return;
         };
-        if !status.warnings.is_empty() {
-            if self.observation.data().outstanding.is_empty()
-                || self.observation.data().recovered_episode
+        if observed.opened {
+            self.recovery_id = None;
+            self.outstanding.clear();
+            self.interruptions.push_back((now, Vec::new()));
+            // Bounded even for pathological warning flapping.
+            while self.interruptions.len() > 256 {
+                self.interruptions.pop_front();
+            }
+        }
+        let Ok(status) = observation else {
+            return;
+        };
+        for warning in &status.warnings {
+            if !self
+                .outstanding
+                .iter()
+                .any(|old| same_condition(&old.warning, warning))
             {
-                self.generation += 1;
-                self.recovery_id = None;
-                self.observation.data_mut().recovered_episode = false;
-                self.observation.data_mut().outstanding.clear();
-                self.interruptions.push_back((now, Vec::new()));
-                // Bounded even for pathological warning flapping.
-                while self.interruptions.len() > 256 {
-                    self.interruptions.pop_front();
-                }
+                self.outstanding.push(Outstanding::new(warning.clone()));
             }
-            for warning in &status.warnings {
-                if !self
-                    .observation
-                    .data()
-                    .outstanding
-                    .iter()
-                    .any(|old| same_condition(old, warning))
-                {
-                    self.observation
-                        .data_mut()
-                        .outstanding
-                        .push(warning.clone());
-                }
-                if let Some((_, causes)) = self.interruptions.back_mut()
-                    && !causes.contains(&cause(warning))
-                {
-                    causes.push(cause(warning));
-                }
+            if let Some((_, causes)) = self.interruptions.back_mut()
+                && !causes.contains(&cause(warning))
+            {
+                causes.push(cause(warning));
             }
-            self.observation.observe(RecoveryObservationEvent::Warn);
-            return;
         }
-        if self.observation.data().outstanding.is_empty() {
-            self.observation.observe(RecoveryObservationEvent::Healthy);
-            return;
-        }
-        let evidence = self
-            .observation
-            .data()
+    }
+
+    fn evidence(
+        &mut self,
+        status: &MachineStatus,
+        config: &MachineWarningsConfig,
+    ) -> Result<bool, &'static str> {
+        let verdicts: Vec<_> = self
             .outstanding
-            .iter()
-            .try_fold(true, |healthy, warning| {
-                recovered(warning, status, config).map(|next| healthy && next)
-            });
-        match evidence {
-            Err(reason) => {
-                let event = if matches!(
-                    reason,
-                    "recovery target exceeds filesystem capacity"
-                        | "recovery target exceeds battery capacity"
-                ) {
-                    RecoveryObservationEvent::Blocked
-                } else {
-                    RecoveryObservationEvent::Unavailable
-                };
-                self.observation.observe(event);
-                self.observation.data_mut().blocked_reason = Some(reason.into());
-            }
-            Ok(false) => {
-                self.observation.observe(RecoveryObservationEvent::Warn);
-            }
-            Ok(true) => {
-                let since = self.observation.healthy_since().unwrap_or(now);
-                let required = self.required_seconds(config);
-                self.observation
-                    .observe(if now.duration_since(since).as_secs() >= required {
-                        RecoveryObservationEvent::Stable(since)
-                    } else {
-                        RecoveryObservationEvent::Headroom(since)
-                    });
-                self.observation.data_mut().recovered_episode |= self.phase() == Phase::Recovered;
-            }
-        }
+            .iter_mut()
+            .map(|item| recovered(&item.warning, &mut item.side, status, config))
+            .collect();
+        verdicts
+            .into_iter()
+            .try_fold(true, |healthy, next| next.map(|next| healthy && next))
     }
 
     /// Thermal recovery needs a long window; power and disk flip instantly.
     pub(super) fn required_seconds(&self, config: &MachineWarningsConfig) -> u64 {
         if self
-            .observation
-            .data()
             .outstanding
             .iter()
-            .any(|warning| cause(warning) == "thermal")
+            .any(|item| cause(&item.warning) == "thermal")
         {
             config.recovery_stable_seconds
         } else {
@@ -281,7 +341,7 @@ impl Recovery {
         }
     }
 
-    pub fn status(&self, config: &MachineWarningsConfig, now: Instant) -> RecoveryStatus {
+    pub fn status(&self, config: &MachineWarningsConfig, now: Duration) -> RecoveryStatus {
         let interruptions_last_hour = ["power", "thermal", "disk"]
             .into_iter()
             .map(|cause| Interruption {
@@ -290,34 +350,31 @@ impl Recovery {
                     .interruptions
                     .iter()
                     .filter(|(at, causes)| {
-                        now.duration_since(*at) < Duration::from_secs(3600)
-                            && causes.contains(&cause)
+                        now.saturating_sub(*at) < HOUR && causes.contains(&cause)
                     })
                     .count(),
             })
             .collect();
         RecoveryStatus {
             phase: self.phase(),
-            generation: self.generation,
+            generation: self.generation(),
             recovery_id: self.recovery_id,
-            stable_seconds: self
-                .observation
-                .healthy_since()
-                .zip(self.observation.data().last_sample)
-                .map_or(0, |(since, (sample, _))| {
-                    sample.duration_since(since).as_secs()
-                }),
+            stable_seconds: self.episodes.stable_for().map_or(0, |held| held.as_secs()),
             required_seconds: self.required_seconds(config),
             wait_id: self.wait_id().map(str::to_owned),
-            outstanding: self.observation.data().outstanding.clone(),
+            outstanding: self
+                .outstanding
+                .iter()
+                .map(|item| item.warning.clone())
+                .collect(),
             interruptions_last_hour,
-            blocked_reason: self.observation.data().blocked_reason.clone(),
+            blocked_reason: self.blocked_reason.clone(),
         }
     }
 
     /// Fixed vocabulary only: OS names/paths must never become instructions.
-    pub fn instruction(&self, config: &MachineWarningsConfig, now: Instant) -> Option<String> {
-        if self.observation.data().outstanding.is_empty() {
+    pub fn instruction(&self, config: &MachineWarningsConfig, now: Duration) -> Option<String> {
+        if self.outstanding.is_empty() {
             return None;
         }
         let status = self.status(config, now);
@@ -372,8 +429,23 @@ fn cause(warning: &MachineWarning) -> &'static str {
     }
 }
 
+fn blocks(reason: &str) -> bool {
+    matches!(
+        reason,
+        "recovery target exceeds filesystem capacity" | "recovery target exceeds battery capacity"
+    )
+}
+
+fn alarmed(warning: &MachineWarning) -> Band {
+    match warning {
+        MachineWarning::Thermal { .. } | MachineWarning::CpuTemperature { .. } => Band::High,
+        MachineWarning::LowBattery { .. } | MachineWarning::LowDiskSpace { .. } => Band::Low,
+    }
+}
+
 fn recovered(
     warning: &MachineWarning,
+    side: &mut Band,
     status: &MachineStatus,
     config: &MachineWarningsConfig,
 ) -> Result<bool, &'static str> {
@@ -407,10 +479,12 @@ fn recovered(
                 .ok_or("triggering battery charge unavailable")?;
             let target = u16::from(config.battery_percent)
                 + u16::from(config.recovery_battery_margin_percent);
-            if target > 100 {
-                return Err("recovery target exceeds battery capacity");
-            }
-            Ok(u16::from(charge) >= target)
+            let thresholds = Thresholds::new(u16::from(config.battery_percent), target)
+                .filter(|_| target <= 100)
+                .ok_or("recovery target exceeds battery capacity")?;
+            let Ok(band) = Hysteresis::restored(thresholds, *side).observe(u16::from(charge));
+            *side = band;
+            Ok(band == Band::High)
         }
         MachineWarning::Thermal { .. } => match status.machine.thermal.state {
             ThermalState::Normal => Ok(true),
@@ -432,7 +506,18 @@ fn recovered(
                 .and_then(|s| s.celsius)
                 .filter(|v| v.is_finite())
                 .ok_or("triggering temperature sensor unavailable")?;
-            Ok(reading <= threshold - config.recovery_temperature_margin_celsius)
+            let band = Thresholds::new(
+                threshold - config.recovery_temperature_margin_celsius,
+                *threshold,
+            )
+            .and_then(|thresholds| {
+                Hysteresis::restored(thresholds, *side)
+                    .observe(reading)
+                    .ok()
+            })
+            .ok_or("triggering temperature sensor unavailable")?;
+            *side = band;
+            Ok(band == Band::Low)
         }
         MachineWarning::LowDiskSpace {
             filesystem,
@@ -452,8 +537,13 @@ fn recovered(
             {
                 return Err("triggering storage target unavailable or remounted");
             }
-            let bytes = DiskThresholds::new(config, fs.total_bytes).recovery_bytes?;
-            Ok(u128::from(fs.available_bytes) >= bytes)
+            let reserves = DiskThresholds::new(config, fs.total_bytes);
+            let thresholds = Thresholds::new(reserves.warning_bytes, reserves.recovery_bytes?)
+                .ok_or("recovery target exceeds filesystem capacity")?;
+            let Ok(band) =
+                Hysteresis::restored(thresholds, *side).observe(u128::from(fs.available_bytes));
+            *side = band;
+            Ok(band == Band::High)
         }
     }
 }

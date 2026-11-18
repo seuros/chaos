@@ -1740,6 +1740,7 @@ dependencies = [
  "deadline-machines",
  "encoding_rs",
  "env-flags",
+ "feedback-machines",
  "futures",
  "image",
  "include_dir",
@@ -3244,10 +3245,11 @@ dependencies = [
 
 [[package]]
 name = "deadline-machines"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da2c41f4fe7e16b2ea82f392e628fa0f1a03de6b7cdb6b80f540e13f4eaaeabc"
+checksum = "ef0dade0f43e6d4da638f67256515519eaad07374a4fb7cea2ea31d17e6859be"
 dependencies = [
+ "libc",
  "tokio",
  "tokio-util",
 ]
@@ -3807,9 +3809,9 @@ dependencies = [
 
 [[package]]
 name = "feedback-machines"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92cfc70539291faea66716a995a726ffcdcde90a42c6862b7bcb6d2132fa44e8"
+checksum = "ad3666266c28d9c001278203d4966a86e0a5be38218c7a9deb5655755a0f94ab"
 
 [[package]]
 name = "ff"
@@ -6870,9 +6872,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.27.0"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f26382da2a568bcb8bd7fc30773753ff69649c425e57bdc52b2433910c1009b0"
+checksum = "de5f7477fe6f523076c83a472de75db288fd4044141ae9566e0766d24014e0c1"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",

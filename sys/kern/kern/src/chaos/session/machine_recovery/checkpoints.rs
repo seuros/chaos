@@ -2,7 +2,6 @@
 use anyhow::Context;
 use chaos_proc::{RecoveryCheckpoint, RecoveryCheckpointNote, RecoveryCheckpointWrite};
 use serde_json::json;
-use tokio::time::Instant;
 
 use super::super::Session;
 use crate::chaos::TurnContext;
@@ -30,10 +29,10 @@ impl Session {
             config.machine_warnings.enabled,
             "Machine warnings are disabled."
         );
-        let (generation, recovery_id, context, observation) = {
+        let (episode, recovery_id, context, observation) = {
             let state = self.state.lock().await;
             let recovery = &state.machine_recovery;
-            let recovery_id = recovery
+            let (episode, recovery_id) = recovery
                 .checkpoint_recovery_id()
                 .map_err(anyhow::Error::msg)?;
             let context = ObservationRequest::new(&config, &state.session_configuration.cwd);
@@ -42,10 +41,10 @@ impl Session {
                 "Machine observation context changed; wait for a fresh observation."
             );
             (
-                recovery.generation,
+                episode,
                 recovery_id,
                 context,
-                serde_json::to_value(recovery.status(&config.machine_warnings, Instant::now()))?,
+                serde_json::to_value(recovery.status(&config.machine_warnings, recovery.now()))?,
             )
         };
         let runtime = self
@@ -72,7 +71,7 @@ impl Session {
             let mut state = self.state.lock().await;
             let recovery = &mut state.machine_recovery;
             if recovery.context.as_ref() == Some(&context) {
-                recovery.bind_checkpoint_recovery(generation, id);
+                recovery.bind_checkpoint_recovery(episode, id);
             }
         }
         Ok(committed.checkpoint)
@@ -114,7 +113,7 @@ impl Session {
                         && *context
                             == &ObservationRequest::new(&config, &state.session_configuration.cwd)
                 })
-                .map(|_| recovery.status(&config.machine_warnings, Instant::now()))
+                .map(|_| recovery.status(&config.machine_warnings, recovery.now()))
         };
         serde_json::to_string(&json!({
             "session_id": self.conversation_id,

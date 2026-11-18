@@ -1,4 +1,5 @@
 use super::super::*;
+use std::time::SystemTime;
 use vitals_machines::probe::*;
 
 pub(super) fn snapshot(
@@ -75,13 +76,15 @@ pub(super) fn sample(
     recovery: &mut Recovery,
     config: &MachineWarningsConfig,
     status: MachineStatus,
-    start: Instant,
     seconds: u64,
 ) {
-    recovery.observe(
-        &Ok(status),
-        config,
-        start + Duration::from_secs(seconds),
-        SystemTime::UNIX_EPOCH + Duration::from_secs(seconds),
-    );
+    recovery.observe(&Ok(status), config, Duration::from_secs(seconds));
+}
+
+pub(super) fn verdict(
+    warning: &MachineWarning,
+    status: &MachineStatus,
+    config: &MachineWarningsConfig,
+) -> Result<bool, &'static str> {
+    recovered(warning, &mut alarmed(warning), status, config)
 }

@@ -1,15 +1,13 @@
 //! Observation producers never spawn model turns; the runner owns wake admission.
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use chaos_ipc::background_tasks::{BackgroundTask, TaskSource, TaskState};
 use chaos_ipc::models::DeveloperInstructions;
 use chaos_ipc::protocol::{Event, EventMsg, WarningEvent};
-use tokio::time::Instant;
 
 use super::Session;
 use crate::chaos::TurnContext;
-use crate::machine_recovery::{POLL_INTERVAL, Phase, Recovery, RecoveryStatus};
+use crate::machine_recovery::{POLL_INTERVAL, Phase, RecoveryStatus};
 use crate::machine_status::{MachineStatus, ObservationRequest};
 
 mod checkpoints;
@@ -75,20 +73,16 @@ impl Session {
 
     pub(crate) async fn machine_recovery_status(&self) -> RecoveryStatus {
         let config = self.get_config().await;
-        self.state
-            .lock()
-            .await
-            .machine_recovery
-            .status(&config.machine_warnings, Instant::now())
+        let state = self.state.lock().await;
+        let recovery = &state.machine_recovery;
+        recovery.status(&config.machine_warnings, recovery.now())
     }
 
     pub(crate) async fn machine_recovery_instruction(&self) -> Option<String> {
         let config = self.get_config().await;
-        self.state
-            .lock()
-            .await
-            .machine_recovery
-            .instruction(&config.machine_warnings, Instant::now())
+        let state = self.state.lock().await;
+        let recovery = &state.machine_recovery;
+        recovery.instruction(&config.machine_warnings, recovery.now())
     }
 
     pub(crate) async fn refresh_machine_recovery(&self) -> Result<MachineStatus, String> {
@@ -141,11 +135,11 @@ impl Session {
                 let changed = {
                     let mut state = self.state.lock().await;
                     let previous = state.machine_recovery.phase();
+                    let now = state.machine_recovery.now();
                     state.machine_recovery.observe(
                         &Err(error.clone()),
                         &config.machine_warnings,
-                        Instant::now(),
-                        SystemTime::now(),
+                        now,
                     );
                     let phase = state.machine_recovery.phase();
                     if previous != phase {
@@ -193,17 +187,7 @@ impl Session {
                 } else {
                     None
                 };
-                let owner_revision = recovery.owner_revision;
-                let sample_revision = recovery.sample_revision;
-                let generation = recovery.generation;
-                let checkpoint_writer = recovery.checkpoint_writer.clone();
-                *recovery = Recovery::default();
-                recovery.owner_revision = owner_revision;
-                recovery.sample_revision = sample_revision;
-                recovery.generation = generation;
-                recovery.checkpoint_writer = checkpoint_writer;
-                recovery.probe = serial.clone();
-                recovery.context = Some(request.clone());
+                recovery.replace_context(request.clone());
                 old
             } else {
                 None
@@ -230,12 +214,8 @@ impl Session {
             }
             let recovery = &mut state.machine_recovery;
             let previous = recovery.phase();
-            recovery.observe(
-                &observation,
-                &config.machine_warnings,
-                Instant::now(),
-                SystemTime::now(),
-            );
+            let now = recovery.now();
+            recovery.observe(&observation, &config.machine_warnings, now);
             let notice = (previous != recovery.phase()).then_some(match recovery.phase() {
                 Phase::Recovered => {
                     "Machine recovery confirmed. \
@@ -277,9 +257,8 @@ impl Session {
             let state = self.state.lock().await;
             if state.machine_recovery.wait_id() == Some(id.as_str()) {
                 if state.machine_recovery.phase() == Phase::Recovered {
-                    let recovery_status = state
-                        .machine_recovery
-                        .status(&config.machine_warnings, Instant::now());
+                    let recovery = &state.machine_recovery;
+                    let recovery_status = recovery.status(&config.machine_warnings, recovery.now());
                     self.services
                         .internal_task_store
                         .complete(

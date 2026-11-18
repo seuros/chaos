@@ -29,6 +29,9 @@ should. There is no patch level; the build timestamp is the patch.
 - An execution delivery that never succeeds dies after 32 attempts instead of
   retrying hourly forever; deliveries list their state and why they died. A
   dead delivery no longer blocks archiving its session.
+- Machine recovery no longer flaps while a battery, disk or CPU reading
+  hovers inside its recovery margin, and a wall-clock step no longer resets
+  its stability window.
 
 ## [47.15.0] - 2026-11-16
 

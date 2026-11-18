@@ -83,6 +83,7 @@ async fn resource(
 async fn recovery_checkpoint_tool_commits_and_resource_stays_readable_after_recovery()
 -> anyhow::Result<()> {
     let (home, session, turn, _runtime) = fixture().await?;
+    let clock = manual_clock(&session).await;
     unresolved(&session).await;
     let mut builder = ToolRegistryBuilder::new();
     builder.register_handler(
@@ -136,13 +137,11 @@ async fn recovery_checkpoint_tool_commits_and_resource_stays_readable_after_reco
         "no checkpoint directory is created"
     );
 
-    tokio::time::pause();
     sample(&session, vitals_machines::probe::ThermalState::Normal).await;
     for _ in 0..10 {
-        tokio::time::advance(POLL_INTERVAL).await;
+        advance(&clock);
         sample(&session, vitals_machines::probe::ThermalState::Normal).await;
     }
-    tokio::time::resume();
     assert_eq!(
         session.machine_recovery_status().await.phase,
         Phase::Recovered

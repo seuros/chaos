@@ -1,5 +1,5 @@
 use super::super::*;
-use chaos_machine::*;
+use vitals_machines::probe::*;
 
 pub(super) fn snapshot(
     config: &MachineWarningsConfig,

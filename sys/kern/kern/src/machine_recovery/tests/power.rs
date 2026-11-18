@@ -1,6 +1,6 @@
 use super::super::*;
 use super::fixtures::*;
-use chaos_machine::*;
+use vitals_machines::probe::*;
 
 #[test]
 fn power_recovers_on_external_power_or_observed_battery_headroom() {

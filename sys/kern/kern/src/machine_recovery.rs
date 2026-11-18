@@ -2,9 +2,9 @@
 use std::collections::VecDeque;
 use std::time::{Duration, SystemTime};
 
-use chaos_machine::{BatteryKind, PowerSource, ThermalState};
 use serde::Serialize;
 use tokio::time::Instant;
+use vitals_machines::probe::{BatteryKind, PowerSource, ThermalState};
 
 use crate::config::MachineWarningsConfig;
 use crate::machine_status::{MachineStatus, ObservationRequest};

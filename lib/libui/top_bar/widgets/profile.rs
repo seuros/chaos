@@ -1,4 +1,4 @@
-use chaos_machine::{DisplayState, ExecutionEnvironment, FormFactor};
+use vitals_machines::probe::{DisplayState, ExecutionEnvironment, FormFactor};
 
 use super::super::machine::Source;
 use super::super::{BarWidget, Content, Side};

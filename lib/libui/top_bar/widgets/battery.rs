@@ -1,7 +1,7 @@
 //! Battery presentation consumes snapshots published by the shared runtime.
 
 use chaos_kern::machine_status::{MachineStatus, MachineWarning};
-use chaos_machine::{BatteryKind, FormFactor, PowerSource};
+use vitals_machines::probe::{BatteryKind, FormFactor, PowerSource};
 
 use super::super::machine::Source;
 use super::super::{BarWidget, Content, Tone};

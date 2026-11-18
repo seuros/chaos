@@ -1,12 +1,12 @@
 use super::*;
-use chaos_machine::{
-    Filesystem, FilesystemBacking, FilesystemId, MachineSnapshot, ResolvedStorageTarget,
-    StorageRole, StorageSnapshot, StorageTarget,
-};
 use serde_json::{Value, json};
 use std::cell::Cell;
 use std::future::ready;
 use std::time::{Duration, SystemTime};
+use vitals_machines::probe::{
+    Filesystem, FilesystemBacking, FilesystemId, MachineSnapshot, ResolvedStorageTarget,
+    StorageRole, StorageSnapshot, StorageTarget,
+};
 
 fn observation(config: &Config, cwd: &Path, observed_at: SystemTime) -> MachineStatus {
     let machine = MachineSnapshot {
@@ -128,7 +128,7 @@ async fn machine_resource_propagates_observation_failure_without_a_snapshot() {
 
 #[tokio::test]
 async fn machine_resource_preserves_fresh_platform_diagnostics() {
-    use chaos_machine::{
+    use vitals_machines::probe::{
         IndexerProcess, IndexingObservation, IndexingSnapshot, MacosThermalDiagnostics,
         SpotlightState, ThermalState,
     };

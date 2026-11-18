@@ -1,9 +1,9 @@
 use super::*;
 use crate::machine_warnings::{MachineWarning, instructions};
-use chaos_machine::{FilesystemId, StorageRole, StorageTarget};
 use rama::futures;
 use std::cell::Cell;
 use std::future::{pending, ready};
+use vitals_machines::probe::{FilesystemId, StorageRole, StorageTarget};
 
 #[tokio::test]
 async fn machine_warnings_reach_the_request_as_ephemeral_developer_input() {

@@ -38,7 +38,7 @@ pub(super) async fn append(
                     .storage
                     .filesystems
                     .iter()
-                    .filter_map(chaos_machine::Filesystem::available_percent)
+                    .filter_map(vitals_machines::probe::Filesystem::available_percent)
                     .collect::<Vec<_>>();
                 let measurements = format!(
                     "Current recovery observations (harness host): external power {:?}; \

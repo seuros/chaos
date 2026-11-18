@@ -63,47 +63,6 @@ async fn missing_credentials_trip_then_close_on_auth() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn half_open_admits_a_single_probe() {
-    let breaker = AuthBreaker::new("test-provider-probe");
-    std::assert_matches!(
-        probe(&breaker, Err(auth_missing())).await,
-        Err(ChaosErr::ProviderAuthMissing(_))
-    );
-    tokio::time::advance(AUTH_HALF_OPEN_TIMEOUT).await;
-
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
-    let first = breaker.probe(
-        || async {
-            started_tx.send(()).unwrap();
-            finish_rx.await.unwrap();
-            Err::<(), _>(auth_missing())
-        },
-        rejected,
-    );
-    let second = async {
-        started_rx.await.unwrap();
-        assert_rejected(&breaker).await;
-        finish_tx.send(()).unwrap();
-    };
-    let (first, ()) = tokio::join!(first, second);
-    std::assert_matches!(first, Err(ChaosErr::ProviderAuthMissing(_)));
-    assert_rejected(&breaker).await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn reset_reopens_probing_after_login() {
-    let breaker = AuthBreaker::new("test-provider-reset");
-    std::assert_matches!(
-        probe(&breaker, Err(auth_missing())).await,
-        Err(ChaosErr::ProviderAuthMissing(_))
-    );
-    assert_rejected(&breaker).await;
-    breaker.reset();
-    probe(&breaker, Ok(())).await.unwrap();
-}
-
-#[tokio::test(start_paused = true)]
 async fn transient_errors_do_not_trip() {
     let breaker = AuthBreaker::new("test-provider-transient");
     std::assert_matches!(

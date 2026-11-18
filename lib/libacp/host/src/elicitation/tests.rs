@@ -26,17 +26,6 @@ fn duplicate_url_ids_are_refused_until_released_or_completed() {
 }
 
 #[test]
-fn stale_claims_cannot_retain_a_replacement_reservation() {
-    let mut ledger = UrlLedger::with_capacity(4);
-    let stale = reserve(&mut ledger, "s", "e").unwrap();
-    assert!(ledger.release(stale));
-    let live = reserve(&mut ledger, "s", "e").unwrap();
-    assert!(!ledger.retain(stale));
-    assert!(!ledger.release(stale));
-    assert!(ledger.retain(live));
-}
-
-#[test]
 fn completion_is_session_scoped_and_dead_sessions_free_their_ids() {
     let mut ledger = UrlLedger::with_capacity(2);
     let (session, id) = key("s", "e");

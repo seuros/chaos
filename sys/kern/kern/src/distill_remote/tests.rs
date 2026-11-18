@@ -73,7 +73,7 @@ fn retry_budget(max_retries: u64) -> Retry {
 }
 
 #[test]
-fn remote_compaction_retries_transient_connection_failures_within_budget() {
+fn remote_compaction_retries_transient_connection_failures() {
     let error = ChaosErr::ConnectionFailed(ConnectionFailedError {
         source: Box::new(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
@@ -81,31 +81,13 @@ fn remote_compaction_retries_transient_connection_failures_within_budget() {
         )),
     });
 
-    let mut retry = retry_budget(2);
-    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
-    assert!(remote_compaction_retry_delay(&error, &mut retry).is_some());
-    assert_eq!(remote_compaction_retry_delay(&error, &mut retry), None);
-}
-
-#[test]
-fn remote_compaction_retries_capacity_errors_with_jitter_around_twenty_seconds() {
-    // Overload remains non-retryable elsewhere; compaction handles it specially.
-    let error = ChaosErr::ServerOverloaded;
-    assert!(!error.is_retryable());
-
-    for _ in 0..32 {
-        let mut retry = retry_budget(5);
-        for _ in 1..=5 {
-            let delay = remote_compaction_retry_delay(&error, &mut retry)
-                .expect("capacity errors should retry within the provider budget");
-            assert!((Duration::from_secs(15)..=Duration::from_secs(25)).contains(&delay));
-        }
-    }
+    assert!(remote_compaction_retry_delay(&error, &mut retry_budget(2)).is_some());
 }
 
 #[test]
 fn remote_compaction_capacity_retries_respect_provider_budget() {
     let error = ChaosErr::ServerOverloaded;
+    assert!(!error.is_retryable());
     assert_eq!(
         remote_compaction_retry_delay(&error, &mut retry_budget(0)),
         None

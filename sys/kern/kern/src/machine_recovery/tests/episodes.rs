@@ -266,16 +266,28 @@ fn a_refused_observation_breaks_continuity_but_keeps_the_episode() {
     assert_eq!(recovery.episode(), episode);
 }
 
-// vitals offers no way to build a Recovery whose issuer is nearly spent, so
-// these feed the refusal through the same path observe() takes on Exhausted.
+/// A recovery in scope zero with `left` episode ids still to issue.
+fn nearly_spent(left: u64) -> Recovery {
+    // Scope zero: the raw id is the sequence, the low 48 bits (`Episode::raw`).
+    let last = (u64::MAX >> 16) - left;
+    let Some(episodes) = vitals_machines::Recovery::restored(0, MAX_GAP, Some(last)) else {
+        panic!("{last:#x} is an episode id of scope zero");
+    };
+    Recovery {
+        episodes,
+        ..Recovery::default()
+    }
+}
+
 #[test]
 fn no_wait_or_checkpoint_attaches_to_a_warning_no_episode_could_open_for() {
     const EXHAUSTED: &str = "cannot open another warning episode";
     let config = MachineWarningsConfig::default();
 
     // No episode at all: the warning that should have opened one was refused.
-    let mut recovery = Recovery::default();
-    recovery.refuse(Refusal::Exhausted);
+    let mut recovery = nearly_spent(0);
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    assert_eq!(recovery.refused, Some(Refusal::Exhausted));
     assert_eq!(recovery.episode(), None);
     assert!(!recovery.unresolved());
     let refused = recovery.request_wait("turn").unwrap_err();
@@ -286,7 +298,7 @@ fn no_wait_or_checkpoint_attaches_to_a_warning_no_episode_could_open_for() {
 
     // A recovered episode is current, but the renewed warning belongs to
     // the episode that could not open, not to it.
-    let mut recovery = Recovery::default();
+    let mut recovery = nearly_spent(1);
     sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
     for seconds in (30..=330).step_by(30) {
         sample(
@@ -297,7 +309,15 @@ fn no_wait_or_checkpoint_attaches_to_a_warning_no_episode_could_open_for() {
         );
     }
     assert_eq!(recovery.phase(), Phase::Recovered);
-    recovery.refuse(Refusal::Exhausted);
+    let episode = recovery.episode();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        340,
+    );
+    assert_eq!(recovery.refused, Some(Refusal::Exhausted));
+    assert_eq!(recovery.episode(), episode);
     let refused = recovery.request_wait("turn").unwrap_err();
     assert!(refused.contains(EXHAUSTED), "{refused}");
     assert!(recovery.checkpoint_recovery_id().is_err());

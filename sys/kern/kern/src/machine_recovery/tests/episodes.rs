@@ -203,3 +203,65 @@ fn a_refused_observation_reads_as_unavailable_until_one_is_honoured() {
         None
     );
 }
+
+#[test]
+fn a_refused_observation_breaks_continuity_but_keeps_the_episode() {
+    let config = MachineWarningsConfig::default();
+    let mut recovery = Recovery::default();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        100,
+    );
+    for seconds in (130..=430).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    let episode = recovery.episode();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        50,
+    );
+    assert_eq!(recovery.phase(), Phase::Unavailable);
+
+    // One cool sample must not inherit the 300 s held before the refusal.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        460,
+    );
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    assert_eq!(recovery.episode(), episode, "same episode, fresh window");
+    assert_eq!(
+        recovery
+            .status(&config, Duration::from_secs(460))
+            .stable_seconds,
+        0
+    );
+    for seconds in (490..760).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+        assert_eq!(recovery.phase(), Phase::Stabilizing, "at {seconds}");
+    }
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        760,
+    );
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    assert_eq!(recovery.episode(), episode);
+}

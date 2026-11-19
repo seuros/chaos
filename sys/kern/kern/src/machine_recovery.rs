@@ -139,7 +139,8 @@ pub(crate) struct Recovery {
     pub clock: Clock,
     episodes: vitals_machines::Recovery,
     /// The latest observation vitals refused. Until one is honoured again
-    /// the episode cannot be trusted, so it reads as unavailable.
+    /// the episode cannot be trusted, so it reads as unavailable, and the
+    /// refused sample breaks continuity when the next one is honoured.
     refused: Option<Refusal>,
     recovery_id: Option<i64>,
     outstanding: Vec<Outstanding>,
@@ -335,13 +336,20 @@ impl Recovery {
                 },
             },
         };
+        if self.refused.is_some() {
+            // The refused sample went unmeasured as far as the episode knows.
+            // Record it as such at the first instant it can be ordered, so
+            // headroom held before it does not carry across it. The episode
+            // stays the same; only continuity breaks.
+            if let Err(refusal) = self.episodes.observe(now, Sample::Unavailable) {
+                self.refuse(refusal);
+                return;
+            }
+        }
         let observed = match self.episodes.observe(now, sample) {
             Ok(observed) => observed,
             Err(refusal) => {
-                // Nothing changed in the episode; do not let its last phase
-                // (perhaps Recovered) stand for a sample it never saw.
-                tracing::error!(?refusal, "machine recovery observation refused");
-                self.refused = Some(refusal);
+                self.refuse(refusal);
                 return;
             }
         };
@@ -372,6 +380,13 @@ impl Recovery {
                 causes.push(cause(warning));
             }
         }
+    }
+
+    /// Nothing changed in the episode; do not let its last phase (perhaps
+    /// Recovered) stand for a sample it never saw.
+    fn refuse(&mut self, refusal: Refusal) {
+        tracing::error!(?refusal, "machine recovery observation refused");
+        self.refused = Some(refusal);
     }
 
     fn evidence(

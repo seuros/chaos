@@ -23,12 +23,12 @@ pub use bootstrap::{
 };
 pub(crate) use rules::database_user_restrictions;
 
+static MOUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, String>>> =
+    std::sync::LazyLock::new(Default::default);
+
 pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
     let bootstrap = resolve_bootstrap_for_open(home).await?;
     let identity = fingerprint(&serde_json::json!({"url": bootstrap.storage_url}))?;
-    static MOUNTS: std::sync::LazyLock<
-        std::sync::Mutex<std::collections::HashMap<PathBuf, String>>,
-    > = std::sync::LazyLock::new(Default::default);
     {
         let mounts = MOUNTS
             .lock()
@@ -40,13 +40,24 @@ pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
             "bootstrap storage changed; restart ChaOS before reading or writing settings"
         );
     }
-    let runtime = crate::runtime_db::open_or_create_runtime_db(
-        &bootstrap.storage_url,
-        &bootstrap.storage_home,
-        "settings",
-    )
-    .await
-    .context("authoritative settings storage is unavailable")?;
+    let vfs = crate::runtime_db::mount_vfs_for(&bootstrap.storage_url, &bootstrap.storage_home)
+        .await
+        .context("authoritative settings storage is unavailable")?;
+    accept_mount(home, identity, &bootstrap.storage_home, vfs)?;
+    Ok(crate::runtime_db::runtime_handle_from_vfs(
+        vfs,
+        bootstrap.storage_home,
+        "settings".to_string(),
+    ))
+}
+
+/// Accept `identity` for `home` and bind its storage in one critical section.
+fn accept_mount(
+    home: &Path,
+    identity: String,
+    storage_home: &Path,
+    vfs: &'static chaos_vfs::ChaosVfs,
+) -> anyhow::Result<()> {
     let mut mounts = MOUNTS
         .lock()
         .map_err(|_| anyhow::anyhow!("settings mount lock poisoned"))?;
@@ -57,7 +68,8 @@ pub async fn open(home: &Path) -> anyhow::Result<RuntimeDbHandle> {
         "bootstrap storage changed while connecting; restart ChaOS"
     );
     mounts.insert(home.to_owned(), identity);
-    Ok(runtime)
+    chaos_vfs::bind_home(storage_home, vfs);
+    Ok(())
 }
 
 /// Resolve bootstrap for a storage open. A running process keeps the storage it

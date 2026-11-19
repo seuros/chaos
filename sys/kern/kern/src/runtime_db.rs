@@ -168,7 +168,7 @@ async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
     registry
 }
 
-fn runtime_handle_from_vfs(
+pub(crate) fn runtime_handle_from_vfs(
     vfs: &ChaosVfs,
     chaos_home: PathBuf,
     default_provider: String,
@@ -202,11 +202,12 @@ pub async fn mount_root_for(
 ) -> anyhow::Result<&'static ChaosVfs> {
     let vfs = mount_vfs_for(storage_url, storage_home).await?;
     chaos_vfs::set_root(vfs);
+    chaos_vfs::bind_home(storage_home, vfs);
     Ok(vfs)
 }
 
-/// Open the backend without claiming the root, for callers that run before boot
-/// has settled which one the process serves.
+/// Open the backend without claiming the root or binding the home; callers bind
+/// only storage they accepted.
 pub async fn mount_vfs_for(
     storage_url: &str,
     storage_home: &Path,
@@ -221,8 +222,6 @@ pub async fn mount_vfs_for(
             chaos_vfs::mount(config, vfs)
         }
     };
-    // Per-home lookups must reach this backend even when the URL is not home-keyed.
-    chaos_vfs::bind_home(storage_home, vfs);
     Ok(vfs)
 }
 

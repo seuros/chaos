@@ -372,8 +372,11 @@ impl AgentControl {
                         parent_thread.chaos.session.flush_rollout().await;
                     }
                     let mut forked_rollout_items =
-                        match RolloutRecorder::get_rollout_history_for_process(parent_process_id)
-                            .await
+                        match RolloutRecorder::get_rollout_history_for_process(
+                            &config.storage_home,
+                            parent_process_id,
+                        )
+                        .await
                         {
                             Ok(history) => history.get_rollout_items(),
                             Err(err) => {

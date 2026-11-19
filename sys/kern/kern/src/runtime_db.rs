@@ -81,10 +81,16 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
         config.model_provider_id.clone(),
     );
 
+    let storage_home = config.storage_home.clone();
     let _ = chaos_cron::spawn_scheduler(
         vfs,
         scheduler_executor(vfs, config).await,
-        Arc::new(|| Box::pin(crate::rollout::recorder::journal_client_for_mounted_backend())),
+        Arc::new(move || {
+            let storage_home = storage_home.clone();
+            Box::pin(
+                async move { crate::rollout::recorder::journal_client_for(&storage_home).await },
+            )
+        }),
     );
 
     // Install the shared ration usage store so adapters built later in

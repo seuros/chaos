@@ -127,6 +127,7 @@ async fn shell_completion(ephemeral: bool) -> Result<()> {
         use chaos_ipc::background_tasks::TaskJournalEvent;
         use chaos_ipc::protocol::RolloutItem;
         let history = chaos_kern::RolloutRecorder::get_rollout_history_for_process(
+            &test.config.storage_home,
             test.session_configured.session_id,
         )
         .await?

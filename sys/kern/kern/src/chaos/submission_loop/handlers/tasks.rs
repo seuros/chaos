@@ -92,30 +92,34 @@ pub async fn process_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u3
         return;
     }
 
-    let initial_history =
-        match RolloutRecorder::get_rollout_history_for_process(sess.conversation_id).await {
-            Ok(history) => history,
-            Err(err) => {
-                let live_rollout_items = recorder.snapshot_rollout_items();
-                if live_rollout_items.is_empty() {
-                    sess.send_event_raw(Event {
-                        id: turn_context.sub_id.clone(),
-                        msg: EventMsg::Error(ErrorEvent {
-                            message: format!(
+    let initial_history = match RolloutRecorder::get_rollout_history_for_process(
+        &sess.get_config().await.storage_home,
+        sess.conversation_id,
+    )
+    .await
+    {
+        Ok(history) => history,
+        Err(err) => {
+            let live_rollout_items = recorder.snapshot_rollout_items();
+            if live_rollout_items.is_empty() {
+                sess.send_event_raw(Event {
+                    id: turn_context.sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: format!(
                             "failed to load persisted session history for rollback replay: {err}"
                         ),
-                            chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
-                        }),
-                    })
-                    .await;
-                    return;
-                }
-                InitialHistory::Resumed(ResumedHistory {
-                    conversation_id: sess.conversation_id,
-                    history: live_rollout_items,
+                        chaos_error_info: Some(ChaosErrorInfo::ProcessRollbackFailed),
+                    }),
                 })
+                .await;
+                return;
             }
-        };
+            InitialHistory::Resumed(ResumedHistory {
+                conversation_id: sess.conversation_id,
+                history: live_rollout_items,
+            })
+        }
+    };
 
     let rollback_event = ProcessRolledBackEvent { num_turns };
     let rollback_msg = EventMsg::ProcessRolledBack(rollback_event.clone());

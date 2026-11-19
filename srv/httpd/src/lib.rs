@@ -320,7 +320,7 @@ pub async fn run_main(
     };
     let semaphore = Arc::new(Semaphore::new(serve_cli.max_concurrent));
     let (sessions, recovered) = if let Some(scope) = serve_cli.session_scope {
-        let client = chaos_kern::journal_client_for_mounted_backend()
+        let client = chaos_kern::journal_client_for(&config.storage_home)
             .await
             .map_err(anyhow::Error::msg)?;
         let (manager, recovered) = sessions::SessionManager::persistent(

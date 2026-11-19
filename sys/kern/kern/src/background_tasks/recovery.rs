@@ -43,29 +43,33 @@ impl Session {
                     self.observe_mcp_task(source.clone(), initial);
                 }
                 Some(TaskSource::Agent { process_id }) => {
-                    let completed =
-                        match RolloutRecorder::get_rollout_history_for_process(*process_id).await {
-                            Ok(history) => history
-                                .get_rollout_items()
-                                .into_iter()
-                                .rev()
-                                .find_map(|item| match item {
-                                    RolloutItem::EventMsg(EventMsg::TurnComplete(event))
-                                        if task.execution_id.as_deref() == Some(&event.turn_id) =>
-                                    {
-                                        Some(Some(event.last_agent_message))
-                                    }
-                                    RolloutItem::EventMsg(EventMsg::TurnAborted(event))
-                                        if task.execution_id.is_some()
-                                            && task.execution_id == event.turn_id =>
-                                    {
-                                        Some(None)
-                                    }
-                                    _ => None,
-                                })
-                                .flatten(),
-                            Err(_) => None,
-                        };
+                    let completed = match RolloutRecorder::get_rollout_history_for_process(
+                        &self.get_config().await.storage_home,
+                        *process_id,
+                    )
+                    .await
+                    {
+                        Ok(history) => history
+                            .get_rollout_items()
+                            .into_iter()
+                            .rev()
+                            .find_map(|item| match item {
+                                RolloutItem::EventMsg(EventMsg::TurnComplete(event))
+                                    if task.execution_id.as_deref() == Some(&event.turn_id) =>
+                                {
+                                    Some(Some(event.last_agent_message))
+                                }
+                                RolloutItem::EventMsg(EventMsg::TurnAborted(event))
+                                    if task.execution_id.is_some()
+                                        && task.execution_id == event.turn_id =>
+                                {
+                                    Some(None)
+                                }
+                                _ => None,
+                            })
+                            .flatten(),
+                        Err(_) => None,
+                    };
                     match completed {
                         Some(message) => {
                             registry

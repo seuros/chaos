@@ -107,7 +107,9 @@ async fn protected_context_is_a_session_snapshot_that_resume_and_fork_restore() 
     assert_eq!(count(&child_turn, INITIAL_CONTEXT), 2);
     assert_eq!(count(&child_turn, V1), 1);
     assert_eq!(count(&child_turn, V2), 0);
-    let child_history = RolloutRecorder::get_rollout_history_for_process(child_id).await?;
+    let child_history =
+        RolloutRecorder::get_rollout_history_for_process(&test.config.storage_home, child_id)
+            .await?;
     let child_meta = child_history
         .get_rollout_items()
         .into_iter()

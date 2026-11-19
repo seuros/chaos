@@ -46,6 +46,7 @@ async fn background_confirm_does_not_report_a_deferred_writer_as_durable() {
         model_provider: "test".into(),
         cli_version: "test".into(),
         owner_id: "test".into(),
+        storage_home: PathBuf::from("/tmp"),
         mode: JournalSinkMode::Create,
     });
     sink.machine.handle(JournalStorageEvent::Disable).unwrap();

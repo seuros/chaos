@@ -165,6 +165,7 @@ pub(crate) async fn run_session_picker(
         std::env::current_dir().ok()
     };
 
+    let storage_home = config.storage_home.clone();
     let config = config.clone();
     let loader_tx = bg_tx.clone();
     let page_loader = Arc::new(move |request: PageLoadRequest| {
@@ -218,10 +219,12 @@ pub(crate) async fn run_session_picker(
         {
             let process_id = row.process_id;
             let tx = bg_tx.clone();
+            let storage_home = storage_home.clone();
             selection_loads.spawn(async move {
-                let selection = chaos_kern::saved_selection::load_saved_selection(process_id)
-                    .await
-                    .map_err(|err| err.to_string());
+                let selection =
+                    chaos_kern::saved_selection::load_saved_selection(&storage_home, process_id)
+                        .await
+                        .map_err(|err| err.to_string());
                 let _ = tx.send(BackgroundEvent::SelectionLoaded {
                     process_id,
                     selection,

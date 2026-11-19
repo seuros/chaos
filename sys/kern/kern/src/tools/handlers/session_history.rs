@@ -125,9 +125,11 @@ impl ToolHandler for SessionHistoryHandler {
                 "failed to flush the session journal before reading it: {err}"
             ))
         })?;
-        let journal = RolloutRecorder::get_journal_for_process(session.conversation_id)
-            .await
-            .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+        let storage_home = session.get_config().await.storage_home.clone();
+        let journal =
+            RolloutRecorder::get_journal_for_process(&storage_home, session.conversation_id)
+                .await
+                .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
 
         let output = match tool_name.as_str() {
             "read_session_history" => {

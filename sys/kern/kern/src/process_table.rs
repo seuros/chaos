@@ -434,7 +434,9 @@ impl ProcessTable {
         auth_manager: Arc<AuthManager>,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
-        let initial_history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
+        let initial_history =
+            RolloutRecorder::get_rollout_history_for_process(&config.storage_home, process_id)
+                .await?;
         Box::pin(self.resume_process_with_history(
             config,
             initial_history,
@@ -491,7 +493,9 @@ impl ProcessTable {
         persist_extended_history: bool,
         parent_trace: Option<W3cTraceContext>,
     ) -> ChaosResult<NewProcess> {
-        let history = RolloutRecorder::get_rollout_history_for_process(process_id).await?;
+        let history =
+            RolloutRecorder::get_rollout_history_for_process(&config.storage_home, process_id)
+                .await?;
         let history = truncate_before_nth_user_message(history, nth_user_message);
         Box::pin(self.state.spawn_process(
             config,
@@ -658,22 +662,32 @@ impl ProcessTableState {
                 history,
             })
         };
-        let initial_history = match RolloutRecorder::journal_contains_process(process_id).await {
-            Ok(true) => match RolloutRecorder::get_rollout_history_for_process(process_id).await {
-                Ok(history) => history,
-                Err(err) => match stashed_history {
-                    Some(history) => {
-                        tracing::warn!(
-                            process_id = %process_id,
-                            error = %err,
-                            "journal returned empty/unusable history; \
-                             falling back to in-memory stash"
-                        );
-                        resumed(history)
-                    }
-                    None => return Err(err.into()),
-                },
-            },
+        let storage_home = config.storage_home.clone();
+        let initial_history = match RolloutRecorder::journal_contains_process(
+            &storage_home,
+            process_id,
+        )
+        .await
+        {
+            Ok(true) => {
+                match RolloutRecorder::get_rollout_history_for_process(&storage_home, process_id)
+                    .await
+                {
+                    Ok(history) => history,
+                    Err(err) => match stashed_history {
+                        Some(history) => {
+                            tracing::warn!(
+                                process_id = %process_id,
+                                error = %err,
+                                "journal returned empty/unusable history; \
+                                 falling back to in-memory stash"
+                            );
+                            resumed(history)
+                        }
+                        None => return Err(err.into()),
+                    },
+                }
+            }
             Ok(false) => stashed_history
                 .map(resumed)
                 .ok_or(ChaosErr::ProcessNotFound(process_id))?,

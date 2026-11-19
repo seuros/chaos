@@ -476,7 +476,7 @@ async fn run_ratatui_app(
         )
     };
     let session_selection = if let Some(id_str) = session_id {
-        match resolve_saved_process_id(id_str).await? {
+        match resolve_saved_process_id(&config, id_str).await? {
             Some(process_id) => action.selection(process_id, false),
             None => return missing_session_exit(id_str, action.action_label()),
         }
@@ -673,7 +673,10 @@ async fn run_ratatui_app(
     app_result
 }
 
-async fn resolve_saved_process_id(id_str: &str) -> std::io::Result<Option<ProcessId>> {
+async fn resolve_saved_process_id(
+    config: &Config,
+    id_str: &str,
+) -> std::io::Result<Option<ProcessId>> {
     let process_id = if Uuid::parse_str(id_str).is_ok() {
         ProcessId::from_string(id_str).ok()
     } else {
@@ -682,7 +685,7 @@ async fn resolve_saved_process_id(id_str: &str) -> std::io::Result<Option<Proces
     let Some(process_id) = process_id else {
         return Ok(None);
     };
-    if RolloutRecorder::journal_contains_process(process_id).await? {
+    if RolloutRecorder::journal_contains_process(&config.storage_home, process_id).await? {
         Ok(Some(process_id))
     } else {
         Ok(None)
@@ -699,7 +702,7 @@ pub(crate) async fn read_session_cwd_by_process_id(
         return Some(metadata.cwd);
     }
 
-    match RolloutRecorder::read_process_cwd_from_journal(process_id).await {
+    match RolloutRecorder::read_process_cwd_from_journal(&config.storage_home, process_id).await {
         Ok(cwd) => cwd,
         Err(err) => {
             warn!(

@@ -5,7 +5,7 @@ use std::io;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::{EventMsg, InitialHistory, ResumedHistory, RolloutItem, SessionSource};
 
-use super::recorder::{RolloutRecorder, journal_client_for_mounted_backend};
+use super::recorder::{RolloutRecorder, journal_client_for};
 use crate::config::Config;
 
 pub(crate) async fn restore(
@@ -13,7 +13,7 @@ pub(crate) async fn restore(
     id: ProcessId,
     expected: &InitialHistory,
 ) -> io::Result<InitialHistory> {
-    let client = journal_client_for_mounted_backend()
+    let client = journal_client_for(&config.storage_home)
         .await
         .map_err(io::Error::other)?;
     let record = client
@@ -29,7 +29,7 @@ pub(crate) async fn restore(
     {
         return Err(io::Error::other("ACP resume provenance does not match"));
     }
-    let history: Vec<_> = RolloutRecorder::get_journal_for_process(id)
+    let history: Vec<_> = RolloutRecorder::get_journal_for_process(&config.storage_home, id)
         .await?
         .items
         .into_iter()

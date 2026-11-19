@@ -847,7 +847,12 @@ async fn resolve_resume_process_id(
     } else if let Some(id_str) = args.session_id.as_deref() {
         if Uuid::parse_str(id_str).is_ok() {
             let process_id = ProcessId::from_string(id_str)?;
-            if chaos_kern::RolloutRecorder::journal_contains_process(process_id).await? {
+            if chaos_kern::RolloutRecorder::journal_contains_process(
+                &config.storage_home,
+                process_id,
+            )
+            .await?
+            {
                 Ok(Some(process_id))
             } else {
                 Ok(None)
@@ -855,7 +860,11 @@ async fn resolve_resume_process_id(
         } else {
             let process_id = chaos_kern::find_process_id_by_name(id_str).await?;
             if let Some(process_id) = process_id
-                && chaos_kern::RolloutRecorder::journal_contains_process(process_id).await?
+                && chaos_kern::RolloutRecorder::journal_contains_process(
+                    &config.storage_home,
+                    process_id,
+                )
+                .await?
             {
                 Ok(Some(process_id))
             } else {

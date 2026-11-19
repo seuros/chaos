@@ -687,8 +687,11 @@ impl Session {
             && let InitialHistory::Resumed(_) = &initial_history
         {
             if sess.services.rollout.lock().await.is_some() {
-                initial_history =
-                    RolloutRecorder::get_rollout_history_for_process(conversation_id).await?;
+                initial_history = RolloutRecorder::get_rollout_history_for_process(
+                    &config.storage_home,
+                    conversation_id,
+                )
+                .await?;
             }
             crate::goal::recover(&sess, &initial_history.get_rollout_items())
                 .await

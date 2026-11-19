@@ -208,8 +208,11 @@ fn sanitize_rollout_item_for_persistence(
 impl RolloutRecorder {
     /// Load the canonical append-only journal for a process, preserving entry
     /// sequence numbers and timestamps for bounded transcript inspection.
-    pub async fn get_journal_for_process(process_id: ProcessId) -> std::io::Result<LoadedJournal> {
-        let client = journal_client_for_mounted_backend()
+    pub async fn get_journal_for_process(
+        storage_home: &Path,
+        process_id: ProcessId,
+    ) -> std::io::Result<LoadedJournal> {
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         match client.load_journal(process_id).await {
@@ -312,14 +315,14 @@ impl RolloutRecorder {
     /// Find the newest recorded process id, optionally filtering to a matching cwd.
     #[allow(clippy::too_many_arguments)]
     pub async fn find_latest_process_id(
-        _config: &impl RolloutConfig,
+        config: &impl RolloutConfig,
         page_size: usize,
         cursor: Option<&Cursor>,
         sort_key: ProcessSortKey,
         allowed_sources: &[SessionSource],
         filter_cwd: Option<&Path>,
     ) -> std::io::Result<Option<ProcessId>> {
-        let client = journal_client_for_mounted_backend()
+        let client = journal_client_for(config.storage_home())
             .await
             .map_err(IoError::other)?;
         let mut records = client
@@ -372,6 +375,7 @@ impl RolloutRecorder {
             }
         );
         let update_default_session = !config.unattended_recovery();
+        let storage_home = config.storage_home().to_path_buf();
 
         let (meta, event_persistence_mode, journal_sink, persisted) = match params {
             RolloutRecorderParams::Create {
@@ -427,6 +431,7 @@ impl RolloutRecorder {
                         model_provider: config.model_provider_id().to_string(),
                         cli_version: CHAOS_VERSION.to_string(),
                         owner_id: Uuid::now_v7().to_string(),
+                        storage_home: storage_home.clone(),
                         mode: JournalSinkMode::Create,
                     }),
                     false,
@@ -447,6 +452,7 @@ impl RolloutRecorder {
                     model_provider: config.model_provider_id().to_string(),
                     cli_version: CHAOS_VERSION.to_string(),
                     owner_id: Uuid::now_v7().to_string(),
+                    storage_home: storage_home.clone(),
                     mode: JournalSinkMode::Resume,
                 }),
                 true,
@@ -558,7 +564,9 @@ impl RolloutRecorder {
         // Fire-and-forget: update the default session pointer in the DB.
         tokio::task::spawn(async move {
             if update_default_session
-                && let Err(err) = RolloutRecorder::set_default_session(session_id_for_default).await
+                && let Err(err) =
+                    RolloutRecorder::set_default_session(&storage_home, session_id_for_default)
+                        .await
             {
                 warn!(%err, "failed to update default session in journal backend");
             }
@@ -663,9 +671,10 @@ impl RolloutRecorder {
     }
 
     pub async fn get_rollout_history_for_process(
+        storage_home: &Path,
         process_id: ProcessId,
     ) -> std::io::Result<InitialHistory> {
-        let client = journal_client_for_mounted_backend()
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         let loaded = match client.load_journal(process_id).await {
@@ -714,16 +723,19 @@ impl RolloutRecorder {
     }
 
     /// Returns the default session ID stored in the DB, if any.
-    pub async fn get_default_session() -> std::io::Result<Option<ProcessId>> {
-        let client = journal_client_for_mounted_backend()
+    pub async fn get_default_session(storage_home: &Path) -> std::io::Result<Option<ProcessId>> {
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         client.get_default_process().await.map_err(IoError::other)
     }
 
     /// Sets the default session ID in the DB.
-    pub async fn set_default_session(process_id: ProcessId) -> std::io::Result<()> {
-        let client = journal_client_for_mounted_backend()
+    pub async fn set_default_session(
+        storage_home: &Path,
+        process_id: ProcessId,
+    ) -> std::io::Result<()> {
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         client
@@ -732,8 +744,11 @@ impl RolloutRecorder {
             .map_err(IoError::other)
     }
 
-    pub async fn journal_contains_process(process_id: ProcessId) -> std::io::Result<bool> {
-        let client = journal_client_for_mounted_backend()
+    pub async fn journal_contains_process(
+        storage_home: &Path,
+        process_id: ProcessId,
+    ) -> std::io::Result<bool> {
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         client
@@ -744,9 +759,10 @@ impl RolloutRecorder {
     }
 
     pub async fn read_process_cwd_from_journal(
+        storage_home: &Path,
         process_id: ProcessId,
     ) -> std::io::Result<Option<PathBuf>> {
-        let client = journal_client_for_mounted_backend()
+        let client = journal_client_for(storage_home)
             .await
             .map_err(IoError::other)?;
         client
@@ -822,6 +838,8 @@ struct PendingJournalConfig {
     model_provider: String,
     cli_version: String,
     owner_id: String,
+    /// The home whose mounted backend holds this journal.
+    storage_home: PathBuf,
     mode: JournalSinkMode,
 }
 
@@ -1081,7 +1099,7 @@ impl ActiveJournalWriter {
         items: &[RolloutItem],
     ) -> Result<Self, String> {
         std::debug_assert_matches!(config.mode, JournalSinkMode::Create);
-        let client = journal_client_for_mounted_backend().await?;
+        let client = journal_client_for(&config.storage_home).await?;
 
         let create_input = JournalCreateProcessInput {
             process_id: config.process_id,
@@ -1151,7 +1169,7 @@ impl ActiveJournalWriter {
         items: &[RolloutItem],
     ) -> anyhow::Result<Self> {
         std::debug_assert_matches!(config.mode, JournalSinkMode::Resume);
-        let client = journal_client_for_mounted_backend()
+        let client = journal_client_for(&config.storage_home)
             .await
             .map_err(anyhow::Error::msg)?;
         let mut writer = Self::connect_existing(client, &config).await?;
@@ -1541,10 +1559,12 @@ fn rollout_items_match(left: &RolloutItem, right: &RolloutItem) -> bool {
     }
 }
 
-/// Connect to the journal selected by the mounted runtime backend. Consumers
-/// must not silently bootstrap SQLite when PostgreSQL was selected.
-pub async fn journal_client_for_mounted_backend() -> Result<JournalClient, String> {
-    let vfs = chaos_vfs::pool().map_err(|err| {
+/// Connect to the journal of the backend mounted for `storage_home` (the
+/// process root when that home was never mounted on its own), the same backend
+/// [`runtime_db::get_runtime_db_for`] serves the home's runtime state from.
+/// Consumers must not silently bootstrap SQLite when PostgreSQL was selected.
+pub async fn journal_client_for(storage_home: &Path) -> Result<JournalClient, String> {
+    let vfs = chaos_vfs::pool_for(storage_home).map_err(|err| {
         format!(
             "journal backend is unavailable because runtime storage was not mounted: {err}; \
              refusing to bootstrap SQLite without an explicit SQLite mount"

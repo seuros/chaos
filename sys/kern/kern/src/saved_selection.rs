@@ -174,13 +174,15 @@ pub async fn restore_process_selection(
     if intent.keep_current {
         return Ok(None);
     }
-    apply_selection(config, load_saved_selection(process_id).await?, intent)
+    let saved = load_saved_selection(&config.storage_home, process_id).await?;
+    apply_selection(config, saved, intent)
 }
 
 pub async fn load_saved_selection(
+    storage_home: &std::path::Path,
     process_id: ProcessId,
 ) -> std::io::Result<Option<SavedSelection>> {
-    let journal = RolloutRecorder::get_journal_for_process(process_id).await?;
+    let journal = RolloutRecorder::get_journal_for_process(storage_home, process_id).await?;
     Ok(selection_from_items(
         journal.items.iter().map(|entry| &entry.item),
     ))

@@ -252,14 +252,31 @@ impl Recovery {
         causes
     }
 
+    /// An open episode that has not recovered, or one whose latest
+    /// observation was refused. Without an episode nothing is unresolved:
+    /// there is nothing a wait or checkpoint could belong to.
     pub fn unresolved(&self) -> bool {
-        self.refused.is_some() || self.episodes.unresolved()
+        self.episode().is_some() && (self.refused.is_some() || self.episodes.unresolved())
+    }
+
+    /// A warning fires but no episode could open for it. It can never be
+    /// observed as recovered, and the episode still current (if any) is not
+    /// the one it belongs to: no wait or checkpoint may attach to it.
+    fn exhausted(&self) -> bool {
+        self.refused == Some(Refusal::Exhausted)
     }
 
     pub fn checkpoint_recovery_id(&self) -> Result<(Episode, Option<i64>), String> {
         if self.owner_revision != self.sample_revision {
             return Err(
                 "Operator input superseded this model response; checkpoint rejected.".into(),
+            );
+        }
+        if self.exhausted() {
+            return Err(
+                "Machine recovery cannot open another warning episode in this session; \
+                 no checkpoint can be tied to it."
+                    .into(),
             );
         }
         let Some(episode) = self.episodes.episode().filter(|_| self.unresolved()) else {
@@ -297,6 +314,13 @@ impl Recovery {
         }
         if let Some(id) = self.wait_id() {
             return Ok(id.to_owned());
+        }
+        if self.exhausted() {
+            return Err(
+                "Machine recovery cannot open another warning episode in this session; \
+                 no recovery wait can be registered."
+                    .into(),
+            );
         }
         if !self.unresolved() {
             return Err("No unresolved machine warning is being monitored.".into());

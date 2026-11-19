@@ -265,3 +265,51 @@ fn a_refused_observation_breaks_continuity_but_keeps_the_episode() {
     assert_eq!(recovery.phase(), Phase::Recovered);
     assert_eq!(recovery.episode(), episode);
 }
+
+// vitals offers no way to build a Recovery whose issuer is nearly spent, so
+// these feed the refusal through the same path observe() takes on Exhausted.
+#[test]
+fn no_wait_or_checkpoint_attaches_to_a_warning_no_episode_could_open_for() {
+    const EXHAUSTED: &str = "cannot open another warning episode";
+    let config = MachineWarningsConfig::default();
+
+    // No episode at all: the warning that should have opened one was refused.
+    let mut recovery = Recovery::default();
+    recovery.refuse(Refusal::Exhausted);
+    assert_eq!(recovery.episode(), None);
+    assert!(!recovery.unresolved());
+    let refused = recovery.request_wait("turn").unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+    assert!(recovery.wait_id().is_none());
+    let refused = recovery.checkpoint_recovery_id().unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+
+    // A recovered episode is current, but the renewed warning belongs to
+    // the episode that could not open, not to it.
+    let mut recovery = Recovery::default();
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    for seconds in (30..=330).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    recovery.refuse(Refusal::Exhausted);
+    let refused = recovery.request_wait("turn").unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+    assert!(recovery.checkpoint_recovery_id().is_err());
+
+    // Once an observation is honoured again, ordinary rules apply.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        360,
+    );
+    // The refusal broke continuity, so the episode is stabilizing again.
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    assert!(recovery.request_wait("turn").is_ok());
+}

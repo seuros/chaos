@@ -189,3 +189,55 @@ fn converts_runtime_db_page_without_losing_resume_metadata() {
     assert_eq!(item.source, Some(SessionSource::Cli));
     assert_eq!(item.git_branch.as_deref(), Some("main"));
 }
+
+/// One process may hold several homes (the in-process test harness does); the
+/// journal must follow the caller's home, not whichever one claimed the root.
+#[tokio::test]
+async fn journal_follows_the_storage_home_not_the_process_root() {
+    let root_home = tempfile::tempdir().unwrap();
+    let other_home = tempfile::tempdir().unwrap();
+    for home in [&root_home, &other_home] {
+        crate::test_support::bootstrap_sqlite(home.path()).unwrap();
+    }
+    let url = |home: &tempfile::TempDir| {
+        format!("sqlite://{}", home.path().join("chaos.sqlite").display())
+    };
+    crate::runtime_db::mount_root_for(&url(&root_home), root_home.path())
+        .await
+        .unwrap();
+    crate::runtime_db::mount_vfs_for(&url(&other_home), other_home.path())
+        .await
+        .unwrap();
+
+    let process_id = ProcessId::new();
+    journal_client_for(other_home.path())
+        .await
+        .unwrap()
+        .create_process(JournalCreateProcessInput {
+            process_id,
+            parent: None,
+            source: SessionSource::Cli,
+            cwd: other_home.path().to_path_buf(),
+            created_at: Timestamp::now(),
+            title: None,
+            model_provider: None,
+            cli_version: None,
+        })
+        .await
+        .unwrap();
+
+    let found_in = |home: &tempfile::TempDir| {
+        let home = home.path().to_path_buf();
+        async move {
+            journal_client_for(&home)
+                .await
+                .unwrap()
+                .get_process(process_id)
+                .await
+                .unwrap()
+                .is_some()
+        }
+    };
+    assert!(found_in(&other_home).await);
+    assert!(!found_in(&root_home).await);
+}

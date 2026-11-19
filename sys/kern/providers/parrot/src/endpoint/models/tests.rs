@@ -4,6 +4,7 @@ use chaos_client::Request;
 use chaos_client::Response;
 use chaos_client::StreamResponse;
 use chaos_client::TransportError;
+use chaos_ipc::openai_models::InputModality;
 use chaos_test_fixtures::TEST_MODEL;
 use pretty_assertions::assert_eq;
 use rama::http::HeaderMap;
@@ -16,7 +17,7 @@ use std::time::Duration;
 #[derive(Clone)]
 struct CapturingTransport {
     last_request: Arc<Mutex<Option<Request>>>,
-    body: Arc<ModelsResponse>,
+    body: serde_json::Value,
     etag: Option<String>,
 }
 
@@ -24,7 +25,7 @@ impl Default for CapturingTransport {
     fn default() -> Self {
         Self {
             last_request: Arc::new(Mutex::new(None)),
-            body: Arc::new(ModelsResponse { models: Vec::new() }),
+            body: json!({"models": []}),
             etag: None,
         }
     }
@@ -33,7 +34,7 @@ impl Default for CapturingTransport {
 impl HttpTransport for CapturingTransport {
     async fn execute(&self, req: Request) -> Result<Response, TransportError> {
         *self.last_request.lock().unwrap() = Some(req);
-        let body = serde_json::to_vec(&*self.body).unwrap();
+        let body = serde_json::to_vec(&self.body).unwrap();
         let mut headers = HeaderMap::new();
         if let Some(etag) = &self.etag {
             headers.insert(ETAG, etag.parse().unwrap());
@@ -79,13 +80,7 @@ fn provider(base_url: &str) -> Provider {
 
 #[tokio::test]
 async fn appends_client_version_query() {
-    let response = ModelsResponse { models: Vec::new() };
-
-    let transport = CapturingTransport {
-        last_request: Arc::new(Mutex::new(None)),
-        body: Arc::new(response),
-        etag: None,
-    };
+    let transport = CapturingTransport::default();
 
     let client = ModelsClient::new(
         transport.clone(),
@@ -114,40 +109,43 @@ async fn appends_client_version_query() {
     );
 }
 
+fn wire_model(slug: &str) -> serde_json::Value {
+    json!({
+        "slug": slug,
+        "display_name": slug,
+        "description": "desc",
+        "default_reasoning_level": "medium",
+        "supported_reasoning_levels": [{"effort": "medium", "description": "medium"}],
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "minimal_client_version": [0, 99, 0],
+        "supported_in_api": true,
+        "priority": 1,
+        "upgrade": null,
+        "base_instructions": "base instructions",
+        "supports_reasoning_summaries": false,
+        "support_verbosity": false,
+        "default_verbosity": null,
+        "apply_patch_tool_type": null,
+        "truncation_policy": {"mode": "bytes", "limit": 10_000},
+        "supports_parallel_tool_calls": false,
+        "supports_image_detail_original": false,
+        "context_window": 272_000,
+        "experimental_supported_tools": [],
+    })
+}
+
 #[tokio::test]
 async fn parses_models_response() {
-    let response = ModelsResponse {
-            models: vec![
-                serde_json::from_value(json!({
-                    "slug": TEST_MODEL,
-                    "display_name": TEST_MODEL,
-                    "description": "desc",
-                    "default_reasoning_level": "medium",
-                    "supported_reasoning_levels": [{"effort": "low", "description": "low"}, {"effort": "medium", "description": "medium"}, {"effort": "high", "description": "high"}],
-                    "shell_type": "shell_command",
-                    "visibility": "list",
-                    "minimal_client_version": [0, 99, 0],
-                    "supported_in_api": true,
-                    "priority": 1,
-                    "upgrade": null,
-                    "base_instructions": "base instructions",
-                    "supports_reasoning_summaries": false,
-                    "support_verbosity": false,
-                    "default_verbosity": null,
-                    "apply_patch_tool_type": null,
-                    "truncation_policy": {"mode": "bytes", "limit": 10_000},
-                    "supports_parallel_tool_calls": false,
-                    "supports_image_detail_original": false,
-                    "context_window": 272_000,
-                    "experimental_supported_tools": [],
-                }))
-                .unwrap(),
-            ],
-        };
+    let mut mixed = wire_model(TEST_MODEL);
+    mixed["input_modalities"] = json!(["text", "image", "audio"]);
+    let mut unsupported = wire_model("unsupported-input");
+    unsupported["input_modalities"] = json!(["audio", "future-modality"]);
+    let legacy = wire_model("legacy-model");
 
     let transport = CapturingTransport {
         last_request: Arc::new(Mutex::new(None)),
-        body: Arc::new(response),
+        body: json!({"models": [mixed, unsupported, legacy]}),
         etag: None,
     };
 
@@ -162,20 +160,44 @@ async fn parses_models_response() {
         .await
         .expect("request should succeed");
 
-    assert_eq!(models.len(), 1);
+    assert_eq!(models.len(), 3);
     assert_eq!(models[0].slug, TEST_MODEL);
     assert_eq!(models[0].supported_in_api, true);
     assert_eq!(models[0].priority, 1);
+    assert_eq!(
+        models[0].input_modalities,
+        [InputModality::Text, InputModality::Image]
+    );
+    assert!(models[1].input_modalities.is_empty());
+    assert_eq!(
+        models[2].input_modalities,
+        [InputModality::Text, InputModality::Image]
+    );
+}
+
+#[tokio::test]
+async fn rejects_non_string_input_modality() {
+    let mut malformed = wire_model(TEST_MODEL);
+    malformed["input_modalities"] = json!(["text", 1]);
+    let client = ModelsClient::new(
+        CapturingTransport {
+            body: json!({"models": [malformed]}),
+            ..Default::default()
+        },
+        provider("https://example.com/api/chaos"),
+        DummyAuth,
+    );
+    assert!(matches!(
+        client.list_models("0.99.0", HeaderMap::new()).await,
+        Err(ApiError::Stream(_))
+    ));
 }
 
 #[tokio::test]
 async fn list_models_includes_etag() {
-    let response = ModelsResponse { models: Vec::new() };
-
     let transport = CapturingTransport {
-        last_request: Arc::new(Mutex::new(None)),
-        body: Arc::new(response),
         etag: Some("\"abc\"".to_string()),
+        ..Default::default()
     };
 
     let client = ModelsClient::new(

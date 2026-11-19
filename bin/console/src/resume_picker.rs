@@ -200,6 +200,7 @@ pub(crate) async fn run_session_picker(
         alt.tui.frame_requester(),
         page_loader,
         default_provider.clone(),
+        storage_home.clone(),
         show_all,
         filter_cwd,
         action,

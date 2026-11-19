@@ -54,8 +54,9 @@ impl ToolHandler for SessionTitleHandler {
             )));
         }
 
+        let storage_home = session.get_config().await.storage_home.clone();
         if let Some(existing) =
-            process_names::find_process_name_record_by_id(&session.conversation_id)
+            process_names::find_process_name_record_by_id(&storage_home, &session.conversation_id)
                 .await
                 .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?
         {
@@ -73,9 +74,10 @@ impl ToolHandler for SessionTitleHandler {
             }
         }
 
-        if let Some(other_process_id) = process_names::find_unarchived_process_id_by_name(&title)
-            .await
-            .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?
+        if let Some(other_process_id) =
+            process_names::find_unarchived_process_id_by_name(&storage_home, &title)
+                .await
+                .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?
             && other_process_id != session.conversation_id
         {
             return Err(FunctionCallError::RespondToModel(format!(

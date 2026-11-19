@@ -858,7 +858,8 @@ async fn resolve_resume_process_id(
                 Ok(None)
             }
         } else {
-            let process_id = chaos_kern::find_process_id_by_name(id_str).await?;
+            let process_id =
+                chaos_kern::find_process_id_by_name(&config.storage_home, id_str).await?;
             if let Some(process_id) = process_id
                 && chaos_kern::RolloutRecorder::journal_contains_process(
                     &config.storage_home,

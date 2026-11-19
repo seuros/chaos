@@ -5,6 +5,7 @@ use super::super::*;
 impl ChatWidget {
     pub(crate) fn emit_forked_process_event(&self, forked_from_id: ProcessId) {
         let app_event_tx = self.app_event_tx.clone();
+        let storage_home = self.config.storage_home.clone();
         tokio::spawn(async move {
             let forked_from_id_text = forked_from_id.to_string();
             let send_name_and_id = |name: String| {
@@ -33,7 +34,7 @@ impl ChatWidget {
                 )));
             };
 
-            match find_process_name_by_id(&forked_from_id).await {
+            match find_process_name_by_id(&storage_home, &forked_from_id).await {
                 Ok(Some(name)) if !name.trim().is_empty() => {
                     send_name_and_id(name);
                 }

@@ -20,7 +20,6 @@ pub(crate) use error::map_session_init_error;
 pub use list::ProcessItem;
 pub use list::ProcessSortKey;
 pub use list::ProcessesPage;
-pub use process_names::append_process_name;
 pub use process_names::find_process_id_by_name;
 pub use process_names::find_process_name_by_id;
 pub use process_names::find_process_names_by_ids;

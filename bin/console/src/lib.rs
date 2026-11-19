@@ -680,7 +680,7 @@ async fn resolve_saved_process_id(
     let process_id = if Uuid::parse_str(id_str).is_ok() {
         ProcessId::from_string(id_str).ok()
     } else {
-        find_process_id_by_name(id_str).await?
+        find_process_id_by_name(&config.storage_home, id_str).await?
     };
     let Some(process_id) = process_id else {
         return Ok(None);

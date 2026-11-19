@@ -155,7 +155,6 @@ pub use rollout::ProcessesPage;
 pub use rollout::RolloutRecorder;
 pub use rollout::RolloutRecorderParams;
 pub use rollout::SessionMeta;
-pub use rollout::append_process_name;
 pub use rollout::find_process_id_by_name;
 pub use rollout::find_process_name_by_id;
 pub use rollout::find_process_names_by_ids;

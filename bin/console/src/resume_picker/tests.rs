@@ -23,6 +23,7 @@ use chaos_kern::ProcessesPage;
 use jiff::Timestamp;
 #[cfg(feature = "vt100-tests")]
 use jiff::ToSpan;
+use std::path::PathBuf;
 
 use crate::tui::FrameRequester;
 use crossterm::event::KeyCode;
@@ -45,6 +46,7 @@ fn test_picker_state(loader: super::state::PageLoader) -> PickerState {
         FrameRequester::test_dummy(),
         loader,
         String::from("openai"),
+        PathBuf::from("/nonexistent/chaos-home"),
         true,
         None,
         SessionPickerAction::Resume,
@@ -165,6 +167,7 @@ fn row_uses_tail_timestamp_for_updated_at() {
         FrameRequester::test_dummy(),
         Arc::new(|_: PageLoadRequest| {}),
         "openai".to_string(),
+        PathBuf::from("/nonexistent/chaos-home"),
         false,
         None,
         SessionPickerAction::Resume,
@@ -562,6 +565,7 @@ async fn provider_switch_defaults_and_tab_override() {
             FrameRequester::test_dummy(),
             Arc::new(|_: PageLoadRequest| {}),
             "openai".to_string(),
+            PathBuf::from("/nonexistent/chaos-home"),
             true,
             None,
             action,

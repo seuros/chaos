@@ -7,7 +7,7 @@ use deadline_machines::continuous::ContinuousClock;
 use feedback_machines::{Band, Hysteresis, Thresholds};
 use serde::Serialize;
 use vitals_machines::probe::{BatteryKind, PowerSource, ThermalState};
-use vitals_machines::{Episode, Sample};
+use vitals_machines::{Episode, Refusal, Sample};
 
 use crate::config::MachineWarningsConfig;
 use crate::machine_status::{MachineStatus, ObservationRequest};
@@ -23,36 +23,29 @@ mod lifecycle;
 use identity::same_condition;
 use lifecycle::Wait;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Phase {
-    #[default]
-    Healthy,
-    Warning,
-    Stabilizing,
-    Recovered,
-    Unavailable,
-    Blocked,
-}
+pub(crate) use vitals_machines::Phase;
 
-impl From<vitals_machines::Phase> for Phase {
-    fn from(phase: vitals_machines::Phase) -> Self {
-        use vitals_machines::Phase as Vitals;
-        match phase {
-            Vitals::Healthy => Self::Healthy,
-            Vitals::Warning => Self::Warning,
-            Vitals::Stabilizing => Self::Stabilizing,
-            Vitals::Recovered => Self::Recovered,
-            Vitals::Unavailable => Self::Unavailable,
-            Vitals::Blocked => Self::Blocked,
-        }
-    }
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde serialize_with passes the field by reference"
+)]
+fn phase_name<S: serde::Serializer>(phase: &Phase, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(match phase {
+        Phase::Healthy => "healthy",
+        Phase::Warning => "warning",
+        Phase::Stabilizing => "stabilizing",
+        Phase::Recovered => "recovered",
+        Phase::Unavailable => "unavailable",
+        Phase::Blocked => "blocked",
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct RecoveryStatus {
+    #[serde(serialize_with = "phase_name")]
     pub phase: Phase,
-    pub generation: u64,
+    /// The live warning episode; `None` while healthy.
+    pub episode: Option<u64>,
     /// Allocated durably with the first checkpoint of this live recovery.
     pub recovery_id: Option<i64>,
     pub stable_seconds: u64,
@@ -61,6 +54,39 @@ pub(crate) struct RecoveryStatus {
     pub outstanding: Vec<MachineWarning>,
     pub interruptions_last_hour: Vec<Interruption>,
     pub blocked_reason: Option<String>,
+}
+
+/// The resource whose capacity a recovery target exceeds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Capacity {
+    Filesystem,
+    Battery,
+}
+
+/// Why an outstanding condition cannot be judged recovered or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unproven {
+    /// The vitals it depends on could not be read.
+    Unavailable(&'static str),
+    /// Its recovery target cannot be reached as configured.
+    Blocked(Capacity),
+}
+
+impl Unproven {
+    pub(crate) const fn reason(self) -> &'static str {
+        match self {
+            Self::Unavailable(reason) => reason,
+            Self::Blocked(Capacity::Filesystem) => "recovery target exceeds filesystem capacity",
+            Self::Blocked(Capacity::Battery) => "recovery target exceeds battery capacity",
+        }
+    }
+}
+
+const fn refusal_reason(refusal: Refusal) -> &'static str {
+    match refusal {
+        Refusal::TimeRegression => "recovery clock went backwards",
+        Refusal::Exhausted => "no recovery episode id left",
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,23 +137,20 @@ pub(crate) struct Recovery {
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
     pub clock: Clock,
-    scope: u16,
     episodes: vitals_machines::Recovery,
+    /// The latest observation vitals refused. Until one is honoured again
+    /// the episode cannot be trusted, so it reads as unavailable, and the
+    /// refused sample breaks continuity when the next one is honoured.
+    refused: Option<Refusal>,
     recovery_id: Option<i64>,
     outstanding: Vec<Outstanding>,
-    blocked_reason: Option<String>,
+    unproven: Option<Unproven>,
     wait: Wait,
     interruptions: VecDeque<(Duration, Vec<&'static str>)>,
 }
 
 impl Default for Recovery {
     fn default() -> Self {
-        Self::in_scope(0)
-    }
-}
-
-impl Recovery {
-    fn in_scope(scope: u16) -> Self {
         Self {
             probe: Arc::default(),
             checkpoint_writer: Arc::default(),
@@ -135,26 +158,46 @@ impl Recovery {
             sample_revision: 0,
             context: None,
             clock: Clock::default(),
-            scope,
-            episodes: vitals_machines::Recovery::with_scope(scope, MAX_GAP),
+            episodes: vitals_machines::Recovery::new(MAX_GAP),
+            refused: None,
             recovery_id: None,
             outstanding: Vec::new(),
-            blocked_reason: None,
+            unproven: None,
             wait: Wait::default(),
             interruptions: VecDeque::new(),
         }
     }
+}
 
-    /// A slow checkpoint must not bind to an episode of the new context.
+impl Recovery {
+    /// Forget everything observed in the old context. The episode issuer
+    /// carries on, so a slow checkpoint still holding an old episode never
+    /// binds to one of the new context, even when the old context returns.
     pub fn replace_context(&mut self, context: ObservationRequest) {
-        let mut next = Self::in_scope(self.scope.wrapping_add(1));
-        next.probe = self.probe.clone();
-        next.checkpoint_writer = self.checkpoint_writer.clone();
-        next.owner_revision = self.owner_revision;
-        next.sample_revision = self.sample_revision;
-        next.clock = self.clock.clone();
-        next.context = Some(context);
-        *self = next;
+        // Exhaustive, so a new field has to decide whether it survives.
+        let Self {
+            probe: _,
+            checkpoint_writer: _,
+            owner_revision: _,
+            sample_revision: _,
+            context: current,
+            clock: _,
+            episodes,
+            refused,
+            recovery_id,
+            outstanding,
+            unproven,
+            wait,
+            interruptions,
+        } = self;
+        *current = Some(context);
+        episodes.reset();
+        *refused = None;
+        *recovery_id = None;
+        outstanding.clear();
+        *unproven = None;
+        *wait = Wait::default();
+        interruptions.clear();
     }
 
     pub fn now(&self) -> Duration {
@@ -162,11 +205,23 @@ impl Recovery {
     }
 
     pub fn phase(&self) -> Phase {
-        self.episodes.phase().into()
+        if self.refused.is_some() {
+            Phase::Unavailable
+        } else {
+            self.episodes.phase()
+        }
     }
 
-    pub fn generation(&self) -> u64 {
-        self.episodes.episode().map_or(0, Episode::raw)
+    /// The resource a blocked recovery target exceeds.
+    pub fn blocked_by(&self) -> Option<Capacity> {
+        match self.unproven {
+            Some(Unproven::Blocked(capacity)) if self.refused.is_none() => Some(capacity),
+            _ => None,
+        }
+    }
+
+    pub fn episode(&self) -> Option<Episode> {
+        self.episodes.episode()
     }
 
     pub fn wait_id(&self) -> Option<&str> {
@@ -197,14 +252,31 @@ impl Recovery {
         causes
     }
 
+    /// An open episode that has not recovered, or one whose latest
+    /// observation was refused. Without an episode nothing is unresolved:
+    /// there is nothing a wait or checkpoint could belong to.
     pub fn unresolved(&self) -> bool {
-        self.episodes.unresolved()
+        self.episode().is_some() && (self.refused.is_some() || self.episodes.unresolved())
+    }
+
+    /// A warning fires but no episode could open for it. It can never be
+    /// observed as recovered, and the episode still current (if any) is not
+    /// the one it belongs to: no wait or checkpoint may attach to it.
+    fn exhausted(&self) -> bool {
+        self.refused == Some(Refusal::Exhausted)
     }
 
     pub fn checkpoint_recovery_id(&self) -> Result<(Episode, Option<i64>), String> {
         if self.owner_revision != self.sample_revision {
             return Err(
                 "Operator input superseded this model response; checkpoint rejected.".into(),
+            );
+        }
+        if self.exhausted() {
+            return Err(
+                "Machine recovery cannot open another warning episode in this session; \
+                 no checkpoint can be tied to it."
+                    .into(),
             );
         }
         let Some(episode) = self.episodes.episode().filter(|_| self.unresolved()) else {
@@ -243,6 +315,13 @@ impl Recovery {
         if let Some(id) = self.wait_id() {
             return Ok(id.to_owned());
         }
+        if self.exhausted() {
+            return Err(
+                "Machine recovery cannot open another warning episode in this session; \
+                 no recovery wait can be registered."
+                    .into(),
+            );
+        }
         if !self.unresolved() {
             return Err("No unresolved machine warning is being monitored.".into());
         }
@@ -263,17 +342,16 @@ impl Recovery {
     ) {
         self.interruptions
             .retain(|(at, _)| now.saturating_sub(*at) < HOUR);
-        self.blocked_reason = None;
+        self.unproven = None;
         let sample = match observation {
             Err(_) => Sample::Unavailable,
             Ok(status) => match self.evidence(status, config) {
                 _ if !status.warnings.is_empty() => Sample::Warning,
-                Err(reason) => {
-                    self.blocked_reason = Some(reason.into());
-                    if blocks(reason) {
-                        Sample::Blocked
-                    } else {
-                        Sample::Unavailable
+                Err(unproven) => {
+                    self.unproven = Some(unproven);
+                    match unproven {
+                        Unproven::Blocked(_) => Sample::Blocked,
+                        Unproven::Unavailable(_) => Sample::Unavailable,
                     }
                 }
                 Ok(false) => Sample::Short,
@@ -282,9 +360,24 @@ impl Recovery {
                 },
             },
         };
-        let Ok(observed) = self.episodes.observe(now, sample) else {
-            return;
+        if self.refused.is_some() {
+            // The refused sample went unmeasured as far as the episode knows.
+            // Record it as such at the first instant it can be ordered, so
+            // headroom held before it does not carry across it. The episode
+            // stays the same; only continuity breaks.
+            if let Err(refusal) = self.episodes.observe(now, Sample::Unavailable) {
+                self.refuse(refusal);
+                return;
+            }
+        }
+        let observed = match self.episodes.observe(now, sample) {
+            Ok(observed) => observed,
+            Err(refusal) => {
+                self.refuse(refusal);
+                return;
+            }
         };
+        self.refused = None;
         if observed.opened {
             self.recovery_id = None;
             self.outstanding.clear();
@@ -313,11 +406,18 @@ impl Recovery {
         }
     }
 
+    /// Nothing changed in the episode; do not let its last phase (perhaps
+    /// Recovered) stand for a sample it never saw.
+    fn refuse(&mut self, refusal: Refusal) {
+        tracing::error!(?refusal, "machine recovery observation refused");
+        self.refused = Some(refusal);
+    }
+
     fn evidence(
         &mut self,
         status: &MachineStatus,
         config: &MachineWarningsConfig,
-    ) -> Result<bool, &'static str> {
+    ) -> Result<bool, Unproven> {
         let verdicts: Vec<_> = self
             .outstanding
             .iter_mut()
@@ -357,9 +457,13 @@ impl Recovery {
             .collect();
         RecoveryStatus {
             phase: self.phase(),
-            generation: self.generation(),
+            episode: self.episode().map(Episode::raw),
             recovery_id: self.recovery_id,
-            stable_seconds: self.episodes.stable_for().map_or(0, |held| held.as_secs()),
+            stable_seconds: self
+                .episodes
+                .stable_for()
+                .filter(|_| self.refused.is_none())
+                .map_or(0, |held| held.as_secs()),
             required_seconds: self.required_seconds(config),
             wait_id: self.wait_id().map(str::to_owned),
             outstanding: self
@@ -368,7 +472,11 @@ impl Recovery {
                 .map(|item| item.warning.clone())
                 .collect(),
             interruptions_last_hour,
-            blocked_reason: self.blocked_reason.clone(),
+            blocked_reason: self
+                .refused
+                .map(refusal_reason)
+                .or_else(|| self.unproven.map(Unproven::reason))
+                .map(str::to_owned),
         }
     }
 
@@ -393,10 +501,20 @@ impl Recovery {
                 "Recovery measurements unavailable. \
                  Verify power, storage, and cooling before resuming."
             }
-            Phase::Blocked => {
-                "Recovery target exceeds resource capacity; \
-                 operator configuration or resource changes are required."
-            }
+            Phase::Blocked => match self.blocked_by() {
+                Some(Capacity::Filesystem) => {
+                    "Recovery target exceeds filesystem capacity; \
+                     operator configuration or storage changes are required."
+                }
+                Some(Capacity::Battery) => {
+                    "Recovery target exceeds battery capacity; \
+                     operator configuration or power changes are required."
+                }
+                None => {
+                    "Recovery target exceeds resource capacity; \
+                     operator configuration or resource changes are required."
+                }
+            },
             _ => {
                 "Machine warning remains unresolved; keep interruption-sensitive/heavy work paused."
             }
@@ -429,13 +547,6 @@ fn cause(warning: &MachineWarning) -> &'static str {
     }
 }
 
-fn blocks(reason: &str) -> bool {
-    matches!(
-        reason,
-        "recovery target exceeds filesystem capacity" | "recovery target exceeds battery capacity"
-    )
-}
-
 fn alarmed(warning: &MachineWarning) -> Band {
     match warning {
         MachineWarning::Thermal { .. } | MachineWarning::CpuTemperature { .. } => Band::High,
@@ -448,7 +559,7 @@ fn recovered(
     side: &mut Band,
     status: &MachineStatus,
     config: &MachineWarningsConfig,
-) -> Result<bool, &'static str> {
+) -> Result<bool, Unproven> {
     match warning {
         MachineWarning::LowBattery {
             name, battery_kind, ..
@@ -460,10 +571,12 @@ fn recovered(
             let supplying_kind = match power.source {
                 PowerSource::Battery => BatteryKind::System,
                 PowerSource::Ups => BatteryKind::Ups,
-                _ => return Err("power source is not confirmed"),
+                _ => return Err(Unproven::Unavailable("power source is not confirmed")),
             };
             if supplying_kind != *battery_kind || power.external_power == Some(true) {
-                return Err("triggering battery supply is not confirmed");
+                return Err(Unproven::Unavailable(
+                    "triggering battery supply is not confirmed",
+                ));
             }
             let charge = power
                 .batteries
@@ -476,19 +589,21 @@ fn recovered(
                 })
                 .and_then(|battery| battery.charge_percent)
                 .filter(|charge| *charge <= 100)
-                .ok_or("triggering battery charge unavailable")?;
+                .ok_or(Unproven::Unavailable(
+                    "triggering battery charge unavailable",
+                ))?;
             let target = u16::from(config.battery_percent)
                 + u16::from(config.recovery_battery_margin_percent);
             let thresholds = Thresholds::new(u16::from(config.battery_percent), target)
                 .filter(|_| target <= 100)
-                .ok_or("recovery target exceeds battery capacity")?;
+                .ok_or(Unproven::Blocked(Capacity::Battery))?;
             let Ok(band) = Hysteresis::restored(thresholds, *side).observe(u16::from(charge));
             *side = band;
             Ok(band == Band::High)
         }
         MachineWarning::Thermal { .. } => match status.machine.thermal.state {
             ThermalState::Normal => Ok(true),
-            ThermalState::Unknown => Err("OS thermal state unavailable"),
+            ThermalState::Unknown => Err(Unproven::Unavailable("OS thermal state unavailable")),
             _ => Ok(false),
         },
         MachineWarning::CpuTemperature {
@@ -505,7 +620,9 @@ fn recovered(
                 .find(|s| s.id == *sensor && s.kind == *temperature_kind)
                 .and_then(|s| s.celsius)
                 .filter(|v| v.is_finite())
-                .ok_or("triggering temperature sensor unavailable")?;
+                .ok_or(Unproven::Unavailable(
+                    "triggering temperature sensor unavailable",
+                ))?;
             let band = Thresholds::new(
                 threshold - config.recovery_temperature_margin_celsius,
                 *threshold,
@@ -515,7 +632,9 @@ fn recovered(
                     .observe(reading)
                     .ok()
             })
-            .ok_or("triggering temperature sensor unavailable")?;
+            .ok_or(Unproven::Unavailable(
+                "triggering temperature sensor unavailable",
+            ))?;
             *side = band;
             Ok(band == Band::Low)
         }
@@ -530,16 +649,20 @@ fn recovered(
                 .iter()
                 .find(|fs| fs.id == *filesystem)
                 .filter(|fs| fs.available_percent().is_some())
-                .ok_or("triggering filesystem unavailable")?;
+                .ok_or(Unproven::Unavailable("triggering filesystem unavailable"))?;
             if targets
                 .iter()
                 .any(|target| !fs.targets.iter().any(|entry| entry.target == *target))
             {
-                return Err("triggering storage target unavailable or remounted");
+                return Err(Unproven::Unavailable(
+                    "triggering storage target unavailable or remounted",
+                ));
             }
             let reserves = DiskThresholds::new(config, fs.total_bytes);
-            let thresholds = Thresholds::new(reserves.warning_bytes, reserves.recovery_bytes?)
-                .ok_or("recovery target exceeds filesystem capacity")?;
+            let thresholds = reserves
+                .recovery_bytes
+                .and_then(|target| Thresholds::new(reserves.warning_bytes, target))
+                .ok_or(Unproven::Blocked(Capacity::Filesystem))?;
             let Ok(band) =
                 Hysteresis::restored(thresholds, *side).observe(u128::from(fs.available_bytes));
             *side = band;

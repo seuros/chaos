@@ -15,7 +15,7 @@ fn defaults_cap_both_reserves_without_changing_small_disk_headroom() {
             DiskThresholds::new(&config, total),
             DiskThresholds {
                 warning_bytes: warning,
-                recovery_bytes: Ok(recovery),
+                recovery_bytes: Some(recovery),
             },
             "total={total}"
         );
@@ -52,7 +52,7 @@ fn custom_reserves_keep_rounding_exact_and_apply_the_byte_margin_after_the_cap()
             DiskThresholds::new(&config, total),
             DiskThresholds {
                 warning_bytes: warning,
-                recovery_bytes: Ok(recovery),
+                recovery_bytes: Some(recovery),
             },
             "{config:?}, total={total}"
         );
@@ -77,7 +77,7 @@ fn impossible_recovery_does_not_suppress_the_warning_reserve_or_overflow() {
             DiskThresholds::new(&config, total),
             DiskThresholds {
                 warning_bytes: u128::from(warning),
-                recovery_bytes: Err("recovery target exceeds filesystem capacity"),
+                recovery_bytes: None,
             },
             "{config:?}, total={total}"
         );

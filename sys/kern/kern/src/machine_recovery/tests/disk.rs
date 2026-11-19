@@ -16,7 +16,7 @@ fn disk_requires_both_margins_and_reports_impossible_targets() {
     status.storage.filesystems[0].available_bytes = 400 << 20;
     assert_eq!(
         verdict(&warning, &status, &config),
-        Err("recovery target exceeds filesystem capacity")
+        Err(Unproven::Blocked(Capacity::Filesystem))
     );
 }
 

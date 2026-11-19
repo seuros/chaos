@@ -6,7 +6,8 @@ use crate::config::MachineWarningsConfig;
 pub(crate) struct DiskThresholds {
     pub(crate) warning_bytes: u128,
     // An impossible recovery target must not suppress the warning itself.
-    pub(crate) recovery_bytes: Result<u128, &'static str>,
+    /// `None` when the recovery target exceeds the filesystem.
+    pub(crate) recovery_bytes: Option<u128>,
 }
 
 impl DiskThresholds {
@@ -23,11 +24,8 @@ impl DiskThresholds {
         Self {
             // Round down for inclusive warnings, up for minimum recovery headroom.
             warning_bytes: (warning_scaled / 100).min(cap),
-            recovery_bytes: if recovery_percent > 100 || recovery_bytes > total {
-                Err("recovery target exceeds filesystem capacity")
-            } else {
-                Ok(recovery_bytes)
-            },
+            recovery_bytes: (recovery_percent <= 100 && recovery_bytes <= total)
+                .then_some(recovery_bytes),
         }
     }
 }

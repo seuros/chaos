@@ -7,7 +7,7 @@ use chaos_ipc::protocol::{Event, EventMsg, WarningEvent};
 
 use super::Session;
 use crate::chaos::TurnContext;
-use crate::machine_recovery::{POLL_INTERVAL, Phase, RecoveryStatus};
+use crate::machine_recovery::{Capacity, POLL_INTERVAL, Phase, RecoveryStatus};
 use crate::machine_status::{MachineStatus, ObservationRequest};
 
 mod checkpoints;
@@ -227,10 +227,20 @@ impl Session {
                 Phase::Unavailable => {
                     "Machine recovery monitoring unavailable; stability window reset."
                 }
-                Phase::Blocked => {
-                    "Machine recovery target exceeds filesystem capacity; \
-                                   adjust configuration or storage."
-                }
+                Phase::Blocked => match recovery.blocked_by() {
+                    Some(Capacity::Filesystem) => {
+                        "Machine recovery target exceeds filesystem capacity; \
+                         adjust configuration or storage."
+                    }
+                    Some(Capacity::Battery) => {
+                        "Machine recovery target exceeds battery capacity; \
+                         adjust configuration or power."
+                    }
+                    None => {
+                        "Machine recovery target exceeds resource capacity; \
+                         adjust configuration or resources."
+                    }
+                },
                 Phase::Warning => "Machine warning active. Recovery pending.",
                 Phase::Healthy => "Machine monitoring active.",
             });

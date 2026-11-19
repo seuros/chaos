@@ -32,6 +32,13 @@ should. There is no patch level; the build timestamp is the patch.
 - Machine recovery no longer flaps while a battery, disk or CPU reading
   hovers inside its recovery margin, and a wall-clock step no longer resets
   its stability window.
+- A recovery checkpoint saved before a workspace or config change can never
+  bind to a later warning episode. Recovery status and checkpoint observations
+  report the live `episode` (null while healthy) instead of `generation`.
+- A recovery observation the clock cannot order reads as unavailable instead
+  of leaving the last phase, perhaps recovered, standing for it.
+- A blocked machine recovery names the capacity it exceeds, battery or
+  filesystem, instead of always blaming the filesystem.
 
 ## [47.15.0] - 2026-11-16
 

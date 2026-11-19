@@ -85,6 +85,6 @@ pub(super) fn verdict(
     warning: &MachineWarning,
     status: &MachineStatus,
     config: &MachineWarningsConfig,
-) -> Result<bool, &'static str> {
+) -> Result<bool, Unproven> {
     recovered(warning, &mut alarmed(warning), status, config)
 }

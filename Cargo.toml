@@ -180,7 +180,7 @@ chaos-mcpd = { path = "srv/mcpd" }
 chaos-acpd = { path = "srv/acpd" }
 acp-host = { path = "lib/libacp/host", version = "0.1.0" }
 mcp-goals = { path = "lib/libmcp/goals", version = "0.1.0" }
-mcp-guest = "0.17.1"
+mcp-guest = "0.17.2"
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos_journald = { path = "srv/journald" }
@@ -252,7 +252,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.28", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.28.1", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3", default-features = false }
@@ -356,7 +356,7 @@ semver = "1"
 serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
-state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
+state-machines = { version = "0.35", features = ["dynamic", "async", "runtime-send"] }
 breaker-machines = { version = "0.27", features = ["async"] }
 chrono-machines = "0.13"
 deadline-machines = { version = "0.6", features = ["tokio", "tokio-util"] }
@@ -366,11 +366,11 @@ suspect-machines = "0.7"
 outbox-machines = "0.10"
 dedup-machines = { version = "0.8", features = ["std"] }
 batch-machines = "0.7"
-saga-machines = "0.6"
+saga-machines = "0.7"
 supervisor-machines = "0.7"
 flow-machines = "0.4"
 journal-machines = "0.9"
-vitals-machines = { version = "0.1", features = ["probe"] }
+vitals-machines = { version = "0.2", features = ["probe"] }
 feedback-machines = "0.8"
 serial_test = "4"
 sha1 = "0.11"

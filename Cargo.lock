@@ -5390,9 +5390,9 @@ dependencies = [
 
 [[package]]
 name = "harel-machines"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "264e263e4f9e295a4c9e086db6e781d0130b0f8aaa72aa18163391e697549ff5"
+checksum = "c55c0689200ba712a0c4360a54ec8bac72ba928bc3229e558b1ebb1ea01a49d7"
 
 [[package]]
 name = "harfrust"
@@ -6852,9 +6852,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-guest"
-version = "0.17.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0314360599062f071f78c5f665ce91bfe25b0e36ed2a66282c2ac519455da09a"
+checksum = "015ad65bfa9a6559f587c08871910da4ab43dbb1c822addb056b4f0fa13d7afd"
 dependencies = [
  "base64 0.23.1",
  "chrono-machines",
@@ -6872,9 +6872,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.28.0"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de5f7477fe6f523076c83a472de75db288fd4044141ae9566e0766d24014e0c1"
+checksum = "b27b175b24cbf6b706c0ab67a84638a0cc5a666dc1bf19868ee631c11d89acf7"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",
@@ -10032,9 +10032,9 @@ dependencies = [
 
 [[package]]
 name = "saga-machines"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae6e30dea05c4e1b4649e7ed403a7f8f7262f54ed72778e2f595eb76eec83cde"
+checksum = "4148444a151d4b14d03e1dcb5c6e962ae8c799b94623ac62b87ca9b56297b8dd"
 dependencies = [
  "dedup-machines",
  "periscope-machines",
@@ -10835,9 +10835,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines"
-version = "0.34.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54acc135c42d21f490db540e3e12b168fe78d521de40648b39499d34e6d108d0"
+checksum = "f2fb3f0428a4a79e7929cacf1186fea42291446987807a5136daae4161c13fcf"
 dependencies = [
  "state-machines-core",
  "state-machines-macro",
@@ -10845,9 +10845,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines-core"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4c4c5f387ceb2d1562a5dc93c28c1bad75305af92f84eee53325dde2b983b14"
+checksum = "1d027fb20a763004675f678951c6c9537d9dbc2b26056c37d41cefb014e55daf"
 dependencies = [
  "serde",
  "serde_json",
@@ -10855,9 +10855,9 @@ dependencies = [
 
 [[package]]
 name = "state-machines-macro"
-version = "0.34.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ff01e9712fb1a47e319dd8c3a04bb1580e3f1dd5439438ea6aadc1212fe4009"
+checksum = "c16c56f4525fd7923580b96d7066341d3b10e772aa2e679e0c65b04881ba9439"
 dependencies = [
  "harel-machines",
  "proc-macro2",
@@ -12167,9 +12167,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vitals-machines"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "870d471d65f2ef5ceb7899fd30f3a3df25b63adc509c352cf89b2cd01e1d3135"
+checksum = "89747956adf7010128406f6cf37fcad330208ca8d4194948288368e16cb67e09"
 dependencies = [
  "feedback-machines",
  "libc",

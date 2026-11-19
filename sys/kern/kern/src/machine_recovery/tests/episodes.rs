@@ -123,3 +123,193 @@ fn operator_input_during_a_model_sample_prevents_a_late_wait_registration() {
     recovery.begin_sample();
     assert!(recovery.request_wait("new response").is_ok());
 }
+
+#[test]
+fn a_checkpoint_from_before_a_context_reset_never_binds_to_a_later_episode() {
+    let config = MachineWarningsConfig::default();
+    let full = crate::config::test_config();
+    let context = |path: &str| ObservationRequest::new(&full, std::path::Path::new(path));
+    let mut recovery = Recovery::default();
+    recovery.replace_context(context("/a"));
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    let (stale, recovery_id) = recovery.checkpoint_recovery_id().unwrap();
+    assert_eq!(recovery_id, None);
+
+    // A -> B -> A: the context check alone cannot tell the episodes apart.
+    recovery.replace_context(context("/b"));
+    assert_eq!(recovery.phase(), Phase::Healthy);
+    assert_eq!(recovery.episode(), None);
+    recovery.replace_context(context("/a"));
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    let (live, _) = recovery.checkpoint_recovery_id().unwrap();
+    assert_ne!(live, stale, "a reset keeps issuing fresh episodes");
+
+    recovery.bind_checkpoint_recovery(stale, 1);
+    assert_eq!(recovery.status(&config, Duration::ZERO).recovery_id, None);
+    recovery.bind_checkpoint_recovery(live, 2);
+    assert_eq!(
+        recovery.status(&config, Duration::ZERO).recovery_id,
+        Some(2)
+    );
+}
+
+#[test]
+fn a_refused_observation_reads_as_unavailable_until_one_is_honoured() {
+    let config = MachineWarningsConfig::default();
+    let mut recovery = Recovery::default();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        100,
+    );
+    for seconds in (130..=430).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+
+    // A renewed warning stamped before the latest observation is refused;
+    // the stale Recovered must not stand for it.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        50,
+    );
+    assert_eq!(recovery.phase(), Phase::Unavailable);
+    assert!(recovery.unresolved());
+    let status = recovery.status(&config, Duration::from_secs(430));
+    assert_eq!(status.stable_seconds, 0);
+    assert_eq!(
+        status.blocked_reason.as_deref(),
+        Some("recovery clock went backwards")
+    );
+
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        460,
+    );
+    assert_eq!(recovery.phase(), Phase::Warning);
+    assert_eq!(recovery.episode().map(Episode::raw), Some(2));
+    assert_eq!(
+        recovery.status(&config, Duration::ZERO).blocked_reason,
+        None
+    );
+}
+
+#[test]
+fn a_refused_observation_breaks_continuity_but_keeps_the_episode() {
+    let config = MachineWarningsConfig::default();
+    let mut recovery = Recovery::default();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        100,
+    );
+    for seconds in (130..=430).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    let episode = recovery.episode();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        50,
+    );
+    assert_eq!(recovery.phase(), Phase::Unavailable);
+
+    // One cool sample must not inherit the 300 s held before the refusal.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        460,
+    );
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    assert_eq!(recovery.episode(), episode, "same episode, fresh window");
+    assert_eq!(
+        recovery
+            .status(&config, Duration::from_secs(460))
+            .stable_seconds,
+        0
+    );
+    for seconds in (490..760).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+        assert_eq!(recovery.phase(), Phase::Stabilizing, "at {seconds}");
+    }
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        760,
+    );
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    assert_eq!(recovery.episode(), episode);
+}
+
+// vitals offers no way to build a Recovery whose issuer is nearly spent, so
+// these feed the refusal through the same path observe() takes on Exhausted.
+#[test]
+fn no_wait_or_checkpoint_attaches_to_a_warning_no_episode_could_open_for() {
+    const EXHAUSTED: &str = "cannot open another warning episode";
+    let config = MachineWarningsConfig::default();
+
+    // No episode at all: the warning that should have opened one was refused.
+    let mut recovery = Recovery::default();
+    recovery.refuse(Refusal::Exhausted);
+    assert_eq!(recovery.episode(), None);
+    assert!(!recovery.unresolved());
+    let refused = recovery.request_wait("turn").unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+    assert!(recovery.wait_id().is_none());
+    let refused = recovery.checkpoint_recovery_id().unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+
+    // A recovered episode is current, but the renewed warning belongs to
+    // the episode that could not open, not to it.
+    let mut recovery = Recovery::default();
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    for seconds in (30..=330).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+    recovery.refuse(Refusal::Exhausted);
+    let refused = recovery.request_wait("turn").unwrap_err();
+    assert!(refused.contains(EXHAUSTED), "{refused}");
+    assert!(recovery.checkpoint_recovery_id().is_err());
+
+    // Once an observation is honoured again, ordinary rules apply.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 80.0, 20 << 30),
+        360,
+    );
+    // The refusal broke continuity, so the episode is stabilizing again.
+    assert_eq!(recovery.phase(), Phase::Stabilizing);
+    assert!(recovery.request_wait("turn").is_ok());
+}

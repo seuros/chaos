@@ -16,7 +16,7 @@ include = ["src/**", "Cargo.toml", "README.md"]
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-state-machines = { version = "0.34", features = ["dynamic"] }
+state-machines = { version = "0.35", features = ["dynamic"] }
 
 [lints]
 workspace = true

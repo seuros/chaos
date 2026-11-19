@@ -356,7 +356,7 @@ semver = "1"
 serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
-state-machines = { version = "0.34", features = ["dynamic", "async", "runtime-send"] }
+state-machines = { version = "0.35", features = ["dynamic", "async", "runtime-send"] }
 breaker-machines = { version = "0.27", features = ["async"] }
 chrono-machines = "0.13"
 deadline-machines = { version = "0.6", features = ["tokio", "tokio-util"] }
@@ -366,7 +366,7 @@ suspect-machines = "0.7"
 outbox-machines = "0.10"
 dedup-machines = { version = "0.8", features = ["std"] }
 batch-machines = "0.7"
-saga-machines = "0.6"
+saga-machines = "0.7"
 supervisor-machines = "0.7"
 flow-machines = "0.4"
 journal-machines = "0.9"

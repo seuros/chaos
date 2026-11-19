@@ -77,5 +77,5 @@ fn power_recovers_on_external_power_or_observed_battery_headroom() {
     status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
     sample(&mut recovery, &config, status, recovered_after + 30);
     assert_eq!(recovery.phase(), Phase::Warning);
-    assert_eq!(recovery.generation(), 2);
+    assert_eq!(recovery.episode().map(Episode::raw), Some(2));
 }

@@ -7,7 +7,7 @@ use deadline_machines::continuous::ContinuousClock;
 use feedback_machines::{Band, Hysteresis, Thresholds};
 use serde::Serialize;
 use vitals_machines::probe::{BatteryKind, PowerSource, ThermalState};
-use vitals_machines::{Episode, Sample};
+use vitals_machines::{Episode, Refusal, Sample};
 
 use crate::config::MachineWarningsConfig;
 use crate::machine_status::{MachineStatus, ObservationRequest};
@@ -23,36 +23,29 @@ mod lifecycle;
 use identity::same_condition;
 use lifecycle::Wait;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Phase {
-    #[default]
-    Healthy,
-    Warning,
-    Stabilizing,
-    Recovered,
-    Unavailable,
-    Blocked,
-}
+pub(crate) use vitals_machines::Phase;
 
-impl From<vitals_machines::Phase> for Phase {
-    fn from(phase: vitals_machines::Phase) -> Self {
-        use vitals_machines::Phase as Vitals;
-        match phase {
-            Vitals::Healthy => Self::Healthy,
-            Vitals::Warning => Self::Warning,
-            Vitals::Stabilizing => Self::Stabilizing,
-            Vitals::Recovered => Self::Recovered,
-            Vitals::Unavailable => Self::Unavailable,
-            Vitals::Blocked => Self::Blocked,
-        }
-    }
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde serialize_with passes the field by reference"
+)]
+fn phase_name<S: serde::Serializer>(phase: &Phase, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(match phase {
+        Phase::Healthy => "healthy",
+        Phase::Warning => "warning",
+        Phase::Stabilizing => "stabilizing",
+        Phase::Recovered => "recovered",
+        Phase::Unavailable => "unavailable",
+        Phase::Blocked => "blocked",
+    })
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct RecoveryStatus {
+    #[serde(serialize_with = "phase_name")]
     pub phase: Phase,
-    pub generation: u64,
+    /// The live warning episode; `None` while healthy.
+    pub episode: Option<u64>,
     /// Allocated durably with the first checkpoint of this live recovery.
     pub recovery_id: Option<i64>,
     pub stable_seconds: u64,
@@ -111,8 +104,10 @@ pub(crate) struct Recovery {
     pub sample_revision: u64,
     pub context: Option<ObservationRequest>,
     pub clock: Clock,
-    scope: u16,
     episodes: vitals_machines::Recovery,
+    /// The latest observation vitals refused. Until one is honoured again
+    /// the episode cannot be trusted, so it reads as unavailable.
+    refused: Option<Refusal>,
     recovery_id: Option<i64>,
     outstanding: Vec<Outstanding>,
     blocked_reason: Option<String>,
@@ -122,12 +117,6 @@ pub(crate) struct Recovery {
 
 impl Default for Recovery {
     fn default() -> Self {
-        Self::in_scope(0)
-    }
-}
-
-impl Recovery {
-    fn in_scope(scope: u16) -> Self {
         Self {
             probe: Arc::default(),
             checkpoint_writer: Arc::default(),
@@ -135,8 +124,8 @@ impl Recovery {
             sample_revision: 0,
             context: None,
             clock: Clock::default(),
-            scope,
-            episodes: vitals_machines::Recovery::with_scope(scope, MAX_GAP),
+            episodes: vitals_machines::Recovery::new(MAX_GAP),
+            refused: None,
             recovery_id: None,
             outstanding: Vec::new(),
             blocked_reason: None,
@@ -144,17 +133,37 @@ impl Recovery {
             interruptions: VecDeque::new(),
         }
     }
+}
 
-    /// A slow checkpoint must not bind to an episode of the new context.
+impl Recovery {
+    /// Forget everything observed in the old context. The episode issuer
+    /// carries on, so a slow checkpoint still holding an old episode never
+    /// binds to one of the new context, even when the old context returns.
     pub fn replace_context(&mut self, context: ObservationRequest) {
-        let mut next = Self::in_scope(self.scope.wrapping_add(1));
-        next.probe = self.probe.clone();
-        next.checkpoint_writer = self.checkpoint_writer.clone();
-        next.owner_revision = self.owner_revision;
-        next.sample_revision = self.sample_revision;
-        next.clock = self.clock.clone();
-        next.context = Some(context);
-        *self = next;
+        // Exhaustive, so a new field has to decide whether it survives.
+        let Self {
+            probe: _,
+            checkpoint_writer: _,
+            owner_revision: _,
+            sample_revision: _,
+            context: current,
+            clock: _,
+            episodes,
+            refused,
+            recovery_id,
+            outstanding,
+            blocked_reason,
+            wait,
+            interruptions,
+        } = self;
+        *current = Some(context);
+        episodes.reset();
+        *refused = None;
+        *recovery_id = None;
+        outstanding.clear();
+        *blocked_reason = None;
+        *wait = Wait::default();
+        interruptions.clear();
     }
 
     pub fn now(&self) -> Duration {
@@ -162,11 +171,15 @@ impl Recovery {
     }
 
     pub fn phase(&self) -> Phase {
-        self.episodes.phase().into()
+        if self.refused.is_some() {
+            Phase::Unavailable
+        } else {
+            self.episodes.phase()
+        }
     }
 
-    pub fn generation(&self) -> u64 {
-        self.episodes.episode().map_or(0, Episode::raw)
+    pub fn episode(&self) -> Option<Episode> {
+        self.episodes.episode()
     }
 
     pub fn wait_id(&self) -> Option<&str> {
@@ -198,7 +211,7 @@ impl Recovery {
     }
 
     pub fn unresolved(&self) -> bool {
-        self.episodes.unresolved()
+        self.refused.is_some() || self.episodes.unresolved()
     }
 
     pub fn checkpoint_recovery_id(&self) -> Result<(Episode, Option<i64>), String> {
@@ -282,9 +295,24 @@ impl Recovery {
                 },
             },
         };
-        let Ok(observed) = self.episodes.observe(now, sample) else {
-            return;
+        let observed = match self.episodes.observe(now, sample) {
+            Ok(observed) => observed,
+            Err(refusal) => {
+                // Nothing changed in the episode; do not let its last phase
+                // (perhaps Recovered) stand for a sample it never saw.
+                tracing::error!(?refusal, "machine recovery observation refused");
+                self.refused = Some(refusal);
+                self.blocked_reason = Some(
+                    match refusal {
+                        Refusal::TimeRegression => "recovery clock went backwards",
+                        Refusal::Exhausted => "no recovery episode id left",
+                    }
+                    .into(),
+                );
+                return;
+            }
         };
+        self.refused = None;
         if observed.opened {
             self.recovery_id = None;
             self.outstanding.clear();
@@ -357,9 +385,13 @@ impl Recovery {
             .collect();
         RecoveryStatus {
             phase: self.phase(),
-            generation: self.generation(),
+            episode: self.episode().map(Episode::raw),
             recovery_id: self.recovery_id,
-            stable_seconds: self.episodes.stable_for().map_or(0, |held| held.as_secs()),
+            stable_seconds: self
+                .episodes
+                .stable_for()
+                .filter(|_| self.refused.is_none())
+                .map_or(0, |held| held.as_secs()),
             required_seconds: self.required_seconds(config),
             wait_id: self.wait_id().map(str::to_owned),
             outstanding: self

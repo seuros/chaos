@@ -123,3 +123,83 @@ fn operator_input_during_a_model_sample_prevents_a_late_wait_registration() {
     recovery.begin_sample();
     assert!(recovery.request_wait("new response").is_ok());
 }
+
+#[test]
+fn a_checkpoint_from_before_a_context_reset_never_binds_to_a_later_episode() {
+    let config = MachineWarningsConfig::default();
+    let full = crate::config::test_config();
+    let context = |path: &str| ObservationRequest::new(&full, std::path::Path::new(path));
+    let mut recovery = Recovery::default();
+    recovery.replace_context(context("/a"));
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    let (stale, recovery_id) = recovery.checkpoint_recovery_id().unwrap();
+    assert_eq!(recovery_id, None);
+
+    // A -> B -> A: the context check alone cannot tell the episodes apart.
+    recovery.replace_context(context("/b"));
+    assert_eq!(recovery.phase(), Phase::Healthy);
+    assert_eq!(recovery.episode(), None);
+    recovery.replace_context(context("/a"));
+    sample(&mut recovery, &config, snapshot(&config, 90.0, 20 << 30), 0);
+    let (live, _) = recovery.checkpoint_recovery_id().unwrap();
+    assert_ne!(live, stale, "a reset keeps issuing fresh episodes");
+
+    recovery.bind_checkpoint_recovery(stale, 1);
+    assert_eq!(recovery.status(&config, Duration::ZERO).recovery_id, None);
+    recovery.bind_checkpoint_recovery(live, 2);
+    assert_eq!(
+        recovery.status(&config, Duration::ZERO).recovery_id,
+        Some(2)
+    );
+}
+
+#[test]
+fn a_refused_observation_reads_as_unavailable_until_one_is_honoured() {
+    let config = MachineWarningsConfig::default();
+    let mut recovery = Recovery::default();
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        100,
+    );
+    for seconds in (130..=430).step_by(30) {
+        sample(
+            &mut recovery,
+            &config,
+            snapshot(&config, 80.0, 20 << 30),
+            seconds,
+        );
+    }
+    assert_eq!(recovery.phase(), Phase::Recovered);
+
+    // A renewed warning stamped before the latest observation is refused;
+    // the stale Recovered must not stand for it.
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        50,
+    );
+    assert_eq!(recovery.phase(), Phase::Unavailable);
+    assert!(recovery.unresolved());
+    let status = recovery.status(&config, Duration::from_secs(430));
+    assert_eq!(status.stable_seconds, 0);
+    assert_eq!(
+        status.blocked_reason.as_deref(),
+        Some("recovery clock went backwards")
+    );
+
+    sample(
+        &mut recovery,
+        &config,
+        snapshot(&config, 90.0, 20 << 30),
+        460,
+    );
+    assert_eq!(recovery.phase(), Phase::Warning);
+    assert_eq!(recovery.episode().map(Episode::raw), Some(2));
+    assert_eq!(
+        recovery.status(&config, Duration::ZERO).blocked_reason,
+        None
+    );
+}

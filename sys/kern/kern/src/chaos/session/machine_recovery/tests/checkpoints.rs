@@ -190,8 +190,8 @@ async fn recovery_checkpoint_ids_share_an_episode_but_not_a_replaced_context() -
     unresolved(&session).await;
     let after = session.machine_recovery_status().await;
     assert!(
-        after.generation > before.generation,
-        "context resets cannot alias a live generation"
+        after.episode.is_some() && after.episode > before.episode,
+        "context resets cannot alias a live episode"
     );
     assert_eq!(after.recovery_id, None);
     assert!(Arc::ptr_eq(
@@ -250,15 +250,12 @@ async fn recovery_checkpoint_resume_does_not_restore_health_or_authority() -> an
     let next = resumed
         .save_recovery_checkpoint(&resumed_turn, "new-episode", note())
         .await?;
-    assert_eq!(
-        first.observation["generation"],
-        next.observation["generation"]
-    );
+    assert_eq!(first.observation["episode"], next.observation["episode"]);
     assert_eq!(next.id, first.id + 1);
     assert_eq!(
         next.recovery_id,
         first.recovery_id + 1,
-        "durable identity is not the resettable generation"
+        "durable identity is not the per-session episode"
     );
 
     let (mut foreign, foreign_turn) =

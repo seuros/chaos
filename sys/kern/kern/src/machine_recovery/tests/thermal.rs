@@ -61,7 +61,7 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
         420,
     );
     assert_eq!(recovery.phase(), Phase::Warning);
-    assert_eq!(recovery.generation(), 2);
+    assert_eq!(recovery.episode().map(Episode::raw), Some(2));
 }
 
 #[test]

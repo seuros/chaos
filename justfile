@@ -209,8 +209,7 @@ check:
 
 # Run tests with production/default features
 test *args:
-    scripts/with-local-qa-tmp.sh {{cargo}} build -p chaos_journald --bin chaos_journald
-    CHAOS_JOURNALD_BIN="$(cd "${CARGO_TARGET_DIR:-target}/debug" && pwd)/chaos_journald" scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --no-fail-fast "$@"
+    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --workspace --no-fail-fast "$@"
 
 # Refuse alternate crypto providers in the production/default workspace graph.
 qa-dependencies:
@@ -227,9 +226,7 @@ qa-features:
         bash scripts/check-tls-dependencies.sh production
     scripts/with-local-qa-tmp.sh {{cargo}} check --locked --workspace --all-features --all-targets
     scripts/with-local-qa-tmp.sh {{cargo}} clippy --locked --workspace --all-features --tests -- -D warnings
-    scripts/with-local-qa-tmp.sh {{cargo}} build -p chaos_journald --bin chaos_journald
-    CHAOS_JOURNALD_BIN="$(cd "${CARGO_TARGET_DIR:-target}/debug" && pwd)/chaos_journald" \
-        scripts/with-local-qa-tmp.sh {{cargo}} nextest run --locked --workspace --all-features --no-fail-fast
+    scripts/with-local-qa-tmp.sh {{cargo}} nextest run --locked --workspace --all-features --no-fail-fast
 
 # Run the bounded Postgres validation set against a mounted filesystem.
 postgres-validate database_url:

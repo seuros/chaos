@@ -25,7 +25,11 @@ impl Drop for Daemon {
 }
 
 fn spawn(socket: &Path, db: &Path) -> std::io::Result<Daemon> {
-    Command::new(env!("CARGO_BIN_EXE_chaos_journald"))
+    // nextest archives relocate binaries and export the new path at runtime;
+    // the compile-time path is only the fallback.
+    let binary = std::env::var_os("CARGO_BIN_EXE_chaos_journald")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_chaos_journald").into());
+    Command::new(binary)
         .arg("--socket")
         .arg(socket)
         .arg("--db")

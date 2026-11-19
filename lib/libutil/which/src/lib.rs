@@ -30,11 +30,7 @@ pub enum CargoBinError {
 
 /// Returns an absolute path to a binary target built for the current test run.
 ///
-/// `CARGO_BIN_EXE_*` wins when set (nextest exports it for the test's own
-/// package; CI exports it for cross-package binaries). Otherwise the binary
-/// must already sit in the target directory beside the running test. This
-/// never builds anything: a test that compiles a missing binary holds Cargo's
-/// build lock for minutes and turns one setup mistake into a timeout per test.
+/// `CARGO_BIN_EXE_*` first, else beside the running test; never builds.
 pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
     let env_keys = cargo_bin_env_keys(name);
     for key in &env_keys {
@@ -74,8 +70,7 @@ fn cargo_bin_env_keys(name: &str) -> Vec<String> {
     keys
 }
 
-/// `<target>/<profile>/<name>` for the profile and target the running test was
-/// built with (test executables live in `<target>/<profile>/deps`).
+/// `<target>/<profile>/<name>` for the running test's profile and target.
 fn target_dir_bin_path(name: &str) -> Result<PathBuf, CargoBinError> {
     let bin_name = format!("{}{}", name, std::env::consts::EXE_SUFFIX);
     let mut dir = std::env::current_exe().map_err(|source| CargoBinError::CurrentExe { source })?;

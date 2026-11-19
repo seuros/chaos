@@ -247,8 +247,7 @@ async fn sqlite_store_keeps_name_filters_and_lookup_ordering() -> std::io::Resul
     Ok(())
 }
 
-/// Names live beside the journal and runtime DB of the caller's home, not in
-/// whichever home claimed the process VFS root.
+/// Names resolve in the caller's home, not the process root.
 #[tokio::test]
 async fn process_names_follow_the_storage_home_not_the_process_root() {
     let root_home = tempfile::tempdir().unwrap();

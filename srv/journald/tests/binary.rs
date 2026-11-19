@@ -1,8 +1,4 @@
-//! Drive the real `chaos_journald` executable, not the in-process server.
-//!
-//! Being an integration test of this package also makes every workspace test
-//! build produce `<target>/<profile>/chaos_journald`, which other packages'
-//! tests (and the `chaos` binaries they spawn) resolve beside themselves.
+//! Drives the real `chaos_journald`; also makes workspace test builds produce it.
 
 use std::path::Path;
 use std::process::Child;

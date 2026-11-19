@@ -190,8 +190,7 @@ fn converts_runtime_db_page_without_losing_resume_metadata() {
     assert_eq!(item.git_branch.as_deref(), Some("main"));
 }
 
-/// One process may hold several homes (the in-process test harness does); the
-/// journal must follow the caller's home, not whichever one claimed the root.
+/// The journal resolves in the caller's home, not the process root.
 #[tokio::test]
 async fn journal_follows_the_storage_home_not_the_process_root() {
     let root_home = tempfile::tempdir().unwrap();

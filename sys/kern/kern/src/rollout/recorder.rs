@@ -1559,9 +1559,7 @@ fn rollout_items_match(left: &RolloutItem, right: &RolloutItem) -> bool {
     }
 }
 
-/// Connect to the journal of the backend mounted for `storage_home` (the
-/// process root when that home was never mounted on its own), the same backend
-/// [`runtime_db::get_runtime_db_for`] serves the home's runtime state from.
+/// Connect to the journal of the backend serving `storage_home`.
 /// Consumers must not silently bootstrap SQLite when PostgreSQL was selected.
 pub async fn journal_client_for(storage_home: &Path) -> Result<JournalClient, String> {
     let vfs = chaos_vfs::pool_for(storage_home).map_err(|err| {

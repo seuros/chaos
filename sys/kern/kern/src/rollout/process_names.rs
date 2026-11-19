@@ -320,8 +320,7 @@ impl ProcessNameStore for PgPool {
     }
 }
 
-/// Calls `op` with the pool of the backend serving `storage_home`, the one its
-/// runtime DB and journal use (the process root for a home never mounted alone).
+/// Calls `op` with the pool of the backend serving `storage_home`.
 async fn with_store<T, F, Fut>(storage_home: &Path, op: F) -> std::io::Result<T>
 where
     F: FnOnce(Vfs) -> Fut,

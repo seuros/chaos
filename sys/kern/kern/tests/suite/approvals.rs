@@ -540,7 +540,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         exclude_tmpdir_env_var: false,
         exclude_slash_tmp: false,
     };
-    // Tmp roots excluded: the "outside" target is the test's cwd, which may itself live under /tmp.
+    // Tmp roots excluded: the "outside" target (cwd) may live under /tmp.
     let workspace_write_only = SandboxPolicy::WorkspaceWrite {
         writable_roots: vec![],
         read_only_access: Default::default(),

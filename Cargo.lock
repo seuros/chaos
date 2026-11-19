@@ -12167,9 +12167,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vitals-machines"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89747956adf7010128406f6cf37fcad330208ca8d4194948288368e16cb67e09"
+checksum = "d2a1819e513ce42ec838816890bda52607d28ceade2d0f06cf85651f60453094"
 dependencies = [
  "feedback-machines",
  "libc",

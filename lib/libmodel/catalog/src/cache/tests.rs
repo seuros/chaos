@@ -101,6 +101,11 @@ async fn legacy_raw_rows_are_skipped_while_marked_rows_survive() -> TestResult<(
 async fn shared_decoder_accepts_envelopes_and_rejects_legacy_shapes() -> TestResult<()> {
     let model = test_model_info("decoder-model", "anthropic", true, 1);
     let envelope = encode_models_json(std::slice::from_ref(&model));
+    let mut extended_envelope = envelope.clone();
+    let modalities = extended_envelope["models"][0]["input_modalities"]
+        .as_array_mut()
+        .expect("encoded input modalities");
+    modalities.push(serde_json::json!("audio"));
     let cases = [
         ("legacy array", serde_json::json!([model.clone()]), None),
         (
@@ -113,7 +118,12 @@ async fn shared_decoder_accepts_envelopes_and_rejects_legacy_shapes() -> TestRes
             serde_json::json!({ "format": "raw_catalog_v2", "models": [model] }),
             None,
         ),
-        ("marked envelope", envelope, Some(vec![model])),
+        ("marked envelope", envelope, Some(vec![model.clone()])),
+        (
+            "marked envelope with an extra provider modality",
+            extended_envelope,
+            Some(vec![model]),
+        ),
     ];
 
     for (label, input, expected) in cases {

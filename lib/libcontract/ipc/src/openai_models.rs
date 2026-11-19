@@ -66,6 +66,24 @@ pub fn default_input_modalities() -> Vec<InputModality> {
     vec![InputModality::Text, InputModality::Image]
 }
 
+/// Provider catalogs can advertise more modalities than Chaos can send. Keep only the
+/// supported tags; an explicitly supplied list must not acquire the legacy default.
+fn deserialize_catalog_input_modalities<'de, D>(
+    deserializer: D,
+) -> Result<Vec<InputModality>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .filter_map(|tag| match tag.as_str() {
+            "text" => Some(InputModality::Text),
+            "image" => Some(InputModality::Image),
+            _ => None,
+        })
+        .collect())
+}
+
 /// Canonical model-family metadata supplied explicitly by a provider or catalog.
 ///
 /// `unknown` is deliberately conservative: callers must not infer a family from
@@ -288,8 +306,11 @@ pub struct ModelInfo {
     #[serde(default = "default_effective_context_window_percent")]
     pub effective_context_window_percent: i64,
     pub experimental_supported_tools: Vec<String>,
-    /// Input modalities accepted by the backend for this model.
-    #[serde(default = "default_input_modalities")]
+    /// Input modalities advertised by the backend that Chaos knows how to send.
+    #[serde(
+        default = "default_input_modalities",
+        deserialize_with = "deserialize_catalog_input_modalities"
+    )]
     pub input_modalities: Vec<InputModality>,
     /// Server-side tools the provider handles natively (e.g. `web_search`, `x_search`).
     /// These are injected into the request tools array as bare `{ "type": "<name>" }` entries

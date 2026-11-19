@@ -180,7 +180,7 @@ chaos-mcpd = { path = "srv/mcpd" }
 chaos-acpd = { path = "srv/acpd" }
 acp-host = { path = "lib/libacp/host", version = "0.1.0" }
 mcp-goals = { path = "lib/libmcp/goals", version = "0.1.0" }
-mcp-guest = "0.17.1"
+mcp-guest = "0.17.2"
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos_journald = { path = "srv/journald" }
@@ -252,7 +252,7 @@ chaos-test-fixtures = { path = "tests/fixtures" }
 chaos-test-process = { path = "tests/process" }
 core_test_support = { path = "sys/kern/kern/tests/common" }
 mcp_test_support = { path = "srv/mcpd/tests/common" }
-mcp-host = { version = "0.28", default-features = false, features = ["stdio", "macros"] }
+mcp-host = { version = "0.28.1", default-features = false, features = ["stdio", "macros"] }
 
 # External
 agent-client-protocol = { version = "3", default-features = false }

@@ -1,7 +1,6 @@
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CargoBinError {
@@ -17,18 +16,25 @@ pub enum CargoBinError {
     },
     #[error("CARGO_BIN_EXE env var {key} resolved to {path:?}, but it does not exist")]
     ResolvedPathDoesNotExist { key: String, path: PathBuf },
-    #[error("could not locate binary {name:?}; tried env vars {env_keys:?}; {fallback}")]
+    #[error(
+        "binary {name:?} was not built for this test run (looked for {expected:?}); \
+         tests never build it themselves. Build it with the same profile and target as \
+         the tests (`cargo build --bin {name}`), or export {env_key}=/absolute/path/to/{name}"
+    )]
     NotFound {
         name: String,
-        env_keys: Vec<String>,
-        fallback: String,
+        env_key: String,
+        expected: PathBuf,
     },
 }
 
 /// Returns an absolute path to a binary target built for the current test run.
 ///
-/// In `cargo test`, `CARGO_BIN_EXE_*` env vars are absolute paths.
-#[allow(deprecated)]
+/// `CARGO_BIN_EXE_*` wins when set (nextest exports it for the test's own
+/// package; CI exports it for cross-package binaries). Otherwise the binary
+/// must already sit in the target directory beside the running test. This
+/// never builds anything: a test that compiles a missing binary holds Cargo's
+/// build lock for minutes and turns one setup mistake into a timeout per test.
 pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
     let env_keys = cargo_bin_env_keys(name);
     for key in &env_keys {
@@ -43,20 +49,15 @@ pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
             });
         }
     }
-    if let Some(path) = legacy_cargo_bin_path(name)? {
-        return Ok(path);
-    }
 
-    if build_cargo_bin(name).is_ok()
-        && let Some(path) = legacy_cargo_bin_path(name)?
-    {
-        return Ok(path);
+    let expected = target_dir_bin_path(name)?;
+    if expected.exists() {
+        return Ok(expected);
     }
-
     Err(CargoBinError::NotFound {
         name: name.to_owned(),
-        env_keys,
-        fallback: "env vars were unset and target/debug fallback did not exist".to_string(),
+        env_key: format!("CARGO_BIN_EXE_{name}"),
+        expected,
     })
 }
 
@@ -73,41 +74,16 @@ fn cargo_bin_env_keys(name: &str) -> Vec<String> {
     keys
 }
 
-fn legacy_cargo_bin_path(name: &str) -> Result<Option<PathBuf>, CargoBinError> {
+/// `<target>/<profile>/<name>` for the profile and target the running test was
+/// built with (test executables live in `<target>/<profile>/deps`).
+fn target_dir_bin_path(name: &str) -> Result<PathBuf, CargoBinError> {
     let bin_name = format!("{}{}", name, std::env::consts::EXE_SUFFIX);
-    let mut candidates = Vec::new();
-
-    let mut current_exe =
-        std::env::current_exe().map_err(|source| CargoBinError::CurrentExe { source })?;
-    current_exe.pop();
-    if current_exe.ends_with("deps") {
-        current_exe.pop();
+    let mut dir = std::env::current_exe().map_err(|source| CargoBinError::CurrentExe { source })?;
+    dir.pop();
+    if dir.ends_with("deps") {
+        dir.pop();
     }
-    candidates.push(current_exe.join(&bin_name));
-
-    if let Ok(root) = repo_root() {
-        candidates.push(root.join("target").join("debug").join(&bin_name));
-    }
-
-    Ok(candidates.into_iter().find(|path| path.exists()))
-}
-
-fn build_cargo_bin(name: &str) -> io::Result<()> {
-    let root = repo_root()?;
-    let status = Command::new("cargo")
-        .arg("build")
-        .arg("--quiet")
-        .arg("--bin")
-        .arg(name)
-        .current_dir(root)
-        .status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
-            "cargo build --bin {name} exited with {status}"
-        )))
-    }
+    Ok(dir.join(bin_name))
 }
 
 /// Macro that derives the path to a test resource at compile time using
@@ -136,3 +112,6 @@ pub fn repo_root() -> io::Result<PathBuf> {
     }
     Ok(root)
 }
+
+#[cfg(test)]
+mod tests;

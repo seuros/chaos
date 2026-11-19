@@ -31,13 +31,7 @@ async fn initialize(server: &Server, id: &str) -> Result<Session> {
 }
 
 async fn config(home: &tempfile::TempDir) -> Result<(Config, Arc<AuthManager>)> {
-    std::fs::write(
-        home.path().join("config.toml"),
-        format!(
-            "storage_url = \"sqlite://{}\"\n",
-            home.path().join("chaos.sqlite").display()
-        ),
-    )?;
+    chaos_kern::test_support::bootstrap_sqlite(home.path())?;
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {

@@ -9,13 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 async fn factory(home: &tempfile::TempDir) -> Result<McpServerHandle> {
-    std::fs::write(
-        home.path().join("config.toml"),
-        format!(
-            "storage_url = \"sqlite://{}\"\n",
-            home.path().join("chaos.sqlite").display()
-        ),
-    )?;
+    // Serves the journal in-process like every other kernel test fixture; these
+    // tests are about the MCP surface, not about launching chaos_journald.
+    chaos_kern::test_support::bootstrap_sqlite(home.path())?;
     let mut config = ConfigBuilder::default()
         .chaos_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {

@@ -549,7 +549,7 @@ impl Session {
             }
         };
 
-        let recall = crate::recall::for_session(config.chaos_home.clone());
+        let recall = crate::recall::for_session(config.chaos_home.clone(), &config.storage_home);
 
         let tool_group_catalog =
             crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;

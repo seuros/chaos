@@ -30,6 +30,7 @@ pub(crate) fn cron_storage() -> Result<BackendCronStorage, String> {
     Ok(BackendCronStorage::from_provider(cron_vfs()?))
 }
 
+/// Single backend: the process-wide scheduler only runs jobs on the process root.
 pub(crate) fn cron_vfs() -> Result<&'static ChaosVfs, String> {
     chaos_vfs::root().map_err(|err| err.to_string())
 }

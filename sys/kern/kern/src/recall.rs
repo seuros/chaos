@@ -1,10 +1,11 @@
-//! PostgreSQL-gated, process-shared recall, prepared only on first enable.
+//! PostgreSQL-gated recall, shared per mounted database, prepared only on first enable.
 
-use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
 use chaos_recall::{RecallConfig, RecallService, RecallState};
-use chaos_vfs::Vfs;
+use chaos_vfs::{ChaosVfs, Vfs};
 use rama::futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +24,10 @@ type Loader = Arc<
         + Sync,
 >;
 
-static RUNTIME: OnceLock<Arc<RecallRuntime>> = OnceLock::new();
+/// One recall runtime per mounted PostgreSQL backend, keyed by mount identity.
+type Runtimes = Mutex<HashMap<usize, Arc<RecallRuntime>>>;
+
+static RUNTIMES: LazyLock<Runtimes> = LazyLock::new(Runtimes::default);
 
 pub(crate) struct RecallRuntime {
     preparation: Preparation<Arc<RecallService>>,
@@ -50,23 +54,31 @@ impl RecallRuntime {
     }
 }
 
-/// Session startup does not touch artifacts or load the model.
-/// The process has one configured VFS and CHAOS_HOME.
-pub(crate) fn for_session(chaos_home: PathBuf) -> Option<Arc<RecallRuntime>> {
-    for_mount(chaos_vfs::pool().ok(), chaos_home, &RUNTIME)
+/// Recall for the backend serving `storage_home`; loads nothing until enabled.
+pub(crate) fn for_session(chaos_home: PathBuf, storage_home: &Path) -> Option<Arc<RecallRuntime>> {
+    for_mount(
+        chaos_vfs::root_for(storage_home).ok(),
+        chaos_home,
+        &RUNTIMES,
+    )
 }
 
 fn for_mount(
-    mount: Option<Vfs>,
+    mount: Option<&'static ChaosVfs>,
     chaos_home: PathBuf,
-    cache: &OnceLock<Arc<RecallRuntime>>,
+    cache: &Runtimes,
 ) -> Option<Arc<RecallRuntime>> {
-    let Some(mount @ Vfs::Postgres(_)) = mount else {
+    let mount = mount?;
+    let pool @ Vfs::Postgres(_) = mount.pool() else {
         return None;
     };
+    let key = std::ptr::from_ref(mount) as usize;
     Some(
         cache
-            .get_or_init(|| Arc::new(runtime_for_mount(mount, chaos_home)))
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(key)
+            .or_insert_with(|| Arc::new(runtime_for_mount(pool, chaos_home)))
             .clone(),
     )
 }

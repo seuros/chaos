@@ -22,6 +22,7 @@ async fn lib_suite() {
     sqlite_storage_url_opens_runtime_db().await;
     sqlite_in_memory_storage_url_opens_runtime_schema().await;
     mount_is_keyed_by_config_and_first_becomes_root().await;
+    bound_home_reaches_a_backend_its_url_did_not_key_by_home().await;
 }
 
 async fn sqlite_home_opens_shared_db() {
@@ -283,4 +284,28 @@ impl Drop for EnvGuard {
             None => unsafe { std::env::remove_var(self.key) },
         }
     }
+}
+
+/// A home mounted from a URL not keyed by home still reaches its own backend.
+async fn bound_home_reaches_a_backend_its_url_did_not_key_by_home() {
+    let root = super::root().expect("an earlier case claimed the root");
+    let home = tempfile::tempdir().expect("create temp dir");
+    let url = format!(
+        "sqlite://{}",
+        home.path().join("elsewhere.sqlite").display()
+    );
+    let config = MountConfig::from_url(url).expect("sqlite url");
+    let vfs = ChaosVfs::from_config(config.clone())
+        .await
+        .expect("open sqlite url");
+    let mounted = super::mount(config, vfs);
+    assert!(
+        std::ptr::eq(root, super::root_for(home.path()).expect("root")),
+        "an unbound home falls back to the root"
+    );
+    super::bind_home(home.path(), mounted);
+    assert!(
+        std::ptr::eq(mounted, super::root_for(home.path()).expect("bound home")),
+        "a bound home reaches its own backend"
+    );
 }

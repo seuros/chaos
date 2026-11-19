@@ -75,6 +75,7 @@ pub fn runtime_dir(chaos_home: &Path) -> PathBuf {
 /// Forward this process's activity to whoever watches it, for as long as the
 /// process lives: through its Postgres database once storage is mounted there,
 /// else to the residents of `chaos_home`.
+/// Single backend: the activity bus is process-wide, so it follows the process root.
 pub fn forward(chaos_home: &Path, kind: OriginKind) {
     let dir = runtime_dir(chaos_home);
     let origin = Origin {

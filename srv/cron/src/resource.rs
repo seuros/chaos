@@ -4,9 +4,9 @@ use crate::BackendCronStorage;
 use crate::CronStorage;
 use crate::spool_store::BackendSpoolStore;
 
-/// List all cron jobs as a JSON string.
+/// List all cron jobs as a JSON string, from the scheduler's backend.
 pub async fn list_crons() -> Result<String, String> {
-    let vfs = chaos_vfs::root().map_err(|err| err.to_string())?;
+    let vfs = crate::tools::cron_vfs()?;
     let storage = BackendCronStorage::from_provider(vfs);
     list_crons_with_storage(&storage).await
 }
@@ -38,9 +38,9 @@ async fn list_crons_with_storage<S: CronStorage>(storage: &S) -> Result<String, 
     serde_json::to_string(&items).map_err(|e| format!("failed to serialize cron jobs: {e}"))
 }
 
-/// List all spool jobs as a JSON string.
+/// List all spool jobs as a JSON string, from the scheduler's backend.
 pub async fn list_spool() -> Result<String, String> {
-    let vfs = chaos_vfs::root().map_err(|err| err.to_string())?;
+    let vfs = crate::tools::cron_vfs()?;
     let storage = BackendSpoolStore::from_provider(vfs);
     let rows = storage
         .list()

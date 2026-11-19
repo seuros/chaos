@@ -212,14 +212,18 @@ pub async fn mount_vfs_for(
     storage_home: &Path,
 ) -> anyhow::Result<&'static ChaosVfs> {
     let config = mount_config_for(storage_url, storage_home)?;
-    if let Some(vfs) = chaos_vfs::mounted(&config) {
-        return Ok(vfs);
-    }
-
-    let vfs = open_vfs(config.clone(), storage_home)
-        .await
-        .map_err(|err| explain_storage_failure(storage_home, err))?;
-    Ok(chaos_vfs::mount(config, vfs))
+    let vfs = match chaos_vfs::mounted(&config) {
+        Some(vfs) => vfs,
+        None => {
+            let vfs = open_vfs(config.clone(), storage_home)
+                .await
+                .map_err(|err| explain_storage_failure(storage_home, err))?;
+            chaos_vfs::mount(config, vfs)
+        }
+    };
+    // Per-home lookups must reach this backend even when the URL is not home-keyed.
+    chaos_vfs::bind_home(storage_home, vfs);
+    Ok(vfs)
 }
 
 #[derive(Debug, thiserror::Error)]

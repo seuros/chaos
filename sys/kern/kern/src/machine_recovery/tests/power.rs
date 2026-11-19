@@ -79,3 +79,46 @@ fn power_recovers_on_external_power_or_observed_battery_headroom() {
     assert_eq!(recovery.phase(), Phase::Warning);
     assert_eq!(recovery.episode().map(Episode::raw), Some(2));
 }
+
+#[test]
+fn an_unreachable_battery_target_blocks_and_names_the_battery() {
+    let config = MachineWarningsConfig {
+        battery_percent: 95,
+        recovery_battery_margin_percent: 10,
+        ..MachineWarningsConfig::default()
+    };
+    let mut status = snapshot(&config, 70.0, 20 << 30);
+    status.machine.power = PowerInfo {
+        source: PowerSource::Battery,
+        external_power: Some(false),
+        batteries: Some(vec![BatteryInfo {
+            name: "InternalBattery-0".into(),
+            kind: BatteryKind::System,
+            present: Some(true),
+            charge_percent: Some(5),
+            state: BatteryState::Discharging,
+        }]),
+    };
+    status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
+    let mut recovery = Recovery::default();
+    sample(&mut recovery, &config, status.clone(), 0);
+    assert_eq!(recovery.phase(), Phase::Warning);
+
+    status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(100);
+    status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
+    assert!(status.warnings.is_empty());
+    sample(&mut recovery, &config, status, 30);
+    assert_eq!(recovery.phase(), Phase::Blocked);
+    assert_eq!(recovery.blocked_by(), Some(Capacity::Battery));
+    assert_eq!(
+        recovery
+            .status(&config, Duration::from_secs(30))
+            .blocked_reason
+            .as_deref(),
+        Some("recovery target exceeds battery capacity")
+    );
+    let instruction = recovery
+        .instruction(&config, Duration::from_secs(30))
+        .unwrap();
+    assert!(instruction.contains("battery capacity"), "{instruction}");
+}

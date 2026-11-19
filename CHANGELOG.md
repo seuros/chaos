@@ -37,6 +37,8 @@ should. There is no patch level; the build timestamp is the patch.
   report the live `episode` (null while healthy) instead of `generation`.
 - A recovery observation the clock cannot order reads as unavailable instead
   of leaving the last phase, perhaps recovered, standing for it.
+- A blocked machine recovery names the capacity it exceeds, battery or
+  filesystem, instead of always blaming the filesystem.
 
 ## [47.15.0] - 2026-11-16
 

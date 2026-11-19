@@ -56,6 +56,39 @@ pub(crate) struct RecoveryStatus {
     pub blocked_reason: Option<String>,
 }
 
+/// The resource whose capacity a recovery target exceeds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Capacity {
+    Filesystem,
+    Battery,
+}
+
+/// Why an outstanding condition cannot be judged recovered or not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Unproven {
+    /// The vitals it depends on could not be read.
+    Unavailable(&'static str),
+    /// Its recovery target cannot be reached as configured.
+    Blocked(Capacity),
+}
+
+impl Unproven {
+    pub(crate) const fn reason(self) -> &'static str {
+        match self {
+            Self::Unavailable(reason) => reason,
+            Self::Blocked(Capacity::Filesystem) => "recovery target exceeds filesystem capacity",
+            Self::Blocked(Capacity::Battery) => "recovery target exceeds battery capacity",
+        }
+    }
+}
+
+const fn refusal_reason(refusal: Refusal) -> &'static str {
+    match refusal {
+        Refusal::TimeRegression => "recovery clock went backwards",
+        Refusal::Exhausted => "no recovery episode id left",
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Interruption {
     pub cause: &'static str,
@@ -110,7 +143,7 @@ pub(crate) struct Recovery {
     refused: Option<Refusal>,
     recovery_id: Option<i64>,
     outstanding: Vec<Outstanding>,
-    blocked_reason: Option<String>,
+    unproven: Option<Unproven>,
     wait: Wait,
     interruptions: VecDeque<(Duration, Vec<&'static str>)>,
 }
@@ -128,7 +161,7 @@ impl Default for Recovery {
             refused: None,
             recovery_id: None,
             outstanding: Vec::new(),
-            blocked_reason: None,
+            unproven: None,
             wait: Wait::default(),
             interruptions: VecDeque::new(),
         }
@@ -152,7 +185,7 @@ impl Recovery {
             refused,
             recovery_id,
             outstanding,
-            blocked_reason,
+            unproven,
             wait,
             interruptions,
         } = self;
@@ -161,7 +194,7 @@ impl Recovery {
         *refused = None;
         *recovery_id = None;
         outstanding.clear();
-        *blocked_reason = None;
+        *unproven = None;
         *wait = Wait::default();
         interruptions.clear();
     }
@@ -175,6 +208,14 @@ impl Recovery {
             Phase::Unavailable
         } else {
             self.episodes.phase()
+        }
+    }
+
+    /// The resource a blocked recovery target exceeds.
+    pub fn blocked_by(&self) -> Option<Capacity> {
+        match self.unproven {
+            Some(Unproven::Blocked(capacity)) if self.refused.is_none() => Some(capacity),
+            _ => None,
         }
     }
 
@@ -276,17 +317,16 @@ impl Recovery {
     ) {
         self.interruptions
             .retain(|(at, _)| now.saturating_sub(*at) < HOUR);
-        self.blocked_reason = None;
+        self.unproven = None;
         let sample = match observation {
             Err(_) => Sample::Unavailable,
             Ok(status) => match self.evidence(status, config) {
                 _ if !status.warnings.is_empty() => Sample::Warning,
-                Err(reason) => {
-                    self.blocked_reason = Some(reason.into());
-                    if blocks(reason) {
-                        Sample::Blocked
-                    } else {
-                        Sample::Unavailable
+                Err(unproven) => {
+                    self.unproven = Some(unproven);
+                    match unproven {
+                        Unproven::Blocked(_) => Sample::Blocked,
+                        Unproven::Unavailable(_) => Sample::Unavailable,
                     }
                 }
                 Ok(false) => Sample::Short,
@@ -302,13 +342,6 @@ impl Recovery {
                 // (perhaps Recovered) stand for a sample it never saw.
                 tracing::error!(?refusal, "machine recovery observation refused");
                 self.refused = Some(refusal);
-                self.blocked_reason = Some(
-                    match refusal {
-                        Refusal::TimeRegression => "recovery clock went backwards",
-                        Refusal::Exhausted => "no recovery episode id left",
-                    }
-                    .into(),
-                );
                 return;
             }
         };
@@ -345,7 +378,7 @@ impl Recovery {
         &mut self,
         status: &MachineStatus,
         config: &MachineWarningsConfig,
-    ) -> Result<bool, &'static str> {
+    ) -> Result<bool, Unproven> {
         let verdicts: Vec<_> = self
             .outstanding
             .iter_mut()
@@ -400,7 +433,11 @@ impl Recovery {
                 .map(|item| item.warning.clone())
                 .collect(),
             interruptions_last_hour,
-            blocked_reason: self.blocked_reason.clone(),
+            blocked_reason: self
+                .refused
+                .map(refusal_reason)
+                .or_else(|| self.unproven.map(Unproven::reason))
+                .map(str::to_owned),
         }
     }
 
@@ -425,10 +462,20 @@ impl Recovery {
                 "Recovery measurements unavailable. \
                  Verify power, storage, and cooling before resuming."
             }
-            Phase::Blocked => {
-                "Recovery target exceeds resource capacity; \
-                 operator configuration or resource changes are required."
-            }
+            Phase::Blocked => match self.blocked_by() {
+                Some(Capacity::Filesystem) => {
+                    "Recovery target exceeds filesystem capacity; \
+                     operator configuration or storage changes are required."
+                }
+                Some(Capacity::Battery) => {
+                    "Recovery target exceeds battery capacity; \
+                     operator configuration or power changes are required."
+                }
+                None => {
+                    "Recovery target exceeds resource capacity; \
+                     operator configuration or resource changes are required."
+                }
+            },
             _ => {
                 "Machine warning remains unresolved; keep interruption-sensitive/heavy work paused."
             }
@@ -461,13 +508,6 @@ fn cause(warning: &MachineWarning) -> &'static str {
     }
 }
 
-fn blocks(reason: &str) -> bool {
-    matches!(
-        reason,
-        "recovery target exceeds filesystem capacity" | "recovery target exceeds battery capacity"
-    )
-}
-
 fn alarmed(warning: &MachineWarning) -> Band {
     match warning {
         MachineWarning::Thermal { .. } | MachineWarning::CpuTemperature { .. } => Band::High,
@@ -480,7 +520,7 @@ fn recovered(
     side: &mut Band,
     status: &MachineStatus,
     config: &MachineWarningsConfig,
-) -> Result<bool, &'static str> {
+) -> Result<bool, Unproven> {
     match warning {
         MachineWarning::LowBattery {
             name, battery_kind, ..
@@ -492,10 +532,12 @@ fn recovered(
             let supplying_kind = match power.source {
                 PowerSource::Battery => BatteryKind::System,
                 PowerSource::Ups => BatteryKind::Ups,
-                _ => return Err("power source is not confirmed"),
+                _ => return Err(Unproven::Unavailable("power source is not confirmed")),
             };
             if supplying_kind != *battery_kind || power.external_power == Some(true) {
-                return Err("triggering battery supply is not confirmed");
+                return Err(Unproven::Unavailable(
+                    "triggering battery supply is not confirmed",
+                ));
             }
             let charge = power
                 .batteries
@@ -508,19 +550,21 @@ fn recovered(
                 })
                 .and_then(|battery| battery.charge_percent)
                 .filter(|charge| *charge <= 100)
-                .ok_or("triggering battery charge unavailable")?;
+                .ok_or(Unproven::Unavailable(
+                    "triggering battery charge unavailable",
+                ))?;
             let target = u16::from(config.battery_percent)
                 + u16::from(config.recovery_battery_margin_percent);
             let thresholds = Thresholds::new(u16::from(config.battery_percent), target)
                 .filter(|_| target <= 100)
-                .ok_or("recovery target exceeds battery capacity")?;
+                .ok_or(Unproven::Blocked(Capacity::Battery))?;
             let Ok(band) = Hysteresis::restored(thresholds, *side).observe(u16::from(charge));
             *side = band;
             Ok(band == Band::High)
         }
         MachineWarning::Thermal { .. } => match status.machine.thermal.state {
             ThermalState::Normal => Ok(true),
-            ThermalState::Unknown => Err("OS thermal state unavailable"),
+            ThermalState::Unknown => Err(Unproven::Unavailable("OS thermal state unavailable")),
             _ => Ok(false),
         },
         MachineWarning::CpuTemperature {
@@ -537,7 +581,9 @@ fn recovered(
                 .find(|s| s.id == *sensor && s.kind == *temperature_kind)
                 .and_then(|s| s.celsius)
                 .filter(|v| v.is_finite())
-                .ok_or("triggering temperature sensor unavailable")?;
+                .ok_or(Unproven::Unavailable(
+                    "triggering temperature sensor unavailable",
+                ))?;
             let band = Thresholds::new(
                 threshold - config.recovery_temperature_margin_celsius,
                 *threshold,
@@ -547,7 +593,9 @@ fn recovered(
                     .observe(reading)
                     .ok()
             })
-            .ok_or("triggering temperature sensor unavailable")?;
+            .ok_or(Unproven::Unavailable(
+                "triggering temperature sensor unavailable",
+            ))?;
             *side = band;
             Ok(band == Band::Low)
         }
@@ -562,16 +610,20 @@ fn recovered(
                 .iter()
                 .find(|fs| fs.id == *filesystem)
                 .filter(|fs| fs.available_percent().is_some())
-                .ok_or("triggering filesystem unavailable")?;
+                .ok_or(Unproven::Unavailable("triggering filesystem unavailable"))?;
             if targets
                 .iter()
                 .any(|target| !fs.targets.iter().any(|entry| entry.target == *target))
             {
-                return Err("triggering storage target unavailable or remounted");
+                return Err(Unproven::Unavailable(
+                    "triggering storage target unavailable or remounted",
+                ));
             }
             let reserves = DiskThresholds::new(config, fs.total_bytes);
-            let thresholds = Thresholds::new(reserves.warning_bytes, reserves.recovery_bytes?)
-                .ok_or("recovery target exceeds filesystem capacity")?;
+            let thresholds = reserves
+                .recovery_bytes
+                .and_then(|target| Thresholds::new(reserves.warning_bytes, target))
+                .ok_or(Unproven::Blocked(Capacity::Filesystem))?;
             let Ok(band) =
                 Hysteresis::restored(thresholds, *side).observe(u128::from(fs.available_bytes));
             *side = band;

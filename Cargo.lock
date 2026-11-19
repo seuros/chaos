@@ -6852,9 +6852,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-guest"
-version = "0.17.3"
+version = "0.17.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3bfc22eab9d776f42cb0e6c6fb98c48e2f5d94eaf0b2ac22710e905821587a"
+checksum = "1ae1de17f329a10e799facf7669bad404fab672bdcc5d07edea87992673f625b"
 dependencies = [
  "base64 0.23.1",
  "chrono-machines",

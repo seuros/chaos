@@ -43,6 +43,7 @@ the stdio server never lists; see chaos-trust(7).
 | `--bearer-token` | env `CHAOS_BEARER_TOKEN` | Required. Empty = rejected at startup. |
 | `--timeout` | `600` | Wall-clock seconds per trigger (body reading + start + execution). |
 | `--max-concurrent` | `4` | Bounds triggers from body reading through cleanup, and active retained turns through background quiescence. |
+| `--mcp-max-streams` | `10` | MCP SSE connections per session: the GET stream plus one per request in flight. |
 | `--body-limit` | `1048576` | Bytes. Enforced while streaming, including chunked bodies; oversized `Content-Length` is rejected before reading. |
 | `--sessions` | `false` | Enable the experimental retained-session endpoints. |
 | `--session-scope` | unset | Durable IDs/outcomes in journald under a stable server namespace. Requires `--sessions`, forbids `--ephemeral`. |

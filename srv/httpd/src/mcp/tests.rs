@@ -176,6 +176,7 @@ fn flags_default_off_repeat_origins_and_refuse_recovery_only() {
         assert!(validate_cli(&cli(&args)).is_err(), "{args:?}");
     }
     assert!(validate_cli(&cli(&["--mcp", "--operator-token", " "])).is_err());
+    assert!(validate_cli(&cli(&["--mcp", "--mcp-max-streams", "0"])).is_err());
     assert!(validate_cli(&cli(&["--mcp-allowed-origin", "https://one.example"])).is_err());
     for invalid in ["*", "null", "file:///tmp", "https://one.example/path"] {
         assert!(validate_cli(&cli(&["--mcp", "--mcp-allowed-origin", invalid])).is_err());
@@ -183,7 +184,7 @@ fn flags_default_off_repeat_origins_and_refuse_recovery_only() {
     let config = transport_config(&enabled, "test-token").unwrap();
     assert_eq!(config.max_request_body_size, enabled.body_limit);
     assert_eq!(config.max_sessions, enabled.max_sessions);
-    assert_eq!(config.max_sse_connections, enabled.max_concurrent);
+    assert_eq!(config.max_sse_connections, enabled.mcp_max_streams);
     assert_eq!(
         config.session_timeout,
         Duration::from_secs(enabled.session_ttl)
@@ -633,7 +634,7 @@ async fn sdk_pins_principal_to_session_and_explicit_nonlocal_origin() {
 #[tokio::test]
 async fn sdk_bounds_sessions_and_streams_without_treating_disconnect_as_delete() {
     let config = transport_config(
-        &cli(&["--mcp", "--max-concurrent", "1", "--max-sessions", "1"]),
+        &cli(&["--mcp", "--mcp-max-streams", "1", "--max-sessions", "1"]),
         "test-token",
     )
     .unwrap();

@@ -21,10 +21,15 @@ pub struct ServeCli {
     pub timeout: u64,
 
     /// Shared trigger/retained-turn and MCP POST ingress capacity. MCP releases
-    /// its slot at response creation, not SSE completion. Also bounds MCP SSE
-    /// connections per session; MCP root workflows separately allow 4 per session.
+    /// its slot at response creation, not SSE completion; MCP root workflows
+    /// separately allow 4 per session.
     #[usage(long = "max-concurrent", default = "4")]
     pub max_concurrent: usize,
+
+    /// MCP SSE connections per session: the standalone GET stream and one per
+    /// request in flight.
+    #[usage(long = "mcp-max-streams", default = "10")]
+    pub mcp_max_streams: usize,
 
     /// Maximum JSON request body size in bytes.
     #[usage(long = "body-limit", default = "1048576")]

@@ -35,6 +35,9 @@ pub(crate) fn validate_cli(cli: &ServeCli) -> anyhow::Result<()> {
     if !cli.mcp && !cli.mcp_allowed_origin.is_empty() {
         bail!("--mcp-allowed-origin requires --mcp");
     }
+    if cli.mcp_max_streams == 0 {
+        bail!("--mcp-max-streams must be at least 1");
+    }
     if cli.mcp
         && let Some(token) = &cli.bearer_token
     {
@@ -94,7 +97,7 @@ fn transport_config(cli: &ServeCli, token: &str) -> anyhow::Result<HttpTransport
         request_timeout: Duration::from_secs(cli.timeout),
         session_timeout: Duration::from_secs(cli.session_ttl),
         max_sessions: cli.max_sessions,
-        max_sse_connections: cli.max_concurrent,
+        max_sse_connections: cli.mcp_max_streams,
         // Keep the SDK's bounded replay, outbound and held-message queues.
         ..HttpTransportConfig::default()
     })

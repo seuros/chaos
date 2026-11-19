@@ -180,7 +180,7 @@ chaos-mcpd = { path = "srv/mcpd" }
 chaos-acpd = { path = "srv/acpd" }
 acp-host = { path = "lib/libacp/host", version = "0.1.0" }
 mcp-goals = { path = "lib/libmcp/goals", version = "0.1.0" }
-mcp-guest = "0.17.2"
+mcp-guest = "0.17.3"
 chaos-mcp-runtime = { path = "lib/libmcp/runtime" }
 chaos-arsenal = { path = "srv/arsenal" }
 chaos_journald = { path = "srv/journald" }

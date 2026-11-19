@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::path::Path;
 
 use chaos_ipc::ProcessId;
 use chaos_vfs::Vfs;
@@ -319,37 +320,18 @@ impl ProcessNameStore for PgPool {
     }
 }
 
-/// Calls `op` with the pool of the mounted backend.
-async fn with_store<T, F, Fut>(op: F) -> std::io::Result<T>
+/// Calls `op` with the pool of the backend serving `storage_home`.
+async fn with_store<T, F, Fut>(storage_home: &Path, op: F) -> std::io::Result<T>
 where
     F: FnOnce(Vfs) -> Fut,
     Fut: Future<Output = std::io::Result<T>>,
 {
-    let pool = chaos_vfs::pool().map_err(std::io::Error::other)?;
+    let pool = chaos_vfs::pool_for(storage_home).map_err(std::io::Error::other)?;
     op(pool).await
 }
 
-/// Persist the explicit process name in the active runtime store.
-pub async fn append_process_name(process_id: ProcessId, name: &str) -> std::io::Result<()> {
-    append_process_name_with_source(process_id, name, ProcessNameSource::User).await
-}
-
-pub(crate) async fn append_process_name_with_source(
-    process_id: ProcessId,
-    name: &str,
-    source: ProcessNameSource,
-) -> std::io::Result<()> {
-    append_name_to_pool(
-        chaos_vfs::pool().map_err(std::io::Error::other)?,
-        process_id,
-        name,
-        source,
-    )
-    .await
-}
-
 pub(crate) async fn append_process_name_for_home(
-    home: &std::path::Path,
+    home: &Path,
     process_id: ProcessId,
     name: &str,
     source: ProcessNameSource,
@@ -384,16 +366,20 @@ async fn append_name_to_pool(
 }
 
 /// Find the explicit process name for a process id, if any.
-pub async fn find_process_name_by_id(process_id: &ProcessId) -> std::io::Result<Option<String>> {
-    Ok(find_process_name_record_by_id(process_id)
+pub async fn find_process_name_by_id(
+    storage_home: &Path,
+    process_id: &ProcessId,
+) -> std::io::Result<Option<String>> {
+    Ok(find_process_name_record_by_id(storage_home, process_id)
         .await?
         .map(|record| record.name))
 }
 
 pub(crate) async fn find_process_name_record_by_id(
+    storage_home: &Path,
     process_id: &ProcessId,
 ) -> std::io::Result<Option<ProcessNameRecord>> {
-    with_store(|pool| async move {
+    with_store(storage_home, |pool| async move {
         match pool {
             Vfs::Sqlite(p) => p.get_process_name(*process_id).await,
             Vfs::Postgres(p) => p.get_process_name(*process_id).await,
@@ -404,9 +390,10 @@ pub(crate) async fn find_process_name_record_by_id(
 
 /// Find explicit process names for a batch of process ids.
 pub async fn find_process_names_by_ids(
+    storage_home: &Path,
     process_ids: &HashSet<ProcessId>,
 ) -> std::io::Result<HashMap<ProcessId, String>> {
-    with_store(|pool| async move {
+    with_store(storage_home, |pool| async move {
         match pool {
             Vfs::Sqlite(p) => p.get_process_names(process_ids).await,
             Vfs::Postgres(p) => p.get_process_names(process_ids).await,
@@ -416,8 +403,11 @@ pub async fn find_process_names_by_ids(
 }
 
 /// Find the most recently updated process id for a process name, if any.
-pub async fn find_process_id_by_name(name: &str) -> std::io::Result<Option<ProcessId>> {
-    with_store(|pool| async move {
+pub async fn find_process_id_by_name(
+    storage_home: &Path,
+    name: &str,
+) -> std::io::Result<Option<ProcessId>> {
+    with_store(storage_home, |pool| async move {
         match pool {
             Vfs::Sqlite(p) => p.find_process_id_by_name(name).await,
             Vfs::Postgres(p) => p.find_process_id_by_name(name).await,
@@ -427,9 +417,10 @@ pub async fn find_process_id_by_name(name: &str) -> std::io::Result<Option<Proce
 }
 
 pub(crate) async fn find_unarchived_process_id_by_name(
+    storage_home: &Path,
     name: &str,
 ) -> std::io::Result<Option<ProcessId>> {
-    with_store(|pool| async move {
+    with_store(storage_home, |pool| async move {
         match pool {
             Vfs::Sqlite(p) => p.find_unarchived_process_id_by_name(name).await,
             Vfs::Postgres(p) => p.find_unarchived_process_id_by_name(name).await,

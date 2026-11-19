@@ -55,6 +55,7 @@ impl TestJournal {
             model_provider: "test".into(),
             cli_version: "test".into(),
             owner_id: "owner".into(),
+            storage_home: self._dir.path().to_path_buf(),
             mode: JournalSinkMode::Resume,
         }
     }
@@ -509,6 +510,7 @@ async fn postgres_shutdown_releases_lease_on_every_exit_path() {
         model_provider: "test".into(),
         cli_version: "test".into(),
         owner_id: "shutdown-test".into(),
+        storage_home: dir.path().to_path_buf(),
         mode: JournalSinkMode::Resume,
     };
     assert_shutdown_releases_lease(JournalClient::postgres_pool(pool), config).await;

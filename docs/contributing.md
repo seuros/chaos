@@ -57,6 +57,12 @@ Everyone else: come in, the door is open.
   scans immediate `.rs` entries, not nested test directories. Its generated
   `#[path]` module loaders require an explicit `<tool>/tests.rs` path on the
   child test declaration.
+- Tests never build binaries. A test that spawns a workspace binary resolves it
+  with `chaos_which::cargo_bin`: `CARGO_BIN_EXE_<name>`, else
+  `<target>/<profile>/<name>` beside the test executable. A missing binary fails
+  at once, naming `cargo build --bin <name>` and the variable to export.
+  `cargo nextest run --workspace` builds every binary the suite spawns; a
+  `-p` subset may need that `cargo build` first.
 - For layout-only edits, compare the moved bodies with the originals and compile
   the affected tests. Use focused runs to check path-sensitive fixtures and suites
   rather than repeatedly running the full QA gate during the move.

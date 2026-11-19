@@ -354,3 +354,24 @@ async fn stored_rules_round_trip_by_name() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// A stale open that loses the identity race must not rebind the home.
+#[tokio::test]
+async fn rejected_settings_open_keeps_the_accepted_home_binding() -> anyhow::Result<()> {
+    let home = tempfile::tempdir()?;
+    let url = |name: &str| format!("sqlite://{}", home.path().join(name).display());
+    let (url_a, url_b) = (url("a.sqlite"), url("b.sqlite"));
+    let slow_a = crate::runtime_db::mount_vfs_for(&url_a, home.path()).await?;
+    let fast_b = crate::runtime_db::mount_vfs_for(&url_b, home.path()).await?;
+    let bound = || chaos_vfs::root_for(home.path()).ok();
+    assert!(
+        bound().is_none_or(|vfs| !std::ptr::eq(vfs, slow_a) && !std::ptr::eq(vfs, fast_b)),
+        "opening a candidate must not bind the home"
+    );
+
+    let identity = |url: &str| fingerprint(&serde_json::json!({ "url": url }));
+    accept_mount(home.path(), identity(&url_b)?, home.path(), fast_b)?;
+    assert!(accept_mount(home.path(), identity(&url_a)?, home.path(), slow_a).is_err());
+    assert!(bound().is_some_and(|vfs| std::ptr::eq(vfs, fast_b)));
+    Ok(())
+}

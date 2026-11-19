@@ -540,6 +540,14 @@ fn scenarios() -> Vec<ScenarioSpec> {
         exclude_tmpdir_env_var: false,
         exclude_slash_tmp: false,
     };
+    // Tmp roots excluded: the "outside" target (cwd) may live under /tmp.
+    let workspace_write_only = SandboxPolicy::WorkspaceWrite {
+        writable_roots: vec![],
+        read_only_access: Default::default(),
+        network_access: false,
+        exclude_tmpdir_env_var: true,
+        exclude_slash_tmp: true,
+    };
 
     vec![
         ScenarioSpec {
@@ -1102,7 +1110,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
         ScenarioSpec {
             name: "workspace_write_never_blocks_outside_workspace",
             approval_policy: Headless,
-            sandbox_policy: workspace_write(false),
+            sandbox_policy: workspace_write_only,
             action: ActionKind::WriteFile {
                 target: TargetPath::OutsideWorkspace("ww_never.txt"),
                 content: "workspace-never",

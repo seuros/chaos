@@ -81,10 +81,16 @@ pub(crate) async fn init(config: &Config) -> anyhow::Result<Option<RuntimeDbHand
         config.model_provider_id.clone(),
     );
 
+    let storage_home = config.storage_home.clone();
     let _ = chaos_cron::spawn_scheduler(
         vfs,
         scheduler_executor(vfs, config).await,
-        Arc::new(|| Box::pin(crate::rollout::recorder::journal_client_for_mounted_backend())),
+        Arc::new(move || {
+            let storage_home = storage_home.clone();
+            Box::pin(
+                async move { crate::rollout::recorder::journal_client_for(&storage_home).await },
+            )
+        }),
     );
 
     // Install the shared ration usage store so adapters built later in
@@ -162,7 +168,7 @@ async fn spool_registry_from_env(config: &Config) -> chaos_abi::SpoolRegistry {
     registry
 }
 
-fn runtime_handle_from_vfs(
+pub(crate) fn runtime_handle_from_vfs(
     vfs: &ChaosVfs,
     chaos_home: PathBuf,
     default_provider: String,
@@ -196,24 +202,27 @@ pub async fn mount_root_for(
 ) -> anyhow::Result<&'static ChaosVfs> {
     let vfs = mount_vfs_for(storage_url, storage_home).await?;
     chaos_vfs::set_root(vfs);
+    chaos_vfs::bind_home(storage_home, vfs);
     Ok(vfs)
 }
 
-/// Open the backend without claiming the root, for callers that run before boot
-/// has settled which one the process serves.
+/// Open the backend without claiming the root or binding the home; callers bind
+/// only storage they accepted.
 pub async fn mount_vfs_for(
     storage_url: &str,
     storage_home: &Path,
 ) -> anyhow::Result<&'static ChaosVfs> {
     let config = mount_config_for(storage_url, storage_home)?;
-    if let Some(vfs) = chaos_vfs::mounted(&config) {
-        return Ok(vfs);
-    }
-
-    let vfs = open_vfs(config.clone(), storage_home)
-        .await
-        .map_err(|err| explain_storage_failure(storage_home, err))?;
-    Ok(chaos_vfs::mount(config, vfs))
+    let vfs = match chaos_vfs::mounted(&config) {
+        Some(vfs) => vfs,
+        None => {
+            let vfs = open_vfs(config.clone(), storage_home)
+                .await
+                .map_err(|err| explain_storage_failure(storage_home, err))?;
+            chaos_vfs::mount(config, vfs)
+        }
+    };
+    Ok(vfs)
 }
 
 #[derive(Debug, thiserror::Error)]

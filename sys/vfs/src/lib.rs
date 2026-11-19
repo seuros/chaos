@@ -17,6 +17,7 @@ const CHAOS_STORAGE_URL_ENV: &str = "CHAOS_STORAGE_URL";
 
 static ROOT: RwLock<Option<&'static ChaosVfs>> = RwLock::new(None);
 static MOUNTS: Mutex<Vec<(MountConfig, &'static ChaosVfs)>> = Mutex::new(Vec::new());
+static HOMES: Mutex<Vec<(PathBuf, &'static ChaosVfs)>> = Mutex::new(Vec::new());
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum VfsError {
@@ -268,6 +269,28 @@ pub fn set_root(vfs: &'static ChaosVfs) {
         .get_or_insert(vfs);
 }
 
+/// Record that `storage_home` is served by `vfs`, whatever URL mounted it; the latest binding wins.
+pub fn bind_home(storage_home: &Path, vfs: &'static ChaosVfs) {
+    let home = absolute(storage_home);
+    let mut homes = HOMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match homes.iter_mut().find(|(bound, _)| *bound == home) {
+        Some(entry) => entry.1 = vfs,
+        None => homes.push((home, vfs)),
+    }
+}
+
+fn bound_home(storage_home: &Path) -> Option<&'static ChaosVfs> {
+    let home = absolute(storage_home);
+    HOMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|(bound, _)| *bound == home)
+        .map(|(_, vfs)| *vfs)
+}
+
 /// The backend mounted under `config`, if any.
 pub fn mounted(config: &MountConfig) -> Option<&'static ChaosVfs> {
     let mounts = MOUNTS
@@ -298,11 +321,11 @@ pub fn pool() -> Result<Vfs, VfsError> {
     root().map(ChaosVfs::pool)
 }
 
-/// The backend serving `storage_home`, falling back to the root for a home this
-/// process never mounted. The lookup keys on the home alone: a process serving
-/// one backend from a URL mounted no home and lands on the root, while a process
-/// holding several homes reaches the one it named.
+/// The backend bound to or mounted for `storage_home`, else the root.
 pub fn root_for(storage_home: &Path) -> Result<&'static ChaosVfs, VfsError> {
+    if let Some(vfs) = bound_home(storage_home) {
+        return Ok(vfs);
+    }
     if let Some(vfs) = mounted(&MountConfig::sqlite_home(storage_home)) {
         return Ok(vfs);
     }

@@ -4,9 +4,7 @@ use acp_host::protocol;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::{EventMsg, RolloutItem, SessionSource};
 use chaos_kern::config::Config;
-use chaos_kern::{
-    ProcessSortKey, RolloutRecorder, journal_client_for_mounted_backend, parse_cursor, runtime_db,
-};
+use chaos_kern::{ProcessSortKey, RolloutRecorder, journal_client_for, parse_cursor, runtime_db};
 use protocol::schema::v1::{ListSessionsResponse, SessionId, SessionInfo};
 
 use crate::{internal, invalid};
@@ -19,7 +17,7 @@ pub(crate) struct Saved {
 }
 
 pub(crate) async fn check_record(config: &Config, id: ProcessId) -> protocol::Result<()> {
-    let journal = journal_client_for_mounted_backend()
+    let journal = journal_client_for(&config.storage_home)
         .await
         .map_err(|_| internal("native ACP journal is unavailable"))?;
     let record = journal
@@ -46,7 +44,7 @@ pub(crate) async fn load(config: &Config, session_id: &SessionId) -> protocol::R
     let id = ProcessId::from_string(&session_id.0)
         .map_err(|_| invalid("invalid saved ACP session id"))?;
     check_record(config, id).await?;
-    let journal = RolloutRecorder::get_journal_for_process(id)
+    let journal = RolloutRecorder::get_journal_for_process(&config.storage_home, id)
         .await
         .map_err(|_| internal("saved ACP transcript could not be loaded"))?;
     let items = journal

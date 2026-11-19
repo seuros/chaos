@@ -46,6 +46,7 @@ async fn background_confirm_does_not_report_a_deferred_writer_as_durable() {
         model_provider: "test".into(),
         cli_version: "test".into(),
         owner_id: "test".into(),
+        storage_home: PathBuf::from("/tmp"),
         mode: JournalSinkMode::Create,
     });
     sink.machine.handle(JournalStorageEvent::Disable).unwrap();
@@ -187,4 +188,55 @@ fn converts_runtime_db_page_without_losing_resume_metadata() {
     assert_eq!(item.cwd.as_deref(), Some(expected_cwd.as_path()));
     assert_eq!(item.source, Some(SessionSource::Cli));
     assert_eq!(item.git_branch.as_deref(), Some("main"));
+}
+
+/// The journal resolves in the caller's home, not the process root.
+#[tokio::test]
+async fn journal_follows_the_storage_home_not_the_process_root() {
+    let root_home = tempfile::tempdir().unwrap();
+    let other_home = tempfile::tempdir().unwrap();
+    for home in [&root_home, &other_home] {
+        crate::test_support::bootstrap_sqlite(home.path()).unwrap();
+    }
+    let url = |home: &tempfile::TempDir| {
+        format!("sqlite://{}", home.path().join("chaos.sqlite").display())
+    };
+    crate::runtime_db::mount_root_for(&url(&root_home), root_home.path())
+        .await
+        .unwrap();
+    crate::runtime_db::mount_vfs_for(&url(&other_home), other_home.path())
+        .await
+        .unwrap();
+
+    let process_id = ProcessId::new();
+    journal_client_for(other_home.path())
+        .await
+        .unwrap()
+        .create_process(JournalCreateProcessInput {
+            process_id,
+            parent: None,
+            source: SessionSource::Cli,
+            cwd: other_home.path().to_path_buf(),
+            created_at: Timestamp::now(),
+            title: None,
+            model_provider: None,
+            cli_version: None,
+        })
+        .await
+        .unwrap();
+
+    let found_in = |home: &tempfile::TempDir| {
+        let home = home.path().to_path_buf();
+        async move {
+            journal_client_for(&home)
+                .await
+                .unwrap()
+                .get_process(process_id)
+                .await
+                .unwrap()
+                .is_some()
+        }
+    };
+    assert!(found_in(&other_home).await);
+    assert!(!found_in(&root_home).await);
 }

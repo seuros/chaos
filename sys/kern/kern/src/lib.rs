@@ -155,7 +155,6 @@ pub use rollout::ProcessesPage;
 pub use rollout::RolloutRecorder;
 pub use rollout::RolloutRecorderParams;
 pub use rollout::SessionMeta;
-pub use rollout::append_process_name;
 pub use rollout::find_process_id_by_name;
 pub use rollout::find_process_name_by_id;
 pub use rollout::find_process_names_by_ids;
@@ -168,7 +167,7 @@ pub use rollout::health::subscribe_persistence_status;
 pub use rollout::list::Cursor;
 pub use rollout::list::parse_cursor;
 pub use rollout::policy::EventPersistenceMode;
-pub use rollout::recorder::journal_client_for_mounted_backend;
+pub use rollout::recorder::journal_client_for;
 pub use turn_scope::TurnScope;
 /// Returns the built-in persona catalog (excludes operational roles like default/scout/task).
 pub fn list_personas() -> &'static std::collections::BTreeMap<String, config::AgentRoleConfig> {

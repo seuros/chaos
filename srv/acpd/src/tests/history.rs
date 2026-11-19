@@ -1,7 +1,7 @@
 use super::*;
 use chaos_ipc::ProcessId;
 use chaos_ipc::protocol::SessionSource;
-use chaos_kern::journal_client_for_mounted_backend;
+use chaos_kern::journal_client_for;
 use core_test_support::responses::{ev_function_call, ev_reasoning_item_added};
 
 fn params(session: &Value, cwd: &std::path::Path) -> Value {
@@ -160,7 +160,9 @@ async fn restoration_rejects_foreign_source_provider_workspace_and_bad_cursors()
     let fixture = Fixture::new().await;
     let (first, session) = fixture.peer().await;
     first.close().await;
-    let journal = journal_client_for_mounted_backend().await.unwrap();
+    let journal = journal_client_for(&fixture.config.storage_home)
+        .await
+        .unwrap();
     let id = ProcessId::from_string(session.as_str().unwrap()).unwrap();
     let record = journal.get_process(id).await.unwrap().unwrap();
     let foreign = ProcessId::new();
@@ -241,9 +243,12 @@ async fn durable_metadata_exists_before_first_prompt_and_paging_is_bounded() {
     // accept a never-prompted, durably checkpointed conversation.
     let id = ProcessId::from_string(first.as_str().unwrap()).unwrap();
     assert!(
-        chaos_kern::RolloutRecorder::get_rollout_history_for_process(id)
-            .await
-            .is_err()
+        chaos_kern::RolloutRecorder::get_rollout_history_for_process(
+            &fixture.config.storage_home,
+            id
+        )
+        .await
+        .is_err()
     );
     let mut peer = Peer::connect(fixture.config.clone()).await;
     let (restored, updates) = peer
@@ -254,8 +259,12 @@ async fn durable_metadata_exists_before_first_prompt_and_paging_is_bounded() {
     peer.close().await;
 }
 
-async fn append_saved(id: ProcessId, item: chaos_ipc::protocol::RolloutItem) {
-    let journal = journal_client_for_mounted_backend().await.unwrap();
+async fn append_saved(
+    storage_home: &std::path::Path,
+    id: ProcessId,
+    item: chaos_ipc::protocol::RolloutItem,
+) {
+    let journal = journal_client_for(storage_home).await.unwrap();
     let loaded = journal.load_journal(id).await.unwrap();
     let lease = journal
         .acquire_lease(id, format!("acp-test-{id}"), 30_000)
@@ -289,6 +298,7 @@ async fn unfinished_foreground_turn_cannot_be_reexecuted_on_restore() {
     peer.close().await;
     let id = ProcessId::from_string(session.as_str().unwrap()).unwrap();
     append_saved(
+        &fixture.config.storage_home,
         id,
         chaos_ipc::protocol::RolloutItem::EventMsg(chaos_ipc::protocol::EventMsg::TurnStarted(
             chaos_ipc::protocol::TurnStartedEvent {
@@ -318,6 +328,7 @@ async fn restore_does_not_recover_previous_goal_or_background_continuations() {
     peer.close().await;
     let id = ProcessId::from_string(session.as_str().unwrap()).unwrap();
     append_saved(
+        &fixture.config.storage_home,
         id,
         RolloutItem::GoalCheckpoint(GoalCheckpointItem {
             conversation_id: id,
@@ -330,6 +341,7 @@ async fn restore_does_not_recover_previous_goal_or_background_continuations() {
     )
     .await;
     append_saved(
+        &fixture.config.storage_home,
         id,
         RolloutItem::BackgroundTask(
             chaos_ipc::background_tasks::TaskJournalEvent::ContinuationStarted {

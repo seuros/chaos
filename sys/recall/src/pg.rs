@@ -44,10 +44,6 @@ impl PgRecallStore {
         Self { pool }
     }
 
-    pub fn from_vfs() -> Result<Self, RecallError> {
-        Self::from_pool(chaos_vfs::pool().map_err(anyhow::Error::from)?)
-    }
-
     pub fn from_pool(pool: Vfs) -> Result<Self, RecallError> {
         match pool {
             Vfs::Postgres(pool) => Ok(Self::new(pool)),

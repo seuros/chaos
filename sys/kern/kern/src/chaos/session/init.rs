@@ -439,19 +439,20 @@ impl Session {
             &mut default_shell,
             session_telemetry.clone(),
         );
-        let process_name = match process_names::find_process_name_by_id(&conversation_id)
-            .instrument(info_span!(
-                "session_init.process_name_lookup",
-                otel.name = "session_init.process_name_lookup",
-            ))
-            .await
-        {
-            Ok(name) => name,
-            Err(err) => {
-                warn!("Failed to read session index for process name: {err}");
-                None
-            }
-        };
+        let process_name =
+            match process_names::find_process_name_by_id(&config.storage_home, &conversation_id)
+                .instrument(info_span!(
+                    "session_init.process_name_lookup",
+                    otel.name = "session_init.process_name_lookup",
+                ))
+                .await
+            {
+                Ok(name) => name,
+                Err(err) => {
+                    warn!("Failed to read session index for process name: {err}");
+                    None
+                }
+            };
         session_configuration.process_name = process_name.clone();
         let state = SessionState::new(session_configuration.clone());
         let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
@@ -548,7 +549,7 @@ impl Session {
             }
         };
 
-        let recall = crate::recall::for_session(config.chaos_home.clone());
+        let recall = crate::recall::for_session(config.chaos_home.clone(), &config.storage_home);
 
         let tool_group_catalog =
             crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
@@ -687,8 +688,11 @@ impl Session {
             && let InitialHistory::Resumed(_) = &initial_history
         {
             if sess.services.rollout.lock().await.is_some() {
-                initial_history =
-                    RolloutRecorder::get_rollout_history_for_process(conversation_id).await?;
+                initial_history = RolloutRecorder::get_rollout_history_for_process(
+                    &config.storage_home,
+                    conversation_id,
+                )
+                .await?;
             }
             crate::goal::recover(&sess, &initial_history.get_rollout_items())
                 .await

@@ -142,7 +142,12 @@ pub async fn discover(
         if matches!(process.source, Some(SessionSource::SubAgent(_))) {
             continue;
         }
-        let history = match RolloutRecorder::get_rollout_history_for_process(process_id).await {
+        let history = match RolloutRecorder::get_rollout_history_for_process(
+            &config.storage_home,
+            process_id,
+        )
+        .await
+        {
             Ok(history) => history,
             Err(error) => {
                 tracing::warn!(%process_id, %error, "cannot inspect recovery candidate");

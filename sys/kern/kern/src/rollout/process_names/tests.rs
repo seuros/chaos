@@ -246,3 +246,67 @@ async fn sqlite_store_keeps_name_filters_and_lookup_ordering() -> std::io::Resul
     );
     Ok(())
 }
+
+/// Names resolve in the caller's home, not the process root.
+#[tokio::test]
+async fn process_names_follow_the_storage_home_not_the_process_root() {
+    let root_home = tempfile::tempdir().unwrap();
+    let other_home = tempfile::tempdir().unwrap();
+    for home in [&root_home, &other_home] {
+        crate::test_support::bootstrap_sqlite(home.path()).unwrap();
+    }
+    let url = |home: &tempfile::TempDir| {
+        format!("sqlite://{}", home.path().join("chaos.sqlite").display())
+    };
+    crate::runtime_db::mount_root_for(&url(&root_home), root_home.path())
+        .await
+        .unwrap();
+    crate::runtime_db::mount_vfs_for(&url(&other_home), other_home.path())
+        .await
+        .unwrap();
+
+    let process_id = ProcessId::new();
+    crate::rollout::recorder::journal_client_for(other_home.path())
+        .await
+        .unwrap()
+        .create_process(chaos_journald::CreateProcessInput {
+            process_id,
+            parent: None,
+            source: chaos_ipc::protocol::SessionSource::Cli,
+            cwd: other_home.path().to_path_buf(),
+            created_at: jiff::Timestamp::now(),
+            title: None,
+            model_provider: None,
+            cli_version: None,
+        })
+        .await
+        .unwrap();
+    super::append_process_name_for_home(
+        other_home.path(),
+        process_id,
+        "per-home",
+        ProcessNameSource::Agent,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        super::find_process_name_by_id(other_home.path(), &process_id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("per-home")
+    );
+    assert_eq!(
+        super::find_process_id_by_name(other_home.path(), "per-home")
+            .await
+            .unwrap(),
+        Some(process_id)
+    );
+    assert_eq!(
+        super::find_process_id_by_name(root_home.path(), "per-home")
+            .await
+            .unwrap(),
+        None
+    );
+}

@@ -83,6 +83,7 @@ pub(super) struct PickerState {
     pub(super) page_loader: PageLoader,
     pub(super) view_rows: Option<usize>,
     pub(super) default_provider: String,
+    pub(super) storage_home: PathBuf,
     pub(super) show_all: bool,
     pub(super) filter_cwd: Option<PathBuf>,
     pub(super) action: SessionPickerAction,
@@ -99,6 +100,7 @@ impl PickerState {
         requester: FrameRequester,
         page_loader: PageLoader,
         default_provider: String,
+        storage_home: PathBuf,
         show_all: bool,
         filter_cwd: Option<PathBuf>,
         action: SessionPickerAction,
@@ -123,6 +125,7 @@ impl PickerState {
             page_loader,
             view_rows: None,
             default_provider,
+            storage_home,
             show_all,
             filter_cwd,
             action,
@@ -323,7 +326,7 @@ impl PickerState {
             return;
         }
 
-        let names = find_process_names_by_ids(&missing_ids)
+        let names = find_process_names_by_ids(&self.storage_home, &missing_ids)
             .await
             .unwrap_or_default();
         for process_id in missing_ids {

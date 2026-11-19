@@ -153,7 +153,7 @@ impl AgentBackend for Backend {
         Box::pin(async move {
             let id = chaos_ipc::ProcessId::from_string(&request.session_id.0)
                 .map_err(|_| invalid("invalid saved ACP session id"))?;
-            let journal = chaos_kern::journal_client_for_mounted_backend()
+            let journal = chaos_kern::journal_client_for(&self.0.base().storage_home)
                 .await
                 .map_err(|_| internal("native ACP journal is unavailable"))?;
             let Some(record) = journal

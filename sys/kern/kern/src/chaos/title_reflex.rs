@@ -165,8 +165,11 @@ pub(crate) async fn review_title_after_reconnect(session: Arc<Session>, history:
     if !title_review_enabled(config.terminal_title, &session_source) {
         return;
     }
+    let storage_home = config.storage_home.clone();
 
-    match process_names::find_process_name_record_by_id(&session.conversation_id).await {
+    match process_names::find_process_name_record_by_id(&storage_home, &session.conversation_id)
+        .await
+    {
         Ok(Some(record)) if record.source == ProcessNameSource::User => {
             mark_reconnect_reviewed(&session).await;
             return;
@@ -264,7 +267,9 @@ pub(crate) async fn review_title_after_reconnect(session: Arc<Session>, history:
         return;
     }
 
-    match process_names::find_process_name_record_by_id(&session.conversation_id).await {
+    match process_names::find_process_name_record_by_id(&storage_home, &session.conversation_id)
+        .await
+    {
         Ok(Some(record)) if record.source == ProcessNameSource::User => return,
         Ok(_) => {}
         Err(err) => {
@@ -272,7 +277,7 @@ pub(crate) async fn review_title_after_reconnect(session: Arc<Session>, history:
             return;
         }
     }
-    match process_names::find_unarchived_process_id_by_name(&title).await {
+    match process_names::find_unarchived_process_id_by_name(&storage_home, &title).await {
         Ok(Some(other_process_id)) if other_process_id != session.conversation_id => {
             warn!(%title, "reconnect title review chose a title already used by another session");
             return;

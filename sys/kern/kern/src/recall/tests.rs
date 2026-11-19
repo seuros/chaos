@@ -1,24 +1,38 @@
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn postgres() -> Vfs {
-    Vfs::Postgres(sqlx::PgPool::connect_lazy("postgres://localhost/unused").unwrap())
+fn postgres() -> &'static ChaosVfs {
+    Box::leak(Box::new(ChaosVfs::from_postgres_pool(
+        sqlx::PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
+    )))
 }
 
 #[tokio::test]
 async fn disabled_mounts_do_not_create_runtime_and_postgres_startup_is_lazy() {
-    let cache = OnceLock::new();
-    let sqlite = Vfs::Sqlite(sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap());
+    let cache = Runtimes::default();
+    let sqlite: &'static ChaosVfs = Box::leak(Box::new(ChaosVfs::from_sqlite_pool(
+        sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap(),
+    )));
     for mount in [None, Some(sqlite)] {
         assert!(for_mount(mount, PathBuf::from("invalid"), &cache).is_none());
-        assert!(cache.get().is_none());
+        assert!(cache.lock().unwrap().is_empty());
     }
     let home = tempfile::tempdir().unwrap();
-    let first = for_mount(Some(postgres()), home.path().to_owned(), &cache).unwrap();
+    let mount = postgres();
+    let first = for_mount(Some(mount), home.path().to_owned(), &cache).unwrap();
     assert!(first.ready_service().is_none());
     assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
-    let second = for_mount(Some(postgres()), PathBuf::from("/unused"), &cache).unwrap();
-    assert!(Arc::ptr_eq(&first, &second));
+    let second = for_mount(Some(mount), PathBuf::from("/unused"), &cache).unwrap();
+    assert!(Arc::ptr_eq(&first, &second), "one mount shares one runtime");
+}
+
+/// A home on another database must not search this one's index.
+#[tokio::test]
+async fn each_postgres_mount_gets_its_own_runtime() {
+    let cache = Runtimes::default();
+    let first = for_mount(Some(postgres()), PathBuf::from("/unused"), &cache).unwrap();
+    let other = for_mount(Some(postgres()), PathBuf::from("/unused"), &cache).unwrap();
+    assert!(!Arc::ptr_eq(&first, &other));
 }
 
 pub(super) fn failing_runtime(calls: Arc<AtomicUsize>) -> Arc<RecallRuntime> {

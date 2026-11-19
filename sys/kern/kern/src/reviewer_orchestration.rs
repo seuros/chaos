@@ -766,11 +766,12 @@ struct PersistedReviewerState {
 }
 
 async fn persisted_reviewer_state(
+    storage_home: &std::path::Path,
     process_id: chaos_ipc::ProcessId,
 ) -> anyhow::Result<PersistedReviewerState> {
     use chaos_ipc::protocol::EventMsg;
 
-    let history = crate::RolloutRecorder::get_rollout_history_for_process(process_id)
+    let history = crate::RolloutRecorder::get_rollout_history_for_process(storage_home, process_id)
         .await
         .context("persisted reviewer rollout could not be read")?;
     let events = history
@@ -929,7 +930,8 @@ impl ReviewerBoundary for SessionReviewerBoundary {
         }
         let persisted_process_id = persisted_processes.first().copied();
         if let Some(process_id) = persisted_process_id {
-            let persisted = persisted_reviewer_state(process_id).await?;
+            let storage_home = self.session.get_config().await.storage_home.clone();
+            let persisted = persisted_reviewer_state(&storage_home, process_id).await?;
             if persisted.model_provider != binding.provider_id || persisted.model != binding.model {
                 bail!("persisted reviewer effective provider/model does not match selection");
             }
@@ -1080,18 +1082,20 @@ impl ReviewerBoundary for SessionReviewerBoundary {
             AgentStatus::Shutdown => Ok(ReviewerOutput::Failed(
                 "reviewer shut down before producing output".to_string(),
             )),
-            AgentStatus::NotFound => persisted_reviewer_state(process_id)
-                .await?
-                .output
-                .map_or_else(
-                    || {
-                        Ok(ReviewerOutput::Failed(
-                            "reviewer is not live and its rollout has no completed output"
-                                .to_string(),
-                        ))
-                    },
-                    |output| Ok(ReviewerOutput::Completed(output)),
-                ),
+            AgentStatus::NotFound => {
+                persisted_reviewer_state(&self.session.get_config().await.storage_home, process_id)
+                    .await?
+                    .output
+                    .map_or_else(
+                        || {
+                            Ok(ReviewerOutput::Failed(
+                                "reviewer is not live and its rollout has no completed output"
+                                    .to_string(),
+                            ))
+                        },
+                        |output| Ok(ReviewerOutput::Completed(output)),
+                    )
+            }
         }
     }
 

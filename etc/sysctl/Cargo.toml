@@ -35,6 +35,6 @@ wildmatch = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }
-chaos-keyring = { workspace = true }
+chaos-vault = { workspace = true, features = ["testing"] }
 pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

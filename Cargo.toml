@@ -82,7 +82,6 @@ members = [
     "lib/libnet/services",
     "lib/libmisc/argv",
     "lib/libmisc/pam",
-    "lib/libmisc/keyring",
     "lib/libmisc/minions",
     "lib/libmisc/synopsis",
     "lib/libmisc/init",
@@ -214,7 +213,6 @@ chaos-locate = { path = "lib/libfs/locate" }
 chaos-diff = { path = "lib/libfs/diff" }
 chaos-argv = { path = "lib/libmisc/argv" }
 chaos-pam = { path = "lib/libmisc/pam" }
-chaos-keyring = { path = "lib/libmisc/keyring" }
 chaos-minions = { path = "lib/libmisc/minions" }
 chaos-synopsis = { path = "lib/libmisc/synopsis" }
 chaos-coreboot = { path = "lib/libmisc/init" }
@@ -298,10 +296,6 @@ indexmap = "2"
 insta = "1"
 inventory = "0.3.25"
 itertools = "0.15"
-keyring-core = "1"
-apple-native-keyring-store = "1"
-linux-keyutils-keyring-store = "1"
-dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust"] }
 landlock = "0.4.7"
 libc = "0.2.191"
 log = "0.4"
@@ -362,6 +356,7 @@ chrono-machines = "0.13"
 deadline-machines = { version = "0.6", features = ["tokio", "tokio-util"] }
 throttle-machines = { version = "0.6", features = ["std"] }
 lease-machines = "0.8"
+custody-machines = { version = "0.1.1", features = ["keyring"] }
 suspect-machines = "0.7"
 outbox-machines = "0.10"
 dedup-machines = { version = "0.8", features = ["std"] }
@@ -491,7 +486,6 @@ ignored = [
     "chaos-vault",
     # workspace re-exports — shear cannot trace through workspace dep graph
     "chaos-watchdog",
-    "apple-native-keyring-store",
     "chaos-snitch",
     "flate2",
     "semver",

@@ -159,12 +159,11 @@ chaos-doas = { workspace = true }
 [dev-dependencies]
 acp-guest = { path = "../../../lib/libacp/guest" }
 chaos-recall = { workspace = true, features = ["test-support"] }
-chaos-keyring = { workspace = true }
+chaos-vault = { workspace = true, features = ["testing"] }
 chaos-test-fixtures = { workspace = true }
 chaos-test-process = { workspace = true }
 assert_cmd = { workspace = true }
 chaos-model-catalog = { workspace = true, features = ["test-support"] }
-keyring-core = { workspace = true }
 chaos-argv = { workspace = true }
 chaos-snitch = { workspace = true, features = [
     "disable-default-metrics-exporter",

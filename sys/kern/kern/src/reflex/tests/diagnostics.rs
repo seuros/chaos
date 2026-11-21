@@ -6,7 +6,7 @@ use std::time::Duration;
 #[tokio::test]
 #[serial]
 async fn live_check_uses_saved_key_and_only_sends_the_synthetic_action() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let server = MockServer::start().await;
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
@@ -92,7 +92,7 @@ async fn failed_live_checks_do_not_fallback_or_expose_upstream_error_bodies() {
 #[tokio::test]
 #[serial]
 async fn missing_saved_key_is_an_error_not_a_skipped_backend() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let server = MockServer::start().await;
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();

@@ -24,8 +24,6 @@ rama = { workspace = true }
 url = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { workspace = true, features = ["keychain"] }
-keyring-core = { workspace = true }
 
 [dev-dependencies]
 chaos-test-process = { workspace = true }

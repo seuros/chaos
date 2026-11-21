@@ -4,16 +4,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
-use chaos_keyring::KeyringStore;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Digest;
 use sha2::Sha256;
 
+mod custody;
 mod local;
 mod sanitizer;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
+pub use custody::VaultSources;
 pub use local::LocalSecretsBackend;
 pub use sanitizer::redact_secrets;
 
@@ -104,15 +107,13 @@ impl SecretsManager {
         Self { backend }
     }
 
-    pub fn new_with_keyring_store(
+    pub fn new_with_sources(
         chaos_home: PathBuf,
         backend_kind: SecretsBackendKind,
-        keyring_store: Arc<dyn KeyringStore>,
+        sources: VaultSources,
     ) -> Self {
         let backend: Arc<dyn SecretsBackend> = match backend_kind {
-            SecretsBackendKind::Local => {
-                Arc::new(LocalSecretsBackend::new(chaos_home, keyring_store))
-            }
+            SecretsBackendKind::Local => Arc::new(LocalSecretsBackend::new(chaos_home, sources)),
         };
         Self { backend }
     }
@@ -185,10 +186,6 @@ pub(crate) fn compute_keyring_account(chaos_home: &Path) -> String {
     let hex = digest_hex(&digest);
     let short = hex.get(..16).unwrap_or(hex.as_str());
     format!("secrets|{short}")
-}
-
-pub(crate) fn keyring_service() -> &'static str {
-    KEYRING_SERVICE
 }
 
 fn digest_hex(bytes: &[u8]) -> String {

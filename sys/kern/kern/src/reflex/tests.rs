@@ -327,7 +327,7 @@ async fn from_config_distinguishes_unavailable_action_risk_from_disabled() {
 #[tokio::test]
 #[serial]
 async fn monitor_action_uses_reflex_verdict_before_remote_monitor() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let _guard = EnvVarGuard::set(TEST_ENV_KEY, OsStr::new(""));
     let server = MockServer::start().await;
     let (session, mut turn_context) = make_session_and_context().await;

@@ -95,7 +95,8 @@ empty database in its place. Point `storage_url` at the new location, or remove
   project's `.chaos/rules/` files also restrict only. `$CHAOS_HOME/rules/` is
   no longer read.
 - Credentials use opaque references backed by `$CHAOS_HOME/secrets/local.age`.
-  macOS keeps the vault's single unlock key in the native login Keychain.
+  The vault's single unlock key lives in the login Keychain on macOS, and in the
+  Secret Service or `$CHAOS_HOME/secrets/vault.key` on Linux and FreeBSD.
   Provider auth modes `keyring` and `auto` use this same vault with no plaintext
   fallback. Provider `file` (the existing default) and `ephemeral` modes remain
   unchanged.

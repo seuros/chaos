@@ -120,8 +120,17 @@ key variables for subscription runs.
 ### Shared credential vault
 
 `$CHAOS_HOME/secrets/local.age` holds settings credentials, provider accounts in
-`keyring`/`auto` mode, and named secrets. Its unlock key uses the OS credential
-store. `auto` does not fall back to plaintext.
+`keyring`/`auto` mode, and named secrets. `auto` does not fall back to plaintext.
+Its unlock key is taken from the first of these that holds it:
+
+- the systemd credential `chaos-vault-key` (`LoadCredential[Encrypted]=`);
+- macOS: the login Keychain; Linux/FreeBSD: the Secret Service, then
+  `$CHAOS_HOME/secrets/vault.key` (`0600`, owner-only path);
+- Linux: the kernel keyring, as a cache only.
+
+The key is never kept only where a reboot erases it: a cache-only key is copied
+into durable storage on use, and the vault refuses writes until it is. Unlock
+errors list every source and why it failed.
 
 Legacy per-item Keychain items are never read or imported; credentials that
 only live there must be re-entered. Back up both the encrypted vault and its

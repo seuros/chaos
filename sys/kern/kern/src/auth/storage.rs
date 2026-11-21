@@ -21,8 +21,6 @@ use uuid::Uuid;
 
 use crate::token_data::TokenData;
 use chaos_ipc::api::AuthMode;
-#[cfg(test)]
-use chaos_keyring::KeyringStore;
 use std::sync::LazyLock;
 
 pub use chaos_sysctl::types::AuthCredentialsStoreMode;
@@ -181,8 +179,9 @@ struct VaultAuthStorage {
 
 impl VaultAuthStorage {
     #[cfg(test)]
-    fn new(chaos_home: PathBuf, keyring_store: Arc<dyn KeyringStore>) -> Self {
-        let vault = chaos_vault::LocalSecretsBackend::new(chaos_home.clone(), keyring_store);
+    fn new(chaos_home: PathBuf, key: &chaos_vault::testing::MemorySource) -> Self {
+        let sources = chaos_vault::testing::sources(key);
+        let vault = chaos_vault::LocalSecretsBackend::new(chaos_home.clone(), sources);
         Self { chaos_home, vault }
     }
 
@@ -196,7 +195,7 @@ impl VaultAuthStorage {
                 .map_err(|_| std::io::Error::other("invalid provider credentials in vault")),
             Ok(None) => Ok(None),
             Err(error) => Err(std::io::Error::other(format!(
-                "failed to load CLI auth from vault: {error}"
+                "failed to load CLI auth from vault: {error:#}"
             ))),
         }
     }
@@ -204,7 +203,7 @@ impl VaultAuthStorage {
     fn save_to_vault(&self, key: &str, value: &str) -> std::io::Result<()> {
         self.vault
             .save_credential(&format!("{KEYRING_SERVICE}/{key}"), value)
-            .map_err(std::io::Error::other)
+            .map_err(|error| std::io::Error::other(format!("{error:#}")))
     }
 }
 
@@ -238,7 +237,7 @@ impl AuthStorageBackend for VaultAuthStorage {
         let keyring_removed = self
             .vault
             .delete_credential(&format!("{KEYRING_SERVICE}/{key}"))
-            .map_err(std::io::Error::other)?;
+            .map_err(|error| std::io::Error::other(format!("{error:#}")))?;
         let file_removed = delete_file_if_exists(&self.chaos_home)?;
         Ok(keyring_removed || file_removed)
     }
@@ -339,15 +338,15 @@ pub(super) fn create_auth_storage_at(
 }
 
 #[cfg(test)]
-fn create_auth_storage_with_keyring_store(
+fn create_auth_storage_with_key(
     chaos_home: PathBuf,
     mode: AuthCredentialsStoreMode,
-    keyring_store: Arc<dyn KeyringStore>,
+    key: &chaos_vault::testing::MemorySource,
 ) -> Arc<dyn AuthStorageBackend> {
     match mode {
         AuthCredentialsStoreMode::File => Arc::new(FileAuthStorage::new(chaos_home)),
         AuthCredentialsStoreMode::Keyring | AuthCredentialsStoreMode::Auto => {
-            Arc::new(VaultAuthStorage::new(chaos_home, keyring_store))
+            Arc::new(VaultAuthStorage::new(chaos_home, key))
         }
         AuthCredentialsStoreMode::Ephemeral => Arc::new(EphemeralAuthStorage::new(chaos_home)),
     }

@@ -14,14 +14,11 @@ use age::decrypt;
 use age::encrypt;
 use age::scrypt::Identity as ScryptIdentity;
 use age::scrypt::Recipient as ScryptRecipient;
-use age::secrecy::ExposeSecret;
 use age::secrecy::SecretString;
 use anyhow::Context;
 use anyhow::Result;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use chaos_keyring::DefaultKeyringStore;
-use chaos_keyring::KeyringStore;
 use rama::telemetry::tracing::warn;
 use rand::TryRng;
 use rand::rngs::SysRng;
@@ -34,8 +31,9 @@ use super::SecretListEntry;
 use super::SecretName;
 use super::SecretScope;
 use super::SecretsBackend;
-use super::compute_keyring_account;
-use super::keyring_service;
+use super::custody;
+use super::custody::VaultCustodian;
+use super::custody::VaultSources;
 
 const SECRETS_VERSION: u8 = 2;
 const LOCAL_SECRETS_FILENAME: &str = "local.age";
@@ -82,6 +80,7 @@ impl std::fmt::Debug for SecretsFile {
 #[derive(Default)]
 struct VaultState {
     passphrase: Option<SecretString>,
+    volatile: Option<String>,
     snapshot: Option<(Vec<u8>, SecretsFile)>,
 }
 
@@ -94,7 +93,7 @@ static VAULTS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<VaultState>>>>> =
 #[derive(Clone)]
 pub struct LocalSecretsBackend {
     chaos_home: PathBuf,
-    keyring_store: Arc<dyn KeyringStore>,
+    custodian: Arc<Result<VaultCustodian, String>>,
     state: Arc<Mutex<VaultState>>,
 }
 
@@ -116,19 +115,29 @@ impl LocalSecretsBackend {
             .entry(home.clone())
             .or_default()
             .clone();
+        #[cfg(any(test, feature = "testing"))]
+        let sources = crate::testing::isolated_sources(&home)
+            .unwrap_or_else(|| custody::platform_sources(&home));
+        #[cfg(not(any(test, feature = "testing")))]
+        let sources = custody::platform_sources(&home);
         Self {
+            custodian: Self::custodian(sources),
             chaos_home: home,
-            keyring_store: Arc::new(DefaultKeyringStore),
             state,
         }
     }
 
-    pub fn new(chaos_home: PathBuf, keyring_store: Arc<dyn KeyringStore>) -> Self {
+    /// A vault of its own over `sources`, sharing no unlock state.
+    pub fn new(chaos_home: PathBuf, sources: VaultSources) -> Self {
         Self {
             chaos_home,
-            keyring_store,
+            custodian: Self::custodian(sources),
             state: Arc::new(Mutex::new(VaultState::default())),
         }
+    }
+
+    fn custodian(sources: VaultSources) -> Arc<Result<VaultCustodian, String>> {
+        Arc::new(custody::custodian(sources).map_err(|error| format!("{error:#}")))
     }
 
     pub fn set(&self, scope: &SecretScope, name: &SecretName, value: &str) -> Result<()> {
@@ -292,7 +301,19 @@ impl LocalSecretsBackend {
     }
 
     fn write_locked(&self, state: &mut VaultState, mut file: SecretsFile) -> Result<()> {
-        let passphrase = self.passphrase(state, !self.secrets_path().exists())?;
+        let sealed = self.secrets_path().exists();
+        if !sealed {
+            state.passphrase = None;
+            state.volatile = None;
+        }
+        let passphrase = self.passphrase(state, !sealed)?;
+        if sealed {
+            let earlier = state.volatile.take();
+            state.volatile = custody::recheck(self.key_custodian()?, &passphrase, earlier);
+        }
+        if let Some(volatile) = &state.volatile {
+            anyhow::bail!("refusing to write the credential vault: {volatile}");
+        }
         file.version = file.version.max(SECRETS_VERSION);
         let plaintext =
             Zeroizing::new(serde_json::to_vec(&file).context("failed to serialize secrets file")?);
@@ -303,47 +324,31 @@ impl LocalSecretsBackend {
         Ok(())
     }
 
+    fn key_custodian(&self) -> Result<&VaultCustodian> {
+        self.custodian
+            .as_ref()
+            .as_ref()
+            .map_err(|error| anyhow::anyhow!("{error}"))
+    }
+
     fn passphrase(&self, state: &mut VaultState, create: bool) -> Result<SecretString> {
         if let Some(key) = &state.passphrase {
             return Ok(key.clone());
         }
-        let account = compute_keyring_account(&self.chaos_home);
-        let loaded = self
-            .keyring_store
-            .load(keyring_service(), &account)
-            .map_err(|err| anyhow::anyhow!(err.message()))
-            .with_context(|| format!("failed to load secrets key from keyring for {account}"))?;
-        let key = match loaded {
-            Some(existing) => SecretString::from(existing),
-            None => {
-                anyhow::ensure!(
-                    create,
-                    "credential vault unlock key is missing; restore it from backup"
-                );
-                // Generate a high-entropy key and persist it in the OS keyring.
-                // This keeps secrets out of plaintext config while remaining
-                // fully local/offline for the MVP.
-                let generated = generate_passphrase()?;
-                self.keyring_store
-                    .save(keyring_service(), &account, generated.expose_secret())
-                    .map_err(|err| anyhow::anyhow!(err.message()))
-                    .context("failed to persist secrets key in keyring")?;
-                let verified = self
-                    .keyring_store
-                    .load(keyring_service(), &account)
-                    .map_err(|err| anyhow::anyhow!(err.message()))?
-                    .map(SecretString::from);
-                anyhow::ensure!(
-                    verified
-                        .as_ref()
-                        .is_some_and(|key| key.expose_secret() == generated.expose_secret()),
-                    "credential vault unlock key failed read-back verification"
-                );
-                generated
-            }
-        };
-        state.passphrase = Some(key.clone());
-        Ok(key)
+        let unlocked = custody::unlock(
+            self.key_custodian()?,
+            &self.secrets_path(),
+            create,
+            generate_passphrase,
+            |ciphertext, passphrase| {
+                decrypt_with_passphrase(ciphertext, passphrase)
+                    .map(Zeroizing::new)
+                    .is_ok()
+            },
+        )?;
+        state.volatile = unlocked.volatile;
+        state.passphrase = Some(unlocked.passphrase.clone());
+        Ok(unlocked.passphrase)
     }
 }
 

@@ -3084,9 +3084,9 @@ dependencies = [
 
 [[package]]
 name = "custody-machines"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fafb19d8f8ae3a7af6d20af890ef382285fb9ded43322ea4f83a386b8209c5e"
+checksum = "d3d1249bf4d321b19d8c9c404c092a54af95d162782f7a4bdd53e2397ef59675"
 dependencies = [
  "apple-native-keyring-store",
  "dbus-secret-service-keyring-store",

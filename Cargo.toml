@@ -356,7 +356,7 @@ chrono-machines = "0.13"
 deadline-machines = { version = "0.6", features = ["tokio", "tokio-util"] }
 throttle-machines = { version = "0.6", features = ["std"] }
 lease-machines = "0.8"
-custody-machines = { version = "0.1", features = ["keyring"] }
+custody-machines = { version = "0.1.1", features = ["keyring"] }
 suspect-machines = "0.7"
 outbox-machines = "0.10"
 dedup-machines = { version = "0.8", features = ["std"] }

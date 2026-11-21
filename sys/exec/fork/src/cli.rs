@@ -140,14 +140,14 @@ impl ResumeArgs {
 #[derive(usage::Args, Debug)]
 pub struct ReviewArgs {
     /// Review staged, unstaged, and untracked changes.
-    #[usage(long = "uncommitted", conflicts("--base", "--commit", "prompt"))]
+    #[usage(long = "uncommitted", conflicts("--base", "--commit"))]
     pub uncommitted: bool,
 
     /// Review changes against the given base branch.
     #[usage(
         long = "base",
         value_name = "BRANCH",
-        conflicts("--uncommitted", "--commit", "prompt")
+        conflicts("--uncommitted", "--commit")
     )]
     pub base: Option<String>,
 
@@ -155,7 +155,7 @@ pub struct ReviewArgs {
     #[usage(
         long = "commit",
         value_name = "SHA",
-        conflicts("--uncommitted", "--base", "prompt")
+        conflicts("--uncommitted", "--base")
     )]
     pub commit: Option<String>,
 
@@ -163,7 +163,9 @@ pub struct ReviewArgs {
     #[usage(long = "title", value_name = "TITLE", requires = "--commit")]
     pub commit_title: Option<String>,
 
-    /// Custom review instructions. If `-` is used, read from stdin.
+    /// Review instructions. Alone, they are the whole review; with
+    /// --uncommitted, --base or --commit, they say what to focus on. If `-` is
+    /// used, read from stdin.
     #[usage(value_name = "PROMPT", value_hint = usage::ValueHint::Other)]
     pub prompt: Option<String>,
 }

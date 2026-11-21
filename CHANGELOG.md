@@ -12,6 +12,8 @@ should. There is no patch level; the build timestamp is the patch.
 ### Added
 - The vault unlock key can be provisioned as the systemd credential
   `chaos-vault-key`.
+- `chaos review --uncommitted|--base|--commit "<instructions>"` focuses a
+  review; instructions alone remain a custom review.
 - Independently publishable `mcp-goals` 0.1.0: the `chaos/goals` wire types
   and goal lifecycle, shared by chaos and helmsman.
 
@@ -35,6 +37,8 @@ should. There is no patch level; the build timestamp is the patch.
   (`keyctl`, `add_key`, `request_key`, x32 included), whatever their network
   policy. Every restricted sandbox now refuses 32-bit compat binaries, as the
   network-restricted one already did.
+- `chaos review` prints the review it ran, and exits non-zero when the review
+  did not complete, instead of exiting 0 with no output.
 - A due cron job runs once, not once per chaos process sharing the runtime
   database.
 - An execution delivery that never succeeds dies after 32 attempts instead of

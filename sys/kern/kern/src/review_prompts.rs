@@ -9,6 +9,8 @@ pub struct ResolvedReviewRequest {
     pub prompt: String,
     pub user_facing_hint: String,
     pub reviewer: Option<String>,
+    /// The user's focus instructions, already folded into `prompt`.
+    pub instructions: Option<String>,
     /// Merge-base SHA pre-computed for `BaseBranch` targets; reused for diff fetch.
     pub merge_base_sha: Option<String>,
 }
@@ -32,7 +34,15 @@ pub fn resolve_review_request(
     } else {
         None
     };
-    let prompt = review_prompt_with_merge_base(&target, cwd, merge_base_sha.as_deref())?;
+    let mut prompt = review_prompt_with_merge_base(&target, cwd, merge_base_sha.as_deref())?;
+    let instructions = request
+        .instructions
+        .map(|instructions| instructions.trim().to_owned())
+        .filter(|instructions| !instructions.is_empty());
+    if let Some(instructions) = &instructions {
+        prompt.push_str("\n\nAdditional instructions from the user:\n");
+        prompt.push_str(instructions);
+    }
     let user_facing_hint = request
         .user_facing_hint
         .unwrap_or_else(|| user_facing_hint(&target));
@@ -42,6 +52,7 @@ pub fn resolve_review_request(
         prompt,
         user_facing_hint,
         reviewer: request.reviewer,
+        instructions,
         merge_base_sha,
     })
 }
@@ -171,6 +182,7 @@ impl From<ResolvedReviewRequest> for ReviewRequest {
             target: resolved.target,
             user_facing_hint: Some(resolved.user_facing_hint),
             reviewer: resolved.reviewer,
+            instructions: resolved.instructions,
         }
     }
 }

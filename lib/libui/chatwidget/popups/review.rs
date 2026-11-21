@@ -41,6 +41,7 @@ impl ChatWidget {
                     target: ReviewTarget::UncommittedChanges,
                     user_facing_hint: None,
                     reviewer: None,
+                    instructions: None,
                 },
             )],
             dismiss_on_select: true,
@@ -114,6 +115,7 @@ impl ChatWidget {
                         },
                         user_facing_hint: None,
                         reviewer: None,
+                        instructions: None,
                     },
                 )],
                 dismiss_on_select: true,
@@ -152,6 +154,7 @@ impl ChatWidget {
                         },
                         user_facing_hint: None,
                         reviewer: None,
+                        instructions: None,
                     },
                 )],
                 dismiss_on_select: true,
@@ -187,6 +190,7 @@ impl ChatWidget {
                     },
                     user_facing_hint: None,
                     reviewer: None,
+                    instructions: None,
                 };
                 if use_reviewer {
                     tx.send(AppEvent::OpenReviewMinionPicker { review_request: rr });

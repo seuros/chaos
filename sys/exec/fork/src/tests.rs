@@ -1,7 +1,9 @@
 use super::*;
 use chaos_ipc::protocol::ErrorEvent;
+use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::McpStartupStatus;
 use chaos_ipc::protocol::McpStartupUpdateEvent;
+use chaos_ipc::protocol::ReviewOutputEvent;
 use chaos_ipc::protocol::TurnCompleteEvent;
 use chaos_snitch::set_parent_from_w3c_trace_context;
 use chaos_snitch::tracing as tracing_opentelemetry;
@@ -147,6 +149,18 @@ fn event_policy_covers_success_and_fatal_boundaries() {
             ExecEventDecision::Dispatch { fatal: true },
         ),
         (
+            EventMsg::ExitedReviewMode(ExitedReviewModeEvent {
+                review_output: None,
+            }),
+            ExecEventDecision::Dispatch { fatal: true },
+        ),
+        (
+            EventMsg::ExitedReviewMode(ExitedReviewModeEvent {
+                review_output: Some(ReviewOutputEvent::default()),
+            }),
+            ExecEventDecision::Dispatch { fatal: false },
+        ),
+        (
             EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
                 server: "required".to_string(),
                 status: McpStartupStatus::Failed {
@@ -186,6 +200,7 @@ fn builds_uncommitted_review_request() {
         target: ReviewTarget::UncommittedChanges,
         user_facing_hint: None,
         reviewer: None,
+        instructions: None,
     };
 
     assert_eq!(request, expected);
@@ -209,6 +224,7 @@ fn builds_commit_review_request_with_title() {
         },
         user_facing_hint: None,
         reviewer: None,
+        instructions: None,
     };
 
     assert_eq!(request, expected);
@@ -231,6 +247,7 @@ fn builds_custom_review_request_trims_prompt() {
         },
         user_facing_hint: None,
         reviewer: None,
+        instructions: None,
     };
 
     assert_eq!(request, expected);
@@ -311,4 +328,32 @@ fn exec_does_not_offer_request_user_input_in_default_mode() {
             ..Default::default()
         }
     );
+}
+
+#[test]
+fn a_prompt_with_a_target_focuses_the_review_and_alone_is_the_review() {
+    let focused = ReviewArgs {
+        uncommitted: true,
+        base: None,
+        commit: None,
+        commit_title: None,
+        prompt: Some("focus on durability".to_string()),
+    };
+    let request = build_review_request(&focused).expect("builds a focused review request");
+    assert_eq!(request.target, ReviewTarget::UncommittedChanges);
+    assert_eq!(request.instructions.as_deref(), Some("focus on durability"));
+
+    let custom = ReviewArgs {
+        uncommitted: false,
+        prompt: Some("review the vault".to_string()),
+        ..focused
+    };
+    let request = build_review_request(&custom).expect("builds a custom review request");
+    assert_eq!(
+        request.target,
+        ReviewTarget::Custom {
+            instructions: "review the vault".to_string()
+        }
+    );
+    assert_eq!(request.instructions, None);
 }

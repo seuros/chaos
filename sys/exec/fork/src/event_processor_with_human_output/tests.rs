@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use chaos_ipc::protocol::EventMsg;
+use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::HookCompletedEvent;
 use chaos_ipc::protocol::HookEventName;
 use chaos_ipc::protocol::HookExecutionMode;
@@ -99,4 +100,15 @@ fn hook_run(
         duration_ms: Some(1),
         entries,
     }
+}
+
+#[test]
+fn a_review_exit_is_printed_even_over_a_progress_line() {
+    let exit = EventMsg::ExitedReviewMode(ExitedReviewModeEvent {
+        review_output: None,
+    });
+    assert!(EventProcessorWithHumanOutput::should_interrupt_progress(
+        &exit
+    ));
+    assert!(!EventProcessorWithHumanOutput::is_silent_event(&exit));
 }

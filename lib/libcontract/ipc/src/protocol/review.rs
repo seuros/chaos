@@ -59,6 +59,9 @@ pub struct ReviewRequest {
     /// Optional minion persona name to use as the reviewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reviewer: Option<String>,
+    /// Extra instructions for a non-custom target: what to focus on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
 }
 
 /// Structured review result produced by a child review session.

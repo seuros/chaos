@@ -18,6 +18,7 @@ use chaos_ipc::protocol::Event;
 use chaos_ipc::protocol::EventMsg;
 use chaos_ipc::protocol::ExecCommandBeginEvent;
 use chaos_ipc::protocol::ExecCommandEndEvent;
+use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::McpToolCallBeginEvent;
@@ -113,6 +114,30 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 let prefix = "ERROR:".style(self.red);
                 ts_msg!(self, "{prefix} {message}");
             }
+            EventMsg::ExitedReviewMode(ExitedReviewModeEvent { review_output }) => {
+                match review_output {
+                    Some(output) => {
+                        let rendered =
+                            chaos_kern::review_format::render_review_output_text(&output);
+                        let verdict = output.overall_correctness.trim();
+                        let text = if verdict.is_empty() {
+                            rendered
+                        } else {
+                            format!(
+                                "Verdict: {verdict} (confidence {:.2})\n\n{rendered}",
+                                output.overall_confidence_score
+                            )
+                        };
+                        ts_msg!(self, "{}", "review".style(self.magenta).style(self.italic));
+                        ts_msg!(self, "{text}");
+                        self.review_message = Some(text);
+                    }
+                    None => {
+                        let prefix = "ERROR:".style(self.red);
+                        ts_msg!(self, "{prefix} the review did not complete");
+                    }
+                }
+            }
             EventMsg::Warning(WarningEvent { message }) => {
                 ts_msg!(
                     self,
@@ -206,14 +231,15 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::TurnComplete(TurnCompleteEvent {
                 last_agent_message, ..
             }) => {
-                let last_message = last_agent_message
-                    .as_deref()
-                    .or(self.last_proposed_plan.as_deref());
+                let review_message = self.review_message.take();
+                let final_message = last_agent_message
+                    .or(review_message)
+                    .or_else(|| self.last_proposed_plan.clone());
                 if let Some(output_file) = self.last_message_path.as_deref() {
-                    handle_last_message(last_message, output_file);
+                    handle_last_message(final_message.as_deref(), output_file);
                 }
 
-                self.final_message = last_agent_message.or_else(|| self.last_proposed_plan.clone());
+                self.final_message = final_message;
 
                 return ChaosStatus::InitiateShutdown;
             }
@@ -774,7 +800,6 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::RawResponseItem(_)
             | EventMsg::UserMessage(_)
             | EventMsg::EnteredReviewMode(_)
-            | EventMsg::ExitedReviewMode(_)
             | EventMsg::ItemStarted(_)
             | EventMsg::ItemCompleted(_)
             | EventMsg::AgentMessageContentDelta(_)

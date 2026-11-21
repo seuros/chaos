@@ -79,6 +79,7 @@ async fn codex_delegate_forwards_exec_approval_and_proceeds_on_approval() {
                 },
                 user_facing_hint: None,
                 reviewer: None,
+                instructions: None,
             },
         })
         .await
@@ -162,6 +163,7 @@ async fn codex_delegate_forwards_patch_approval_and_proceeds_on_decision() {
                 },
                 user_facing_hint: None,
                 reviewer: None,
+                instructions: None,
             },
         })
         .await
@@ -222,6 +224,7 @@ async fn codex_delegate_ignores_legacy_deltas() {
                 },
                 user_facing_hint: None,
                 reviewer: None,
+                instructions: None,
             },
         })
         .await

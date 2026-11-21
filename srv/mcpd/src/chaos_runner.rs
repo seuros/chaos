@@ -92,6 +92,39 @@ impl Drop for ActiveRequest {
 ///
 /// Returns a `SessionOutcome` — the caller (tool handler) converts this
 /// to the appropriate `ToolOutput`. Notifications are streamed via `outgoing`.
+struct Ticker {
+    progress: Option<Progress>,
+    step: f64,
+}
+
+impl Ticker {
+    fn tick(&mut self, message: impl Into<String>) {
+        if let Some(progress) = &self.progress {
+            self.step += 1.0;
+            progress.report(self.step, None, Some(message.into()));
+        }
+    }
+}
+
+fn progress_message(msg: &EventMsg) -> Option<String> {
+    match msg {
+        EventMsg::TurnStarted(_) => Some("Turn started".into()),
+        EventMsg::McpToolCallBegin(ev) => Some(format!("Calling {}", ev.invocation.display_name())),
+        EventMsg::ExecCommandBegin(ev) => {
+            let command = ev.command.join(" ");
+            Some(match command.char_indices().nth(80) {
+                Some((end, _)) => format!("Running {}…", &command[..end]),
+                None => format!("Running {command}"),
+            })
+        }
+        EventMsg::PatchApplyBegin(_) => Some("Applying patch".into()),
+        EventMsg::WebSearchBegin(_) => Some("Searching the web".into()),
+        EventMsg::ContextCompacted(_) => Some("Context compacted".into()),
+        EventMsg::TurnComplete(_) => Some("Turn complete".into()),
+        _ => None,
+    }
+}
+
 /// If request-scoped `progress` is provided, MCP progress notifications are sent at
 /// key milestones so the client can display status.
 pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutcome {
@@ -110,9 +143,11 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
     } = args;
 
     // Send progress if the client requested it.
-    if let Some(ref p) = progress {
-        p.report(0.0, Some(4.0), Some("Resolving process...".into()));
-    }
+    let mut ticker = Ticker {
+        progress,
+        step: -1.0,
+    };
+    ticker.tick("Resolving process...");
 
     // Phase 1: resolve process
     let resolved = match existing_process_id {
@@ -174,9 +209,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         process,
     } = resolved;
 
-    if let Some(ref p) = progress {
-        p.report(1.0, Some(4.0), Some("Configuring session...".into()));
-    }
+    ticker.tick("Configuring session...");
 
     // Phase 2: submit prompt
     running_requests
@@ -222,9 +255,7 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         };
     }
 
-    if let Some(ref p) = progress {
-        p.report(2.0, Some(4.0), Some("Streaming response...".into()));
-    }
+    ticker.tick("Streaming response...");
 
     // Phase 3: event loop
     let wait = BackgroundWait::new(&process, wait_background, background_timeout);
@@ -235,18 +266,16 @@ pub(crate) async fn run_chaos_session(args: RunChaosSessionArgs) -> SessionOutco
         request_id,
         process_names,
         wait,
+        &mut ticker,
     )
     .await;
     request.complete = true;
 
-    if let Some(ref p) = progress {
-        let msg = if outcome.is_error {
-            "Failed"
-        } else {
-            "Complete"
-        };
-        p.report(4.0, Some(4.0), Some(msg.into()));
-    }
+    ticker.tick(if outcome.is_error {
+        "Failed"
+    } else {
+        "Complete"
+    });
 
     outcome
 }
@@ -259,6 +288,7 @@ async fn run_event_loop(
     request_id: RequestId,
     process_names: ProcessNameCache,
     mut wait: BackgroundWait,
+    ticker: &mut Ticker,
 ) -> SessionOutcome {
     let request_id_str = request_id.to_string();
     let wait_background = wait.is_enabled();
@@ -283,6 +313,10 @@ async fn run_event_loop(
                         }),
                     )
                     .await;
+
+                if let Some(message) = progress_message(&event.msg) {
+                    ticker.tick(message);
+                }
 
                 match event.msg {
                     EventMsg::ExecApprovalRequest(ev) => {
@@ -469,7 +503,11 @@ async fn run_event_loop(
                 let _ = process.submit(Op::Interrupt).await;
                 return SessionOutcome {
                     process_id,
-                    text: format!("{OS_NAME} runtime error: {e}"),
+                    text: if text.is_empty() {
+                        format!("{OS_NAME} runtime error: {e}")
+                    } else {
+                        format!("{text}\n\n{OS_NAME} runtime error: {e}")
+                    },
                     is_error: true,
                 };
             }

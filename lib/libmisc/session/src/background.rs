@@ -43,7 +43,11 @@ impl BackgroundWait {
         wait.lifecycle
             .waiting_data_mut()
             .unwrap_or_else(|| unreachable!("recovery owns its wait"))
-            .completed_turn = true;
+            .complete_turn();
+        wait.lifecycle
+            .waiting_data_mut()
+            .unwrap_or_else(|| unreachable!("recovery owns its wait"))
+            .armed = true;
         wait
     }
     pub fn new(process: &Process, enabled: bool, timeout: Duration) -> Self {
@@ -55,13 +59,15 @@ impl BackgroundWait {
         enabled: bool,
         timeout: Duration,
     ) -> Self {
+        let timeout = timeout.clamp(Duration::from_secs(1), Duration::from_secs(86_400));
         let lifecycle = if enabled {
             BackgroundWaitLifecycle::new(())
                 .with_waiting_data(WaitData {
                     activity,
-                    deadline: Instant::now()
-                        + timeout.clamp(Duration::from_secs(1), Duration::from_secs(86_400)),
+                    timeout,
+                    deadline: Instant::now() + timeout,
                     completed_turn: false,
+                    armed: false,
                 })
                 .into_dynamic()
         } else {
@@ -109,6 +115,11 @@ impl BackgroundWait {
             if let Some(outcome) = self.terminal() {
                 return outcome;
             }
+            if let Some(waiting) = self.lifecycle.waiting_data_mut()
+                && waiting.activity.borrow().wake_policy == WakePolicy::Enabled
+            {
+                waiting.armed = true;
+            }
             let waiting = self.lifecycle.waiting_data();
             let enabled = waiting.is_some();
             let deadline = waiting
@@ -118,7 +129,11 @@ impl BackgroundWait {
                 if Instant::now() >= deadline {
                     return self.finish(WaitEvent::Stopped("background wait timed out".into()));
                 }
-                disposition(&waiting.activity.borrow(), waiting.completed_turn)
+                let mut activity = waiting.activity.borrow().clone();
+                if !waiting.armed {
+                    activity.wake_policy = WakePolicy::Enabled;
+                }
+                disposition(&activity, waiting.completed_turn)
             } else {
                 None
             };
@@ -128,7 +143,9 @@ impl BackgroundWait {
                     return match event {
                         Ok(event) => {
                             if let Some(waiting) = self.lifecycle.waiting_data_mut() {
-                                waiting.completed_turn |= matches!(event.msg, EventMsg::TurnComplete(_));
+                                if matches!(event.msg, EventMsg::TurnComplete(_)) {
+                                    waiting.complete_turn();
+                                }
                             }
                             if enabled && matches!(event.msg, EventMsg::ExecApprovalRequest(_)
                                 | EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::RequestUserInput(_)

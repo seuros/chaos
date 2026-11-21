@@ -6,8 +6,19 @@ use tokio::time::Instant;
 #[derive(Debug)]
 pub(super) struct WaitData {
     pub activity: watch::Receiver<ProcessActivity>,
+    pub timeout: std::time::Duration,
     pub deadline: Instant,
     pub completed_turn: bool,
+    pub armed: bool,
+}
+
+impl WaitData {
+    pub fn complete_turn(&mut self) {
+        if !self.completed_turn {
+            self.deadline = Instant::now() + self.timeout;
+        }
+        self.completed_turn = true;
+    }
 }
 
 state_machine! {

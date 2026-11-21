@@ -1222,6 +1222,7 @@ impl ModelClientSession {
 
                 let config = ClampConfig {
                     env_remove: clamp_settings.env_remove.clone(),
+                    stream_idle_timeout: Some(clamp_state.provider.stream_idle_timeout()),
                     system_prompt: Some(system_prompt.clone()),
                     cwd: Some(clamp_cwd.clone()),
                     resume_session_id: continuation.as_ref().map(|(id, _)| id.clone()),
@@ -1434,6 +1435,11 @@ impl ModelClientSession {
                             }))
                             .await;
                         break;
+                    }
+                    Ok(Some(ClampMessage::RateLimitEvent { rate_limit_info })) => {
+                        if let Some(snapshot) = super::clamp_limits::snapshot(&rate_limit_info) {
+                            let _ = tx_event.send(Ok(ResponseEvent::RateLimits(snapshot))).await;
+                        }
                     }
                     Ok(Some(ClampMessage::System { .. })) => {}
                     Ok(Some(_)) => {}
@@ -1825,6 +1831,7 @@ fn clamp_failure(
 ) -> chaos_parrot::error::ApiError {
     let marker = match error {
         chaos_clamp::ClampError::CliNotFound(_) => "clamp_cli_not_found",
+        chaos_clamp::ClampError::UnsupportedClaudeCode { .. } => "clamp_cli_unsupported",
         chaos_clamp::ClampError::AuthenticationUnavailable => "clamp_auth_unavailable",
         _ => fallback,
     };

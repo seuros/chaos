@@ -13,6 +13,7 @@
 //! per-turn state such as the `x-chaos-turn-state` token used for sticky routing.
 
 pub(crate) mod auth_breaker;
+mod clamp_limits;
 mod clamp_worker;
 mod invocation;
 mod native_resume;

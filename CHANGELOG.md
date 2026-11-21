@@ -18,6 +18,8 @@ should. There is no patch level; the build timestamp is the patch.
   and goal lifecycle, shared by chaos and helmsman.
 
 ### Changed
+- Claude Code clamp needs Claude Code 2.1.330 or later and says so when the
+  installed CLI is older.
 - A model stream or remote compaction stops retrying when the server asks to
   wait more than five minutes.
 - Failed execution deliveries retry after a jittered delay instead of an exact
@@ -28,6 +30,10 @@ should. There is no patch level; the build timestamp is the patch.
   timeouts never outlive it. Interactive turns keep their own timeouts.
 
 ### Fixed
+- Clamped Claude Code shows its account rate limits instead of going quiet at
+  a limit, and keeps long silent streams open as long as the provider allows.
+- A Claude Code clamped from inside another Claude Code session no longer
+  inherits that session's identity or messaging credentials.
 - On FreeBSD, chaos sees the machine's model, chassis, displays, each battery,
   ACPI thermal state and lid, instead of an anonymous host with one aggregate
   battery.

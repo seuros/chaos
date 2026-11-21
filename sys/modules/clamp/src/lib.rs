@@ -10,11 +10,13 @@
 mod antigravity;
 mod antigravity_sandbox;
 mod child;
+mod child_env;
 mod egress;
 mod protocol;
 mod proxy;
 mod session_bridge;
 mod transport;
+mod version;
 
 pub use antigravity::AntigravityBridgeConfig;
 pub use antigravity::AntigravityConfig;
@@ -38,7 +40,10 @@ pub use protocol::ControlResponse;
 pub use protocol::Message;
 pub use protocol::ModelUsage;
 pub use protocol::ModelUsageMap;
+pub use protocol::RateLimitInfo;
+pub use protocol::UnifiedWindows;
 pub use protocol::Usage;
+pub use protocol::UsageWindow;
 pub use protocol::observed_context_window;
 pub use proxy::FileWiretapSink;
 pub use proxy::WiretapExchange;
@@ -52,6 +57,8 @@ pub use transport::ClampTransport;
 pub use transport::HookCallbackHandler;
 pub use transport::McpMessageHandler;
 pub use transport::ToolPermissionHandler;
+pub use version::MIN_CLAUDE_CODE;
+pub use version::Version as ClaudeCodeVersion;
 
 use std::sync::Mutex;
 

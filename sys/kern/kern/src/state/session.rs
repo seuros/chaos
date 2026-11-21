@@ -15,6 +15,7 @@ use crate::protocol::TokenUsageInfo;
 use crate::sandboxing::merge_permission_profiles;
 use crate::truncate::TruncationPolicy;
 use chaos_context::pressure::Window;
+use chaos_ipc::protocol::RateLimitWindow;
 use chaos_ipc::protocol::TurnContextItem;
 
 /// Persistent, session-scoped state owned by the session runner task.
@@ -22,6 +23,12 @@ pub(crate) struct SessionState {
     pub(crate) session_configuration: SessionConfiguration,
     pub(crate) history: ContextManager,
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
+    /// The last merged snapshot of every provider's limits, keyed by provider
+    /// and limit, so a partial update keeps its own windows even after another
+    /// provider's limits came in between, and never borrows another's.
+    rate_limits_by_limit: HashMap<(String, String), RateLimitSnapshot>,
+    /// The provider identity behind `latest_rate_limits`.
+    latest_rate_limits_provider: Option<String>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) dependency_env: HashMap<String, String>,
     /// Settings used by the latest regular user turn, used for turn-to-turn
@@ -47,6 +54,8 @@ impl SessionState {
             session_configuration,
             history,
             latest_rate_limits: None,
+            rate_limits_by_limit: HashMap::new(),
+            latest_rate_limits_provider: None,
             server_reasoning_included: false,
             dependency_env: HashMap::new(),
             previous_turn_settings: None,
@@ -121,11 +130,34 @@ impl SessionState {
         self.history.token_info()
     }
 
-    pub(crate) fn set_rate_limits(&mut self, snapshot: RateLimitSnapshot) {
-        self.latest_rate_limits = Some(merge_rate_limit_fields(
-            self.latest_rate_limits.as_ref(),
+    /// Record a snapshot from `provider`, an identity string for the provider
+    /// that sent it.
+    pub(crate) fn set_rate_limits(&mut self, provider: &str, snapshot: RateLimitSnapshot) {
+        let key = (
+            provider.to_string(),
+            snapshot
+                .limit_id
+                .clone()
+                .unwrap_or_else(|| "chaos".to_string()),
+        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| {
+                i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
+            });
+        let latest_same_provider = self
+            .latest_rate_limits
+            .as_ref()
+            .filter(|_| self.latest_rate_limits_provider.as_deref() == Some(provider));
+        let merged = merge_rate_limit_fields(
+            latest_same_provider,
+            self.rate_limits_by_limit.get(&key),
             snapshot,
-        ));
+            now,
+        );
+        self.rate_limits_by_limit.insert(key, merged.clone());
+        self.latest_rate_limits = Some(merged);
+        self.latest_rate_limits_provider = Some(provider.to_string());
     }
 
     pub(crate) fn token_info_and_rate_limits(
@@ -178,23 +210,48 @@ impl SessionState {
     }
 }
 
-// Sometimes new snapshots don't include credits or plan information.
-// Preserve those from the previous snapshot when missing. For `limit_id`, treat
+// A snapshot fills only what it reports. Windows it leaves out are kept from
+// the last snapshot of the same limit, until they reset (`now` is Unix seconds).
+// Credits and plan information belong to the account, so they are kept from
+// `latest` (the latest snapshot, already limited to the same provider) when it
+// is of the same account family (`chaos`, `chaos_other`). For `limit_id`, treat
 // missing values as the default `"chaos"` bucket.
 fn merge_rate_limit_fields(
-    previous: Option<&RateLimitSnapshot>,
+    latest: Option<&RateLimitSnapshot>,
+    same_limit: Option<&RateLimitSnapshot>,
     mut snapshot: RateLimitSnapshot,
+    now: i64,
 ) -> RateLimitSnapshot {
-    if snapshot.limit_id.is_none() {
-        snapshot.limit_id = Some("chaos".to_string());
+    let current = |window: &Option<RateLimitWindow>| {
+        window
+            .clone()
+            .filter(|window| window.resets_at.is_none_or(|resets_at| resets_at > now))
+    };
+    let limit_id = snapshot
+        .limit_id
+        .get_or_insert_with(|| "chaos".to_string())
+        .clone();
+    let same_account = latest.filter(|prior| {
+        let prior_id = prior.limit_id.as_deref().unwrap_or("chaos");
+        account_family(prior_id) == account_family(&limit_id)
+    });
+    if snapshot.primary.is_none() {
+        snapshot.primary = same_limit.and_then(|prior| current(&prior.primary));
+    }
+    if snapshot.secondary.is_none() {
+        snapshot.secondary = same_limit.and_then(|prior| current(&prior.secondary));
     }
     if snapshot.credits.is_none() {
-        snapshot.credits = previous.and_then(|prior| prior.credits.clone());
+        snapshot.credits = same_account.and_then(|prior| prior.credits.clone());
     }
     if snapshot.plan_type.is_none() {
-        snapshot.plan_type = previous.and_then(|prior| prior.plan_type);
+        snapshot.plan_type = same_account.and_then(|prior| prior.plan_type);
     }
     snapshot
+}
+
+fn account_family(limit_id: &str) -> &str {
+    limit_id.split('_').next().unwrap_or(limit_id)
 }
 
 #[cfg(test)]

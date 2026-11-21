@@ -178,3 +178,34 @@ fn historical_and_error_results_without_usage_remain_unknown() {
         assert_eq!(is_error, expected_error);
     }
 }
+
+#[test]
+fn rate_limit_event_parses_its_windows() {
+    let line = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning",
+        "rateLimitType":"five_hour","utilization":0.82,"resetsAt":1795300000,
+        "unifiedWindows":{"five_hour":{"utilization":0.82,"resetsAt":1795300000},
+        "seven_day":{"utilization":0.4,"resetsAt":1795800000,"status":"allowed"}},
+        "isUsingOverage":false},"uuid":"u","session_id":"s"}"#;
+    let Message::RateLimitEvent { rate_limit_info } =
+        serde_json::from_str::<Message>(line).expect("parses")
+    else {
+        panic!("not a rate limit event");
+    };
+    assert_eq!(rate_limit_info.status.as_deref(), Some("allowed_warning"));
+    assert_eq!(
+        rate_limit_info.rate_limit_type.as_deref(),
+        Some("five_hour")
+    );
+    let windows = rate_limit_info.unified_windows.expect("windows");
+    assert_eq!(windows.five_hour.map(|w| w.utilization), Some(0.82));
+    assert_eq!(windows.seven_day.map(|w| w.resets_at), Some(1_795_800_000));
+}
+
+#[test]
+fn a_bare_rate_limit_event_still_parses() {
+    let line = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
+    assert!(matches!(
+        serde_json::from_str::<Message>(line).expect("parses"),
+        Message::RateLimitEvent { .. }
+    ));
+}

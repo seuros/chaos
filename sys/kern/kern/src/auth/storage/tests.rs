@@ -6,8 +6,11 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::tempdir;
 
-use chaos_keyring::tests::MockKeyringStore;
-use keyring_core::Error as KeyringError;
+use chaos_vault::testing::MemorySource;
+
+fn test_key() -> MemorySource {
+    MemorySource::durable("test keyring")
+}
 
 #[allow(clippy::duplicate_mod)]
 #[path = "../../test_support/auth_fixtures.rs"]
@@ -334,8 +337,7 @@ fn auth_with_prefix(prefix: &str) -> AuthDotJson {
 #[test]
 fn keyring_auth_storage_load_returns_deserialized_auth() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
-    let mock_keyring = MockKeyringStore::default();
-    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), Arc::new(mock_keyring));
+    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), &test_key());
     let expected = AuthDotJson {
         providers: [(
             "openai".to_string(),
@@ -369,11 +371,8 @@ fn keyring_auth_storage_compute_store_key_for_home_directory() {
 #[test]
 fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
-    let mock_keyring = MockKeyringStore::default();
-    let storage = VaultAuthStorage::new(
-        chaos_home.path().to_path_buf(),
-        Arc::new(mock_keyring.clone()),
-    );
+    let key = test_key();
+    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), &key);
     let auth_file = get_auth_file(chaos_home.path());
     std::fs::write(&auth_file, "stale")?;
     let auth = AuthDotJson {
@@ -398,11 +397,11 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
 
     storage.save(&auth)?;
 
-    let key = compute_store_key(chaos_home.path());
     assert_eq!(storage.load()?, Some(normalized(&auth)));
+    let held = key.held().context("the vault key")?;
     assert!(
-        !mock_keyring.contains(&key),
-        "provider tokens belong in the vault, not Keychain"
+        !String::from_utf8_lossy(&held).contains("access"),
+        "provider tokens belong in the vault, not the keyring"
     );
     assert!(!auth_file.exists());
     Ok(())
@@ -411,8 +410,7 @@ fn keyring_auth_storage_save_persists_and_removes_fallback_file() -> anyhow::Res
 #[test]
 fn keyring_auth_storage_delete_removes_keyring_and_file() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
-    let mock_keyring = MockKeyringStore::default();
-    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), Arc::new(mock_keyring));
+    let storage = VaultAuthStorage::new(chaos_home.path().to_path_buf(), &test_key());
     storage.save(&auth_with_prefix("delete"))?;
     let auth_file = get_auth_file(chaos_home.path());
     std::fs::write(&auth_file, "stale")?;
@@ -429,59 +427,32 @@ fn keyring_auth_storage_delete_removes_keyring_and_file() -> anyhow::Result<()> 
 }
 
 #[test]
-fn secure_auth_never_reads_legacy_keychain_or_plaintext() -> anyhow::Result<()> {
+fn secure_auth_never_reads_plaintext() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
-    let mock_keyring = MockKeyringStore::default();
+    let key = test_key();
     FileAuthStorage::new(chaos_home.path().into()).save(&auth_with_prefix("file"))?;
-    mock_keyring.save(KEYRING_SERVICE, &compute_store_key(chaos_home.path()), "{}")?;
     for mode in [
         AuthCredentialsStoreMode::Keyring,
         AuthCredentialsStoreMode::Auto,
     ] {
-        let storage = create_auth_storage_with_keyring_store(
-            chaos_home.path().into(),
-            mode,
-            Arc::new(mock_keyring.clone()),
-        );
+        let storage = create_auth_storage_with_key(chaos_home.path().into(), mode, &key);
         assert_eq!(storage.load()?, None);
     }
     Ok(())
 }
 
-#[derive(Debug)]
-struct DeniedKeyring;
-
-impl KeyringStore for DeniedKeyring {
-    fn load(
-        &self,
-        _: &str,
-        _: &str,
-    ) -> Result<Option<String>, chaos_keyring::CredentialStoreError> {
-        Err(chaos_keyring::CredentialStoreError::new(
-            KeyringError::Invalid("test".into(), "denied".into()),
-        ))
-    }
-    fn save(&self, _: &str, _: &str, _: &str) -> Result<(), chaos_keyring::CredentialStoreError> {
-        panic!("must not write after denied unlock")
-    }
-    fn delete(&self, _: &str, _: &str) -> Result<bool, chaos_keyring::CredentialStoreError> {
-        panic!("must not delete the master key")
-    }
-}
-
 #[test]
 fn secure_auth_never_writes_plaintext_when_keychain_is_denied() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
+    let denied = test_key();
+    denied.set_unreachable(true);
     for mode in [
         AuthCredentialsStoreMode::Keyring,
         AuthCredentialsStoreMode::Auto,
     ] {
-        let storage = create_auth_storage_with_keyring_store(
-            chaos_home.path().into(),
-            mode,
-            Arc::new(DeniedKeyring),
-        );
+        let storage = create_auth_storage_with_key(chaos_home.path().into(), mode, &denied);
         assert!(storage.save(&auth_with_prefix("secret")).is_err());
+        assert_eq!(denied.writes(), 0, "must not write after a denied unlock");
         assert!(!get_auth_file(chaos_home.path()).exists());
         assert!(!chaos_home.path().join("secrets/local.age").exists());
     }
@@ -489,33 +460,22 @@ fn secure_auth_never_writes_plaintext_when_keychain_is_denied() -> anyhow::Resul
 }
 
 #[test]
-fn vault_auth_rotation_and_logout_ignore_legacy_keychain() -> anyhow::Result<()> {
+fn vault_auth_rotation_and_logout() -> anyhow::Result<()> {
     let home = tempdir()?;
-    let keyring = Arc::new(MockKeyringStore::default());
-    let storage = VaultAuthStorage::new(home.path().into(), keyring.clone());
-    let legacy = normalized(&auth_with_prefix("legacy"));
-    let key = compute_store_key(home.path());
-    let serialized = serde_json::to_string(&legacy)?;
-    keyring.save(KEYRING_SERVICE, &key, &serialized)?;
+    let key = test_key();
+    let storage = VaultAuthStorage::new(home.path().into(), &key);
     assert!(storage.load()?.is_none());
-    storage.save(&legacy)?;
-    assert_eq!(storage.load()?, Some(legacy));
-    assert_eq!(
-        keyring.saved_value(&key).as_deref(),
-        Some(serialized.as_str())
-    );
+    let first = normalized(&auth_with_prefix("first"));
+    storage.save(&first)?;
+    assert_eq!(storage.load()?, Some(first));
 
     let rotated = normalized(&auth_with_prefix("rotated"));
     storage.save(&rotated)?;
     assert_eq!(storage.load()?, Some(rotated));
     storage.delete()?;
     assert!(storage.load()?.is_none());
-    let reopened = VaultAuthStorage::new(home.path().into(), keyring.clone());
+    let reopened = VaultAuthStorage::new(home.path().into(), &key);
     assert!(reopened.load()?.is_none());
-    assert_eq!(
-        keyring.saved_value(&key).as_deref(),
-        Some(serialized.as_str())
-    );
     Ok(())
 }
 
@@ -609,7 +569,7 @@ fn ephemeral_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
 fn vault_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
     let chaos_home = tempdir()?;
     let auth_home = tempdir()?;
-    let keyring = Arc::new(MockKeyringStore::default());
+    let key = test_key();
     for mode in [
         AuthCredentialsStoreMode::Keyring,
         AuthCredentialsStoreMode::Auto,
@@ -618,12 +578,8 @@ fn vault_auth_home_isolates_load_save_logout() -> anyhow::Result<()> {
             chaos_home.path(),
             Some(auth_home.path().as_os_str()),
         )?;
-        let split = create_auth_storage_with_keyring_store(resolved, mode, keyring.clone());
-        let default = create_auth_storage_with_keyring_store(
-            chaos_home.path().to_path_buf(),
-            mode,
-            keyring.clone(),
-        );
+        let split = create_auth_storage_with_key(resolved, mode, &key);
+        let default = create_auth_storage_with_key(chaos_home.path().to_path_buf(), mode, &key);
         assert_split_isolated(&split, &default)?;
     }
     assert!(!chaos_home.path().join("auth.json").exists());

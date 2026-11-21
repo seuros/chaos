@@ -186,7 +186,7 @@ async fn write_value_supports_nested_app_paths() -> Result<()> {
 
 #[tokio::test]
 async fn write_otlp_exporters_store_auth_headers_as_credentials() -> Result<()> {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let tmp = seeded_home("").await;
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
     let endpoint = "http://collector.example/ingest";

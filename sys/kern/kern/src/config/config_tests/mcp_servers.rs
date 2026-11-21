@@ -364,7 +364,7 @@ async fn replace_mcp_servers_round_trips_streamable_http_options() -> anyhow::Re
 fn initialize_mcp_credential_store() {
     static INITIALIZED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     INITIALIZED.get_or_init(|| {
-        // Both transport tests share the process-wide keyring backend.
-        let _store = chaos_keyring::tests::MockKeyringStore::default();
+        // Both transport tests share the process-wide in-memory vault key.
+        chaos_vault::testing::isolate();
     });
 }

@@ -10,6 +10,8 @@ should. There is no patch level; the build timestamp is the patch.
 ## [Unreleased]
 
 ### Added
+- The vault unlock key can be provisioned as the systemd credential
+  `chaos-vault-key`.
 - Independently publishable `mcp-goals` 0.1.0: the `chaos/goals` wire types
   and goal lifecycle, shared by chaos and helmsman.
 
@@ -24,6 +26,11 @@ should. There is no patch level; the build timestamp is the patch.
   timeouts never outlive it. Interactive turns keep their own timeouts.
 
 ### Fixed
+- On Linux the vault unlock key no longer lives only in the kernel keyring,
+  which forgets it at reboot or when the login session ends. It is kept in the
+  Secret Service or `$CHAOS_HOME/secrets/vault.key`, and a key found only in
+  the kernel keyring is moved there on next use.
+- Vault unlock errors name every key source and why it failed.
 - A due cron job runs once, not once per chaos process sharing the runtime
   database.
 - An execution delivery that never succeeds dies after 32 attempts instead of

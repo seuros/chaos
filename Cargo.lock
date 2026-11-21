@@ -241,8 +241,6 @@ dependencies = [
  "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
- "dbus-secret-service-keyring-store",
- "keyring-core",
  "libc",
  "serde",
  "serde_json",
@@ -260,11 +258,8 @@ dependencies = [
  "chaos-ipc",
  "chaos-parole",
  "chaos-realpath",
- "dbus-secret-service-keyring-store",
- "keyring-core",
  "landlock",
  "libc",
- "linux-keyutils-keyring-store",
  "pretty_assertions",
  "seccompiler",
  "serde",
@@ -279,14 +274,12 @@ name = "alcatraz-macos"
 version = "47.15.0"
 dependencies = [
  "alcatraz-base",
- "apple-native-keyring-store",
  "chaos-ipc",
  "chaos-parole",
  "chaos-pf",
  "chaos-realpath",
  "chaos-test-process",
  "dirs",
- "keyring-core",
  "libc",
  "pretty_assertions",
  "rama",
@@ -820,6 +813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array 0.4.15",
+ "zeroize",
 ]
 
 [[package]]
@@ -1695,7 +1689,6 @@ dependencies = [
  "chaos-git",
  "chaos-halluacinate",
  "chaos-ipc",
- "chaos-keyring",
  "chaos-lex",
  "chaos-libration",
  "chaos-locate",
@@ -1748,7 +1741,6 @@ dependencies = [
  "insta",
  "inventory",
  "jiff",
- "keyring-core",
  "landlock",
  "lease-machines",
  "libc",
@@ -1798,14 +1790,6 @@ dependencies = [
  "wildmatch",
  "wiremock",
  "zstd 0.14.3",
-]
-
-[[package]]
-name = "chaos-keyring"
-version = "47.15.0"
-dependencies = [
- "keyring-core",
- "rama",
 ]
 
 [[package]]
@@ -2293,7 +2277,6 @@ dependencies = [
  "anyhow",
  "chaos-chassis",
  "chaos-ipc",
- "chaos-keyring",
  "chaos-pf",
  "chaos-realpath",
  "chaos-selinux",
@@ -2407,8 +2390,7 @@ dependencies = [
  "age",
  "anyhow",
  "base64 0.23.1",
- "chaos-keyring",
- "keyring-core",
+ "custody-machines",
  "pretty_assertions",
  "rama",
  "rand 0.10.3",
@@ -3101,6 +3083,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "custody-machines"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3d1249bf4d321b19d8c9c404c092a54af95d162782f7a4bdd53e2397ef59675"
+dependencies = [
+ "apple-native-keyring-store",
+ "dbus-secret-service-keyring-store",
+ "keyring-core",
+ "linux-keyutils-keyring-store",
+ "rustix 1.1.6",
+ "sha2 0.11.1",
+ "zeroize",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3458,6 +3455,7 @@ dependencies = [
  "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]

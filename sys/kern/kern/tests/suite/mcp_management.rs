@@ -157,7 +157,7 @@ async fn management_updates_tools_in_same_turn_despite_optional_startup_failure(
 #[serial(process_env)]
 async fn reset_reconnects_only_the_effective_global_or_project_server() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
-    let _credential_store = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
 
     for project_override in [false, true] {
         let server = responses::start_mock_server().await;

@@ -1,5 +1,6 @@
 use super::*;
-use chaos_keyring::tests::MockKeyringStore;
+use crate::testing::MemorySource;
+use crate::testing::sources;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -31,11 +32,10 @@ fn environment_id_fallback_has_cwd_prefix() {
 
 fn manager_round_trips_local_backend() -> Result<()> {
     let chaos_home = tempfile::tempdir().expect("tempdir");
-    let keyring = Arc::new(MockKeyringStore::default());
-    let manager = SecretsManager::new_with_keyring_store(
+    let manager = SecretsManager::new_with_sources(
         chaos_home.path().to_path_buf(),
         SecretsBackendKind::Local,
-        keyring,
+        sources(&MemorySource::durable("test keyring")),
     );
     let scope = SecretScope::Global;
     let name = SecretName::new("GITHUB_TOKEN")?;

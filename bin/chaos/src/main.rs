@@ -417,10 +417,9 @@ fn main() -> anyhow::Result<()> {
     chaos_sysinfo::locale::sanitize_process_environment();
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         // Sandbox helpers dispatch above and never reach this point, so any
-        // init that spawns background threads (keyring D-Bus, TLS providers)
-        // runs only in the regular chaos process — clear of the seccomp filter.
+        // init that spawns background threads (TLS providers) runs only in the
+        // regular chaos process — clear of the seccomp filter.
         let _ = rama::tls::rustls::dep::rustls::crypto::ring::default_provider().install_default();
-        alcatraz::register_keyring_store();
 
         cli_main(arg0_paths).await?;
         Ok(())

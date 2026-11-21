@@ -76,7 +76,7 @@ async fn toggling_checks_persists_without_changing_backends_or_inflight_turns() 
 #[tokio::test]
 #[serial]
 async fn goal_and_safety_clients_share_settings_but_keep_distinct_retry_budgets() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let server = MockServer::start().await;
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
@@ -133,9 +133,7 @@ async fn goal_and_safety_clients_share_settings_but_keep_distinct_retry_budgets(
 #[tokio::test]
 #[serial]
 async fn mcp_safety_and_goal_clients_share_the_saved_credential_cache() {
-    use chaos_keyring::{DefaultKeyringStore, KeyringStore};
-
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let (_, context) = make_session_and_context().await;
     let mut config = (*context.config).clone();
     let (_, mut settings) = presets().into_iter().next().unwrap();
@@ -143,16 +141,6 @@ async fn mcp_safety_and_goal_clients_share_the_saved_credential_cache() {
     settings.api_key = Some(reference.clone());
     config.reflex.insert("jev".into(), settings);
 
-    // No legacy per-credential Keychain item is created.
-    assert!(
-        DefaultKeyringStore
-            .load(
-                "chaos-settings",
-                reference.strip_prefix("keyring:chaos-settings/").unwrap(),
-            )
-            .unwrap()
-            .is_none()
-    );
     for _ in 0..3 {
         assert!(from_config(&config, None).unwrap().is_some());
         assert!(goal_client(&config, None).is_ok());
@@ -166,7 +154,7 @@ async fn mcp_safety_and_goal_clients_share_the_saved_credential_cache() {
 #[tokio::test]
 #[serial]
 async fn setup_stores_only_a_reference_and_resolves_without_environment() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let home = tempfile::tempdir().unwrap();
     let (session, context) = make_session_and_context_with_home(home.path()).await;
     let config = &context.config;
@@ -241,7 +229,7 @@ async fn setup_stores_only_a_reference_and_resolves_without_environment() {
 #[tokio::test]
 #[serial]
 async fn a_failed_settings_write_does_not_replace_existing_credentials() {
-    let _keyring = chaos_keyring::tests::MockKeyringStore::default();
+    chaos_vault::testing::isolate();
     let home = tempfile::tempdir().unwrap();
     let (_, context) = make_session_and_context_with_home(home.path()).await;
     let config = &context.config;

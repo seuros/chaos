@@ -28,6 +28,9 @@ should. There is no patch level; the build timestamp is the patch.
   timeouts never outlive it. Interactive turns keep their own timeouts.
 
 ### Fixed
+- On FreeBSD, chaos sees the machine's model, chassis, displays, each battery,
+  ACPI thermal state and lid, instead of an anonymous host with one aggregate
+  battery.
 - On Linux the vault unlock key no longer lives only in the kernel keyring,
   which forgets it at reboot or when the login session ends. It is kept in the
   Secret Service or `$CHAOS_HOME/secrets/vault.key`, and a key found only in

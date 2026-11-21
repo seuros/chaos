@@ -365,7 +365,7 @@ saga-machines = "0.7"
 supervisor-machines = "0.7"
 flow-machines = "0.4"
 journal-machines = "0.9"
-vitals-machines = { version = "0.3", features = ["probe"] }
+vitals-machines = { version = "0.4", features = ["probe"] }
 feedback-machines = "0.8"
 serial_test = "4"
 sha1 = "0.11"

@@ -109,7 +109,6 @@ impl EventProcessorWithHumanOutput {
                     | EventMsg::RawResponseItem(_)
                     | EventMsg::UserMessage(_)
                     | EventMsg::EnteredReviewMode(_)
-                    | EventMsg::ExitedReviewMode(_)
                     | EventMsg::ItemStarted(_)
                     | EventMsg::ItemCompleted(_)
                     | EventMsg::AgentMessageContentDelta(_)
@@ -137,6 +136,7 @@ impl EventProcessorWithHumanOutput {
                 | EventMsg::DeprecationNotice(_)
                 | EventMsg::StreamError(_)
                 | EventMsg::TurnComplete(_)
+                | EventMsg::ExitedReviewMode(_)
                 | EventMsg::ShutdownComplete
         )
     }

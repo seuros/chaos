@@ -703,6 +703,9 @@ fn exec_event_decision(
 ) -> ExecEventDecision {
     match event {
         EventMsg::Error(_) => ExecEventDecision::Dispatch { fatal: true },
+        EventMsg::ExitedReviewMode(review) if review.review_output.is_none() => {
+            ExecEventDecision::Dispatch { fatal: true }
+        }
         EventMsg::TurnComplete(payload) if payload.turn_id != task_id => ExecEventDecision::Ignore,
         EventMsg::TurnAborted(payload) if payload.turn_id.as_deref() != Some(task_id) => {
             ExecEventDecision::Ignore
@@ -999,6 +1002,17 @@ fn resolve_prompt(prompt_arg: Option<String>) -> String {
 }
 
 fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
+    let prompt = match args.prompt.clone() {
+        Some(prompt_arg) => {
+            let prompt = resolve_prompt(Some(prompt_arg)).trim().to_string();
+            if prompt.is_empty() {
+                anyhow::bail!("Review prompt cannot be empty");
+            }
+            Some(prompt)
+        }
+        None => None,
+    };
+    let mut instructions = prompt.clone();
     let target = if args.uncommitted {
         ReviewTarget::UncommittedChanges
     } else if let Some(branch) = args.base.clone() {
@@ -1008,11 +1022,8 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
             sha,
             title: args.commit_title.clone(),
         }
-    } else if let Some(prompt_arg) = args.prompt.clone() {
-        let prompt = resolve_prompt(Some(prompt_arg)).trim().to_string();
-        if prompt.is_empty() {
-            anyhow::bail!("Review prompt cannot be empty");
-        }
+    } else if let Some(prompt) = prompt {
+        instructions = None;
         ReviewTarget::Custom {
             instructions: prompt,
         }
@@ -1026,6 +1037,7 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
         target,
         user_facing_hint: None,
         reviewer: None,
+        instructions,
     })
 }
 

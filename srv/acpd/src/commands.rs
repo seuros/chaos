@@ -271,6 +271,7 @@ pub(crate) async fn dispatch(
                 },
                 user_facing_hint: None,
                 reviewer: None,
+                instructions: None,
             },
         }))),
         _ => notice(context, "Unsupported ACP command. Use /help.").await,

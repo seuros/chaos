@@ -743,6 +743,7 @@ pub(super) async fn spawn_review_thread(
         target: resolved.target,
         user_facing_hint: Some(resolved.user_facing_hint),
         reviewer: resolved.reviewer,
+        instructions: resolved.instructions,
     };
     sess.send_event(&tc, EventMsg::EnteredReviewMode(review_request))
         .await;

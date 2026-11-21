@@ -1853,6 +1853,7 @@ async fn entered_review_mode_uses_request_hint() {
             },
             user_facing_hint: Some("feature branch".to_string()),
             reviewer: None,
+            instructions: None,
         }),
     });
 
@@ -1873,6 +1874,7 @@ async fn entered_review_mode_defaults_to_current_changes_banner() {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
             reviewer: None,
+            instructions: None,
         }),
     });
 
@@ -1892,6 +1894,7 @@ async fn live_agent_message_renders_during_review_mode() {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
             reviewer: None,
+            instructions: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -1919,6 +1922,7 @@ async fn process_snapshot_replay_preserves_agent_message_during_review_mode() {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: None,
             reviewer: None,
+            instructions: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -1963,6 +1967,7 @@ async fn review_restores_context_window_indicator() {
             },
             user_facing_hint: Some("feature branch".to_string()),
             reviewer: None,
+            instructions: None,
         }),
     });
 
@@ -6319,6 +6324,7 @@ async fn custom_prompt_submit_sends_review_op() {
                     },
                     user_facing_hint: None,
                     reviewer: None,
+                    instructions: None,
                 }
             );
         }
@@ -9237,6 +9243,7 @@ async fn enter_queues_user_messages_while_review_is_running() {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: Some("current changes".to_string()),
             reviewer: None,
+            instructions: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);

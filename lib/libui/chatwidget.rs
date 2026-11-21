@@ -754,6 +754,7 @@ pub fn show_review_commit_picker_with_entries(
                         },
                         user_facing_hint: None,
                         reviewer: None,
+                        instructions: None,
                     },
                 }));
             })],

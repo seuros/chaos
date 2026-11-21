@@ -176,3 +176,27 @@ async fn commit_diff_ref_starting_with_dash_is_not_treated_as_git_option() {
         "parent ref must not be interpreted as git --output"
     );
 }
+
+#[test]
+fn instructions_are_appended_to_the_target_prompt() {
+    let cwd = TempDir::new().expect("tempdir");
+    let request = ReviewRequest {
+        target: ReviewTarget::UncommittedChanges,
+        user_facing_hint: None,
+        reviewer: None,
+        instructions: Some("  focus on durability  ".to_string()),
+    };
+    let resolved = resolve_review_request(request, cwd.path()).expect("resolves");
+    assert_eq!(
+        resolved.instructions.as_deref(),
+        Some("focus on durability")
+    );
+    assert!(resolved.prompt.starts_with(UNCOMMITTED_PROMPT));
+    assert!(
+        resolved
+            .prompt
+            .ends_with("Additional instructions from the user:\nfocus on durability"),
+        "{}",
+        resolved.prompt
+    );
+}

@@ -357,6 +357,7 @@ impl ChatWidget {
                         },
                         user_facing_hint: None,
                         reviewer: None,
+                        instructions: None,
                     },
                 });
                 self.bottom_pane.drain_pending_submission_state();

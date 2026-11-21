@@ -31,6 +31,10 @@ should. There is no patch level; the build timestamp is the patch.
   Secret Service or `$CHAOS_HOME/secrets/vault.key`, and a key found only in
   the kernel keyring is moved there on next use.
 - Vault unlock errors name every key source and why it failed.
+- Sandboxed commands on Linux can no longer reach the kernel keyring
+  (`keyctl`, `add_key`, `request_key`, x32 included), whatever their network
+  policy. Every restricted sandbox now refuses 32-bit compat binaries, as the
+  network-restricted one already did.
 - A due cron job runs once, not once per chaos process sharing the runtime
   database.
 - An execution delivery that never succeeds dies after 32 attempts instead of

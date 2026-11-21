@@ -62,11 +62,12 @@ pub fn apply_sandbox_policy_to_current_thread(
         network_seccomp_mode(socket_policy, allow_network_for_proxy, proxy_routed_network);
     let apply_proxy_port_landlock = proxy_routed_network && !allowed_proxy_ports.is_empty();
 
-    // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
-    if network_seccomp_mode.is_some()
+    let restricted = network_seccomp_mode.is_some()
         || apply_proxy_port_landlock
-        || (apply_landlock_fs && !has_full_disk_write_access(&file_system_policy))
-    {
+        || (apply_landlock_fs && !has_full_disk_write_access(&file_system_policy));
+
+    // `PR_SET_NO_NEW_PRIVS` is required for both seccomp and landlock.
+    if restricted {
         set_no_new_privs()?;
     }
 
@@ -89,8 +90,8 @@ pub fn apply_sandbox_policy_to_current_thread(
         install_network_landlock_rules_on_current_thread(allowed_proxy_ports)?;
     }
 
-    if let Some(mode) = network_seccomp_mode {
-        install_network_seccomp_filter_on_current_thread(mode)?;
+    if restricted {
+        install_seccomp_filter_on_current_thread(network_seccomp_mode)?;
     }
 
     Ok(())
@@ -170,17 +171,85 @@ fn install_filesystem_landlock_rules_on_current_thread(
     Ok(())
 }
 
-/// Installs a seccomp filter for Linux network sandboxing.
-///
-/// The filter is applied to the current thread so only the sandboxed child
-/// inherits it.
-fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) -> Result<()> {
+/// Installs the sandbox's seccomp filter on the current thread, so only the
+/// sandboxed child inherits it.
+fn install_seccomp_filter_on_current_thread(network: Option<NetworkSeccompMode>) -> Result<()> {
+    let rules = seccomp_rules(network)?;
+
+    let filter = SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,                     // default – allow
+        SeccompAction::Errno(libc::EPERM as u32), // when rule matches – return EPERM
+        if cfg!(target_arch = "x86_64") {
+            TargetArch::x86_64
+        } else if cfg!(target_arch = "aarch64") {
+            TargetArch::aarch64
+        } else {
+            unimplemented!("unsupported architecture for seccomp filter");
+        },
+    )?;
+
+    let prog: BpfProgram = filter.try_into()?;
+
+    apply_filter(&prog)?;
+
+    Ok(())
+}
+
+/// `__X32_SYSCALL_BIT`.
+const X32_SYSCALL_BIT: i64 = 0x4000_0000;
+
+/// The calls a sandboxed command may not make. The kernel keyring is always
+/// closed: it caches the credential vault's unlock key, and a tool has no
+/// business reading it. Network rules join when the network is restricted.
+/// The filter kills 32-bit compat processes outright (seccompiler's arch
+/// check): their syscall table would reach the keyring under other numbers.
+/// On x86-64 every rule is mirrored onto the x32 ABI, which shares the audit
+/// arch.
+fn seccomp_rules(network: Option<NetworkSeccompMode>) -> Result<BTreeMap<i64, Vec<SeccompRule>>> {
+    let native = native_seccomp_rules(network)?;
+    if !cfg!(target_arch = "x86_64") {
+        return Ok(native);
+    }
+    let mirrored: Vec<(i64, Vec<SeccompRule>)> = native
+        .iter()
+        .map(|(nr, rules)| (x32_syscall(*nr), rules.clone()))
+        .collect();
+    let mut rules = native;
+    rules.extend(mirrored);
+    Ok(rules)
+}
+
+/// The x32 number of a native x86-64 syscall: the shared number with the x32
+/// bit, or the x32 table's own entry where its argument layout differs.
+fn x32_syscall(native: i64) -> i64 {
+    let shared = match native {
+        libc::SYS_ptrace => 521,
+        libc::SYS_recvmmsg => 537,
+        libc::SYS_sendmmsg => 538,
+        libc::SYS_setsockopt => 541,
+        libc::SYS_getsockopt => 542,
+        other => other,
+    };
+    shared | X32_SYSCALL_BIT
+}
+
+fn native_seccomp_rules(
+    network: Option<NetworkSeccompMode>,
+) -> Result<BTreeMap<i64, Vec<SeccompRule>>> {
     fn deny_syscall(rules: &mut BTreeMap<i64, Vec<SeccompRule>>, nr: i64) {
         rules.insert(nr, vec![]); // empty rule vec = unconditional match
     }
 
-    // Build rule map.
     let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
+
+    deny_syscall(&mut rules, libc::SYS_keyctl);
+    deny_syscall(&mut rules, libc::SYS_add_key);
+    deny_syscall(&mut rules, libc::SYS_request_key);
+
+    let Some(mode) = network else {
+        return Ok(rules);
+    };
 
     deny_syscall(&mut rules, libc::SYS_ptrace);
     deny_syscall(&mut rules, libc::SYS_io_uring_setup);
@@ -247,24 +316,7 @@ fn install_network_seccomp_filter_on_current_thread(mode: NetworkSeccompMode) ->
         }
     }
 
-    let filter = SeccompFilter::new(
-        rules,
-        SeccompAction::Allow,                     // default – allow
-        SeccompAction::Errno(libc::EPERM as u32), // when rule matches – return EPERM
-        if cfg!(target_arch = "x86_64") {
-            TargetArch::x86_64
-        } else if cfg!(target_arch = "aarch64") {
-            TargetArch::aarch64
-        } else {
-            unimplemented!("unsupported architecture for seccomp filter");
-        },
-    )?;
-
-    let prog: BpfProgram = filter.try_into()?;
-
-    apply_filter(&prog)?;
-
-    Ok(())
+    Ok(rules)
 }
 
 fn install_network_landlock_rules_on_current_thread(allowed_proxy_ports: &[u16]) -> Result<()> {

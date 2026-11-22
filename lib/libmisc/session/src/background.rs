@@ -142,10 +142,10 @@ impl BackgroundWait {
                 event = process.next_event() => {
                     return match event {
                         Ok(event) => {
-                            if let Some(waiting) = self.lifecycle.waiting_data_mut() {
-                                if matches!(event.msg, EventMsg::TurnComplete(_)) {
-                                    waiting.complete_turn();
-                                }
+                            if let Some(waiting) = self.lifecycle.waiting_data_mut()
+                                && matches!(event.msg, EventMsg::TurnComplete(_))
+                            {
+                                waiting.complete_turn();
                             }
                             if enabled && matches!(event.msg, EventMsg::ExecApprovalRequest(_)
                                 | EventMsg::ApplyPatchApprovalRequest(_) | EventMsg::RequestUserInput(_)

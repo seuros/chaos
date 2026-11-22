@@ -48,7 +48,7 @@ pub struct McpAddServerParams {
 impl McpManageServer {
     #[mcp_tool(
         name = "mcp_add_server",
-        description = "Add an MCP server.",
+        description = "Add an MCP server to the project's .mcp.json.",
         read_only = false,
         destructive = false,
         open_world = false
@@ -124,11 +124,20 @@ pub fn add_server_to_dot_mcp_json(
     params: McpAddServerParams,
 ) -> Result<BTreeMap<String, McpServerConfig>, String> {
     let mut doc = load_dot_mcp_json(path)?;
-    if doc.mcp_servers.contains_key(&params.name) {
+    if let Some(existing) = doc.mcp_servers.get(&params.name) {
+        let state = if existing.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        let name = &params.name;
         return Err(format!(
-            "MCP server `{}` already exists in {}",
-            params.name,
-            path.display()
+            "MCP server `{name}` already exists in {} (project entry, {state}). \
+             In a trusted project, project entries take precedence over same-named global \
+             servers even when disabled. \
+             To use a same-named global server, remove the project entry with \
+             `mcp_server(name: {name:?}, action: \"remove\")`.",
+            path.display(),
         ));
     }
 

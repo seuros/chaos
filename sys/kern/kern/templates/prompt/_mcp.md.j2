@@ -7,4 +7,5 @@
 - Use `mcp_add_server` and `mcp_server`; never edit `.mcp.json` by hand for changes they cover.
 {% endif %}
 - Add, enable, disable, and remove edit the project's `.mcp.json` and reload its servers. Reset reconnects only the named effective server (global or project) in this session; it does not change configuration, credentials, or enabled state.
+- In a trusted project, a `.mcp.json` entry overrides a same-named global server even when disabled. To use the global server, remove the project entry with `mcp_server` and `action: "remove"`; do not disable it or add another entry.
 - These operations make `chaos://mcp` stale. Read it again afterward for startup and auth status; if subscribed, `notifications/resources/updated` also fires.

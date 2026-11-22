@@ -26,7 +26,8 @@ impl McpManageServer {
     #[mcp_tool(
         name = "mcp_server",
         description = "Reset a global or project MCP server in this session only. \
-            Enable/disable/remove edit project config. Reset reconnects only the named \
+            Enable/disable/remove edit project config. Disable keeps the project override; \
+            remove it to use a same-named global server. Reset reconnects only the named \
             effective server, preserves identity and saved credentials, and never enables \
             disabled servers.",
         read_only = false,

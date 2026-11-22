@@ -60,6 +60,33 @@ fn add_server_creates_dot_mcp_json() {
 }
 
 #[test]
+fn add_server_explains_duplicate_project_override_without_changing_it() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join(DOT_MCP_JSON);
+    for (enabled, state) in [(true, "enabled"), (false, "disabled")] {
+        let original = serde_json::json!({
+            "mcpServers": {"docs": {"command": "node", "enabled": enabled}}
+        })
+        .to_string();
+        std::fs::write(&path, &original).expect("seed project override");
+        let params = serde_json::from_value(serde_json::json!({
+            "name": "docs",
+            "url": "https://example.com/mcp",
+        }))
+        .expect("valid remote parameters");
+        let err = execute_add_server(&path, params).expect_err("duplicate project entry");
+
+        assert!(err.contains(&format!("{} (project entry, {state})", path.display())));
+        assert!(err.contains("take precedence over same-named global servers even when disabled"));
+        assert!(err.contains(r#"mcp_server(name: "docs", action: "remove")"#));
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read project config"),
+            original
+        );
+    }
+}
+
+#[test]
 fn server_action_updates_enabled_flag() {
     let temp = tempdir().expect("tempdir");
     let path = temp.path().join(".mcp.json");

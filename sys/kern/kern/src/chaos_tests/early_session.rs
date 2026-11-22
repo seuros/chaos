@@ -1003,7 +1003,7 @@ async fn set_rate_limits_retains_previous_credits() {
         }),
         plan_type: Some(chaos_ipc::account::PlanType::Plus),
     };
-    state.set_rate_limits(initial.clone());
+    state.set_rate_limits("test-provider", initial.clone());
 
     let update = RateLimitSnapshot {
         limit_id: Some("chaos_other".to_string()),
@@ -1021,7 +1021,7 @@ async fn set_rate_limits_retains_previous_credits() {
         credits: None,
         plan_type: None,
     };
-    state.set_rate_limits(update.clone());
+    state.set_rate_limits("test-provider", update.clone());
 
     assert_eq!(
         state.latest_rate_limits,

@@ -159,6 +159,42 @@ pub fn observed_context_window(
         .or_else(|| window_for(requested_model))
 }
 
+/// `rate_limit_info` of a `rate_limit_event`. Utilization is a fraction of
+/// the limit (0.0 to 1.0) and reset times are Unix seconds.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitInfo {
+    /// `allowed`, `allowed_warning` or `rejected`.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// The limit this event is about: `five_hour`, `seven_day`, ...
+    #[serde(default)]
+    pub rate_limit_type: Option<String>,
+    #[serde(default)]
+    pub utilization: Option<f64>,
+    #[serde(default)]
+    pub resets_at: Option<i64>,
+    #[serde(default)]
+    pub unified_windows: Option<UnifiedWindows>,
+}
+
+/// Per-window usage of the account's unified limits.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct UnifiedWindows {
+    #[serde(default)]
+    pub five_hour: Option<UsageWindow>,
+    #[serde(default)]
+    pub seven_day: Option<UsageWindow>,
+}
+
+/// One usage window: a fraction used and when it resets.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub utilization: f64,
+    pub resets_at: i64,
+}
+
 /// A parsed message from Claude Code's stream-json output.
 ///
 /// The `type` field is used for tag-based deserialization but some message
@@ -210,6 +246,13 @@ pub enum Message {
         message: Option<Value>,
         #[serde(flatten)]
         extra: serde_json::Map<String, Value>,
+    },
+
+    /// Claude Code's view of the account's usage limits, sent as it changes.
+    #[serde(rename = "rate_limit_event")]
+    RateLimitEvent {
+        #[serde(default)]
+        rate_limit_info: RateLimitInfo,
     },
 
     /// A control response from Claude Code to our control request.

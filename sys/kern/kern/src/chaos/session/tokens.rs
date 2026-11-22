@@ -408,7 +408,13 @@ impl Session {
 
         {
             let mut state = self.state.lock().await;
-            state.set_rate_limits(new_rate_limits);
+            let provider = &turn_context.provider;
+            let identity = format!(
+                "{}|{}",
+                provider.name,
+                provider.base_url.as_deref().unwrap_or_default()
+            );
+            state.set_rate_limits(&identity, new_rate_limits);
         }
         self.send_token_count_event(turn_context).await;
     }

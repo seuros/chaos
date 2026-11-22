@@ -69,6 +69,9 @@ pub struct ClampConfig {
     pub cli_path: Option<PathBuf>,
     /// Daemon-only environment names that must never reach the native CLI.
     pub env_remove: Vec<String>,
+    /// How long Claude Code may wait on a silent model stream; Chaos's own
+    /// provider timeout, so a gateway's 5-minute default never cuts it short.
+    pub stream_idle_timeout: Option<std::time::Duration>,
     /// Whether to launch Claude Code in bare mode.
     pub bare_mode: bool,
     /// Working directory for the subprocess.
@@ -134,6 +137,7 @@ impl Default for ClampConfig {
         Self {
             cli_path: None,
             env_remove: Vec::new(),
+            stream_idle_timeout: None,
             bare_mode: false,
             cwd: None,
             resume_session_id: None,
@@ -347,10 +351,8 @@ fn build_command(
     if let Some(base_url) = &config.anthropic_base_url {
         cmd.env("ANTHROPIC_BASE_URL", base_url);
     }
+    crate::child_env::apply(&mut cmd, &config.env_remove, config.stream_idle_timeout);
 
-    for name in &config.env_remove {
-        cmd.env_remove(name);
-    }
     Ok((cmd, files))
 }
 
@@ -359,6 +361,13 @@ fn build_command(
 pub enum ClampError {
     #[error("Claude CLI not found: {0}")]
     CliNotFound(String),
+
+    #[error(
+        "clamp protocol v2 needs Claude Code {} or later ({cli}: {found}); \
+         update with: npm install -g @anthropic-ai/claude-code@latest",
+        crate::version::MIN_CLAUDE_CODE
+    )]
+    UnsupportedClaudeCode { cli: String, found: String },
 
     #[error("failed to spawn claude subprocess: {0}")]
     SpawnFailed(#[from] std::io::Error),
@@ -396,7 +405,10 @@ impl ClampTransport {
     /// Spawn a Claude Code subprocess and set up the transport.
     pub async fn spawn(config: ClampConfig) -> Result<Self, ClampError> {
         let cli_path = find_claude_cli(&config)?;
-        info!(cli = %cli_path.display(), "spawning claude subprocess for clamping");
+        let version =
+            crate::version::ensure_supported(&cli_path, config.cwd.as_deref(), &config.env_remove)
+                .await?;
+        info!(cli = %cli_path.display(), %version, "spawning claude subprocess for clamping");
 
         let (mut cmd, config_files) = build_command(&cli_path, &config)?;
         let mut child = crate::child::NativeChild::spawn(&mut cmd)?;
@@ -762,9 +774,10 @@ impl ClampTransport {
                     model_usage,
                 }))
             }
-            msg @ (Message::Assistant { .. } | Message::Result { .. } | Message::System { .. }) => {
-                Ok(Some(msg))
-            }
+            msg @ (Message::Assistant { .. }
+            | Message::Result { .. }
+            | Message::System { .. }
+            | Message::RateLimitEvent { .. }) => Ok(Some(msg)),
             Message::Unknown => Ok(None),
         }
     }

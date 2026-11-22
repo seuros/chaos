@@ -103,6 +103,11 @@ a compatible current model or uses `gemini-3.1-pro-low`.
 
 Chaos instructions and permissions still apply when clamped.
 
+Claude Code clamp speaks protocol v2 and needs Claude Code 2.1.330 or later; an
+older CLI is refused before the turn starts. The CLI's account limits show as
+Chaos rate limits (five-hour and seven-day windows). Its stream timeout follows
+the provider's `stream_idle_timeout_ms`.
+
 ### Context window and compaction under clamp
 
 Claude Code reports the context window of the model that served each turn

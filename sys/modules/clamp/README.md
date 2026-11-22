@@ -8,7 +8,11 @@ the full Antigravity security design, see
 The separate ACP migration is not enabled: supported bounded runtime IPC under
 the native macOS sandbox remains unverified.
 
-- **Claude Code:** bidirectional stream-JSON control transport. Chaos owns
+- **Claude Code (clamp protocol v2, Claude Code 2.1.330+):** bidirectional
+  stream-JSON control transport. Older CLIs are refused at spawn. The child gets
+  none of a parent Claude Code session's identity or messaging variables, never
+  runs a deferred tool call on resume, and waits on silent streams as long as
+  Chaos does. `rate_limit_event`s are parsed and reach the host. Chaos owns
   tools and permissions through its MCP bridge. User messages are sent over
   stdin; nonempty system prompts use `--system-prompt-file`, and MCP
   configuration uses `--mcp-config` with a JSON file path. Both files are

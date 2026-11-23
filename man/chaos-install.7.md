@@ -188,6 +188,16 @@ and `--target-dir` settings are respected. Concurrent builds in the same
 checkout still need separate target directories to avoid Cargo's lock.
 For sandboxed agents, both the cache and the target location must be writable;
 `MBX_CACHE_DIR` can place the cache inside an allowed directory.
+If `cargo` is an mbx shim and it cannot open a managed target lock, bypass mbx
+and use a separate target directory in a writable root. For example, from a
+writable source checkout:
+
+```bash
+MBX_DISABLE=1 CARGO_TARGET_DIR="$PWD/target-sandbox" cargo check
+```
+
+Use a real writable directory. Disabling mbx alone does not change where an
+existing `target` symlink points.
 
 Inspect local cache activity with:
 

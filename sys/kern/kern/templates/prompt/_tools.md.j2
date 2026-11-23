@@ -22,6 +22,9 @@
 {% endif %}
 {% if "read_file" in tools or "grep_files" in tools or "locate_files" in tools or "list_dir" in tools %}
 - Run independent filesystem calls in parallel. Use shell for builds, tests, and operations without dedicated tools.
+- If sandboxed Cargo hits a permission error on an mbx-managed target, retry
+  with `MBX_DISABLE=1` and an explicit `CARGO_TARGET_DIR` in a writable root.
+  Do not reuse a `target` symlink that points outside the sandbox.
 {% endif %}
 {% if "read_session_history" in tools or "search_session_history" in tools %}
 - Use the session-history tools to retrieve earlier conversation context.

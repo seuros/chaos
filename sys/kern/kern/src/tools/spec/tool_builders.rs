@@ -1500,19 +1500,25 @@ fn create_list_mcp_tool(
 }
 
 pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
-    let properties = mcp_resource_uri_properties(concat!(
-        "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
-        "Use list_mcp_resources or list_mcp_resource_templates to discover it. ",
-        "Also supports tasks:// / tasks://get/<id> / tasks://result/<id>.",
-    ));
+    let properties = mcp_resource_uri_properties(
+        concat!(
+            "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
+            "Use list_mcp_resources or list_mcp_resource_templates to discover it. ",
+            "Also supports tasks:// / tasks://get/<id> / tasks://result/<id>.",
+        ),
+        concat!(
+            "Optional configured server name. Required for ambiguous or unlisted external ",
+            "resources and for external tasks.",
+        ),
+    );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "read_mcp_resource".to_string(),
         description: concat!(
             "Read a resource by URI. For templates, supply raw string parameters and ",
-            "let URI-template expansion percent-encode them. Omit server for internal ",
-            "resources and tasks; specify the configured server ",
-            "for external MCP resources and tasks.",
+            "let URI-template expansion percent-encode them. If server is omitted, ",
+            "read an internal resource or discover a unique external server from its ",
+            "advertised resources and templates. External tasks always require server.",
         )
         .to_string(),
         strict: false,
@@ -1527,11 +1533,14 @@ pub(crate) fn create_read_mcp_resource_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
-    let mut properties = mcp_resource_uri_properties(concat!(
-        "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
-        "The expanded URI is passed to the server without requiring the resource ",
-        "to currently exist or appear in list_mcp_resources.",
-    ));
+    let mut properties = mcp_resource_uri_properties(
+        concat!(
+            "Concrete resource URI, or RFC 6570 URI template when parameters are supplied. ",
+            "The expanded URI is passed to the server without requiring the resource ",
+            "to currently exist or appear in list_mcp_resources.",
+        ),
+        "Omit for internal resources. For external resources, specify the configured MCP server.",
+    );
     properties.insert(
         "subscribed".to_string(),
         JsonSchema::Boolean {
@@ -1558,15 +1567,15 @@ pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
     })
 }
 
-fn mcp_resource_uri_properties(uri_description: &str) -> BTreeMap<String, JsonSchema> {
+fn mcp_resource_uri_properties(
+    uri_description: &str,
+    server_description: &str,
+) -> BTreeMap<String, JsonSchema> {
     BTreeMap::from([
         (
             "server".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "Omit for internal resources and tasks. For external MCP resources, use the configured server name from list_mcp_resources."
-                        .to_string(),
-                ),
+                description: Some(server_description.to_string()),
             },
         ),
         (

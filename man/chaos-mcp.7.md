@@ -263,6 +263,10 @@ See [chaos-appearance(7)](./chaos-appearance.7.md) for UI indicators.
   searches when they already contain the needed data.
 - For templates, pass raw values in `parameters`; do not pre-encode them.
   For concrete URIs, omit `parameters`.
+- For `read_mcp_resource`, omit `server` to discover a unique provider from
+  advertised resources and templates. If more than one server serves the URI,
+  use `server` to choose one. Unlisted external resources need an explicit
+  server, as do external subscriptions.
 - Follow async work through its task handle. Internal tasks use `tasks://get/<id>`
   and `tasks://result/<id>`; external tasks require their originating server.
   Cancel explicitly; stopping polling does not stop work.

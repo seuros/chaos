@@ -1017,6 +1017,29 @@ impl McpConnectionManager {
             .await
     }
 
+    /// Discover all listed resources from one server, following pagination.
+    pub async fn discover_resources(&self, server: &str) -> Result<Vec<ResourceInfo>> {
+        Ok(self
+            .client_by_name(server)
+            .await?
+            .session
+            .list_resources()
+            .await?)
+    }
+
+    /// Discover all listed resource templates from one server, following pagination.
+    pub async fn discover_resource_templates(
+        &self,
+        server: &str,
+    ) -> Result<Vec<ResourceTemplateInfo>> {
+        Ok(self
+            .client_by_name(server)
+            .await?
+            .session
+            .list_resource_templates()
+            .await?)
+    }
+
     /// Read a resource from the specified server.
     pub async fn read_resource(
         &self,

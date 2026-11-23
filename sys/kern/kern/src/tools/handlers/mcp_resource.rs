@@ -9,7 +9,6 @@ use chaos_mcp_runtime::ListResourceTemplatesResult;
 use chaos_mcp_runtime::ListResourcesResult;
 use chaos_mcp_runtime::McpToolCallResult;
 use chaos_mcp_runtime::PaginatedRequestParams;
-use chaos_mcp_runtime::ReadResourceRequestParams;
 use chaos_mcp_runtime::ReadResourceResult;
 use chaos_mcp_runtime::ResourceContents;
 use chaos_mcp_runtime::ResourceContentsText;
@@ -39,6 +38,8 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
 pub struct McpResourceHandler;
+
+mod routing;
 
 #[derive(Debug, Deserialize, Default)]
 struct ListResourcesArgs {
@@ -457,19 +458,12 @@ async fn read_inline_resource(
     session: &Session,
     turn: &TurnContext,
     uri: &str,
-) -> Result<ReadResourceResult, FunctionCallError> {
+) -> Result<Option<ReadResourceResult>, FunctionCallError> {
     let backend = KernelBuiltinResourceBackend { session, turn };
     let content = builtin_mcp_resources::read_resource(&backend, uri)
         .await
         .map_err(FunctionCallError::RespondToModel)?;
-    let content = content.ok_or_else(|| {
-        FunctionCallError::RespondToModel(format!("unknown inline ChaOS resource: {uri}"))
-    })?;
-    Ok(inline_text_resource_result(
-        uri.to_string(),
-        content.text,
-        content.mime_type,
-    ))
+    Ok(content.map(|content| inline_text_resource_result(uri, content.text, content.mime_type)))
 }
 
 async fn read_static_resource(
@@ -887,8 +881,18 @@ async fn handle_read_resource(
     let start = Instant::now();
 
     let payload_result: Result<ReadResourcePayload, FunctionCallError> = async {
-        let result =
-            read_resource_contents(&session, turn.as_ref(), server.as_deref(), &uri).await?;
+        let (server, result) = if server.is_some() || uri.starts_with("tasks://") {
+            let result =
+                read_resource_contents(&session, turn.as_ref(), server.as_deref(), &uri).await?;
+            (server, result)
+        } else if let Some(result) = read_local_resource(&session, turn.as_ref(), &uri).await? {
+            (None, result)
+        } else if uri.starts_with("chaos://") {
+            return Err(unknown_inline_resource(&uri));
+        } else {
+            let (server, result) = routing::read_advertised_resource(&session, &uri).await?;
+            (Some(server), result)
+        };
         if let Some(TaskUri::Result { task_id }) = parse_task_uri(&uri) {
             let id = if let Some(server) = server.as_deref() {
                 if let Some(source) = session.mcp_task_source(server, task_id) {
@@ -963,9 +967,23 @@ pub(super) fn normalize_resource_server(
     Ok(server)
 }
 
-// Internal reads retain normal resource visibility checks.
+async fn read_local_resource(
+    session: &Session,
+    turn: &TurnContext,
+    uri: &str,
+) -> Result<Option<ReadResourceResult>, FunctionCallError> {
+    match read_static_resource(session, turn, uri).await? {
+        Some(result) => Ok(Some(result)),
+        None => read_inline_resource(session, turn, uri).await,
+    }
+}
+
+fn unknown_inline_resource(uri: &str) -> FunctionCallError {
+    FunctionCallError::RespondToModel(format!("unknown inline ChaOS resource: {uri}"))
+}
+
 async fn read_resource_contents(
-    session: &Arc<Session>,
+    session: &Session,
     turn: &TurnContext,
     server: Option<&str>,
     uri: &str,
@@ -973,23 +991,15 @@ async fn read_resource_contents(
     if let Some(op) = parse_task_uri(uri) {
         read_task_resource(session, server, uri, op).await
     } else if let Some(server) = server {
-        session
-            .read_resource(
-                server,
-                ReadResourceRequestParams {
-                    uri: uri.to_string(),
-                    meta: None,
-                },
-            )
+        routing::read_external_resource(session, server, uri)
             .await
             .map_err(|err| {
                 FunctionCallError::RespondToModel(format!("resources/read failed: {err:#}"))
             })
     } else {
-        match read_static_resource(session, turn, uri).await? {
-            Some(result) => Ok(result),
-            None => read_inline_resource(session, turn, uri).await,
-        }
+        read_local_resource(session, turn, uri)
+            .await?
+            .ok_or_else(|| unknown_inline_resource(uri))
     }
 }
 

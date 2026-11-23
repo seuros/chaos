@@ -15,7 +15,6 @@ use std::time::Duration;
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_mcp_runtime::PaginatedRequestParams;
 use chaos_mcp_runtime::manager::McpClientIdentity;
 use chaos_mcp_runtime::manager::McpConnectionManager;
 use chaos_mcp_runtime::manager::SandboxState;
@@ -741,10 +740,7 @@ impl McpRegistryActor {
             async move {
                 let result = actor
                     .execute(&server, |manager, server| async move {
-                        manager
-                            .list_resources(&server, None::<PaginatedRequestParams>)
-                            .await
-                            .map(|result| result.resources)
+                        manager.discover_resources(&server).await
                     })
                     .await;
                 (server, result)
@@ -762,10 +758,7 @@ impl McpRegistryActor {
             async move {
                 let result = actor
                     .execute(&server, |manager, server| async move {
-                        manager
-                            .list_resource_templates(&server, None::<PaginatedRequestParams>)
-                            .await
-                            .map(|result| result.resource_templates)
+                        manager.discover_resource_templates(&server).await
                     })
                     .await;
                 (server, result)

@@ -9,6 +9,8 @@ should. There is no patch level; the build timestamp is the patch.
 
 ## [Unreleased]
 
+## [47.16.0] - 2026-11-23
+
 ### Added
 - The vault unlock key can be provisioned as the systemd credential
   `chaos-vault-key`.
@@ -30,6 +32,8 @@ should. There is no patch level; the build timestamp is the patch.
   timeouts never outlive it. Interactive turns keep their own timeouts.
 
 ### Fixed
+- Provider reasoning appears in the Ctrl-T transcript after the reasoning item
+  completes, unless `hide_agent_reasoning` is enabled (#209).
 - Clamped Claude Code shows its account rate limits instead of going quiet at
   a limit, and keeps long silent streams open as long as the provider allows.
 - A Claude Code clamped from inside another Claude Code session no longer

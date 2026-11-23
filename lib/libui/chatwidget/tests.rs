@@ -46,6 +46,7 @@ use chaos_ipc::config_types::Settings;
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
 use chaos_ipc::items::PlanItem;
+use chaos_ipc::items::ReasoningItem;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::items::UserMessageItem;
 use chaos_ipc::models::MessagePhase;
@@ -75,6 +76,7 @@ use chaos_ipc::protocol::ExitedReviewModeEvent;
 use chaos_ipc::protocol::FileChange;
 use chaos_ipc::protocol::RateLimitSnapshot;
 use chaos_ipc::protocol::ReasoningContentDeltaEvent;
+use chaos_ipc::protocol::ReasoningRawContentDeltaEvent;
 use std::assert_matches;
 
 use crate::test_render::render_to_trimmed_string;
@@ -8831,6 +8833,59 @@ async fn multiple_agent_messages_in_single_turn_emit_multiple_headers() {
     let first_idx = combined.find("First message").unwrap();
     let second_idx = combined.find("Second message").unwrap();
     assert!(first_idx < second_idx, "messages out of order: {combined}");
+}
+
+#[tokio::test]
+async fn completed_raw_reasoning_appears_once_in_transcript() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    for (text, streamed, completed, hidden) in [
+        ("I checked **both** cases.", true, true, false),
+        ("Only streamed text.", true, false, false),
+        ("Only completed text.", false, true, false),
+        ("Hidden text.", true, true, true),
+    ] {
+        chat.config.hide_agent_reasoning = hidden;
+        if streamed {
+            chat.handle_codex_event(Event {
+                id: "s1".into(),
+                msg: EventMsg::ReasoningRawContentDelta(ReasoningRawContentDeltaEvent {
+                    process_id: String::new(),
+                    turn_id: "turn-1".into(),
+                    item_id: "reasoning-1".into(),
+                    content_index: 0,
+                    delta: text.into(),
+                }),
+            });
+        }
+        chat.handle_codex_event(Event {
+            id: "s1".into(),
+            msg: EventMsg::ItemCompleted(ItemCompletedEvent {
+                process_id: ProcessId::new(),
+                turn_id: "turn-1".into(),
+                item: TurnItem::Reasoning(ReasoningItem {
+                    id: "reasoning-1".into(),
+                    summary_text: Vec::new(),
+                    raw_content: completed.then(|| text.to_owned()).into_iter().collect(),
+                }),
+            }),
+        });
+
+        let mut transcript = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AppEvent::InsertHistoryCell(cell) = event {
+                transcript.push(
+                    lines_to_single_string(&cell.transcript_lines(80))
+                        .trim()
+                        .to_owned(),
+                );
+            }
+        }
+        if hidden {
+            assert!(transcript.is_empty());
+        } else {
+            assert_eq!(transcript, [format!("• {}", text.replace("**", ""))]);
+        }
+    }
 }
 
 #[cfg(test)]

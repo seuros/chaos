@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use chaos_ipc::items::AgentMessageContent;
 use chaos_ipc::items::AgentMessageItem;
+use chaos_ipc::items::ReasoningItem;
 use chaos_ipc::models::MessagePhase;
 use chaos_snitch::RuntimeMetricsSummary;
 use ratatui::style::Stylize;
@@ -173,6 +174,9 @@ impl ChatWidget {
     }
 
     pub(super) fn on_agent_reasoning_delta(&mut self, delta: String) {
+        if self.config.hide_agent_reasoning {
+            return;
+        }
         self.reasoning_buffer.push_str(&delta);
 
         if self.exec_wait_streak.is_some() {
@@ -186,17 +190,42 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(super) fn on_agent_reasoning_final(&mut self) {
-        self.full_reasoning_buffer.push_str(&self.reasoning_buffer);
-        if !self.full_reasoning_buffer.is_empty() {
-            let cell = history_cell::new_reasoning_summary_block(
-                self.full_reasoning_buffer.clone(),
-                &self.config.cwd,
-            );
-            self.add_boxed_history(cell);
+    pub(super) fn on_reasoning_item_completed(&mut self, item: ReasoningItem) {
+        let text = item.raw_content.join("\n\n");
+        if text.trim().is_empty() {
+            self.finish_reasoning(item.summary_text.join("\n\n"), false);
+        } else {
+            self.finish_reasoning(text, true);
         }
-        self.reasoning_buffer.clear();
-        self.full_reasoning_buffer.clear();
+    }
+
+    pub(super) fn on_agent_reasoning_final(&mut self) {
+        self.finish_reasoning(String::new(), false);
+    }
+
+    fn finish_reasoning(&mut self, text: String, raw: bool) {
+        let mut buffered = std::mem::take(&mut self.full_reasoning_buffer);
+        buffered.push_str(&std::mem::take(&mut self.reasoning_buffer));
+        // Completed items can repeat the streamed text, or omit it entirely.
+        let text = if text.trim().is_empty() {
+            buffered
+        } else {
+            text
+        };
+        if !self.config.hide_agent_reasoning && !text.trim().is_empty() {
+            if raw {
+                // Raw text may contain bold spans that are not summary headers.
+                self.add_to_history(history_cell::ReasoningSummaryCell::new(
+                    String::new(),
+                    text,
+                    &self.config.cwd,
+                    true,
+                ));
+            } else {
+                let cell = history_cell::new_reasoning_summary_block(text, &self.config.cwd);
+                self.add_boxed_history(cell);
+            }
+        }
         self.request_redraw();
     }
 

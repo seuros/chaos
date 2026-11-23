@@ -305,8 +305,14 @@ impl ChatWidget {
                 if let chaos_ipc::items::TurnItem::Plan(plan_item) = &item {
                     self.on_plan_item_completed(plan_item.text.clone());
                 }
-                if let chaos_ipc::items::TurnItem::AgentMessage(item) = item {
-                    self.on_agent_message_item_completed(item);
+                match item {
+                    chaos_ipc::items::TurnItem::AgentMessage(item) => {
+                        self.on_agent_message_item_completed(item);
+                    }
+                    chaos_ipc::items::TurnItem::Reasoning(item) => {
+                        self.on_reasoning_item_completed(item);
+                    }
+                    _ => {}
                 }
             }
         }

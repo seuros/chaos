@@ -39,7 +39,14 @@ impl ToolGroupFilter<'_> {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
+    build_session_catalog(true)
+}
+
+pub(crate) fn build_session_catalog(
+    recall_supported: bool,
+) -> Result<ToolGroupCatalog, ToolGroupError> {
     let catalog = ToolGroupCatalog::new();
     for (id, description) in [
         (SHELL, "Command execution and PTY input"),
@@ -60,10 +67,6 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         (CRON, "Recurring job controls"),
         (MCP_MANAGEMENT, "Add and administer configured MCP servers"),
         (WORKFLOWS, "Execute bounded, session-owned tool workflows"),
-        (
-            RECALL,
-            "Search and explicitly store scoped persistent memory",
-        ),
     ] {
         catalog.define_group(ToolGroupDefinition::new(id, description, false))?;
     }
@@ -156,11 +159,18 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         ToolExposure::groups([WEB]),
     )?;
     assign(&catalog, ["view_image"], ToolExposure::groups([FILESYSTEM]))?;
-    assign(
-        &catalog,
-        crate::tools::handlers::recall::NAMES,
-        ToolExposure::groups([RECALL]),
-    )?;
+    if recall_supported {
+        catalog.define_group(ToolGroupDefinition::new(
+            RECALL,
+            "Search and explicitly store scoped persistent memory",
+            false,
+        ))?;
+        assign(
+            &catalog,
+            crate::tools::handlers::recall::NAMES,
+            ToolExposure::groups([RECALL]),
+        )?;
+    }
 
     let mut static_tool_names = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -219,15 +229,13 @@ pub(crate) fn build_catalog() -> Result<ToolGroupCatalog, ToolGroupError> {
         "web_search",
         "image_generation",
         "view_image",
-        "recall_search",
-        "recall_store",
-        "recall_delete",
-        "recall_open",
-        "recall_use",
     ]
     .into_iter()
     .map(str::to_string)
     .collect::<Vec<_>>();
+    if recall_supported {
+        native_tool_names.extend(crate::tools::handlers::recall::NAMES.map(str::to_string));
+    }
     native_tool_names.extend(static_tool_names);
     catalog.validate_tools(native_tool_names, true)?;
     Ok(catalog)

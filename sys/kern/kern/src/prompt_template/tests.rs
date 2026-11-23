@@ -22,7 +22,11 @@ fn tools(names: &str) -> Vec<ToolSpec> {
 }
 
 fn render_runtime(names: &str, enabled_groups: &str) -> String {
-    let catalog = crate::tools::groups::build_catalog().unwrap();
+    render_runtime_with_recall(names, enabled_groups, true)
+}
+
+fn render_runtime_with_recall(names: &str, enabled_groups: &str, recall_supported: bool) -> String {
+    let catalog = crate::tools::groups::build_session_catalog(recall_supported).unwrap();
     let state = catalog.new_state();
     catalog
         .set_groups_enabled(&state, enabled_groups.split_whitespace(), true)
@@ -124,6 +128,32 @@ fn filesystem_guidance_tracks_visible_tools_and_disabled_groups() {
                 "{names}: {text}"
             );
         }
+    }
+}
+
+#[test]
+fn recall_guidance_tracks_visible_tools() {
+    let sqlite = render_runtime_with_recall("enable_tools read_file", "", false);
+    assert!(!sqlite.contains("recall"));
+
+    for (names, groups, enable, search, write) in [
+        ("read_file", "", false, false, false),
+        ("enable_tools", "", true, false, false),
+        ("enable_tools", "recall", false, false, false),
+        ("recall_search", "recall", false, true, false),
+        (
+            "recall_search recall_use recall_store",
+            "recall",
+            false,
+            true,
+            true,
+        ),
+    ] {
+        let text = render_runtime(names, groups);
+        assert_eq!(text.contains("Enable `recall`"), enable, "{names}");
+        assert_eq!(text.contains("`recall_search`"), search, "{names}");
+        assert_eq!(text.contains("Call `recall_use`"), write, "{names}");
+        assert_eq!(text.contains("Store memory only when"), write, "{names}");
     }
 }
 

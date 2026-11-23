@@ -551,8 +551,8 @@ impl Session {
 
         let recall = crate::recall::for_session(config.chaos_home.clone(), &config.storage_home);
 
-        let tool_group_catalog =
-            crate::tools::groups::build_catalog().context("failed to build tool group catalog")?;
+        let tool_group_catalog = crate::tools::groups::build_session_catalog(recall.is_some())
+            .context("failed to build tool group catalog")?;
         // Clamp harnesses already own tool gating. Starting their bridge with operational
         // groups hidden leaves clients unable to discover tools they need for the turn.
         let tool_group_state = crate::tools::groups::new_state(

@@ -6870,9 +6870,9 @@ dependencies = [
 
 [[package]]
 name = "mcp-host"
-version = "0.28.1"
+version = "0.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b27b175b24cbf6b706c0ab67a84638a0cc5a666dc1bf19868ee631c11d89acf7"
+checksum = "b59fb4ba0470b8836031927ccd32a0b59e0beb3d321fb8abcedf8461221fbe73"
 dependencies = [
  "arc-swap",
  "base64 0.23.1",

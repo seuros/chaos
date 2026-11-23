@@ -39,7 +39,9 @@ use super::ToolInfo;
 use super::elicitation::ElicitationRequestManager;
 use super::elicitation::elicitation_is_rejected_by_policy;
 use super::filter::ToolFilter;
-use super::filter::store_managed_tools;
+use refresh::{refresh_prompts, refresh_resources, refresh_tools};
+
+mod refresh;
 
 pub(super) fn request_id_to_protocol(id: &RequestId) -> ProtocolRequestId {
     match id {
@@ -351,8 +353,7 @@ impl ClientHandler for ChaosClientHandler {
 
     fn on_tools_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
-            let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
+            let Some(session) = self.notification_session().await else {
                 return;
             };
             refresh_tools(
@@ -369,8 +370,7 @@ impl ClientHandler for ChaosClientHandler {
 
     fn on_resources_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
-            let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
+            let Some(session) = self.notification_session().await else {
                 return;
             };
             refresh_resources(&self.server_name, &session, &*self.catalog).await;
@@ -379,8 +379,7 @@ impl ClientHandler for ChaosClientHandler {
 
     fn on_prompts_list_changed(&self) -> ClientHandlerFuture<'_> {
         Box::pin(async move {
-            let session_guard = self.session.read().await;
-            let Some(session) = session_guard.as_ref().and_then(WeakMcpSession::upgrade) else {
+            let Some(session) = self.notification_session().await else {
                 return;
             };
             refresh_prompts(&self.server_name, &session, &*self.catalog).await;
@@ -420,82 +419,15 @@ impl ClientHandler for ChaosClientHandler {
     }
 }
 
-/// Refresh tools for `server_name`: re-list from the session, apply the filter
-/// into `tools_arc`, then sync the filtered set to the catalog.
-async fn refresh_tools(
-    server_name: &str,
-    session: &McpSession,
-    tool_timeout: Duration,
-    tool_filter: &ToolFilter,
-    tools_arc: &Arc<StdRwLock<Vec<ToolInfo>>>,
-    catalog: &dyn McpCatalogSink,
-) {
-    match super::client::list_tools_for_session_uncached(server_name, session, Some(tool_timeout))
-        .await
-    {
-        Ok(tools) => {
-            store_managed_tools(tool_filter, tools_arc, tools);
-            if let Ok(store) = tools_arc.read() {
-                let catalog_tools: Vec<_> = store
-                    .iter()
-                    .map(crate::catalog_conv::mcp_tool_info_to_catalog_tool)
-                    .collect();
-                catalog.unregister_mcp_tools(server_name);
-                catalog.register_mcp_tools(server_name, catalog_tools);
-            }
-        }
-        Err(err) => {
-            warn!("Failed to refresh tool list for '{server_name}': {err}");
-        }
+impl ChaosClientHandler {
+    /// Own a session handle without holding its slot lock during remote I/O.
+    async fn notification_session(&self) -> Option<McpSession> {
+        self.session
+            .read()
+            .await
+            .as_ref()
+            .and_then(WeakMcpSession::upgrade)
     }
-}
-
-/// Re-list resources and resource templates from `session` and push them to
-/// the catalog, replacing whatever was registered before.
-async fn refresh_resources(server_name: &str, session: &McpSession, catalog: &dyn McpCatalogSink) {
-    let resources = match session.list_resources().await {
-        Ok(list) => list
-            .into_iter()
-            .map(crate::catalog_conv::mcp_resource_to_catalog)
-            .collect(),
-        Err(err) => {
-            warn!("Failed to refresh resource list for '{server_name}': {err}");
-            return;
-        }
-    };
-
-    let templates = match session.list_resource_templates().await {
-        Ok(list) => list
-            .into_iter()
-            .map(crate::catalog_conv::mcp_resource_template_to_catalog)
-            .collect(),
-        Err(err) => {
-            warn!("Failed to refresh resource template list for '{server_name}': {err}");
-            Vec::new()
-        }
-    };
-
-    // `unregister_mcp` would also drop tools and prompts, so we use the
-    // narrower resource-only unregister here.
-    catalog.unregister_mcp_resources(server_name);
-    catalog.register_mcp_resources(server_name, resources, templates);
-}
-
-/// Re-list prompts from `session` and push them to the catalog.
-async fn refresh_prompts(server_name: &str, session: &McpSession, catalog: &dyn McpCatalogSink) {
-    let prompts = match session.list_prompts().await {
-        Ok(result) => result
-            .into_iter()
-            .map(crate::catalog_conv::mcp_prompt_to_catalog)
-            .collect(),
-        Err(err) => {
-            warn!("Failed to refresh prompt list for '{server_name}': {err}");
-            return;
-        }
-    };
-
-    catalog.unregister_mcp_prompts(server_name);
-    catalog.register_mcp_prompts(server_name, prompts);
 }
 
 #[cfg(test)]

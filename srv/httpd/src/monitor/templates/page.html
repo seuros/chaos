@@ -2,6 +2,7 @@
 {% block body %}
 <header class="masthead">
   <h1>Chaos monitor</h1>
+  {% if mobile %}<a href="/monitor/phone">Pair phone</a>{% endif %}
   {% if open %}
   <span class="local-open">read-only · open</span>
   {% else %}

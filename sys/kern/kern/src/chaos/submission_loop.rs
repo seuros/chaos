@@ -413,8 +413,12 @@ pub(crate) async fn submission_loop(
                     handlers::patch_approval(&sess, id, decision).await;
                     false
                 }
-                Op::UserInputAnswer { id, response } => {
-                    handlers::request_user_input_response(&sess, id, response).await;
+                Op::UserInputAnswer {
+                    id,
+                    call_id,
+                    response,
+                } => {
+                    handlers::request_user_input_response(&sess, id, call_id, response).await;
                     false
                 }
                 Op::RequestPermissionsResponse { id, response } => {

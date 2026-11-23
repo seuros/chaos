@@ -124,7 +124,7 @@ pub(crate) enum PendingInsert<T> {
 pub(crate) struct TurnState {
     pending_approvals: HashMap<(ApprovalKind, String), oneshot::Sender<ReviewDecision>>,
     pending_request_permissions: HashMap<String, oneshot::Sender<RequestPermissionsResponse>>,
-    pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
+    pending_user_input: HashMap<String, (String, oneshot::Sender<RequestUserInputResponse>)>,
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
     pending_input: Vec<ResponseInputItem>,
@@ -197,6 +197,7 @@ impl TurnState {
     pub(crate) fn insert_pending_user_input(
         &mut self,
         key: String,
+        call_id: String,
         tx: oneshot::Sender<RequestUserInputResponse>,
     ) -> PendingInsert<RequestUserInputResponse> {
         use std::collections::hash_map::Entry;
@@ -204,7 +205,7 @@ impl TurnState {
         match self.pending_user_input.entry(key) {
             Entry::Occupied(_) => PendingInsert::Duplicate(tx),
             Entry::Vacant(slot) => {
-                slot.insert(tx);
+                slot.insert((call_id, tx));
                 PendingInsert::Inserted
             }
         }
@@ -216,7 +217,7 @@ impl TurnState {
         if self
             .pending_user_input
             .get(key)
-            .is_some_and(oneshot::Sender::is_closed)
+            .is_some_and(|(_, sender)| sender.is_closed())
         {
             self.pending_user_input.remove(key);
         }
@@ -226,7 +227,22 @@ impl TurnState {
         &mut self,
         key: &str,
     ) -> Option<oneshot::Sender<RequestUserInputResponse>> {
-        self.pending_user_input.remove(key)
+        self.pending_user_input
+            .remove(key)
+            .map(|(_, sender)| sender)
+    }
+
+    /// A late reply must not consume the next question's mailbox in the same turn.
+    pub(crate) fn take_user_input_call(
+        &mut self,
+        turn: &str,
+        call: &str,
+    ) -> Option<oneshot::Sender<RequestUserInputResponse>> {
+        let (pending, _) = self.pending_user_input.get(turn)?;
+        if pending != call {
+            return None;
+        }
+        self.remove_pending_user_input(turn)
     }
 
     pub(crate) fn insert_pending_elicitation(

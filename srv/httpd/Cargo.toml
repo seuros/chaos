@@ -28,6 +28,9 @@ lsd-protocol = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+sqlx = { workspace = true }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+rand = { workspace = true }
 dedup-machines = { workspace = true }
 hmac = { workspace = true }
 jiff = { workspace = true }
@@ -43,7 +46,6 @@ usage = { workspace = true }
 [dev-dependencies]
 lsd-protocol = { workspace = true, features = ["fixtures"] }
 chaos-proc = { workspace = true }
-sqlx = { workspace = true }
 chaos-test-fixtures = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

@@ -808,6 +808,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::ReasoningRawContentDelta(_)
             | EventMsg::ProcessRolledBack(_)
             | EventMsg::RequestUserInput(_)
+            | EventMsg::MobileQuestionAnswered { .. }
             | EventMsg::RequestPermissions(_)
             | EventMsg::CollabAgentStatusChanged(_)
             | EventMsg::CollabResumeBegin(_)

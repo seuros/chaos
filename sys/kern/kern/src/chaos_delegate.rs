@@ -528,8 +528,7 @@ async fn handle_request_user_input(
     let args = RequestUserInputArgs {
         questions: event.questions,
     };
-    let response_fut =
-        parent_session.request_user_input(parent_ctx, parent_ctx.sub_id.clone(), args);
+    let response_fut = parent_session.request_user_input(parent_ctx, event.call_id.clone(), args);
     let response = await_user_input_with_cancel(
         response_fut,
         parent_session,
@@ -537,7 +536,13 @@ async fn handle_request_user_input(
         cancel_token,
     )
     .await;
-    let _ = chaos.submit(Op::UserInputAnswer { id, response }).await;
+    let _ = chaos
+        .submit(Op::UserInputAnswer {
+            id,
+            call_id: Some(event.call_id),
+            response,
+        })
+        .await;
 }
 
 async fn handle_request_permissions(

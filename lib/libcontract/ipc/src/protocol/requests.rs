@@ -267,6 +267,9 @@ pub enum Op {
     UserInputAnswer {
         /// Turn id for the in-flight request.
         id: String,
+        /// The question generation. Older local clients supplied only the turn.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_id: Option<String>,
         /// User-provided answers.
         response: RequestUserInputResponse,
     },

@@ -83,6 +83,8 @@ pub trait BottomPaneView: Renderable {
         Some(request)
     }
 
+    fn dismiss_answered_question(&mut self, _turn: &str, _call: &str) {}
+
     /// Try to handle request_user_input; return the original value if not
     /// consumed.
     fn try_consume_user_input_request(

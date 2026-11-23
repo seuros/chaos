@@ -108,6 +108,7 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::ExecApprovalRequest(_)
         | EventMsg::RequestPermissions(_)
         | EventMsg::RequestUserInput(_)
+        | EventMsg::MobileQuestionAnswered { .. }
         | EventMsg::ElicitationRequest(_)
         | EventMsg::ElicitationComplete(_)
         | EventMsg::ApplyPatchApprovalRequest(_)

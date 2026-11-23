@@ -42,6 +42,7 @@ pub(crate) async fn server_state_with(
         home.path().to_path_buf(),
     );
     let state = Arc::new(ServerState {
+        mobile: None,
         config: Arc::new(config),
         process_table: Arc::new(table),
         auth_manager: auth_manager_from_auth_with_home(auth, home.path().to_path_buf()),

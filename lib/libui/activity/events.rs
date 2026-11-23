@@ -128,6 +128,12 @@ impl Tracker {
                         .inputs
                         .insert(format!("input:{}:{}", ev.turn_id, ev.call_id));
                 }
+                EventMsg::MobileQuestionAnswered { prompt, .. } => {
+                    state
+                        .data_mut()
+                        .inputs
+                        .remove(&format!("input:{}:{}", prompt.turn_id, prompt.call_id));
+                }
                 EventMsg::RequestPermissions(ev) => {
                     state
                         .data_mut()

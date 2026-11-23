@@ -95,10 +95,15 @@ pub(super) trait Widget: Serialize {
 
 /// `open`: this viewer may watch without a token, so connect on load.
 /// `host`: the machine this page watches, already checked by `host_param`.
-pub(super) fn page(open: bool, host: Option<&str>) -> Result<String, minijinja::Error> {
+pub(super) fn page(
+    open: bool,
+    host: Option<&str>,
+    mobile: bool,
+) -> Result<String, minijinja::Error> {
     ENV.get_template("page.html")?.render(minijinja::context! {
         css_version => STYLESHEET.version.as_str(),
         open,
+        mobile,
         events => match host {
             Some(host) => format!("/monitor/events?host={host}"),
             None => "/monitor/events".to_string(),

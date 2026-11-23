@@ -11,6 +11,23 @@ pub struct ServeCli {
     #[usage(long = "port", default = "4000")]
     pub port: u16,
 
+    /// Opt in to the separate HTTPS-only phone listener on a concrete LAN IP:port.
+    /// Requires a loopback monitor, Postgres and the three mobile credential files.
+    #[usage(long = "mobile-listen")]
+    pub mobile_listen: Option<std::net::SocketAddr>,
+
+    /// PEM leaf certificate for the phone listener. Its fingerprint is in the QR.
+    #[usage(long = "mobile-cert")]
+    pub mobile_cert: Option<PathBuf>,
+
+    /// Private PEM key for the phone listener.
+    #[usage(long = "mobile-key")]
+    pub mobile_key: Option<PathBuf>,
+
+    /// File containing the separate random operator secret used to pair/revoke.
+    #[usage(long = "mobile-admin-file")]
+    pub mobile_admin_file: Option<PathBuf>,
+
     /// Bearer token for triggers, live monitoring and MCP. Falls back to `CHAOS_BEARER_TOKEN`
     /// env var. Empty tokens are rejected.
     #[usage(long = "bearer-token", env = "CHAOS_BEARER_TOKEN")]

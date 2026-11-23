@@ -239,6 +239,7 @@ impl NativeSession {
                         &context,
                         Op::UserInputAnswer {
                             id: request.turn_id.clone(),
+                            call_id: Some(request.call_id.clone()),
                             response,
                         },
                         "failed to resolve ACP user input",

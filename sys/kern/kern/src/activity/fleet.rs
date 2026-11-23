@@ -46,6 +46,7 @@ pub struct Origin {
 }
 
 pub mod database;
+pub mod relay;
 
 /// This machine's name, as origins carry it.
 pub fn local_host() -> &'static str {

@@ -143,6 +143,7 @@ fn parallel_tools_and_waits_keep_their_reason_until_all_finish() {
         id,
         &Op::UserInputAnswer {
             id: "turn".into(),
+            call_id: None,
             response: chaos_ipc::request_user_input::RequestUserInputResponse {
                 answers: HashMap::new(),
             },
@@ -195,6 +196,7 @@ fn concurrent_input_prompts_are_not_cleared_by_a_single_answer() {
     }
     let answer = Op::UserInputAnswer {
         id: "turn".into(),
+        call_id: None,
         response: chaos_ipc::request_user_input::RequestUserInputResponse {
             answers: HashMap::new(),
         },

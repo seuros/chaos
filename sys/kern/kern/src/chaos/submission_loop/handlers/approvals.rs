@@ -71,9 +71,15 @@ pub async fn patch_approval(sess: &Arc<Session>, id: String, decision: ReviewDec
 pub async fn request_user_input_response(
     sess: &Arc<Session>,
     id: String,
+    call_id: Option<String>,
     response: RequestUserInputResponse,
 ) {
-    sess.notify_user_input_response(&id, response).await;
+    if !sess
+        .deliver_user_input(&id, call_id.as_deref(), response)
+        .await
+    {
+        warn!("Ignoring answer to a question that is no longer pending");
+    }
 }
 
 pub async fn request_permissions_response(

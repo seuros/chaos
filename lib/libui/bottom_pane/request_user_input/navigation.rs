@@ -155,6 +155,7 @@ impl RequestUserInputOverlay {
         self.app_event_tx
             .send(AppEvent::ChaosOp(Op::UserInputAnswer {
                 id: self.request.turn_id.clone(),
+                call_id: Some(self.request.call_id.clone()),
                 response: RequestUserInputResponse {
                     answers: answers.clone(),
                 },
@@ -166,6 +167,10 @@ impl RequestUserInputOverlay {
                 interrupted: false,
             },
         )));
+        self.advance_question_queue();
+    }
+
+    pub(super) fn advance_question_queue(&mut self) {
         if let Some(next) = self.queue.pop_front() {
             self.request = next;
             self.reset_for_request();

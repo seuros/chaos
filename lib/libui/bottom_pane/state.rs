@@ -702,6 +702,17 @@ impl BottomPane {
     }
 
     /// Called when the agent requests user input.
+    pub fn dismiss_answered_question(&mut self, turn: &str, call: &str) {
+        self.view_stack.retain_mut(|view| {
+            view.dismiss_answered_question(turn, call);
+            !view.is_complete()
+        });
+        if self.view_stack.is_empty() {
+            self.on_active_view_complete();
+        }
+        self.request_redraw();
+    }
+
     pub fn push_user_input_request(&mut self, request: RequestUserInputEvent) {
         let request = if let Some(view) = self.view_stack.last_mut() {
             match view.try_consume_user_input_request(request) {

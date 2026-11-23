@@ -37,6 +37,17 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
     let method = request.method().clone();
     let path_cow = request.uri().path().map(|path| path.as_encoded_str());
     let path = path_cow.as_deref().unwrap_or("");
+    if path.starts_with("/monitor/phone")
+        && let Some(relay) = &state.mobile
+    {
+        if monitor::admission(&state, &request) == monitor::Admission::WrongHost {
+            return json_response(
+                StatusCode::FORBIDDEN,
+                &ApiErrorResponse::error("local monitor required"),
+            );
+        }
+        return crate::mobile::admin(relay, request).await;
+    }
 
     // The SDK owns protocol admission for every method, including OPTIONS and
     // unsupported methods. Never use the legacy bearer/header/body path here.
@@ -122,6 +133,7 @@ async fn handle(state: Arc<ServerState>, request: Request) -> Response {
         (Method::GET, "/monitor") => monitor::page_response(
             monitor::admission(&state, &request) == monitor::Admission::Open,
             monitor::host_param(&request),
+            state.mobile.is_some(),
         ),
         (Method::GET, monitor::STYLESHEET_PATH) => {
             monitor::stylesheet_response(request.headers().get(monitor::IF_NONE_MATCH_HEADER))
@@ -477,7 +489,7 @@ fn method_not_allowed(allowed: &'static str) -> Response {
     response
 }
 
-fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
+pub(crate) fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
     let json = serde_json::to_vec(body).unwrap_or_else(|_| b"{}".to_vec());
     let mut response = Response::new(Body::from(json));
     *response.status_mut() = status;

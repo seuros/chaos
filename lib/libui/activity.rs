@@ -218,14 +218,18 @@ impl Tracker {
 
     /// Resolving one prompt must not hide other concurrent prompts.
     pub fn note_op(&mut self, process_id: ProcessId, op: &Op, now: Instant) {
-        if let Op::UserInputAnswer { id, .. } = op {
+        if let Op::UserInputAnswer { id, call_id, .. } = op {
             if let Some(state) = self.processes.get_mut(&process_id) {
                 let prefix = format!("input:{id}:");
                 let key = state
                     .data()
                     .inputs
                     .iter()
-                    .find(|key| key.starts_with(&prefix))
+                    .find(|key| {
+                        key.strip_prefix(&prefix).is_some_and(|suffix| {
+                            call_id.as_deref().is_none_or(|call| suffix == call)
+                        })
+                    })
                     .cloned();
                 if let Some(key) = key {
                     state.data_mut().inputs.remove(&key);

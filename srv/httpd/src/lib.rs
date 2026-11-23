@@ -13,6 +13,7 @@ mod inference;
 mod ingress;
 #[cfg(feature = "mcpd")]
 mod mcp;
+mod mobile;
 mod monitor;
 pub mod protocol;
 mod runner;
@@ -77,6 +78,7 @@ pub(crate) struct ServerState {
     timeout: Duration,
     body_limit: usize,
     monitor: monitor::MonitorState,
+    mobile: Option<Arc<mobile::Relay>>,
     sessions: Option<Arc<sessions::SessionManager>>,
     #[cfg(feature = "mcpd")]
     mcp: Option<mcp::McpEndpoint>,
@@ -310,6 +312,7 @@ pub async fn run_main(
     } else {
         None
     };
+    let phone = mobile::prepare(&serve_cli, &config.storage_url).await?;
     let policy = if serve_cli.session_scope.is_some() && !serve_cli.session_recovery_only {
         Some(Arc::new(
             sessions::durable::policy::PinnedPolicy::new(config.clone(), core.auth_manager.clone())
@@ -360,6 +363,7 @@ pub async fn run_main(
 
     // 11. Build server state.
     let state = Arc::new(ServerState {
+        mobile: phone.as_ref().map(|(relay, _, _)| relay.clone()),
         config,
         process_table: core.process_table,
         auth_manager: core.auth_manager,
@@ -406,6 +410,11 @@ pub async fn run_main(
         shutdown_state.shutdown_sessions().await;
     });
     let exec = Executor::graceful(graceful.guard());
+    let _phone = if let Some((relay, addr, tls)) = phone {
+        Some(mobile::listen(relay, addr, tls, exec.clone()).await?)
+    } else {
+        None
+    };
 
     let listener = TcpListener::build(exec.clone())
         .bind_address(addr)

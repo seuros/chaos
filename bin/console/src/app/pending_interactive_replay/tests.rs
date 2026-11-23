@@ -84,6 +84,7 @@ fn elicitation_event(
 fn user_input_answer(turn_id: &str) -> Op {
     Op::UserInputAnswer {
         id: turn_id.to_string(),
+        call_id: None,
         response: chaos_ipc::request_user_input::RequestUserInputResponse {
             answers: HashMap::new(),
         },

@@ -110,14 +110,15 @@ impl PendingInteractiveReplayState {
                     id,
                 );
             }
-            // `Op::UserInputAnswer` identifies the turn, not the prompt call_id. The UI
-            // answers queued prompts for the same turn in FIFO order, so remove the oldest
-            // queued call_id for that turn.
-            Op::UserInputAnswer { id, .. } => {
+            Op::UserInputAnswer { id, call_id, .. } => {
                 let mut remove_turn_entry = false;
                 if let Some(call_ids) = self.request_user_input_call_ids_by_turn_id.get_mut(id) {
-                    if !call_ids.is_empty() {
-                        let call_id = call_ids.remove(0);
+                    let index = match call_id {
+                        Some(call) => call_ids.iter().position(|pending| pending == call),
+                        None => (!call_ids.is_empty()).then_some(0),
+                    };
+                    if let Some(index) = index {
+                        let call_id = call_ids.remove(index);
                         self.request_user_input_call_ids.remove(&call_id);
                     }
                     if call_ids.is_empty() {
@@ -135,6 +136,19 @@ impl PendingInteractiveReplayState {
 
     pub(super) fn note_event(&mut self, event: &Event) {
         match &event.msg {
+            EventMsg::MobileQuestionAnswered { prompt, .. } => {
+                self.request_user_input_call_ids.remove(&prompt.call_id);
+                if let Some(calls) = self
+                    .request_user_input_call_ids_by_turn_id
+                    .get_mut(&prompt.turn_id)
+                {
+                    calls.retain(|id| id != &prompt.call_id);
+                    if calls.is_empty() {
+                        self.request_user_input_call_ids_by_turn_id
+                            .remove(&prompt.turn_id);
+                    }
+                }
+            }
             EventMsg::ExecApprovalRequest(ev) => {
                 let approval_id = ev.effective_approval_id();
                 self.exec_approval_call_ids.insert(approval_id.clone());

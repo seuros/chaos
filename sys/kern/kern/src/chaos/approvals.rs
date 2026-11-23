@@ -420,24 +420,33 @@ impl Session {
         sub_id: &str,
         response: RequestUserInputResponse,
     ) {
+        if !self.deliver_user_input(sub_id, None, response).await {
+            warn!("No live pending user input found for sub_id: {sub_id}");
+        }
+    }
+
+    /// Returns true only if the matching live waiter accepted the answer.
+    /// Network callers must supply the call id; None is for legacy local clients.
+    pub(crate) async fn deliver_user_input(
+        &self,
+        sub_id: &str,
+        call_id: Option<&str>,
+        response: RequestUserInputResponse,
+    ) -> bool {
         let entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.remove_pending_user_input(sub_id)
+                    match call_id {
+                        Some(call) => ts.take_user_input_call(sub_id, call),
+                        None => ts.remove_pending_user_input(sub_id),
+                    }
                 }
                 None => None,
             }
         };
-        match entry {
-            Some(tx_response) => {
-                tx_response.send(response).ok();
-            }
-            None => {
-                warn!("No pending user input found for sub_id: {sub_id}");
-            }
-        }
+        entry.is_some_and(|sender| sender.send(response).is_ok())
     }
 
     pub async fn notify_request_permissions_response(
@@ -585,10 +594,11 @@ impl Session {
             .await
             .as_ref()
             .map(|active| active.turn_state.clone())?;
-        let insert_result = state
-            .lock()
-            .await
-            .insert_pending_user_input(sub_id.clone(), tx_response);
+        let insert_result = state.lock().await.insert_pending_user_input(
+            sub_id.clone(),
+            call_id.clone(),
+            tx_response,
+        );
         if let PendingInsert::Duplicate(_) = insert_result {
             error!("Duplicate pending user input for sub_id: {sub_id}");
             return None;
@@ -599,13 +609,42 @@ impl Session {
             key: sub_id,
         };
 
-        let event = EventMsg::RequestUserInput(RequestUserInputEvent {
+        let prompt = RequestUserInputEvent {
             call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
             questions: args.questions,
-        });
-        self.send_event(turn_context, event).await;
-        let response = (&mut pending.receiver).await.ok();
+        };
+        self.send_event(turn_context, EventMsg::RequestUserInput(prompt.clone()))
+            .await;
+        let response = if let Some(box_) =
+            crate::activity::fleet::relay::Mailbox::for_prompt(self.conversation_id, &prompt)
+        {
+            let session = self.conversation_id.to_string();
+            let (response, mobile) = tokio::select! {
+                biased;
+                response = &mut pending.receiver => (response.ok(), false),
+                proposal = box_.proposal(&session, &prompt) => {
+                    let won = self.deliver_user_input(&prompt.turn_id, Some(&prompt.call_id), proposal).await;
+                    ((&mut pending.receiver).await.ok(), won)
+                }
+            };
+            if let Some(answer) = &response {
+                box_.confirm(&session, &prompt, answer, mobile).await;
+                if mobile {
+                    self.send_event(
+                        turn_context,
+                        EventMsg::MobileQuestionAnswered {
+                            prompt,
+                            answer: answer.clone(),
+                        },
+                    )
+                    .await;
+                }
+            }
+            response
+        } else {
+            (&mut pending.receiver).await.ok()
+        };
         crate::activity::resolved(self.conversation_id, call_id);
         response
     }

@@ -36,7 +36,7 @@ async fn dropped_input_releases_mailbox_slot() {
         state
             .lock()
             .await
-            .insert_pending_user_input("turn".into(), sender),
+            .insert_pending_user_input("turn".into(), "call".into(), sender),
         PendingInsert::Inserted
     ));
     drop(PendingUserInput {
@@ -61,7 +61,7 @@ async fn delayed_input_cleanup_preserves_live_replacement() {
     let (sender, receiver) = oneshot::channel();
     let mut locked = state.lock().await;
     assert!(matches!(
-        locked.insert_pending_user_input("turn".into(), sender),
+        locked.insert_pending_user_input("turn".into(), "first".into(), sender),
         PendingInsert::Inserted
     ));
     // Force the guard's delayed cleanup path.
@@ -72,12 +72,15 @@ async fn delayed_input_cleanup_preserves_live_replacement() {
     });
     let (replacement, mut response) = oneshot::channel();
     assert!(matches!(
-        locked.insert_pending_user_input("turn".into(), replacement),
+        locked.insert_pending_user_input("turn".into(), "second".into(), replacement),
         PendingInsert::Inserted
     ));
     drop(locked);
     tokio::task::yield_now().await;
-    let sender = state.lock().await.remove_pending_user_input("turn");
+    let mut locked = state.lock().await;
+    assert!(locked.take_user_input_call("turn", "first").is_none());
+    let sender = locked.take_user_input_call("turn", "second");
+    assert!(locked.take_user_input_call("turn", "second").is_none());
     assert!(sender.is_some());
     sender
         .unwrap()
@@ -96,7 +99,7 @@ fn input_cleanup_can_drop_outside_runtime_with_contended_state() {
     let (sender, receiver) = oneshot::channel();
     let mut locked = state.try_lock().unwrap();
     assert!(matches!(
-        locked.insert_pending_user_input("turn".into(), sender),
+        locked.insert_pending_user_input("turn".into(), "first".into(), sender),
         PendingInsert::Inserted
     ));
     drop(PendingUserInput {
@@ -106,7 +109,7 @@ fn input_cleanup_can_drop_outside_runtime_with_contended_state() {
     });
     let (replacement, _response) = oneshot::channel();
     assert!(matches!(
-        locked.insert_pending_user_input("turn".into(), replacement),
+        locked.insert_pending_user_input("turn".into(), "second".into(), replacement),
         PendingInsert::Inserted
     ));
 }

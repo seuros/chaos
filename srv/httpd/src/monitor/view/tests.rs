@@ -145,12 +145,14 @@ fn labels_are_escaped() {
 
 #[test]
 fn the_page_links_the_stylesheet_of_this_build() {
-    let html = page(false, None).unwrap();
+    let html = page(false, None, false).unwrap();
+    assert!(!html.contains("/monitor/phone"));
     assert!(
         html.contains(&format!("/monitor/app.css?v={}", STYLESHEET.version)),
         "{html}"
     );
-    let one = page(true, Some("silica")).unwrap();
+    let one = page(true, Some("silica"), true).unwrap();
+    assert!(one.contains("/monitor/phone"));
     assert!(
         one.contains("&#x2f;monitor&#x2f;events?host=silica"),
         "{one}"

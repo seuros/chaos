@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Pair a FreeChaOS phone</title>
+<main><h1>Pair a phone</h1><p>Enter the mobile operator key, not the monitor viewer token. On the same Wi-Fi, scan the QR or enter the code in FreeChaOS. Either one uses up the invitation.</p>
+<form><label>Operator key <input type="password" required autocomplete="off"></label> <button>Create invitation</button>
+<button type="button" id="devices">List paired devices</button>
+<button type="button" id="revoke">Revoke all phones and invitations</button></form><ul id="list"></ul>
+<p role="status" id="msg"></p><img hidden alt="Single-use FreeChaOS pairing invitation"><p><label id="manual" hidden>Pairing code <input readonly spellcheck="false" autocomplete="off" size="56" id="code"></label></p></main>
+<script>
+const form=document.querySelector('form'), image=document.querySelector('img'), msg=document.querySelector('#msg');let url,timer;
+const manual=document.querySelector('#manual'),code=document.querySelector('#code');code.onclick=()=>code.select();
+function clear(){manual.hidden=true;code.value='';image.hidden=true; image.removeAttribute('src');if(url)URL.revokeObjectURL(url);clearTimeout(timer)}
+async function action(which){clear();const key=form.querySelector('input');const headers={Authorization:'Bearer '+key.value,Accept:'application/json'};key.value='';
+try{const r=await fetch('/monitor/phone/'+which,{method:'POST',headers,cache:'no-store'});if(!r.ok)throw Error();
+if(which==='invite'){const data=await r.json();url=URL.createObjectURL(new Blob([data.qr],{type:'image/svg+xml'}));image.src=url;image.hidden=false;code.value=data.code;manual.hidden=false;msg.textContent='Scan or enter the code within two minutes.';timer=setTimeout(()=>{clear();msg.textContent='Invitation expired.'},120000)}
+else if(which==='devices'){const list=document.querySelector('#list');list.replaceChildren();for(const id of await r.json()){const li=document.createElement('li'),btn=document.createElement('button');li.append(document.createTextNode(id+' '));btn.textContent='Revoke';btn.onclick=()=>{if(confirm('Revoke this device? Enter the operator key first.'))action('revoke/'+id)};li.append(btn);list.append(li)}msg.textContent='Enter the key again to revoke a device.'}
+else {document.querySelector('#list').replaceChildren();msg.textContent='Revoked.'}}catch{msg.textContent='Request refused or server unavailable.'}}
+document.querySelector('#devices').onclick=()=>action('devices');
+form.onsubmit=e=>{e.preventDefault();action('invite')};document.querySelector('#revoke').onclick=()=>{if(confirm('Disconnect every paired phone?'))action('revoke')};
+</script></html>

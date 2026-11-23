@@ -164,6 +164,17 @@ impl ChatWidget {
             EventMsg::RequestUserInput(ev) => {
                 self.on_request_user_input(ev);
             }
+            EventMsg::MobileQuestionAnswered { prompt, answer } => {
+                self.bottom_pane
+                    .dismiss_answered_question(&prompt.turn_id, &prompt.call_id);
+                self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
+                    crate::history_cell::RequestUserInputResultCell {
+                        questions: prompt.questions,
+                        answers: answer.answers,
+                        interrupted: false,
+                    },
+                )));
+            }
             EventMsg::RequestPermissions(ev) => {
                 self.on_request_permissions(ev);
             }

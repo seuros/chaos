@@ -47,10 +47,28 @@ fn call_output(req: &ResponsesRequest, call_id: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_resolves_pending() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Plan).await
+    request_user_input_round_trip_for_mode(ModeKind::Plan, false).await
 }
 
-async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Result<()> {
+/// Real waiting owner with deterministic model responses. An external phone
+/// or the LAN test client must deliver the answer through the resident.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires dedicated Postgres, CHAOS_MOBILE_OWNER=1 and a paired client"]
+async fn mobile_owner_round_trip() -> anyhow::Result<()> {
+    let url = std::env::var("TEST_DATABASE_URL")?;
+    anyhow::ensure!(std::env::var("CHAOS_MOBILE_OWNER").as_deref() == Ok("1"));
+    let pool = sqlx::PgPool::connect(&url).await?;
+    chaos_vfs::set_root(chaos_vfs::mount(
+        chaos_vfs::MountConfig::postgres_url(url),
+        chaos_vfs::ChaosVfs::from_postgres_pool(pool),
+    ));
+    request_user_input_round_trip_for_mode(ModeKind::Plan, true).await
+}
+
+async fn request_user_input_round_trip_for_mode(
+    mode: ModeKind,
+    mobile: bool,
+) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -133,22 +151,58 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
     assert_eq!(request.questions.len(), 1);
     assert_eq!(request.questions[0].is_other, true);
 
+    let expected = if mobile {
+        std::env::var("RELAY_TEST_REPLY").unwrap_or_else(|_| "Yes (Recommended)".to_string())
+    } else {
+        "yes".to_string()
+    };
     let mut answers = HashMap::new();
     answers.insert(
         "confirm_path".to_string(),
         RequestUserInputAnswer {
-            answers: vec!["yes".to_string()],
+            answers: vec![expected.clone()],
         },
     );
     let response = RequestUserInputResponse { answers };
-    chaos
-        .submit(Op::UserInputAnswer {
-            id: request.turn_id.clone(),
-            response,
-        })
-        .await?;
+    if !mobile {
+        chaos
+            .submit(Op::UserInputAnswer {
+                id: request.turn_id.clone(),
+                call_id: Some(request.call_id.clone()),
+                response,
+            })
+            .await?;
+    }
 
-    wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    if mobile {
+        tokio::time::timeout(std::time::Duration::from_secs(300), async {
+            let mut confirmed = false;
+            loop {
+                match chaos.next_event().await?.msg {
+                    EventMsg::MobileQuestionAnswered { prompt, answer } => {
+                        assert!(!confirmed, "duplicate phone confirmation");
+                        assert_eq!(prompt.call_id, request.call_id);
+                        assert_eq!(prompt.turn_id, request.turn_id);
+                        assert_eq!(
+                            answer.answers["confirm_path"].answers,
+                            vec![expected.clone()]
+                        );
+                        confirmed = true;
+                    }
+                    EventMsg::TurnComplete(_) => break,
+                    _ => {}
+                }
+            }
+            assert!(
+                confirmed,
+                "owner completed without confirming a phone answer"
+            );
+            anyhow::Ok(())
+        })
+        .await??;
+    } else {
+        wait_for_event(&chaos, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    }
 
     let req = second_mock.single_request();
     let output_text = call_output(&req, call_id);
@@ -157,7 +211,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
         output_json,
         json!({
             "answers": {
-                "confirm_path": { "answers": ["yes"] }
+                "confirm_path": { "answers": [expected] }
             }
         })
     );
@@ -167,5 +221,5 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_round_trip_in_default_mode() -> anyhow::Result<()> {
-    request_user_input_round_trip_for_mode(ModeKind::Default).await
+    request_user_input_round_trip_for_mode(ModeKind::Default, false).await
 }

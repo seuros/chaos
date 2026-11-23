@@ -217,6 +217,11 @@ pub enum EventMsg {
     RequestPermissions(RequestPermissionsEvent),
 
     RequestUserInput(RequestUserInputEvent),
+    /// A paired phone answered an ordinary question at its owning process.
+    MobileQuestionAnswered {
+        prompt: RequestUserInputEvent,
+        answer: crate::request_user_input::RequestUserInputResponse,
+    },
 
     DynamicToolCallRequest(DynamicToolCallRequest),
 

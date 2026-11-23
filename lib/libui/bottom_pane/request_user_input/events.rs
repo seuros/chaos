@@ -134,6 +134,13 @@ impl RequestUserInputOverlay {
 }
 
 impl BottomPaneView for RequestUserInputOverlay {
+    fn dismiss_answered_question(&mut self, turn: &str, call: &str) {
+        self.queue
+            .retain(|q| q.turn_id != turn || q.call_id != call);
+        if self.request.turn_id == turn && self.request.call_id == call {
+            self.advance_question_queue();
+        }
+    }
     fn prefer_esc_to_handle_key_event(&self) -> bool {
         true
     }

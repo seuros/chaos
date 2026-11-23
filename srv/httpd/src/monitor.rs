@@ -207,8 +207,8 @@ fn loopback_host(host: &str) -> bool {
     matches!(name, "127.0.0.1" | "localhost" | "::1")
 }
 
-pub(crate) fn page_response(open: bool, host: Option<String>) -> Response {
-    match view::page(open, host.as_deref()) {
+pub(crate) fn page_response(open: bool, host: Option<String>, mobile: bool) -> Response {
+    match view::page(open, host.as_deref(), mobile) {
         Ok(html) => html_response(html),
         Err(error) => {
             chaos_snitch::tracing::error!(%error, "monitor page does not render");

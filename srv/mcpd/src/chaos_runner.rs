@@ -475,6 +475,7 @@ async fn run_event_loop(
                     | EventMsg::ReasoningRawContentDelta(_)
                     | EventMsg::ExitedReviewMode(_)
                     | EventMsg::RequestUserInput(_)
+                    | EventMsg::MobileQuestionAnswered { .. }
                     | EventMsg::RequestPermissions(_)
                     | EventMsg::DynamicToolCallRequest(_)
                     | EventMsg::DynamicToolCallResponse(_)

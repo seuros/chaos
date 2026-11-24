@@ -39,6 +39,15 @@ pub struct Cli {
     )]
     pub add_dir: Vec<PathBuf>,
 
+    /// Attach one or more local WAV audio clips to the user turn.
+    #[usage(
+        long = "audio",
+        value_name = "FILE",
+        value_hint = usage::ValueHint::FilePath,
+        global
+    )]
+    pub audio: Vec<PathBuf>,
+
     /// Run without persisting session history.
     #[usage(long = "ephemeral", global)]
     pub ephemeral: bool,

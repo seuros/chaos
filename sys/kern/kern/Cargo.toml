@@ -75,6 +75,7 @@ chaos-proc = { workspace = true }
 chaos-realpath = { workspace = true }
 chaos-tmpfs = { workspace = true }
 chaos-pixbuf = { workspace = true }
+chaos-audio = { workspace = true }
 chaos-pwd = { workspace = true }
 chaos-pty = { workspace = true }
 chaos-vault = { workspace = true }

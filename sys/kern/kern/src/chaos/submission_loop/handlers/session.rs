@@ -105,13 +105,26 @@ pub async fn user_turn(sess: &Arc<Session>, sub_id: String, op: Op, scope: crate
     };
     current_context.session_telemetry.user_prompt(&items);
     sess.suspend_completion_wakes(WakePolicy::Enabled).await;
-    if let Err(SteerInputError::NoActiveTurn(items)) = sess.steer_input(items, None).await {
-        sess.spawn_task(
-            Arc::clone(&current_context),
-            items,
-            crate::tasks::RegularTask::Owner,
-        )
-        .await;
+    match sess.steer_input(items, None).await {
+        Err(SteerInputError::NoActiveTurn(items)) => {
+            sess.spawn_task(
+                Arc::clone(&current_context),
+                items,
+                crate::tasks::RegularTask::Owner,
+            )
+            .await;
+        }
+        Err(SteerInputError::UnsupportedInput(message)) => {
+            sess.send_event(
+                current_context.as_ref(),
+                EventMsg::Error(crate::protocol::ErrorEvent {
+                    message,
+                    chaos_error_info: Some(chaos_ipc::protocol::ChaosErrorInfo::BadRequest),
+                }),
+            )
+            .await;
+        }
+        _ => {}
     }
 }
 

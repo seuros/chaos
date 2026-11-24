@@ -116,6 +116,85 @@ fn antigravity_usage_preserves_reasoning_and_cache_tokens() {
 }
 
 #[test]
+fn prepare_user_input_keeps_audio_bytes_off_history_and_caps_one_clip_per_turn() {
+    use std::io::Write;
+
+    use chaos_audio::AudioError;
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ResponseInputItem;
+    use chaos_ipc::models::ResponseItem;
+    use chaos_ipc::user_input::UserInput;
+
+    let mut wav = Vec::with_capacity(44 + 320);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36u32 + 320).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&16_000u32.to_le_bytes());
+    wav.extend_from_slice(&32_000u32.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&320u32.to_le_bytes());
+    wav.resize(44 + 320, 0);
+
+    let mut file = tempfile::NamedTempFile::with_suffix(".wav").unwrap();
+    file.write_all(&wav).unwrap();
+
+    let prepared = crate::prompt_images::prepare_user_input_for_turn(vec![
+        UserInput::Text {
+            text: "Which tone came first?".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::LocalAudio {
+            path: file.path().to_path_buf(),
+        },
+    ])
+    .unwrap();
+    assert_eq!(prepared.audio_attachments.len(), 1);
+    let attachment = &prepared.audio_attachments[0];
+    assert_eq!(attachment.mime_type, "audio/wav");
+
+    // History/rollout item must carry ONLY the permanent text note, never base64 audio bytes.
+    let ResponseInputItem::Message { content, .. } = &prepared.item else {
+        panic!("expected user message");
+    };
+    assert!(
+        content
+            .iter()
+            .all(|item| matches!(item, ContentItem::InputText { .. }))
+    );
+    let history_json = serde_json::to_string(&ResponseItem::from(prepared.item.clone())).unwrap();
+    assert!(history_json.contains(&format!("id {}", attachment.nonce)));
+    assert!(!history_json.contains(attachment.data_base64.as_ref()));
+
+    // Even if Turn 1 fails before any assistant response (and even after resume),
+    // a subsequent plain-text turn carries zero armed audio attachments.
+    let turn2 = crate::prompt_images::prepare_user_input_for_turn(vec![UserInput::Text {
+        text: "Next question without audio".to_string(),
+        text_elements: Vec::new(),
+    }])
+    .unwrap();
+    assert!(turn2.audio_attachments.is_empty());
+
+    // At most one local audio clip may be attached per turn.
+    let err = crate::prompt_images::prepare_user_input_for_turn(vec![
+        UserInput::LocalAudio {
+            path: file.path().to_path_buf(),
+        },
+        UserInput::LocalAudio {
+            path: file.path().to_path_buf(),
+        },
+    ])
+    .err()
+    .expect("second clip should be rejected");
+    assert!(matches!(err, AudioError::TooManyAttachments));
+}
+
+#[test]
 fn clamp_usage_uses_aggregate_counters_and_last_call_context() {
     let usage = clamp_usage_to_token_usage(
         Usage {

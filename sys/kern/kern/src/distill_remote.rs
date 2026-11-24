@@ -121,6 +121,7 @@ async fn run_remote_distill_task_inner_impl(
         base_instructions,
         personality: turn_context.personality,
         output_schema: None,
+        turn_audio_attachments: Vec::new(),
     };
     let mut replacement_input = prompt.input.clone();
     prompt.input.push(ResponseItem::CompactionTrigger {});

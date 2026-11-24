@@ -86,6 +86,7 @@ pub(super) fn build_prompt(
         base_instructions,
         personality: turn_context.personality,
         output_schema: turn_context.final_output_json_schema.clone(),
+        turn_audio_attachments: Vec::new(),
     }
 }
 
@@ -130,6 +131,7 @@ pub(super) async fn run_sampling_request(
     progress: &mut TurnProgressTracker,
     turn_metadata_header: Option<&str>,
     input: Vec<chaos_ipc::models::ResponseItem>,
+    turn_audio_attachments: &[chaos_clamp::AntigravityAudioAttachment],
     server_model_warning_emitted_for_turn: &mut bool,
     cancellation_token: CancellationToken,
 ) -> ChaosResult<SamplingRequestResult> {
@@ -167,6 +169,7 @@ pub(super) async fn run_sampling_request(
         turn_context.as_ref(),
         base_instructions,
     );
+    prompt.turn_audio_attachments = turn_audio_attachments.to_vec();
     let mut tool_runtime = ToolCallRuntime::new(
         Arc::clone(&router),
         Arc::clone(&sess),

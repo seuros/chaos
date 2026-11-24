@@ -215,6 +215,43 @@ async fn steer_input_enforces_expected_turn_id() {
 }
 
 #[tokio::test]
+async fn steer_input_rejects_local_audio_without_queueing_error_text() {
+    let (sess, tc, _rx) = make_session_and_context_with_rx().await;
+    let input = vec![UserInput::Text {
+        text: "hello".to_string(),
+        text_elements: Vec::new(),
+    }];
+    sess.spawn_task(
+        Arc::clone(&tc),
+        input,
+        NeverEndingTask {
+            kind: TaskKind::Regular,
+            listen_to_cancellation_token: false,
+        },
+    )
+    .await;
+
+    let steer_input = vec![
+        UserInput::Text {
+            text: "listen to this".to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::LocalAudio {
+            path: std::path::PathBuf::from("/nonexistent/clip.wav"),
+        },
+    ];
+    let err = sess
+        .steer_input(steer_input, None)
+        .await
+        .expect_err("steering with local audio should be rejected");
+    std::assert_matches!(err, SteerInputError::UnsupportedInput(_));
+    assert!(
+        sess.get_pending_input().await.is_empty(),
+        "rejected audio steer must not inject anything into pending input"
+    );
+}
+
+#[tokio::test]
 async fn steer_input_returns_active_turn_id() {
     let (sess, tc, _rx) = make_session_and_context_with_rx().await;
     let input = vec![UserInput::Text {

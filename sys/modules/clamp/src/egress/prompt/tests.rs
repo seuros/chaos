@@ -264,3 +264,459 @@ async fn unsupported_generation_endpoints_and_formats_fail_closed() {
         );
     }
 }
+
+fn sample_audio_attachment(nonce: &str) -> AntigravityAudioAttachment {
+    AntigravityAudioAttachment {
+        nonce: nonce.to_string(),
+        mime_type: "audio/wav".to_string(),
+        data_base64: Arc::from("UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="),
+    }
+}
+
+fn cloud_request_with_user_text(model: &str, user_text: &str) -> Value {
+    json!({
+        "model": model,
+        "project": "test-project",
+        "request": {
+            "contents": [{"role": "user", "parts": [{"text": user_text}]}],
+            "systemInstruction": {"parts": [{"text": "CLI agent instructions"}]},
+            "tools": [{"functionDeclarations": [{"name": "chaos_tool"}]}],
+            "generationConfig": {"temperature": 0.2}
+        }
+    })
+}
+
+#[tokio::test]
+async fn armed_audio_splices_inline_data_beside_permanent_placeholder() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let attachment = sample_audio_attachment("7f3a9c12");
+    let guard = prompt
+        .arm_audio("gemini-4-neon-high".to_string(), vec![attachment.clone()])
+        .unwrap();
+
+    let user_text = "<USER_REQUEST>\nWhich tone came first?\n[audio clip: tones.wav, 1.0 s, id 7f3a9c12]\n</USER_REQUEST>";
+    let req = generation_request(
+        GENERATE,
+        cloud_request_with_user_text("gemini-4-neon-high", user_text),
+    );
+    let rewritten = prompt.rewrite(req, DAILY_CLOUD_CODE).await.unwrap();
+    let content_length: usize = rewritten.headers()[CONTENT_LENGTH]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let bytes = rewritten.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(content_length, bytes.len());
+
+    let actual: Value = serde_json::from_slice(&bytes).unwrap();
+    let parts = actual["request"]["contents"][0]["parts"]
+        .as_array()
+        .unwrap();
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[0]["text"], user_text);
+    assert_eq!(
+        parts[1],
+        json!({
+            "inlineData": {
+                "mimeType": "audio/wav",
+                "data": attachment.data_base64,
+            }
+        })
+    );
+    assert_eq!(guard.disarm().unwrap(), 1);
+    assert!(!format!("{attachment:?}").contains(attachment.data_base64.as_ref()));
+}
+
+#[tokio::test]
+async fn non_matching_auxiliary_and_history_echo_requests_never_splice_audio() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let user_text = "[audio clip: tones.wav, 1.0 s, id deadbeef]";
+
+    // 1. Unarmed turn: placeholder in text never triggers splice.
+    let unarmed = payload(
+        prompt
+            .rewrite(
+                generation_request(
+                    GENERATE,
+                    cloud_request_with_user_text("gemini-4-neon-high", user_text),
+                ),
+                CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        unarmed["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // Arm for gemini-4-neon-high.
+    let guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("deadbeef")],
+        )
+        .unwrap();
+
+    // 2. Different model (auxiliary model) with matching nonce -> no splice.
+    let wrong_model = payload(
+        prompt
+            .rewrite(
+                generation_request(
+                    GENERATE,
+                    cloud_request_with_user_text("gemini-4-flash-low", user_text),
+                ),
+                CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        wrong_model["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // 3. Auxiliary call on the SAME model (no tools) copying user text + nonce -> no splice.
+    let mut same_model_aux = cloud_request_with_user_text("gemini-4-neon-high", user_text);
+    same_model_aux["request"]
+        .as_object_mut()
+        .unwrap()
+        .remove("tools");
+    let aux_resp = payload(
+        prompt
+            .rewrite(generation_request(GENERATE, same_model_aux), CLOUD_CODE)
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        aux_resp["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // 4. Placeholder echoed only in a role="model" part -> no splice.
+    let echo_req = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": "plain turn"}]},
+                {"role": "model", "parts": [{"text": user_text}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "chaos_tool"}]}]
+        }
+    });
+    let echo_resp = payload(
+        prompt
+            .rewrite(generation_request(GENERATE, echo_req), CLOUD_CODE)
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        echo_resp["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        echo_resp["request"]["contents"][1]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // None of those non-matching requests counted as a delivery.
+    assert_eq!(guard.disarm().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn multi_step_turn_splices_every_matching_request_and_clears_on_disarm() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("abc12345")],
+        )
+        .unwrap();
+
+    let user_text = "[audio clip: tones.wav, 1.0 s, id abc12345]";
+    // Step 1: initial generation request.
+    let step1 = payload(
+        prompt
+            .rewrite(
+                generation_request(
+                    GENERATE,
+                    cloud_request_with_user_text("gemini-4-neon-high", user_text),
+                ),
+                DAILY_CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        step1["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    // Step 2: post-tool-call request in the same turn resends contents[0].
+    let step2_payload = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": user_text}]},
+                {"role": "model", "parts": [{"text": "calling tool"}]},
+                {"role": "user", "parts": [{"text": "tool result"}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "chaos_tool"}]}]
+        }
+    });
+    let step2 = payload(
+        prompt
+            .rewrite(
+                generation_request(GENERATE, step2_payload),
+                DAILY_CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        step2["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        step2["request"]["contents"][2]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    assert_eq!(guard.disarm().unwrap(), 2);
+
+    // Resumed turn after disarm: same placeholder text receives NO audio.
+    let resumed = payload(
+        prompt
+            .rewrite(
+                generation_request(
+                    GENERATE,
+                    cloud_request_with_user_text("gemini-4-neon-high", user_text),
+                ),
+                DAILY_CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        resumed["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let user_text = "[audio clip: tones.wav, 1.0 s, id dup99999]";
+
+    // Ambiguous target: two role="user" messages contain the same nonce.
+    let guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("dup99999")],
+        )
+        .unwrap();
+    let ambiguous = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": user_text}]},
+                {"role": "user", "parts": [{"text": user_text}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "chaos_tool"}]}]
+        }
+    });
+    assert!(
+        prompt
+            .rewrite(generation_request(GENERATE, ambiguous), CLOUD_CODE)
+            .await
+            .is_err()
+    );
+    assert_eq!(guard.disarm().unwrap(), 0);
+
+    // Oversized final serialized request (after splicing base64 audio) -> rejected.
+    let guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![AntigravityAudioAttachment {
+                nonce: "big12345".to_string(),
+                mime_type: "audio/wav".to_string(),
+                data_base64: Arc::from("A".repeat(MAX_GENERATION_REQUEST_BYTES)),
+            }],
+        )
+        .unwrap();
+    let oversized = cloud_request_with_user_text(
+        "gemini-4-neon-high",
+        "[audio clip: big.wav, 10.0 s, id big12345]",
+    );
+    assert!(
+        prompt
+            .rewrite(generation_request(GENERATE, oversized), CLOUD_CODE)
+            .await
+            .is_err()
+    );
+    assert_eq!(guard.disarm().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn late_guard_drop_does_not_disarm_a_newer_turn_and_function_response_echo_is_ignored() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+
+    // Turn 1 arms, then Turn 2 arms before Turn 1's guard drops (e.g. cancelled task).
+    let stale_guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("turn1aaa")],
+        )
+        .unwrap();
+    let active_guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("turn2bbb")],
+        )
+        .unwrap();
+    drop(stale_guard);
+
+    // Turn 2 includes a role="user" functionResponse echoing the placeholder+nonce
+    // (for example from read_session_history). Only the text part matches, so it
+    // is unambiguous and splices cleanly.
+    let turn2_text = "[audio clip: tones.wav, 1.0 s, id turn2bbb]";
+    let req_with_tool_echo = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": format!("<USER_REQUEST>{turn2_text}</USER_REQUEST>")}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "read_session_history", "args": {}}}]},
+                {"role": "user", "parts": [{"functionResponse": {"name": "read_session_history", "response": {"output": turn2_text}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "read_session_history"}]}]
+        }
+    });
+    let rewritten = payload(
+        prompt
+            .rewrite(generation_request(GENERATE, req_with_tool_echo), CLOUD_CODE)
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        rewritten["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(active_guard.disarm().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn non_audio_request_is_not_rejected_by_audio_size_check() {
+    // System prompt pushes serialized body slightly over MAX_GENERATION_REQUEST_BYTES
+    // even though no audio is armed; the audio size check must only run when spliced.
+    let prompt = AntigravitySystemPrompt::new("X".repeat(1024));
+    let body = cloud_request_with_user_text(
+        "gemini-4-neon-high",
+        &"a".repeat(MAX_GENERATION_REQUEST_BYTES - 512),
+    );
+    let result = prompt
+        .rewrite(generation_request(GENERATE, body), CLOUD_CODE)
+        .await;
+    assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+}
+
+#[tokio::test]
+async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_audio() {
+    use futures::stream;
+    use std::convert::Infallible;
+
+    for replace_with_new_turn in [false, true] {
+        let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+        let guard = prompt
+            .arm_audio(
+                "gemini-4-neon-high".to_string(),
+                vec![sample_audio_attachment("race1234")],
+            )
+            .unwrap();
+        let body_bytes = serde_json::to_vec(&cloud_request_with_user_text(
+            "gemini-4-neon-high",
+            "[audio clip: tones.wav, 1.0 s, id race1234]",
+        ))
+        .unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
+        let (polled_tx, polled_rx) = tokio::sync::oneshot::channel::<()>();
+        let streaming_body = Body::from_stream(stream::once(async move {
+            let _ = polled_tx.send(());
+            Ok::<Vec<u8>, Infallible>(rx.await.unwrap())
+        }));
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(GENERATE)
+            .header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, body_bytes.len().to_string())
+            .body(streaming_body)
+            .unwrap();
+
+        let prompt_clone = prompt.clone();
+        let rewrite_task = tokio::spawn(async move { prompt_clone.rewrite(req, CLOUD_CODE).await });
+        // Wait until `rewrite` has snapshotted `active_audio` and is actively polling the body.
+        polled_rx.await.unwrap();
+
+        let _replacement_guard = if replace_with_new_turn {
+            Some(
+                prompt
+                    .arm_audio(
+                        "gemini-4-neon-high".to_string(),
+                        vec![sample_audio_attachment("next5678")],
+                    )
+                    .unwrap(),
+            )
+        } else {
+            assert_eq!(guard.disarm().unwrap(), 0);
+            None
+        };
+
+        tx.send(body_bytes).unwrap();
+        let result = rewrite_task.await.unwrap();
+        assert!(
+            result.is_err(),
+            "expected rewrite to fail when audio authorization changed mid-body (replace={replace_with_new_turn})"
+        );
+    }
+}

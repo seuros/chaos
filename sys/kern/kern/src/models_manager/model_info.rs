@@ -44,6 +44,25 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     {
         model.supports_reasoning_summaries = true;
     }
+    // Antigravity (`agy`) does not publish a remote model catalog; when fallback
+    // metadata is synthesized for a Gemini slug under Antigravity, advertise
+    // native audio input without widening `default_input_modalities()` or
+    // overriding explicit catalog entries.
+    if model.used_fallback_model_metadata
+        && config.clamp_backend == crate::config::ClampBackend::Antigravity
+        && model
+            .slug
+            .rsplit('/')
+            .next()
+            .is_some_and(|slug| slug.starts_with("gemini-"))
+        && !model
+            .input_modalities
+            .contains(&chaos_ipc::openai_models::InputModality::Audio)
+    {
+        model
+            .input_modalities
+            .push(chaos_ipc::openai_models::InputModality::Audio);
+    }
     let use_observed_chatgpt_window = config.model_context_window.is_none()
         && config.chatgpt_context_window == ChatgptContextWindow::Observed400k
         && config.model_provider.is_openai()

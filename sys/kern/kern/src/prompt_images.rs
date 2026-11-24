@@ -1,5 +1,8 @@
 use std::path::Path;
+use std::sync::Arc;
 
+use chaos_audio::AudioError;
+use chaos_audio::load_local_wav;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ImageDetail;
@@ -11,6 +14,11 @@ use chaos_ipc::user_input::UserInput;
 use chaos_pixbuf::PromptImageMode;
 use chaos_pixbuf::error::ImageProcessingError;
 use chaos_pixbuf::load_for_prompt;
+
+pub(crate) struct PreparedUserInput {
+    pub item: ResponseInputItem,
+    pub audio_attachments: Vec<chaos_clamp::AntigravityAudioAttachment>,
+}
 
 pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> ResponseInputItem {
     let mut image_index = 0;
@@ -43,6 +51,62 @@ pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> Resp
             })
             .collect(),
     }
+}
+
+pub(crate) fn prepare_user_input_for_turn(
+    items: Vec<UserInput>,
+) -> Result<PreparedUserInput, AudioError> {
+    let mut image_index = 0;
+    let mut content = Vec::new();
+    let mut audio_attachments = Vec::new();
+    for item in items {
+        match item {
+            UserInput::Text { text, .. } => content.push(ContentItem::InputText { text }),
+            UserInput::Image { image_url } => {
+                image_index += 1;
+                content.extend(remote_image_content_items(image_url));
+            }
+            UserInput::LocalImage { path } => {
+                image_index += 1;
+                content.extend(local_image_content_items_with_label_number(
+                    &path,
+                    Some(image_index),
+                    PromptImageMode::ResizeToFit,
+                ));
+            }
+            UserInput::LocalAudio { path } => {
+                if !audio_attachments.is_empty() {
+                    return Err(AudioError::TooManyAttachments);
+                }
+                let validated = load_local_wav(&path)?;
+                let nonce = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+                let placeholder = validated.placeholder(&nonce);
+                // Only the permanent text note enters canonical history and
+                // rollout logs; raw audio bytes stay scoped to the live turn.
+                content.push(ContentItem::InputText { text: placeholder });
+                audio_attachments.push(chaos_clamp::AntigravityAudioAttachment {
+                    nonce,
+                    mime_type: validated.format.mime_type().to_string(),
+                    data_base64: Arc::from(validated.encode_base64()),
+                });
+            }
+            UserInput::Mention { .. } => {}
+            UserInput::EmbeddedResource { name, text, .. } => {
+                let header = format!("[{name}]\n");
+                content.push(ContentItem::InputText {
+                    text: format!("{header}{text}"),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(PreparedUserInput {
+        item: ResponseInputItem::Message {
+            role: "user".to_string(),
+            content,
+        },
+        audio_attachments,
+    })
 }
 
 pub(crate) fn local_image_content_items_with_label_number(

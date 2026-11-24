@@ -128,6 +128,59 @@ async fn journal_recovery_preserves_unrecorded_and_steered_input() {
 }
 
 #[tokio::test]
+async fn journal_recovery_records_placeholder_note_for_local_audio() {
+    let (session, context) = crate::chaos::make_session_and_context().await;
+    let session = Arc::new(session);
+    let context = Arc::new(context);
+    let input = vec![
+        UserInput::Text {
+            text: "which tone came first?".into(),
+            text_elements: Vec::new(),
+        },
+        UserInput::LocalAudio {
+            path: std::path::PathBuf::from("/tmp/nonexistent-clip.wav"),
+        },
+    ];
+    session
+        .spawn_task(context.clone(), input.clone(), PausedTask(true))
+        .await;
+
+    let continuation = pause_for_journal_recovery(&session).await.unwrap();
+    resume_after_journal_recovery(&session, continuation).await;
+    session
+        .abort_all_tasks(chaos_ipc::protocol::TurnAbortReason::Replaced)
+        .await;
+
+    let history = session.clone_history().await;
+    let texts: Vec<_> = history
+        .raw_items()
+        .iter()
+        .filter_map(|item| {
+            let chaos_ipc::models::ResponseItem::Message { role, content, .. } = item else {
+                return None;
+            };
+            if role != "user" {
+                return None;
+            }
+            Some(
+                content
+                    .iter()
+                    .filter_map(|part| match part {
+                        ContentItem::InputText { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect();
+    assert!(
+        texts.contains(&"[audio clip not re-sent after recovery: nonexistent-clip.wav]"),
+        "expected recovery note in history, got: {texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn journal_recovery_does_not_duplicate_recorded_input() {
     let (session, context) = crate::chaos::make_session_and_context().await;
     let session = Arc::new(session);

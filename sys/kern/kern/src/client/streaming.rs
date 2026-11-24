@@ -750,6 +750,17 @@ impl ModelClientSession {
             .model
             .clone()
             .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
+        let audio_attachments = prompt.turn_audio_attachments.clone();
+        if !audio_attachments.is_empty()
+            && !model_info
+                .input_modalities
+                .contains(&chaos_ipc::openai_models::InputModality::Audio)
+        {
+            return Err(ChaosErr::Fatal(format!(
+                "model `{}` does not advertise audio input support",
+                model_info.slug
+            )));
+        }
         let clamp_state = Arc::clone(&self.client.state);
         let client = self.client.clone();
         let (output, rx_event) = mpsc::channel(256);
@@ -936,21 +947,32 @@ impl ModelClientSession {
             };
             // The CLI is only the transport: the canonical system prompt goes
             // into its provider request, never into the user-content frame.
-            let prompt_update = {
+            let audio_guard = {
                 let egress = clamp_state.antigravity_egress.lock().await;
                 match egress.as_ref() {
-                    Some(egress) => egress
-                        .set_antigravity_system_prompt(system_prompt.clone())
-                        .map_err(|error| error.to_string()),
+                    Some(egress) => {
+                        if let Err(error) =
+                            egress.set_antigravity_system_prompt(system_prompt.clone())
+                        {
+                            Err(error.to_string())
+                        } else {
+                            egress
+                                .arm_antigravity_audio(model.clone(), audio_attachments.clone())
+                                .map_err(|error| error.to_string())
+                        }
+                    }
                     None => Err("Antigravity system-prompt egress is missing".to_string()),
                 }
             };
-            if let Err(error) = prompt_update {
-                let _ = tx_event
-                    .send(Err(chaos_parrot::error::ApiError::Stream(error)))
-                    .await;
-                return;
-            }
+            let audio_guard = match audio_guard {
+                Ok(guard) => guard,
+                Err(error) => {
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::Stream(error)))
+                        .await;
+                    return;
+                }
+            };
             let content = match continuation.as_ref() {
                 None => format!(
                     "Use the Chaos MCP server as your sole action surface. Native Antigravity \
@@ -1020,9 +1042,28 @@ impl ModelClientSession {
             let turn = transport.run_turn_streamed(&content, Some(&tx_step)).await;
             drop(tx_step);
             let streamed_text = forwarder.await.unwrap_or_default();
+            let spliced_audio_requests = match audio_guard.disarm() {
+                Ok(count) => count,
+                Err(error) => {
+                    let _ = tx_event
+                        .send(Err(chaos_parrot::error::ApiError::Stream(
+                            error.to_string(),
+                        )))
+                        .await;
+                    return;
+                }
+            };
 
             match turn {
                 Ok(turn) => {
+                    if !audio_attachments.is_empty() && spliced_audio_requests == 0 {
+                        let _ = tx_event
+                            .send(Err(chaos_parrot::error::ApiError::InvalidRequest {
+                                message: "attached audio clip was not delivered to any authorized Antigravity generation request; retry the turn".to_string(),
+                            }))
+                            .await;
+                        return;
+                    }
                     // `agy` repeats the whole answer in its result event; the
                     // deltas already carried it, so only emit what was missed.
                     let response = if turn.response.is_empty() {
@@ -1561,6 +1602,11 @@ impl ModelClientSession {
         if clamped {
             return match self.client.clamp_backend() {
                 crate::config::ClampBackend::ClaudeCode => {
+                    if !prompt.turn_audio_attachments.is_empty() {
+                        return Err(ChaosErr::Fatal(
+                            "local audio attachments are not supported on Claude clamp".into(),
+                        ));
+                    }
                     self.stream_clamped(prompt, model_info, session_telemetry)
                         .await
                 }
@@ -1569,6 +1615,12 @@ impl ModelClientSession {
                         .await
                 }
             };
+        }
+        if !prompt.turn_audio_attachments.is_empty() {
+            return Err(ChaosErr::Fatal(
+                "local audio attachments are currently only supported on Antigravity (Gemini) clamp"
+                    .into(),
+            ));
         }
 
         // Fail fast (and stop hammering provider auth) when no credentials are

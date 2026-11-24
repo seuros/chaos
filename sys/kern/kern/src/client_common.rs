@@ -46,6 +46,11 @@ pub struct Prompt {
 
     /// Optional the output schema for the model's response.
     pub output_schema: Option<Value>,
+
+    /// Ephemeral turn-scoped audio attachments authorized by the current human
+    /// turn. Never persisted in canonical history, rollout logs, or compaction
+    /// prompts — only the permanent text note enters history.
+    pub(crate) turn_audio_attachments: Vec<chaos_clamp::AntigravityAudioAttachment>,
 }
 
 impl Default for Prompt {
@@ -60,6 +65,7 @@ impl Default for Prompt {
             },
             personality: None,
             output_schema: None,
+            turn_audio_attachments: Vec::new(),
         }
     }
 }

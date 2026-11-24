@@ -222,6 +222,14 @@ fn parse_collab_input(
                     "Items can't be empty".to_string(),
                 ));
             }
+            if items
+                .iter()
+                .any(|item| matches!(item, UserInput::LocalAudio { .. }))
+            {
+                return Err(FunctionCallError::RespondToModel(
+                    "Local audio attachments cannot be sent by agent tools".to_string(),
+                ));
+            }
             Ok(items)
         }
     }

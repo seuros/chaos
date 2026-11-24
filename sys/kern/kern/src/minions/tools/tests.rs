@@ -606,6 +606,27 @@ async fn send_input_interrupts_before_prompt() {
         .expect("shutdown should submit");
 }
 
+#[test]
+fn parse_collab_input_rejects_local_audio() {
+    let err = parse_collab_input(
+        None,
+        Some(vec![
+            UserInput::Text {
+                text: "listen to this".to_string(),
+                text_elements: Vec::new(),
+            },
+            UserInput::LocalAudio {
+                path: PathBuf::from("/tmp/secret.wav"),
+            },
+        ]),
+    )
+    .expect_err("agent tools must not authorize local audio attachments");
+    assert!(
+        matches!(err, FunctionCallError::RespondToModel(ref msg) if msg.contains("Local audio attachments")),
+        "unexpected error: {err:?}"
+    );
+}
+
 #[tokio::test]
 async fn send_input_accepts_structured_items() {
     let (_home, mut session, turn) = persistent_session_and_context().await;

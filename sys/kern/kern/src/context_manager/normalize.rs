@@ -298,8 +298,7 @@ pub(crate) fn strip_images_when_unsupported(
     input_modalities: &[InputModality],
     items: &mut [ResponseItem],
 ) {
-    let supports_images = input_modalities.contains(&InputModality::Image);
-    if supports_images {
+    if input_modalities.contains(&InputModality::Image) {
         return;
     }
 

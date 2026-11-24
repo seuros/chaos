@@ -138,9 +138,9 @@ fn wire_model(slug: &str) -> serde_json::Value {
 #[tokio::test]
 async fn parses_models_response() {
     let mut mixed = wire_model(TEST_MODEL);
-    mixed["input_modalities"] = json!(["text", "image", "audio"]);
+    mixed["input_modalities"] = json!(["text", "image", "audio", "video"]);
     let mut unsupported = wire_model("unsupported-input");
-    unsupported["input_modalities"] = json!(["audio", "future-modality"]);
+    unsupported["input_modalities"] = json!(["video", "future-modality"]);
     let legacy = wire_model("legacy-model");
 
     let transport = CapturingTransport {
@@ -166,7 +166,11 @@ async fn parses_models_response() {
     assert_eq!(models[0].priority, 1);
     assert_eq!(
         models[0].input_modalities,
-        [InputModality::Text, InputModality::Image]
+        [
+            InputModality::Text,
+            InputModality::Image,
+            InputModality::Audio
+        ]
     );
     assert!(models[1].input_modalities.is_empty());
     assert_eq!(

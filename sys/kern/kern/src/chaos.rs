@@ -57,6 +57,7 @@ pub enum SteerInputError {
     NoActiveTurn(Vec<UserInput>),
     ExpectedTurnMismatch { expected: String, actual: String },
     EmptyInput,
+    UnsupportedInput(String),
 }
 
 // ── Test-only surface ────────────────────────────────────────────────────────

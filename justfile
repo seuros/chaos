@@ -29,8 +29,8 @@ build *args:
 # Install chaos into ~/.cargo/bin (release + target-cpu=native).
 install: (_install "")
 
-# Install chaos into ~/.cargo/bin using the debug profile.
-debug: (_install "--debug")
+# Install chaos into ~/.cargo/bin with debug assertions and line info.
+debug: (_install "--profile debug-install")
 
 # Install every driver using its own install recipe.
 install-drivers:
@@ -172,8 +172,14 @@ _install profile_flag:
         [ -n "$need_dbus_pkg" ]     && echo "  ensure PKG_CONFIG_PATH points at a directory with dbus-1.pc" >&2
         exit 1
     fi
-    RUSTFLAGS="-C target-cpu=native" {{cargo}} install --path bin/chaos --locked --force {{profile_flag}}
-    RUSTFLAGS="-C target-cpu=native" {{cargo}} install --path srv/journald --locked --force {{profile_flag}}
+    # Make an inherited rustup override explicit without switching to stable
+    # or bypassing the workspace pin when no override was set.
+    set --
+    if [ -n "${RUSTUP_TOOLCHAIN:-}" ]; then
+        set -- "+$RUSTUP_TOOLCHAIN"
+    fi
+    RUSTFLAGS="-C target-cpu=native" {{cargo}} "$@" install --path bin/chaos --locked --force {{profile_flag}}
+    RUSTFLAGS="-C target-cpu=native" {{cargo}} "$@" install --path srv/journald --locked --force {{profile_flag}}
 
 # Build a portable release tarball: chaos + install.sh.
 # Usage: just dist [output=chaos-dist.tar.gz]

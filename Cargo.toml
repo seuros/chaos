@@ -514,6 +514,12 @@ debug = 1
 [profile.test]
 debug = 1
 
+[profile.debug-install]
+inherits = "dev"
+# Reduce generated code and unwind metadata for the installed binary.
+# Debug info and unwind tables are separate; keep both for diagnostics.
+opt-level = 1
+
 [profile.release]
 # ThinLTO keeps ~95% of the runtime win of FatLTO on chaos's workload
 # (I/O-bound: tokio + rustls + model streaming + IPC, with hot CPU work

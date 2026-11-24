@@ -26,6 +26,10 @@ pub enum UserInput {
     /// `Image` variant (base64 data URL) during request serialization.
     LocalImage { path: std::path::PathBuf },
 
+    /// Local audio path provided by the user. Validated before sending and
+    /// converted to an `InputAudio` content item for audio-capable routes.
+    LocalAudio { path: std::path::PathBuf },
+
     /// Explicit structured mention selected by the user.
     ///
     /// `path` identifies the exact mention target, for example

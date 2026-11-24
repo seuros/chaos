@@ -603,8 +603,17 @@ fn image_data_url_estimate_adjustment(item: &ResponseItem) -> (i64, i64) {
     match item {
         ResponseItem::Message { content, .. } => {
             for content_item in content {
-                if let ContentItem::InputImage { image_url } = content_item {
-                    accumulate(image_url, None);
+                match content_item {
+                    ContentItem::InputImage { image_url } => {
+                        accumulate(image_url, None);
+                    }
+                    ContentItem::InputAudio {
+                        data, placeholder, ..
+                    } => {
+                        payload_bytes = payload_bytes.saturating_add(data.len());
+                        replacement_bytes = replacement_bytes.saturating_add(placeholder.len());
+                    }
+                    _ => {}
                 }
             }
         }

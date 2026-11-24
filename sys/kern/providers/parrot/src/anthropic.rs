@@ -349,6 +349,9 @@ fn convert_content_item(c: &ContentItem) -> Option<Value> {
                 }))
             }
         }
+        ContentItem::InputAudio { placeholder, .. } => {
+            Some(serde_json::json!({"type": "text", "text": placeholder}))
+        }
         ContentItem::Document {
             name,
             mime_type,

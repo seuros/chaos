@@ -357,6 +357,7 @@ fn response_input_to_tool_output(
                     chaos_ipc::models::ContentItem::InputText { text }
                     | chaos_ipc::models::ContentItem::OutputText { text } => Some(text),
                     chaos_ipc::models::ContentItem::InputImage { .. } => None,
+                    chaos_ipc::models::ContentItem::InputAudio { .. } => None,
                     chaos_ipc::models::ContentItem::Document { name, text, .. } => {
                         let header = name.map(|n| format!("[{n}]\n")).unwrap_or_default();
                         Some(format!("{header}{text}"))

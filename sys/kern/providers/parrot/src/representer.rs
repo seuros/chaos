@@ -272,7 +272,7 @@ fn text_only(content: &[ContentItem]) -> Option<String> {
                 parts.push(text.as_str());
             }
             ContentItem::Document { text, .. } => parts.push(text.as_str()),
-            ContentItem::InputImage { .. } => return None,
+            ContentItem::InputImage { .. } | ContentItem::InputAudio { .. } => return None,
         }
     }
     Some(parts.join("\n"))

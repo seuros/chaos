@@ -56,6 +56,8 @@ pub enum InputModality {
     Text,
     /// Image attachments included in user turns.
     Image,
+    /// Audio attachments included in user turns.
+    Audio,
 }
 
 /// Backward-compatible default when `input_modalities` is omitted on the wire.
@@ -79,6 +81,7 @@ where
         .filter_map(|tag| match tag.as_str() {
             "text" => Some(InputModality::Text),
             "image" => Some(InputModality::Image),
+            "audio" => Some(InputModality::Audio),
             _ => None,
         })
         .collect())

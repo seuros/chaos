@@ -105,7 +105,7 @@ async fn shared_decoder_accepts_envelopes_and_rejects_legacy_shapes() -> TestRes
     let modalities = extended_envelope["models"][0]["input_modalities"]
         .as_array_mut()
         .expect("encoded input modalities");
-    modalities.push(serde_json::json!("audio"));
+    modalities.push(serde_json::json!("video"));
     let cases = [
         ("legacy array", serde_json::json!([model.clone()]), None),
         (

@@ -469,6 +469,7 @@ fn render_message_content(content: &[ContentItem]) -> String {
         .map(|item| match item {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => text.clone(),
             ContentItem::InputImage { .. } => "[image omitted]".to_string(),
+            ContentItem::InputAudio { placeholder, .. } => placeholder.clone(),
             ContentItem::Document {
                 name,
                 mime_type,

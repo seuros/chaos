@@ -278,6 +278,7 @@ fn content_item(item: &ContentItem) -> Content {
             Content::text(text.clone())
         }
         ContentItem::InputImage { image_url } => Content::File(image(image_url)),
+        ContentItem::InputAudio { placeholder, .. } => Content::text(placeholder.clone()),
         ContentItem::Document { name, text, .. } => {
             let header = name
                 .as_deref()

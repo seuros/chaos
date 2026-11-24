@@ -165,7 +165,7 @@ fn prepare_user_input_keeps_audio_bytes_off_history_and_caps_one_clip_per_turn()
     assert!(
         content
             .iter()
-            .all(|item| !matches!(item, ContentItem::InputAudio { .. }))
+            .all(|item| matches!(item, ContentItem::InputText { .. }))
     );
     let history_json = serde_json::to_string(&ResponseItem::from(prepared.item.clone())).unwrap();
     assert!(history_json.contains(&format!("id {}", attachment.nonce)));

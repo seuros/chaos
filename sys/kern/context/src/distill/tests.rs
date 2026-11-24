@@ -32,24 +32,6 @@ fn content_items_to_text_ignores_image_only_content() {
 }
 
 #[test]
-fn content_items_to_text_excludes_audio_base64_payload() {
-    let items = vec![
-        ContentItem::InputText {
-            text: "which tone came first?".to_string(),
-        },
-        ContentItem::InputAudio {
-            data: "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=".to_string(),
-            mime_type: "audio/wav".to_string(),
-            placeholder: "[audio clip: clip.wav, 1.0 s, id 7f3a9c]".to_string(),
-        },
-    ];
-
-    let joined = content_items_to_text(&items);
-
-    assert_eq!(Some("which tone came first?".to_string()), joined);
-}
-
-#[test]
 fn collect_user_messages_extracts_user_text_only() {
     let items = vec![
         ResponseItem::Message {

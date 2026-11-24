@@ -122,9 +122,7 @@ fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => {
                 text.contains(needle)
             }
-            ContentItem::InputImage { .. }
-            | ContentItem::InputAudio { .. }
-            | ContentItem::Document { .. } => false,
+            ContentItem::InputImage { .. } | ContentItem::Document { .. } => false,
         })
     })
 }

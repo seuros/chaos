@@ -163,19 +163,11 @@ fn response_user_message_preview(content: &[ContentItem]) -> Option<String> {
     if let Some(text) = content.iter().find_map(|item| match item {
         ContentItem::InputText { text } => Some(text.as_str()),
         ContentItem::InputImage { .. }
-        | ContentItem::InputAudio { .. }
         | ContentItem::OutputText { .. }
         | ContentItem::Document { .. } => None,
     }) && let Some(preview) = cleanup_user_message_preview(text)
     {
         return Some(preview);
-    }
-
-    if let Some(placeholder) = content.iter().find_map(|item| match item {
-        ContentItem::InputAudio { placeholder, .. } => Some(placeholder.clone()),
-        _ => None,
-    }) {
-        return Some(placeholder);
     }
 
     content

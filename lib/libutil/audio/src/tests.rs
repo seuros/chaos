@@ -113,6 +113,11 @@ fn rejects_invalid_riff_extent_and_fmt_fields() {
     short_riff[4..8].copy_from_slice(&28u32.to_le_bytes());
     assert!(validate_wav_bytes(&short_riff).is_err());
 
+    // Valid WAV container with trailing bytes past declared RIFF extent -> rejected.
+    let mut trailing = synthetic_pcm_wav(8_000, 100);
+    trailing.extend_from_slice(b"trailing-secret-bytes");
+    assert!(validate_wav_bytes(&trailing).is_err());
+
     // Unsupported format tag.
     let mut bad_tag = synthetic_pcm_wav(8_000, 100);
     bad_tag[20..22].copy_from_slice(&0x9999u16.to_le_bytes());

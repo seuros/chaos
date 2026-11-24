@@ -436,11 +436,6 @@ fn truncate_retained_message_to_token_budget(
                 }
             }
             ContentItem::InputImage { .. } => truncated_content.push(content_item),
-            ContentItem::InputAudio { placeholder, .. } => {
-                truncated_content.push(ContentItem::InputText {
-                    text: placeholder.clone(),
-                });
-            }
         }
     }
 

@@ -503,9 +503,22 @@ async fn resume_after_journal_recovery(sess: &Arc<Session>, continuation: Journa
     Arc::make_mut(&mut context).final_output_json_schema =
         continuation.context.final_output_json_schema.clone();
     if !continuation.input.is_empty() {
+        let recovered_input: Vec<chaos_ipc::user_input::UserInput> = continuation
+            .input
+            .iter()
+            .map(|input| match input {
+                chaos_ipc::user_input::UserInput::LocalAudio { path } => {
+                    chaos_ipc::user_input::UserInput::Text {
+                        text: chaos_audio::recovery_placeholder(path),
+                        text_elements: Vec::new(),
+                    }
+                }
+                other => other.clone(),
+            })
+            .collect();
         let item =
-            crate::prompt_images::response_input_item_from_user_input(continuation.input.clone());
-        sess.record_user_prompt_and_emit_turn_item(&context, &continuation.input, item.into())
+            crate::prompt_images::response_input_item_from_user_input(recovered_input.clone());
+        sess.record_user_prompt_and_emit_turn_item(&context, &recovered_input, item.into())
             .await;
     }
     for input in continuation.pending {

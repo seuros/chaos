@@ -54,12 +54,6 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
                     image_url: image_url.clone(),
                 });
             }
-            ContentItem::InputAudio { placeholder, .. } => {
-                content.push(UserInput::Text {
-                    text: placeholder.clone(),
-                    text_elements: Vec::new(),
-                });
-            }
             ContentItem::OutputText { text } => {
                 warn!("Output text in user message: {}", text);
             }

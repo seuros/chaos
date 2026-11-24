@@ -518,9 +518,6 @@ pub(crate) fn render_clamp_content_items(content: &[ContentItem]) -> String {
                     rendered.push(']');
                 }
             }
-            ContentItem::InputAudio { placeholder, .. } => {
-                rendered.push_str(placeholder);
-            }
             ContentItem::Document { name, text, .. } => {
                 if let Some(name) = name {
                     rendered.push('[');

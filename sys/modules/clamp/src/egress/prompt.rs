@@ -265,6 +265,10 @@ impl AntigravitySystemPrompt {
                 && Some(turn.generation_id) == active_generation
             {
                 turn.spliced_requests = turn.spliced_requests.saturating_add(1);
+            } else {
+                return Err(
+                    "clamp audio attachment authorization expired before request was sent".into(),
+                );
             }
         }
         // Neither framing nor body digests from the CLI describe the new body.

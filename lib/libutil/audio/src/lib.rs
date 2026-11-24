@@ -186,6 +186,9 @@ pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
     if riff_end > bytes.len() {
         return Err("WAV RIFF declared extent exceeds file length".into());
     }
+    if riff_end < bytes.len() {
+        return Err("WAV file has trailing bytes past declared RIFF extent".into());
+    }
 
     let mut cursor = 12usize;
     let mut byte_rate: Option<u32> = None;
@@ -322,6 +325,15 @@ fn sanitize_filename(path: &Path) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+/// Format a permanent note used when a turn containing a local audio clip is
+/// recovered from the session journal without re-reading or re-sending the file.
+pub fn recovery_placeholder(path: &Path) -> String {
+    format!(
+        "[audio clip not re-sent after recovery: {}]",
+        sanitize_filename(path)
+    )
 }
 
 #[cfg(test)]

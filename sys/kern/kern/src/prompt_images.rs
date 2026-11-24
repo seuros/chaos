@@ -150,9 +150,6 @@ pub(crate) fn local_image_tool_output_items(
             ContentItem::InputImage { image_url } => {
                 FunctionCallOutputContentItem::InputImage { image_url, detail }
             }
-            ContentItem::InputAudio { placeholder, .. } => {
-                FunctionCallOutputContentItem::InputText { text: placeholder }
-            }
             ContentItem::Document { name, text, .. } => {
                 let header = name.map(|n| format!("[{n}]\n")).unwrap_or_default();
                 FunctionCallOutputContentItem::InputText {

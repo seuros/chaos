@@ -660,3 +660,61 @@ async fn non_audio_request_is_not_rejected_by_audio_size_check() {
         .await;
     assert!(result.is_ok(), "unexpected error: {:?}", result.err());
 }
+
+#[tokio::test]
+async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_audio() {
+    use futures::stream;
+    use std::convert::Infallible;
+
+    for replace_with_new_turn in [false, true] {
+        let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+        let guard = prompt
+            .arm_audio(
+                "gemini-4-neon-high".to_string(),
+                vec![sample_audio_attachment("race1234")],
+            )
+            .unwrap();
+        let body_bytes = serde_json::to_vec(&cloud_request_with_user_text(
+            "gemini-4-neon-high",
+            "[audio clip: tones.wav, 1.0 s, id race1234]",
+        ))
+        .unwrap();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
+        let streaming_body = Body::from_stream(stream::once(async move {
+            Ok::<Vec<u8>, Infallible>(rx.await.unwrap())
+        }));
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(GENERATE)
+            .header(CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(CONTENT_LENGTH, body_bytes.len().to_string())
+            .body(streaming_body)
+            .unwrap();
+
+        let prompt_clone = prompt.clone();
+        let rewrite_task = tokio::spawn(async move { prompt_clone.rewrite(req, CLOUD_CODE).await });
+        // Yield so `rewrite` snapshots `active_audio` and suspends on body collection.
+        tokio::task::yield_now().await;
+
+        let _replacement_guard = if replace_with_new_turn {
+            Some(
+                prompt
+                    .arm_audio(
+                        "gemini-4-neon-high".to_string(),
+                        vec![sample_audio_attachment("next5678")],
+                    )
+                    .unwrap(),
+            )
+        } else {
+            assert_eq!(guard.disarm().unwrap(), 0);
+            None
+        };
+
+        tx.send(body_bytes).unwrap();
+        let result = rewrite_task.await.unwrap();
+        assert!(
+            result.is_err(),
+            "expected rewrite to fail when audio authorization changed mid-body (replace={replace_with_new_turn})"
+        );
+    }
+}

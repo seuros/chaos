@@ -188,9 +188,6 @@ pub(super) fn convert_content_item_to_value(c: &ContentItem) -> Option<Value> {
             "type": "image_url",
             "image_url": { "url": image_url }
         })),
-        ContentItem::InputAudio { placeholder, .. } => {
-            Some(serde_json::json!({ "type": "text", "text": placeholder }))
-        }
         ContentItem::Document { name, text, .. } => {
             let header = name
                 .as_deref()

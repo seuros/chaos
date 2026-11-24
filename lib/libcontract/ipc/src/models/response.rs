@@ -50,17 +50,6 @@ pub enum ContentItem {
     InputImage {
         image_url: String,
     },
-    /// Human-attached local audio clip.
-    ///
-    /// `placeholder` is the permanent human-readable note rendered into text
-    /// history (for example `[audio clip: clip.wav, 1.0 s, id <nonce>]`). Raw
-    /// base64 `data` is omitted from compaction, session-transcript search,
-    /// and resumed text history.
-    InputAudio {
-        data: String,
-        mime_type: String,
-        placeholder: String,
-    },
     OutputText {
         text: String,
     },

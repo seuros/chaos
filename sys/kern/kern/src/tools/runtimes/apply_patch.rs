@@ -449,6 +449,7 @@ enum PatchChangeTransfer {
         unified_diff: String,
         move_path: Option<PathBuf>,
         new_content: String,
+        expected_original: Option<String>,
     },
 }
 
@@ -472,10 +473,12 @@ impl PatchActionTransfer {
                         unified_diff,
                         move_path,
                         new_content,
+                        expected_original,
                     } => PatchChangeTransfer::Update {
                         unified_diff: unified_diff.clone(),
                         move_path: move_path.clone(),
                         new_content: new_content.clone(),
+                        expected_original: expected_original.clone(),
                     },
                 };
                 (path.clone(), transfer)
@@ -503,10 +506,12 @@ impl PatchActionTransfer {
                         unified_diff,
                         move_path,
                         new_content,
+                        expected_original,
                     } => ApplyPatchFileChange::Update {
                         unified_diff,
                         move_path,
                         new_content,
+                        expected_original,
                     },
                 };
                 (path, change)

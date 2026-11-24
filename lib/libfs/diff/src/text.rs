@@ -96,6 +96,7 @@ pub fn prepare_text_update(
                 unified_diff,
                 move_path: None,
                 new_content: applied.new_contents,
+                expected_original: None,
             },
         )]),
         cwd.to_path_buf(),

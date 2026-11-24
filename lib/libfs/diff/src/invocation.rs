@@ -18,6 +18,7 @@ use crate::MaybeApplyPatchVerified;
 use crate::parser::Hunk;
 use crate::parser::ParseError;
 use crate::parser::parse_patch;
+use crate::prepare_add;
 use crate::unified_diff_from_chunks;
 use std::str::Utf8Error;
 use tree_sitter::LanguageError;
@@ -155,7 +156,10 @@ pub fn maybe_parse_apply_patch_verified(argv: &[String], cwd: &Path) -> MaybeApp
                 let path = hunk.resolve_path(&effective_cwd);
                 match hunk {
                     Hunk::AddFile { contents, .. } => {
-                        changes.insert(path, ApplyPatchFileChange::Add { content: contents });
+                        match prepare_add(&path, contents) {
+                            Ok(change) => changes.insert(path, change),
+                            Err(error) => return MaybeApplyPatchVerified::CorrectnessError(error),
+                        };
                     }
                     Hunk::DeleteFile { .. } => {
                         let content = match std::fs::read_to_string(&path) {
@@ -189,6 +193,7 @@ pub fn maybe_parse_apply_patch_verified(argv: &[String], cwd: &Path) -> MaybeApp
                                 unified_diff,
                                 move_path: move_path.map(|p| effective_cwd.join(p)),
                                 new_content: contents,
+                                expected_original: None,
                             },
                         );
                     }

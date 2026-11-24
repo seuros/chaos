@@ -529,6 +529,86 @@ fn test_apply_action_add_file() {
 }
 
 #[test]
+fn test_add_rejects_existing_file_before_and_after_verification() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("existing.txt");
+    let argv = [
+        "apply_patch".into(),
+        "*** Begin Patch\n*** Add File: existing.txt\n+new content\n*** End Patch".into(),
+    ];
+    let MaybeApplyPatchVerified::Body(action) = maybe_parse_apply_patch_verified(&argv, dir.path())
+    else {
+        panic!("expected an add action for an absent path");
+    };
+
+    fs::write(&path, "old content\n").unwrap();
+    let MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ComputeReplacements(error)) =
+        maybe_parse_apply_patch_verified(&argv, dir.path())
+    else {
+        panic!("expected a conflict during verification");
+    };
+    assert!(error.contains("would add 1 and remove 1 lines"));
+    let ApplyPatchError::IoError(error) = apply_action(&action).unwrap_err() else {
+        panic!("expected a conflict during creation");
+    };
+    assert_eq!(error.source.kind(), std::io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "old content\n");
+}
+
+#[test]
+fn test_small_add_collision_updates_only_the_verified_content() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("existing.txt");
+    let argv = [
+        "apply_patch".into(),
+        "*** Begin Patch\n*** Add File: existing.txt\n+keep\n+\n+after\n*** End Patch".into(),
+    ];
+    fs::write(&path, "keep\nbefore\n").unwrap();
+    let verify = || {
+        let MaybeApplyPatchVerified::Body(action) =
+            maybe_parse_apply_patch_verified(&argv, dir.path())
+        else {
+            panic!("expected a small update");
+        };
+        action
+    };
+    let action = verify();
+    fs::write(&path, "keep\nnewer\n").unwrap();
+    assert!(
+        apply_action(&action)
+            .unwrap_err()
+            .to_string()
+            .contains("changed after patch verification")
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), "keep\nnewer\n");
+    assert!(
+        apply_action(&verify())
+            .unwrap()
+            .contains(&format!("M {}", path.display()))
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), "keep\n\nafter\n");
+    assert_eq!(
+        apply_action(&verify()).unwrap(),
+        "Success. No files changed.\n"
+    );
+}
+
+#[test]
+fn test_add_collision_enforces_absolute_diff_limits() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("existing.txt");
+    fs::write(&path, "keep\n").unwrap();
+    for proposed in [
+        format!("keep\n{}", "\n".repeat(SMALL_ADD_MAX_CHANGED_LINES + 1)),
+        format!("keep\n{}\n", "x".repeat(SMALL_ADD_MAX_CHANGED_BYTES)),
+    ] {
+        let error = prepare_add(&path, proposed).unwrap_err();
+        assert!(error.to_string().contains("use Update File"));
+    }
+    assert_eq!(fs::read_to_string(&path).unwrap(), "keep\n");
+}
+
+#[test]
 fn test_apply_action_update_file() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("existing.txt");
@@ -541,6 +621,7 @@ fn test_apply_action_update_file() {
             unified_diff: String::new(),
             move_path: None,
             new_content: "new content\n".to_string(),
+            expected_original: None,
         },
     );
     let action = ApplyPatchAction {

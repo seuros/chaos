@@ -79,7 +79,9 @@ fn test_apply_patch_cli_applies_multiple_operations() -> anyhow::Result<()> {
     let modify_path = workspace.write_file("modify.txt", "line1\nline2\n")?;
     let delete_path = workspace.write_file("delete.txt", "obsolete\n")?;
 
-    let patch = "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n*** Delete File: delete.txt\n*** Update File: modify.txt\n@@\n-line2\n+changed\n*** End Patch";
+    let patch = "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n\
+                 *** Delete File: delete.txt\n*** Update File: modify.txt\n\
+                 @@\n-line2\n+changed\n*** End Patch";
 
     workspace.assert_arg_patch(patch)?.success().stdout(
         "Success. Updated the following files:\nA nested/new.txt\nM modify.txt\nD delete.txt\n",
@@ -97,7 +99,8 @@ fn test_apply_patch_cli_applies_multiple_chunks() -> anyhow::Result<()> {
     let workspace = ApplyPatchWorkspace::new()?;
     let target_path = workspace.write_file("multi.txt", "line1\nline2\nline3\nline4\n")?;
 
-    let patch = "*** Begin Patch\n*** Update File: multi.txt\n@@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch";
+    let patch = "*** Begin Patch\n*** Update File: multi.txt\n\
+                 @@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch";
 
     workspace
         .assert_arg_patch(patch)?
@@ -118,7 +121,8 @@ fn test_apply_patch_cli_moves_file_to_new_directory() -> anyhow::Result<()> {
     let original_path = workspace.write_file("old/name.txt", "old content\n")?;
     let new_path = workspace.path("renamed/dir/name.txt");
 
-    let patch = "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch";
+    let patch = "*** Begin Patch\n*** Update File: old/name.txt\n\
+                 *** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch";
 
     workspace
         .assert_arg_patch(patch)?
@@ -159,11 +163,17 @@ fn test_apply_patch_cli_reports_missing_context() -> anyhow::Result<()> {
 
 #[test]
 fn test_apply_patch_cli_rejects_missing_file_delete() -> anyhow::Result<()> {
-    ApplyPatchWorkspace::new()?
-        .assert_arg_patch("*** Begin Patch\n*** Delete File: missing.txt\n*** End Patch")?
-        .failure()
-        .stderr("Failed to delete file missing.txt\n");
+    assert_delete_failure(&ApplyPatchWorkspace::new()?, "missing.txt")
+}
 
+fn assert_delete_failure(workspace: &ApplyPatchWorkspace, path: &str) -> anyhow::Result<()> {
+    let output = workspace.run_arg_patch(format!(
+        "*** Begin Patch\n*** Delete File: {path}\n*** End Patch"
+    ))?;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)?.starts_with(&format!("Failed to delete file {path}: "))
+    );
     Ok(())
 }
 
@@ -199,7 +209,8 @@ fn test_apply_patch_cli_move_overwrites_existing_destination() -> anyhow::Result
 
     workspace
         .assert_arg_patch(
-        "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-from\n+new\n*** End Patch",
+            "*** Begin Patch\n*** Update File: old/name.txt\n\
+         *** Move to: renamed/dir/name.txt\n@@\n-from\n+new\n*** End Patch",
         )?
         .success()
         .stdout("Success. Updated the following files:\nM renamed/dir/name.txt\n");
@@ -211,19 +222,35 @@ fn test_apply_patch_cli_move_overwrites_existing_destination() -> anyhow::Result
 }
 
 #[test]
-fn test_apply_patch_cli_add_overwrites_existing_file() -> anyhow::Result<()> {
+fn test_apply_patch_cli_add_rejects_existing_file() -> anyhow::Result<()> {
     let workspace = ApplyPatchWorkspace::new()?;
     let path = workspace.write_file("duplicate.txt", "old content\n")?;
 
+    let output = workspace.run_arg_patch(
+        "*** Begin Patch\n*** Add File: duplicate.txt\n+new content\n*** End Patch",
+    )?;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)?
+            .contains("Cannot add duplicate.txt: would add 1 and remove 1 lines; use Update File")
+    );
+
+    assert_eq!(fs::read_to_string(&path)?, "old content\n");
+
+    Ok(())
+}
+
+#[test]
+fn test_apply_patch_cli_add_accepts_a_blank_line_change() -> anyhow::Result<()> {
+    let workspace = ApplyPatchWorkspace::new()?;
+    let path = workspace.write_file("existing.txt", "first\n\n\nsecond\n")?;
     workspace
         .assert_arg_patch(
-            "*** Begin Patch\n*** Add File: duplicate.txt\n+new content\n*** End Patch",
+            "*** Begin Patch\n*** Add File: existing.txt\n+first\n+\n+second\n*** End Patch",
         )?
         .success()
-        .stdout("Success. Updated the following files:\nA duplicate.txt\n");
-
-    assert_eq!(fs::read_to_string(&path)?, "new content\n");
-
+        .stdout("Success. Updated the following files:\nM existing.txt\n");
+    assert_eq!(fs::read_to_string(&path)?, "first\n\nsecond\n");
     Ok(())
 }
 
@@ -232,12 +259,7 @@ fn test_apply_patch_cli_delete_directory_fails() -> anyhow::Result<()> {
     let workspace = ApplyPatchWorkspace::new()?;
     workspace.create_dir_all("dir")?;
 
-    workspace
-        .assert_arg_patch("*** Begin Patch\n*** Delete File: dir\n*** End Patch")?
-        .failure()
-        .stderr("Failed to delete file dir\n");
-
-    Ok(())
+    assert_delete_failure(&workspace, "dir")
 }
 
 #[test]
@@ -245,7 +267,11 @@ fn test_apply_patch_cli_rejects_invalid_hunk_header() -> anyhow::Result<()> {
     ApplyPatchWorkspace::new()?
         .assert_arg_patch("*** Begin Patch\n*** Frobnicate File: foo\n*** End Patch")?
         .failure()
-        .stderr("Invalid patch hunk on line 2: '*** Frobnicate File: foo' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'\n");
+        .stderr(
+            "Invalid patch hunk on line 2: '*** Frobnicate File: foo' is not a valid hunk header. \
+             Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', \
+             '*** Update File: {path}'\n",
+        );
 
     Ok(())
 }
@@ -257,7 +283,8 @@ fn test_apply_patch_cli_updates_file_appends_trailing_newline() -> anyhow::Resul
 
     workspace
         .assert_arg_patch(
-            "*** Begin Patch\n*** Update File: no_newline.txt\n@@\n-no newline at end\n+first line\n+second line\n*** End Patch",
+            "*** Begin Patch\n*** Update File: no_newline.txt\n\
+             @@\n-no newline at end\n+first line\n+second line\n*** End Patch",
         )?
         .success()
         .stdout("Success. Updated the following files:\nM no_newline.txt\n");
@@ -276,11 +303,14 @@ fn test_apply_patch_cli_failure_after_partial_success_leaves_changes() -> anyhow
 
     workspace
         .assert_arg_patch(
-            "*** Begin Patch\n*** Add File: created.txt\n+hello\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch",
+            "*** Begin Patch\n*** Add File: created.txt\n+hello\n\
+             *** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch",
         )?
         .failure()
         .stdout("")
-        .stderr("Failed to read file to update missing.txt: No such file or directory (os error 2)\n");
+        .stderr(
+            "Failed to read file to update missing.txt: No such file or directory (os error 2)\n",
+        );
 
     assert_eq!(fs::read_to_string(&new_file)?, "hello\n");
 

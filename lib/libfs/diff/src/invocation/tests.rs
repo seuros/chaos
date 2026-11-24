@@ -22,13 +22,15 @@ fn args_bash(script: &str) -> Vec<String> {
 
 fn heredoc_script(prefix: &str) -> String {
     format!(
-        "{prefix}apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch\nPATCH"
+        "{prefix}apply_patch <<'PATCH'\n*** Begin Patch\n\
+         *** Add File: foo\n+hi\n*** End Patch\nPATCH"
     )
 }
 
 fn heredoc_script_with_suffix(prefix: &str, suffix: &str) -> String {
     format!(
-        "{prefix}apply_patch <<'PATCH'\n*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch\nPATCH{suffix}"
+        "{prefix}apply_patch <<'PATCH'\n*** Begin Patch\n\
+         *** Add File: foo\n+hi\n*** End Patch\nPATCH{suffix}"
     )
 }
 
@@ -166,6 +168,7 @@ fn test_apply_patch_should_resolve_absolute_paths_in_cwd() {
                     .to_string(),
                     move_path: None,
                     new_content: "updated session directory content\n".to_string(),
+                    expected_original: None,
                 },
             )]),
             patch: argv[1].clone(),

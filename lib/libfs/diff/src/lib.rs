@@ -5,11 +5,10 @@ mod standalone_executable;
 mod text;
 
 use std::collections::HashMap;
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::path::PathBuf;
 
-use anyhow::Context;
-use anyhow::Result;
 pub use parser::Hunk;
 pub use parser::ParseError;
 use parser::ParseError::*;
@@ -108,6 +107,8 @@ pub enum ApplyPatchFileChange {
         move_path: Option<PathBuf>,
         /// new_content that will result after the unified_diff is applied.
         new_content: String,
+        /// Original snapshot required for an implicit update from Add File.
+        expected_original: Option<String>,
     },
 }
 
@@ -237,56 +238,17 @@ pub fn apply_hunks(
     stdout: &mut impl std::io::Write,
     stderr: &mut impl std::io::Write,
 ) -> Result<(), ApplyPatchError> {
-    let _existing_paths: Vec<&Path> = hunks
-        .iter()
-        .filter_map(|hunk| match hunk {
-            Hunk::AddFile { .. } => {
-                // The file is being added, so it doesn't exist yet.
-                None
-            }
-            Hunk::DeleteFile { path } => Some(path.as_path()),
-            Hunk::UpdateFile {
-                path, move_path, ..
-            } => match move_path {
-                Some(move_path) => {
-                    if std::fs::metadata(move_path)
-                        .map(|m| m.is_file())
-                        .unwrap_or(false)
-                    {
-                        Some(move_path.as_path())
-                    } else {
-                        None
-                    }
-                }
-                None => Some(path.as_path()),
-            },
-        })
-        .collect::<Vec<&Path>>();
-
-    // Delegate to a helper that applies each hunk to the filesystem.
     match apply_hunks_to_files(hunks) {
-        Ok(affected) => {
-            print_summary(&affected, stdout).map_err(ApplyPatchError::from)?;
-            Ok(())
-        }
+        Ok(affected) => Ok(print_summary(&affected, stdout)?),
         Err(err) => {
-            let msg = err.to_string();
-            writeln!(stderr, "{msg}").map_err(ApplyPatchError::from)?;
-            if let Some(io) = err.downcast_ref::<std::io::Error>() {
-                Err(ApplyPatchError::from(io))
-            } else {
-                Err(ApplyPatchError::IoError(IoError {
-                    context: msg,
-                    source: std::io::Error::other(err),
-                }))
-            }
+            writeln!(stderr, "{err}")?;
+            Err(err)
         }
     }
 }
 
-/// Applies each parsed patch hunk to the filesystem.
-/// Returns an error if any of the changes could not be applied.
 /// Tracks file paths affected by applying a patch.
+#[derive(Default)]
 pub struct AffectedPaths {
     pub added: Vec<PathBuf>,
     pub modified: Vec<PathBuf>,
@@ -295,71 +257,226 @@ pub struct AffectedPaths {
 
 /// Apply the hunks to the filesystem, returning which files were added, modified, or deleted.
 /// Returns an error if the patch could not be applied.
-fn apply_hunks_to_files(hunks: &[Hunk]) -> anyhow::Result<AffectedPaths> {
+fn apply_hunks_to_files(hunks: &[Hunk]) -> Result<AffectedPaths, ApplyPatchError> {
     if hunks.is_empty() {
-        anyhow::bail!("No files were modified.");
+        return Err(empty_patch());
     }
 
-    let mut added: Vec<PathBuf> = Vec::new();
-    let mut modified: Vec<PathBuf> = Vec::new();
-    let mut deleted: Vec<PathBuf> = Vec::new();
+    // Prepare each hunk immediately before applying it: the CLI applies hunks
+    // in order, so a later hunk can see changes from an earlier one.
+    let mut affected = AffectedPaths::default();
     for hunk in hunks {
         match hunk {
             Hunk::AddFile { path, contents } => {
-                if let Some(parent) = path.parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    std::fs::create_dir_all(parent).with_context(|| {
-                        format!("Failed to create parent directories for {}", path.display())
-                    })?;
-                }
-                std::fs::write(path, contents)
-                    .with_context(|| format!("Failed to write file {}", path.display()))?;
-                added.push(path.clone());
+                affected.apply_change(path, &prepare_add(path, contents.clone())?)?;
             }
-            Hunk::DeleteFile { path } => {
-                std::fs::remove_file(path)
-                    .with_context(|| format!("Failed to delete file {}", path.display()))?;
-                deleted.push(path.clone());
-            }
+            Hunk::DeleteFile { path } => affected.delete(path)?,
             Hunk::UpdateFile {
                 path,
                 move_path,
                 chunks,
             } => {
-                let AppliedPatch { new_contents, .. } =
-                    derive_new_contents_from_chunks(path, chunks)?;
-                if let Some(dest) = move_path {
-                    if let Some(parent) = dest.parent()
-                        && !parent.as_os_str().is_empty()
-                    {
-                        std::fs::create_dir_all(parent).with_context(|| {
-                            format!("Failed to create parent directories for {}", dest.display())
-                        })?;
-                    }
-                    std::fs::write(dest, new_contents)
-                        .with_context(|| format!("Failed to write file {}", dest.display()))?;
-                    std::fs::remove_file(path)
-                        .with_context(|| format!("Failed to remove original {}", path.display()))?;
-                    modified.push(dest.clone());
-                } else {
-                    std::fs::write(path, new_contents)
-                        .with_context(|| format!("Failed to write file {}", path.display()))?;
-                    modified.push(path.clone());
-                }
+                let patch = derive_new_contents_from_chunks(path, chunks)?;
+                affected.update(path, move_path.as_deref(), &patch.new_contents, None)?;
             }
         }
     }
-    Ok(AffectedPaths {
-        added,
-        modified,
-        deleted,
+    Ok(affected)
+}
+
+fn empty_patch() -> ApplyPatchError {
+    ApplyPatchError::ComputeReplacements("No files were modified.".into())
+}
+
+impl AffectedPaths {
+    fn apply_change(&mut self, path: &Path, change: &ApplyPatchFileChange) -> Result<(), IoError> {
+        match change {
+            ApplyPatchFileChange::Add { content } => {
+                create_file(path, content)?;
+                self.added.push(path.to_path_buf());
+                Ok(())
+            }
+            ApplyPatchFileChange::Delete { .. } => self.delete(path),
+            ApplyPatchFileChange::Update {
+                new_content,
+                move_path,
+                expected_original,
+                ..
+            } => self.update(
+                path,
+                move_path.as_deref(),
+                new_content,
+                expected_original.as_deref(),
+            ),
+        }
+    }
+
+    fn delete(&mut self, path: &Path) -> Result<(), IoError> {
+        remove_file(path, "delete file")?;
+        self.deleted.push(path.to_path_buf());
+        Ok(())
+    }
+
+    fn update(
+        &mut self,
+        path: &Path,
+        move_path: Option<&Path>,
+        content: &str,
+        expected_original: Option<&str>,
+    ) -> Result<(), IoError> {
+        if let Some(original) = expected_original {
+            if apply_small_update(path, original, content)? {
+                self.modified.push(path.to_path_buf());
+            }
+            return Ok(());
+        }
+
+        let dest = move_path.unwrap_or(path);
+        create_parent_dirs(dest)?;
+        std::fs::write(dest, content).map_err(|source| IoError {
+            context: format!("Failed to write file {}", dest.display()),
+            source,
+        })?;
+        if move_path.is_some() {
+            remove_file(path, "remove original")?;
+        }
+        self.modified.push(dest.to_path_buf());
+        Ok(())
+    }
+}
+
+fn remove_file(path: &Path, operation: &str) -> Result<(), IoError> {
+    std::fs::remove_file(path).map_err(|source| IoError {
+        context: format!("Failed to {operation} {}", path.display()),
+        source,
     })
 }
 
 struct AppliedPatch {
     original_contents: String,
     new_contents: String,
+}
+
+fn add_file_error(path: &Path, source: std::io::Error) -> IoError {
+    let context = if source.kind() == std::io::ErrorKind::AlreadyExists {
+        format!(
+            "Cannot add {}: use Update File for an existing path",
+            path.display()
+        )
+    } else {
+        format!("Failed to create file {}", path.display())
+    };
+    IoError { context, source }
+}
+
+const SMALL_ADD_MAX_CHANGED_LINES: usize = 8;
+const SMALL_ADD_MAX_CHANGED_BYTES: usize = 4096;
+
+fn prepare_add(path: &Path, content: String) -> Result<ApplyPatchFileChange, ApplyPatchError> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ApplyPatchFileChange::Add { content });
+        }
+        Err(error) => return Err(add_file_error(path, error).into()),
+    };
+    if !metadata.is_file() {
+        return Err(add_file_error(path, std::io::ErrorKind::AlreadyExists.into()).into());
+    }
+    let original = std::fs::read_to_string(path).map_err(|source| IoError {
+        context: format!("Failed to read existing file {}", path.display()),
+        source,
+    })?;
+    let diff = TextDiff::from_lines(&original, &content);
+    let (mut added, mut removed, mut bytes) = (0, 0, 0);
+    let (mut removed_text, mut retained_text) = (false, false);
+    for change in diff.iter_all_changes() {
+        let line = change.value();
+        match change.tag() {
+            similar::ChangeTag::Equal => {
+                retained_text |= !line.trim().is_empty();
+                continue;
+            }
+            similar::ChangeTag::Insert => added += 1,
+            similar::ChangeTag::Delete => {
+                removed += 1;
+                removed_text |= !line.trim().is_empty();
+            }
+        }
+        bytes += line.len();
+    }
+    if added + removed > SMALL_ADD_MAX_CHANGED_LINES
+        || bytes > SMALL_ADD_MAX_CHANGED_BYTES
+        || (removed_text && !retained_text)
+    {
+        return Err(ApplyPatchError::ComputeReplacements(format!(
+            "Cannot add {}: would add {added} and remove {removed} lines; use Update File",
+            path.display()
+        )));
+    }
+    Ok(ApplyPatchFileChange::Update {
+        unified_diff: diff.unified_diff().context_radius(1).to_string(),
+        move_path: None,
+        new_content: content,
+        expected_original: Some(original),
+    })
+}
+
+fn apply_small_update(path: &Path, original: &str, content: &str) -> Result<bool, IoError> {
+    let error = |source| IoError {
+        context: format!("Failed to apply small update to {}", path.display()),
+        source,
+    };
+    let changed = || {
+        error(std::io::Error::other(
+            "file changed after patch verification",
+        ))
+    };
+    if !std::fs::symlink_metadata(path).map_err(error)?.is_file() {
+        return Err(changed());
+    }
+    // Read and write through the same handle so a path replacement cannot
+    // redirect the write after we compare the content.
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(error)?;
+    let mut current = Vec::new();
+    (&mut file)
+        .take(original.len() as u64 + 1)
+        .read_to_end(&mut current)
+        .map_err(error)?;
+    if current != original.as_bytes() {
+        return Err(changed());
+    }
+    if original == content {
+        return Ok(false);
+    }
+    file.rewind().map_err(error)?;
+    file.write_all(content.as_bytes()).map_err(error)?;
+    file.set_len(content.len() as u64).map_err(error)?;
+    Ok(true)
+}
+
+fn create_parent_dirs(path: &Path) -> Result<(), IoError> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|source| IoError {
+            context: format!("Failed to create parent directories for {}", path.display()),
+            source,
+        })?;
+    }
+    Ok(())
+}
+
+fn create_file(path: &Path, contents: &str) -> Result<(), IoError> {
+    create_parent_dirs(path)?;
+    // Check again at write time: the path may have appeared after verification.
+    std::fs::File::create_new(path)
+        .and_then(|mut file| file.write_all(contents.as_bytes()))
+        .map_err(|source| add_file_error(path, source))
 }
 
 /// Return *only* the new file contents (joined into a single `String`) after
@@ -569,92 +686,14 @@ pub fn unified_diff_from_chunks_with_context(
 /// Returns the summary string (e.g. "Success. Updated the following files:\nM src/foo.rs\n").
 pub fn apply_action(action: &ApplyPatchAction) -> std::result::Result<String, ApplyPatchError> {
     if action.is_empty() {
-        return Err(ApplyPatchError::IoError(IoError {
-            context: "No files were modified.".to_string(),
-            source: std::io::Error::other("empty patch action"),
-        }));
+        return Err(empty_patch());
     }
 
-    let mut added: Vec<PathBuf> = Vec::new();
-    let mut modified: Vec<PathBuf> = Vec::new();
-    let mut deleted: Vec<PathBuf> = Vec::new();
-
+    let mut affected = AffectedPaths::default();
     for (path, change) in action.changes() {
-        match change {
-            ApplyPatchFileChange::Add { content } => {
-                if let Some(parent) = path.parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        ApplyPatchError::IoError(IoError {
-                            context: format!(
-                                "Failed to create parent directories for {}",
-                                path.display()
-                            ),
-                            source: e,
-                        })
-                    })?;
-                }
-                std::fs::write(path, content).map_err(|e| {
-                    ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to write file {}", path.display()),
-                        source: e,
-                    })
-                })?;
-                added.push(path.clone());
-            }
-            ApplyPatchFileChange::Delete { .. } => {
-                std::fs::remove_file(path).map_err(|e| {
-                    ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to delete file {}", path.display()),
-                        source: e,
-                    })
-                })?;
-                deleted.push(path.clone());
-            }
-            ApplyPatchFileChange::Update {
-                new_content,
-                move_path,
-                ..
-            } => {
-                let dest = move_path.as_deref().unwrap_or(path.as_path());
-                if let Some(parent) = dest.parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        ApplyPatchError::IoError(IoError {
-                            context: format!(
-                                "Failed to create parent directories for {}",
-                                dest.display()
-                            ),
-                            source: e,
-                        })
-                    })?;
-                }
-                std::fs::write(dest, new_content).map_err(|e| {
-                    ApplyPatchError::IoError(IoError {
-                        context: format!("Failed to write file {}", dest.display()),
-                        source: e,
-                    })
-                })?;
-                if move_path.is_some() {
-                    std::fs::remove_file(path).map_err(|e| {
-                        ApplyPatchError::IoError(IoError {
-                            context: format!("Failed to remove original {}", path.display()),
-                            source: e,
-                        })
-                    })?;
-                }
-                modified.push(dest.to_path_buf());
-            }
-        }
+        affected.apply_change(path, change)?;
     }
 
-    let affected = AffectedPaths {
-        added,
-        modified,
-        deleted,
-    };
     let mut summary = Vec::new();
     print_summary(&affected, &mut summary).map_err(|e| {
         ApplyPatchError::IoError(IoError {
@@ -671,6 +710,9 @@ pub fn print_summary(
     affected: &AffectedPaths,
     out: &mut impl std::io::Write,
 ) -> std::io::Result<()> {
+    if affected.added.is_empty() && affected.modified.is_empty() && affected.deleted.is_empty() {
+        return writeln!(out, "Success. No files changed.");
+    }
     writeln!(out, "Success. Updated the following files:")?;
     for path in &affected.added {
         writeln!(out, "A {}", path.display())?;

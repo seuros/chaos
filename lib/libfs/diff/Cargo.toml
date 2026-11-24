@@ -17,13 +17,13 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 similar = { workspace = true }
 thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 tree-sitter-bash = { workspace = true }
 
 [dev-dependencies]
+anyhow = { workspace = true }
 assert_cmd = { workspace = true }
 chaos-which = { workspace = true }
 pretty_assertions = { workspace = true }

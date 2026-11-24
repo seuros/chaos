@@ -88,7 +88,7 @@ fn snapshot_dir_recursive(
         // under both Cargo and Buck2.
         let metadata = fs::metadata(&path)?;
         if metadata.is_dir() {
-            entries.insert(rel.clone(), Entry::Dir);
+            entries.insert(rel, Entry::Dir);
             snapshot_dir_recursive(base, &path, entries)?;
         } else if metadata.is_file() {
             let contents = fs::read(&path)?;

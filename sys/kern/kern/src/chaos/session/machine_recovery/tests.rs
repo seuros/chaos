@@ -389,6 +389,20 @@ async fn machine_recovery_after_session_resume_can_publish_a_wake() {
         "stable recovery must be eligible for runner admission"
     );
     assert_eq!(pending[0].source, Some(TaskSource::MachineRecovery));
+    use chaos_ipc::models::{ContentItem, ResponseItem};
+
+    session.deliver_task_completions(&turn).await.unwrap();
+    let history = session.clone_history().await;
+    let Some(ResponseItem::Message { content, .. }) = history.raw_items().last() else {
+        panic!("expected a recovery completion message");
+    };
+    let ContentItem::InputText { text } = &content[0] else {
+        panic!("expected recovery completion text");
+    };
+    assert!(text.contains("\"machine_health\":"));
+    assert!(text.contains("\"phase\":\"recovered\""));
+    assert!(text.contains("\"outstanding_warnings\":[]"));
+    assert!(!text.contains("\"observations\":"));
 }
 
 #[tokio::test]

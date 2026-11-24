@@ -269,6 +269,24 @@ impl Session {
                 if state.machine_recovery.phase() == Phase::Recovered {
                     let recovery = &state.machine_recovery;
                     let recovery_status = recovery.status(&config.machine_warnings, recovery.now());
+                    let warnings = observation.iter().flat_map(|status| &status.warnings).map(|warning| {
+                        use crate::machine_warnings::MachineWarning;
+
+                        match warning {
+                            MachineWarning::LowBattery { charge_percent, .. } => {
+                                serde_json::json!({"kind": "low_battery", "charge_percent": charge_percent})
+                            }
+                            MachineWarning::LowDiskSpace { available_bytes, available_percent, .. } => {
+                                serde_json::json!({"kind": "low_disk_space", "available_bytes": available_bytes, "available_percent": available_percent})
+                            }
+                            MachineWarning::Thermal { state } => {
+                                serde_json::json!({"kind": "thermal", "state": state})
+                            }
+                            MachineWarning::CpuTemperature { value, threshold, .. } => {
+                                serde_json::json!({"kind": "cpu_temperature", "value": value, "threshold": threshold})
+                            }
+                        }
+                    }).collect::<Vec<_>>();
                     self.services
                         .internal_task_store
                         .complete(
@@ -276,6 +294,12 @@ impl Session {
                             TaskState::Succeeded,
                             Some("Stable recovery observed; reassess before resuming.".into()),
                             Some(serde_json::json!({
+                                "health_summary": {
+                                    "phase": "recovered",
+                                    "stable_seconds": recovery_status.stable_seconds,
+                                    "required_seconds": recovery_status.required_seconds,
+                                    "outstanding_warnings": warnings,
+                                },
                                 "recovery": recovery_status,
                                 "observations": observation.as_ref().ok(),
                             })),

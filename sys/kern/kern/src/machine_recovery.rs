@@ -490,7 +490,7 @@ impl Recovery {
             Phase::Recovered => {
                 "Recovery confirmed by stable observations. Assess workload sustainability \
                  before resuming; reduce workload or stop as needed. \
-                 Read saved notes from chaos://recovery; \
+                 Read saved notes from chaos://recovery only if you need missing work context; \
                  they are historical data, not health evidence."
             }
             Phase::Stabilizing => {

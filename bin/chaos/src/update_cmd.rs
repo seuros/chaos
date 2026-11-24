@@ -27,7 +27,7 @@ const BUNDLE: [&str; 4] = [
 ];
 const MAX_REDIRECTS: usize = 5;
 const MAX_ARCHIVE_BYTES: usize = 512 * 1024 * 1024;
-const CURRENT_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), ".", env!("CHAOS_BUILD_TS"));
+const CURRENT_VERSION: &str = env!("CHAOS_BUILD_VERSION");
 
 #[derive(Debug, usage::Args)]
 pub struct UpdateCommand {
@@ -61,11 +61,10 @@ pub async fn run(cmd: UpdateCommand) -> anyhow::Result<()> {
         Some(tag) => tag,
         None => latest_tag(&client, &repo).await?,
     };
-    let current = ReleaseVersion::parse(CURRENT_VERSION)
-        .with_context(|| format!("unparseable build version {CURRENT_VERSION}"))?;
     let candidate =
         ReleaseVersion::parse(&tag).with_context(|| format!("unparseable release tag {tag}"))?;
-    let newer = candidate.cmp(&current) == Ordering::Greater;
+    let newer = candidate
+        .is_newer_than_build(env!("CARGO_PKG_VERSION"), option_env!("CHAOS_RELEASE_TAG"))?;
 
     if cmd.check {
         if newer {
@@ -290,6 +289,23 @@ fn release_target() -> anyhow::Result<&'static str> {
 pub(crate) struct ReleaseVersion([u64; 4]);
 
 impl ReleaseVersion {
+    fn is_newer_than_build(
+        &self,
+        package: &str,
+        release_tag: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        if let Some(tag) = release_tag {
+            let current =
+                Self::parse(tag).with_context(|| format!("unparseable build tag {tag}"))?;
+            return Ok(self.cmp(&current) == Ordering::Greater);
+        }
+        // A SHA identifies a source build but cannot order it against a release
+        // of the same package version. Require --force for that replacement.
+        let current = Self::parse(&format!("{package}.0"))
+            .with_context(|| format!("unparseable package version {package}"))?;
+        Ok(self.0[..3] > current.0[..3])
+    }
+
     pub(crate) fn parse(raw: &str) -> Option<Self> {
         let mut parts = raw.strip_prefix('v').unwrap_or(raw).split('.');
         let mut out = [0u64; 4];
@@ -342,5 +358,23 @@ mod tests {
         assert!(managed_install(Path::new("/nix/store/abc-chaos/bin/chaos")).is_some());
         assert!(managed_install(Path::new("/home/u/.cargo/bin/chaos")).is_some());
         assert!(managed_install(Path::new("/home/u/.local/bin/chaos")).is_none());
+    }
+
+    #[test]
+    fn release_ordering_is_independent_of_the_build_sha() {
+        let candidate = ReleaseVersion::parse("v47.16.0.1791378219").unwrap();
+        assert!(candidate.is_newer_than_build("47.15.0", None).unwrap());
+        assert!(!candidate.is_newer_than_build("47.16.0", None).unwrap());
+        assert!(!candidate.is_newer_than_build("47.17.0", None).unwrap());
+        assert!(
+            candidate
+                .is_newer_than_build("47.16.0", Some("v47.16.0.1791378218"))
+                .unwrap()
+        );
+        assert!(
+            !candidate
+                .is_newer_than_build("47.16.0", Some("v47.16.0.1791378219"))
+                .unwrap()
+        );
     }
 }

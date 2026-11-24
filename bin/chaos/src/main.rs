@@ -75,7 +75,7 @@ use chaos_sysinfo::terminal::TerminalName;
 )]
 #[usage(
     author = env!("CARGO_PKG_AUTHORS"),
-    version = concat!(env!("CARGO_PKG_VERSION"), ".", env!("CHAOS_BUILD_TS")),
+    version = env!("CHAOS_BUILD_VERSION"),
     // The executable is sometimes invoked via a platform‑specific name like
     // `chaos-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `chaos` command name that users run.

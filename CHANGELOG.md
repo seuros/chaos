@@ -3,11 +3,23 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR.TIMESTAMP`. A MAJOR
+Versions follow [VibeSemVer](SEMVER.md): `47.MAJOR.MINOR+SHA[-dirty]`. A MAJOR
 entry means read this file before upgrading. A MINOR entry means you probably
-should. There is no patch level; the build timestamp is the patch.
+should. The build identifies its source commit rather than a patch level.
 
 ## [Unreleased]
+
+## [47.17.0] - 2026-11-24
+
+### Changed
+- `chaos --version` reports a short Git SHA instead of a build timestamp,
+  with `-dirty` when tracked changes are uncommitted.
+
+### Fixed
+- `apply_patch` rejects large `Add File` rewrites of existing files while
+  accepting small edits.
+- MCP resource reads can resolve the server when its name is omitted.
+- Recall guidance is shown only on backends that support memory.
 
 ## [47.16.0] - 2026-11-23
 

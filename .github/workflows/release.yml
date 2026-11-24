@@ -17,7 +17,6 @@ jobs:
     name: Prepare release metadata
     runs-on: ubuntu-latest
     outputs:
-      build_ts: ${{ steps.meta.outputs.build_ts }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
       is_github: ${{ steps.meta.outputs.is_github }}
     steps:
@@ -36,7 +35,6 @@ jobs:
           else
             is_github="false"
           fi
-          echo "build_ts=${build_ts}"  >> "$GITHUB_OUTPUT"
           echo "tag_name=${tag_name}"  >> "$GITHUB_OUTPUT"
           echo "is_github=${is_github}" >> "$GITHUB_OUTPUT"
           echo "### Release metadata" >> "$GITHUB_STEP_SUMMARY"
@@ -99,7 +97,7 @@ jobs:
       - name: Build tarball
         shell: bash
         env:
-          CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
+          CHAOS_RELEASE_TAG: ${{ needs.prepare.outputs.tag_name }}
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
@@ -169,7 +167,7 @@ jobs:
       - name: Build tarball
         shell: bash
         env:
-          CHAOS_BUILD_TS: ${{ needs.prepare.outputs.build_ts }}
+          CHAOS_RELEASE_TAG: ${{ needs.prepare.outputs.tag_name }}
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail

@@ -3,7 +3,7 @@
 ## Format
 
 ```
-47.MAJOR.MINOR.TIMESTAMP
+47.MAJOR.MINOR+SHA[-dirty]
 ```
 
 ## 47
@@ -27,20 +27,22 @@ Incremented when you don't need to read anything but probably should. New
 things showed up. Nothing broke. You'll discover them eventually, or they'll
 discover you.
 
-## TIMESTAMP
+## SHA
 
-Unix epoch seconds at compile time. Every build is unique. Two binaries
-compiled one second apart are different versions. This is the only honest
-number in the entire scheme.
+`chaos --version` reports the abbreviated Git commit (at least eight hex
+characters). Builds from the same clean commit report the same version.
+Staged or unstaged changes to tracked files add `-dirty`; untracked files
+alone do not. Builds without Git metadata report `+unknown`.
 
-The timestamp is injected by `build.rs` and baked into the binary. You cannot
-fake it without recompiling, and if you recompile, you get a new one. The
-system is self-correcting.
+Published release tags still use `v47.MAJOR.MINOR.TIMESTAMP` so the updater
+can order releases and install older tags. A source build has no release
+timestamp, so replacing it with a release of the same package version
+requires `chaos update --force`.
 
 ## What about PATCH?
 
 There is no patch level. If something is broken, it gets fixed and rebuilt.
-The new timestamp is the patch. Ship it.
+The new commit identifies the fix. Ship it.
 
 ## Version 48
 
@@ -56,9 +58,9 @@ No human may open this PR. Attempting to do so results in a 47-day ban.
 | Scheme | Honest? | Notes |
 |--------|---------|-------|
 | SemVer | Aspirational | Nobody follows it anyway |
-| CalVer | Date-based | We have that, it's called TIMESTAMP |
+| CalVer | Date-based | Release tags still have a timestamp |
 | [VibeSemVer](https://github.com/seuros/vibecode.crust/blob/master-vibe/SEMVER.md) | Chaotic | The original. We learned from the best. |
-| Chaos VibeSemVer | Yes | The timestamp never lies |
+| Chaos VibeSemVer | Yes | The build identifies its source commit |
 
 ## Releases
 

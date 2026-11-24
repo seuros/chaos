@@ -52,6 +52,7 @@ use crate::proxy::{
 };
 
 mod prompt;
+pub use prompt::AntigravityAudioAttachment;
 use prompt::AntigravitySystemPrompt;
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
@@ -275,6 +276,30 @@ impl EgressProxy {
             .as_ref()
             .ok_or("clamp egress was started without system-prompt replacement")?
             .update(text)
+    }
+
+    /// Authorize validated human-attached audio clips for the active Antigravity
+    /// turn on `authorized_model`. Clips are spliced on every matching main
+    /// generation request in the turn until [`Self::disarm_antigravity_audio`]
+    /// is called.
+    pub fn arm_antigravity_audio(
+        &self,
+        authorized_model: String,
+        attachments: Vec<AntigravityAudioAttachment>,
+    ) -> Result<(), BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .arm_audio(authorized_model, attachments)
+    }
+
+    /// Clear any turn-scoped Antigravity audio attachments and return the number
+    /// of main generation requests that received the splice during the turn.
+    pub fn disarm_antigravity_audio(&self) -> Result<usize, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .disarm_audio()
     }
 
     /// Stop the proxy.

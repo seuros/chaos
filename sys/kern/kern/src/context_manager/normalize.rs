@@ -299,7 +299,8 @@ pub(crate) fn strip_images_when_unsupported(
     items: &mut [ResponseItem],
 ) {
     let supports_images = input_modalities.contains(&InputModality::Image);
-    if supports_images {
+    let supports_audio = input_modalities.contains(&InputModality::Audio);
+    if supports_images && supports_audio {
         return;
     }
 
@@ -309,9 +310,14 @@ pub(crate) fn strip_images_when_unsupported(
                 let mut normalized_content = Vec::with_capacity(content.len());
                 for content_item in content.iter() {
                     match content_item {
-                        ContentItem::InputImage { .. } => {
+                        ContentItem::InputImage { .. } if !supports_images => {
                             normalized_content.push(ContentItem::InputText {
                                 text: IMAGE_CONTENT_OMITTED_PLACEHOLDER.to_string(),
+                            });
+                        }
+                        ContentItem::InputAudio { placeholder, .. } if !supports_audio => {
+                            normalized_content.push(ContentItem::InputText {
+                                text: placeholder.clone(),
                             });
                         }
                         _ => normalized_content.push(content_item.clone()),
@@ -320,7 +326,9 @@ pub(crate) fn strip_images_when_unsupported(
                 *content = normalized_content;
             }
             ResponseItem::FunctionCallOutput { output, .. }
-            | ResponseItem::CustomToolCallOutput { output, .. } => {
+            | ResponseItem::CustomToolCallOutput { output, .. }
+                if !supports_images =>
+            {
                 if let Some(content_items) = output.content_items_mut() {
                     let mut normalized_content_items = Vec::with_capacity(content_items.len());
                     for content_item in content_items.iter() {

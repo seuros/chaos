@@ -166,7 +166,11 @@ async fn parses_models_response() {
     assert_eq!(models[0].priority, 1);
     assert_eq!(
         models[0].input_modalities,
-        [InputModality::Text, InputModality::Image, InputModality::Audio]
+        [
+            InputModality::Text,
+            InputModality::Image,
+            InputModality::Audio
+        ]
     );
     assert!(models[1].input_modalities.is_empty());
     assert_eq!(

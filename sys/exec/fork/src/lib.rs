@@ -133,6 +133,7 @@ struct ExecRunArgs {
     fork_history: Option<Vec<RolloutItem>>,
     resume_process_id: Option<ProcessId>,
     prompt: Option<String>,
+    audio: Vec<PathBuf>,
     skip_git_repo_check: bool,
     stderr_with_ansi: bool,
 }
@@ -238,6 +239,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         output_schema: output_schema_path,
         config_overrides,
         progress_cursor,
+        audio,
     } = cli;
 
     let (_stdout_with_ansi, stderr_with_ansi) = match color {
@@ -451,6 +453,7 @@ pub async fn run_main(mut cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Re
         fork_history,
         resume_process_id,
         prompt,
+        audio,
         skip_git_repo_check,
         stderr_with_ansi,
     })
@@ -476,6 +479,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         fork_history,
         resume_process_id,
         prompt,
+        audio,
         skip_git_repo_check,
         stderr_with_ansi,
     } = args;
@@ -569,11 +573,14 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 })
                 .or(root_prompt);
             let prompt_text = resolve_prompt(prompt_arg);
-            let items = vec![UserInput::Text {
+            let mut items = vec![UserInput::Text {
                 text: prompt_text.clone(),
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
             }];
+            for path in &audio {
+                items.push(UserInput::LocalAudio { path: path.clone() });
+            }
             let output_schema = load_output_schema(output_schema_path.clone())?;
             (
                 InitialOperation::UserTurn {
@@ -585,11 +592,14 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
         (None, root_prompt) => {
             let prompt_text = resolve_prompt(root_prompt);
-            let items = vec![UserInput::Text {
+            let mut items = vec![UserInput::Text {
                 text: prompt_text.clone(),
                 // CLI input doesn't track UI element ranges, so none are available here.
                 text_elements: Vec::new(),
             }];
+            for path in &audio {
+                items.push(UserInput::LocalAudio { path: path.clone() });
+            }
             let output_schema = load_output_schema(output_schema_path)?;
             (
                 InitialOperation::UserTurn {

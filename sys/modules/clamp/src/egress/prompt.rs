@@ -43,6 +43,36 @@ struct ActiveAudioTurn {
     spliced_requests: usize,
 }
 
+/// RAII guard that disarms turn-scoped Antigravity audio when dropped (for
+/// example on turn cancellation) or when explicitly disarmed at turn end.
+pub struct AntigravityAudioGuard {
+    audio: Arc<RwLock<Option<ActiveAudioTurn>>>,
+    disarmed: bool,
+}
+
+impl AntigravityAudioGuard {
+    /// Clear the active turn's attachments and return the number of authorized
+    /// main generation requests that received the splice.
+    pub fn disarm(mut self) -> Result<usize, BoxError> {
+        self.disarmed = true;
+        let mut guard = self
+            .audio
+            .write()
+            .map_err(|_| "clamp audio attachment lock poisoned")?;
+        Ok(guard.take().map_or(0, |turn| turn.spliced_requests))
+    }
+}
+
+impl Drop for AntigravityAudioGuard {
+    fn drop(&mut self) {
+        if !self.disarmed
+            && let Ok(mut guard) = self.audio.write()
+        {
+            *guard = None;
+        }
+    }
+}
+
 /// Shared by the proxy handle and all of its connections. Updated before the
 /// CLI starts each turn, so resumed conversations cannot retain a stale prompt.
 #[derive(Clone)]
@@ -77,7 +107,7 @@ impl AntigravitySystemPrompt {
         &self,
         authorized_model: String,
         attachments: Vec<AntigravityAudioAttachment>,
-    ) -> Result<(), BoxError> {
+    ) -> Result<AntigravityAudioGuard, BoxError> {
         let mut guard = self
             .audio
             .write()
@@ -91,7 +121,10 @@ impl AntigravitySystemPrompt {
                 spliced_requests: 0,
             });
         }
-        Ok(())
+        Ok(AntigravityAudioGuard {
+            audio: Arc::clone(&self.audio),
+            disarmed: false,
+        })
     }
 
     pub(super) fn disarm_audio(&self) -> Result<usize, BoxError> {

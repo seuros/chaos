@@ -34,6 +34,7 @@ pub use antigravity::AntigravityUsage;
 pub use antigravity_sandbox::prepare_antigravity_sandbox;
 pub use egress::ANTIGRAVITY_ALLOWED_HOSTS;
 pub use egress::AntigravityAudioAttachment;
+pub use egress::AntigravityAudioGuard;
 pub use egress::EgressPolicy;
 pub use egress::EgressProxy;
 pub use protocol::ControlRequest;

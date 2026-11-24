@@ -116,6 +116,73 @@ fn antigravity_usage_preserves_reasoning_and_cache_tokens() {
 }
 
 #[test]
+fn active_turn_audio_attachments_only_arms_latest_user_turn() {
+    use chaos_ipc::models::ContentItem;
+    use chaos_ipc::models::ResponseItem;
+
+    let turn1_user = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![
+            ContentItem::InputText {
+                text: "Which tone came first?".to_string(),
+            },
+            ContentItem::InputAudio {
+                data: "UklGRiQAAABXQVZF".to_string(),
+                mime_type: "audio/wav".to_string(),
+                placeholder: "[audio clip: tones.wav, 1.0 s, id 7f3a9c12]".to_string(),
+            },
+        ],
+        end_turn: None,
+        phase: None,
+    };
+
+    let mut prompt = crate::client_common::Prompt::default();
+    prompt.input = vec![
+        turn1_user.clone(),
+        ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "<permissions instructions>...</permissions instructions>".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ];
+    let armed = super::active_turn_audio_attachments(&prompt);
+    assert_eq!(armed.len(), 1);
+    assert_eq!(armed[0].nonce, "7f3a9c12");
+    assert_eq!(armed[0].mime_type, "audio/wav");
+    assert_eq!(armed[0].data_base64, "UklGRiQAAABXQVZF");
+
+    // After the assistant responds and a follow-up plain-text user turn arrives,
+    // the earlier turn's audio must NOT be re-armed.
+    prompt.input = vec![
+        turn1_user,
+        ResponseItem::Message {
+            id: None,
+            role: "assistant".to_string(),
+            content: vec![ContentItem::OutputText {
+                text: "The higher tone came first.".to_string(),
+            }],
+            end_turn: Some(true),
+            phase: None,
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "Thanks!".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ];
+    assert!(super::active_turn_audio_attachments(&prompt).is_empty());
+}
+
+#[test]
 fn clamp_usage_uses_aggregate_counters_and_last_call_context() {
     let usage = clamp_usage_to_token_usage(
         Usage {

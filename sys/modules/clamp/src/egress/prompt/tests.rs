@@ -290,7 +290,7 @@ fn cloud_request_with_user_text(model: &str, user_text: &str) -> Value {
 async fn armed_audio_splices_inline_data_beside_permanent_placeholder() {
     let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
     let attachment = sample_audio_attachment("7f3a9c12");
-    prompt
+    let guard = prompt
         .arm_audio("gemini-4-neon-high".to_string(), vec![attachment.clone()])
         .unwrap();
 
@@ -309,7 +309,9 @@ async fn armed_audio_splices_inline_data_beside_permanent_placeholder() {
     assert_eq!(content_length, bytes.len());
 
     let actual: Value = serde_json::from_slice(&bytes).unwrap();
-    let parts = actual["request"]["contents"][0]["parts"].as_array().unwrap();
+    let parts = actual["request"]["contents"][0]["parts"]
+        .as_array()
+        .unwrap();
     assert_eq!(parts.len(), 2);
     assert_eq!(parts[0]["text"], user_text);
     assert_eq!(
@@ -321,7 +323,7 @@ async fn armed_audio_splices_inline_data_beside_permanent_placeholder() {
             }
         })
     );
-    assert_eq!(prompt.disarm_audio().unwrap(), 1);
+    assert_eq!(guard.disarm().unwrap(), 1);
     assert!(!format!("{attachment:?}").contains(&attachment.data_base64));
 }
 
@@ -344,10 +346,16 @@ async fn non_matching_auxiliary_and_history_echo_requests_never_splice_audio() {
             .unwrap(),
     )
     .await;
-    assert_eq!(unarmed["request"]["contents"][0]["parts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        unarmed["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     // Arm for gemini-4-neon-high.
-    prompt
+    let guard = prompt
         .arm_audio(
             "gemini-4-neon-high".to_string(),
             vec![sample_audio_attachment("deadbeef")],
@@ -369,13 +377,19 @@ async fn non_matching_auxiliary_and_history_echo_requests_never_splice_audio() {
     )
     .await;
     assert_eq!(
-        wrong_model["request"]["contents"][0]["parts"].as_array().unwrap().len(),
+        wrong_model["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
 
     // 3. Auxiliary call on the SAME model (no tools) copying user text + nonce -> no splice.
     let mut same_model_aux = cloud_request_with_user_text("gemini-4-neon-high", user_text);
-    same_model_aux["request"].as_object_mut().unwrap().remove("tools");
+    same_model_aux["request"]
+        .as_object_mut()
+        .unwrap()
+        .remove("tools");
     let aux_resp = payload(
         prompt
             .rewrite(generation_request(GENERATE, same_model_aux), CLOUD_CODE)
@@ -384,7 +398,10 @@ async fn non_matching_auxiliary_and_history_echo_requests_never_splice_audio() {
     )
     .await;
     assert_eq!(
-        aux_resp["request"]["contents"][0]["parts"].as_array().unwrap().len(),
+        aux_resp["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
 
@@ -408,22 +425,28 @@ async fn non_matching_auxiliary_and_history_echo_requests_never_splice_audio() {
     )
     .await;
     assert_eq!(
-        echo_resp["request"]["contents"][0]["parts"].as_array().unwrap().len(),
+        echo_resp["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
     assert_eq!(
-        echo_resp["request"]["contents"][1]["parts"].as_array().unwrap().len(),
+        echo_resp["request"]["contents"][1]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
 
     // None of those non-matching requests counted as a delivery.
-    assert_eq!(prompt.disarm_audio().unwrap(), 0);
+    assert_eq!(guard.disarm().unwrap(), 0);
 }
 
 #[tokio::test]
 async fn multi_step_turn_splices_every_matching_request_and_clears_on_disarm() {
     let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
-    prompt
+    let guard = prompt
         .arm_audio(
             "gemini-4-neon-high".to_string(),
             vec![sample_audio_attachment("abc12345")],
@@ -445,7 +468,13 @@ async fn multi_step_turn_splices_every_matching_request_and_clears_on_disarm() {
             .unwrap(),
     )
     .await;
-    assert_eq!(step1["request"]["contents"][0]["parts"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        step1["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 
     // Step 2: post-tool-call request in the same turn resends contents[0].
     let step2_payload = json!({
@@ -462,15 +491,30 @@ async fn multi_step_turn_splices_every_matching_request_and_clears_on_disarm() {
     });
     let step2 = payload(
         prompt
-            .rewrite(generation_request(GENERATE, step2_payload), DAILY_CLOUD_CODE)
+            .rewrite(
+                generation_request(GENERATE, step2_payload),
+                DAILY_CLOUD_CODE,
+            )
             .await
             .unwrap(),
     )
     .await;
-    assert_eq!(step2["request"]["contents"][0]["parts"].as_array().unwrap().len(), 2);
-    assert_eq!(step2["request"]["contents"][2]["parts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        step2["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        step2["request"]["contents"][2]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
-    assert_eq!(prompt.disarm_audio().unwrap(), 2);
+    assert_eq!(guard.disarm().unwrap(), 2);
 
     // Resumed turn after disarm: same placeholder text receives NO audio.
     let resumed = payload(
@@ -486,7 +530,13 @@ async fn multi_step_turn_splices_every_matching_request_and_clears_on_disarm() {
             .unwrap(),
     )
     .await;
-    assert_eq!(resumed["request"]["contents"][0]["parts"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        resumed["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -495,7 +545,7 @@ async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
     let user_text = "[audio clip: tones.wav, 1.0 s, id dup99999]";
 
     // Ambiguous target: two role="user" messages contain the same nonce.
-    prompt
+    let guard = prompt
         .arm_audio(
             "gemini-4-neon-high".to_string(),
             vec![sample_audio_attachment("dup99999")],
@@ -518,10 +568,10 @@ async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
             .await
             .is_err()
     );
-    assert_eq!(prompt.disarm_audio().unwrap(), 0);
+    assert_eq!(guard.disarm().unwrap(), 0);
 
     // Oversized final serialized request (after splicing base64 audio) -> rejected.
-    prompt
+    let guard = prompt
         .arm_audio(
             "gemini-4-neon-high".to_string(),
             vec![AntigravityAudioAttachment {
@@ -541,5 +591,5 @@ async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
             .await
             .is_err()
     );
-    assert_eq!(prompt.disarm_audio().unwrap(), 0);
+    assert_eq!(guard.disarm().unwrap(), 0);
 }

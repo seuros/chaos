@@ -53,6 +53,7 @@ use crate::proxy::{
 
 mod prompt;
 pub use prompt::AntigravityAudioAttachment;
+pub use prompt::AntigravityAudioGuard;
 use prompt::AntigravitySystemPrompt;
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
@@ -286,7 +287,7 @@ impl EgressProxy {
         &self,
         authorized_model: String,
         attachments: Vec<AntigravityAudioAttachment>,
-    ) -> Result<(), BoxError> {
+    ) -> Result<AntigravityAudioGuard, BoxError> {
         self.system_prompt
             .as_ref()
             .ok_or("clamp egress was started without Antigravity prompt rewriting")?

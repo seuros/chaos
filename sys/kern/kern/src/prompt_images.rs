@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use chaos_audio::AudioError;
+use chaos_audio::load_local_wav;
 use chaos_ipc::models::ContentItem;
 use chaos_ipc::models::FunctionCallOutputContentItem;
 use chaos_ipc::models::ImageDetail;
@@ -13,36 +15,60 @@ use chaos_pixbuf::error::ImageProcessingError;
 use chaos_pixbuf::load_for_prompt;
 
 pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> ResponseInputItem {
+    try_response_input_item_from_user_input(items).unwrap_or_else(|err| {
+        ResponseInputItem::Message {
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: err.to_string(),
+            }],
+        }
+    })
+}
+
+pub(crate) fn try_response_input_item_from_user_input(
+    items: Vec<UserInput>,
+) -> Result<ResponseInputItem, AudioError> {
     let mut image_index = 0;
-    ResponseInputItem::Message {
-        role: "user".to_string(),
-        content: items
-            .into_iter()
-            .flat_map(|item| match item {
-                UserInput::Text { text, .. } => vec![ContentItem::InputText { text }],
-                UserInput::Image { image_url } => {
-                    image_index += 1;
-                    remote_image_content_items(image_url)
-                }
-                UserInput::LocalImage { path } => {
-                    image_index += 1;
-                    local_image_content_items_with_label_number(
-                        &path,
-                        Some(image_index),
-                        PromptImageMode::ResizeToFit,
-                    )
-                }
-                UserInput::Mention { .. } => Vec::new(),
-                UserInput::EmbeddedResource { name, text, .. } => {
-                    let header = format!("[{name}]\n");
-                    vec![ContentItem::InputText {
-                        text: format!("{header}{text}"),
-                    }]
-                }
-                _ => Vec::new(),
-            })
-            .collect(),
+    let mut content = Vec::new();
+    for item in items {
+        match item {
+            UserInput::Text { text, .. } => content.push(ContentItem::InputText { text }),
+            UserInput::Image { image_url } => {
+                image_index += 1;
+                content.extend(remote_image_content_items(image_url));
+            }
+            UserInput::LocalImage { path } => {
+                image_index += 1;
+                content.extend(local_image_content_items_with_label_number(
+                    &path,
+                    Some(image_index),
+                    PromptImageMode::ResizeToFit,
+                ));
+            }
+            UserInput::LocalAudio { path } => {
+                let validated = load_local_wav(&path)?;
+                let nonce = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+                let placeholder = validated.placeholder(&nonce);
+                content.push(ContentItem::InputAudio {
+                    data: validated.encode_base64(),
+                    mime_type: validated.format.mime_type().to_string(),
+                    placeholder,
+                });
+            }
+            UserInput::Mention { .. } => {}
+            UserInput::EmbeddedResource { name, text, .. } => {
+                let header = format!("[{name}]\n");
+                content.push(ContentItem::InputText {
+                    text: format!("{header}{text}"),
+                });
+            }
+            _ => {}
+        }
     }
+    Ok(ResponseInputItem::Message {
+        role: "user".to_string(),
+        content,
+    })
 }
 
 pub(crate) fn local_image_content_items_with_label_number(

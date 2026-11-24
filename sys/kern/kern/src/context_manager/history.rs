@@ -600,6 +600,8 @@ fn image_data_url_estimate_adjustment(item: &ResponseItem) -> (i64, i64) {
         }
     };
 
+    let mut audio_payload_bytes = 0i64;
+    let mut audio_replacement_bytes = 0i64;
     match item {
         ResponseItem::Message { content, .. } => {
             for content_item in content {
@@ -610,8 +612,10 @@ fn image_data_url_estimate_adjustment(item: &ResponseItem) -> (i64, i64) {
                     ContentItem::InputAudio {
                         data, placeholder, ..
                     } => {
-                        payload_bytes = payload_bytes.saturating_add(data.len());
-                        replacement_bytes = replacement_bytes.saturating_add(placeholder.len());
+                        audio_payload_bytes = audio_payload_bytes
+                            .saturating_add(i64::try_from(data.len()).unwrap_or(i64::MAX));
+                        audio_replacement_bytes = audio_replacement_bytes
+                            .saturating_add(i64::try_from(placeholder.len()).unwrap_or(i64::MAX));
                     }
                     _ => {}
                 }
@@ -632,7 +636,10 @@ fn image_data_url_estimate_adjustment(item: &ResponseItem) -> (i64, i64) {
         _ => {}
     }
 
-    (payload_bytes, replacement_bytes)
+    (
+        payload_bytes.saturating_add(audio_payload_bytes),
+        replacement_bytes.saturating_add(audio_replacement_bytes),
+    )
 }
 
 fn is_model_generated_item(item: &ResponseItem) -> bool {

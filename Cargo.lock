@@ -1685,6 +1685,7 @@ dependencies = [
  "chaos-abi",
  "chaos-argv",
  "chaos-arsenal",
+ "chaos-audio",
  "chaos-check",
  "chaos-clamp",
  "chaos-client",

@@ -133,10 +133,11 @@ pub fn load_local_wav_with_limit(
         });
     }
 
-    let duration_ms = validate_wav_bytes(&bytes).map_err(|detail| AudioError::UnsupportedFormat {
-        path: path.to_path_buf(),
-        detail,
-    })?;
+    let duration_ms =
+        validate_wav_bytes(&bytes).map_err(|detail| AudioError::UnsupportedFormat {
+            path: path.to_path_buf(),
+            detail,
+        })?;
     let filename = sanitize_filename(path);
 
     Ok(ValidatedAudio {
@@ -151,7 +152,9 @@ pub fn load_local_wav_with_limit(
 /// milliseconds when a valid `fmt ` byte rate and `data` chunk are present.
 pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
     if bytes.len() < 12 {
-        return Err("file is shorter than a 12-byte RIFF/WAVE header (only WAV is supported)".into());
+        return Err(
+            "file is shorter than a 12-byte RIFF/WAVE header (only WAV is supported)".into(),
+        );
     }
     if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err("missing RIFF/WAVE magic header (only WAV is supported)".into());

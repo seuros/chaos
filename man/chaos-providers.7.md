@@ -155,6 +155,20 @@ chaos exec --json -c clamp=true -c clamp_backend=antigravity \
   -m gemini-3.1-pro-low resume <process_id> "continue"
 ```
 
+To attach a short local WAV audio clip to an Antigravity Gemini turn, pass
+`--audio <FILE>` (repeatable, up to 8 MiB per clip, validated as RIFF/WAVE
+before send):
+
+```bash
+chaos exec --json -c clamp=true -c clamp_backend=antigravity \
+  -m gemini-4-neon --audio clip.wav "What do you hear?"
+```
+
+Audio clips are spliced turn-scoped into authorized main generation requests by
+the Antigravity egress proxy and left in resumed history as a permanent text
+placeholder without re-uploading raw audio bytes. Unsupported routes or models
+without audio support fail before sending.
+
 Resumes require the same effective clamp configuration, including any non-default
 backend. For AGY, retain the process ID, dedicated home, CLI path, and model
 selection across invocations and workers.

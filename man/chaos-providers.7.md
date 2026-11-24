@@ -156,8 +156,8 @@ chaos exec --json -c clamp=true -c clamp_backend=antigravity \
 ```
 
 To attach a short local WAV audio clip to an Antigravity Gemini turn, pass
-`--audio <FILE>` (repeatable, up to 8 MiB per clip, validated as RIFF/WAVE
-before send):
+`--audio <FILE>` (one regular WAV file per turn, up to 8 MiB, validated as
+RIFF/WAVE before send):
 
 ```bash
 chaos exec --json -c clamp=true -c clamp_backend=antigravity \
@@ -165,9 +165,10 @@ chaos exec --json -c clamp=true -c clamp_backend=antigravity \
 ```
 
 Audio clips are spliced turn-scoped into authorized main generation requests by
-the Antigravity egress proxy and left in resumed history as a permanent text
-placeholder without re-uploading raw audio bytes. Unsupported routes or models
-without audio support fail before sending.
+the Antigravity egress proxy; raw audio bytes stay on the live turn only and
+are never written to history, rollout logs, or compaction prompts (only the
+permanent text placeholder enters history). Unsupported routes, models without
+audio support, or mid-turn steers with audio fail before sending.
 
 Resumes require the same effective clamp configuration, including any non-default
 backend. For AGY, retain the process ID, dedicated home, CLI path, and model

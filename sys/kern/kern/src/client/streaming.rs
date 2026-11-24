@@ -750,7 +750,7 @@ impl ModelClientSession {
             .model
             .clone()
             .unwrap_or_else(|| antigravity_model_slug(&model_info.slug, effort));
-        let audio_attachments = active_turn_audio_attachments(prompt);
+        let audio_attachments = prompt.turn_audio_attachments.clone();
         if !audio_attachments.is_empty()
             && !model_info
                 .input_modalities
@@ -1602,7 +1602,7 @@ impl ModelClientSession {
         if clamped {
             return match self.client.clamp_backend() {
                 crate::config::ClampBackend::ClaudeCode => {
-                    if !active_turn_audio_attachments(prompt).is_empty() {
+                    if !prompt.turn_audio_attachments.is_empty() {
                         return Err(ChaosErr::Fatal(
                             "local audio attachments are not supported on Claude clamp".into(),
                         ));
@@ -1616,7 +1616,7 @@ impl ModelClientSession {
                 }
             };
         }
-        if !active_turn_audio_attachments(prompt).is_empty() {
+        if !prompt.turn_audio_attachments.is_empty() {
             return Err(ChaosErr::Fatal(
                 "local audio attachments are currently only supported on Antigravity (Gemini) clamp"
                     .into(),
@@ -1962,65 +1962,6 @@ fn antigravity_model_slug(model: &str, effort: Option<ReasoningEffortConfig>) ->
         tier
     };
     format!("{model}-{tier}")
-}
-
-/// Extract audio attachments belonging only to the active human turn (user
-/// messages after the last assistant/model/tool response in `prompt`).
-/// Developer/system injections appended during the active turn (such as title
-/// reminders or permissions context) do not hide the active turn's audio, while
-/// earlier turns' audio items remain in history as their permanent text
-/// placeholder and are never re-armed on resumed turns.
-pub(super) fn active_turn_audio_attachments(
-    prompt: &Prompt,
-) -> Vec<chaos_clamp::AntigravityAudioAttachment> {
-    let input = prompt.get_formatted_input();
-    let start = input
-        .iter()
-        .rposition(|item| {
-            matches!(item, ResponseItem::Message { role, .. } if role == "assistant")
-                || matches!(
-                    item,
-                    ResponseItem::FunctionCall { .. }
-                        | ResponseItem::FunctionCallOutput { .. }
-                        | ResponseItem::CustomToolCall { .. }
-                        | ResponseItem::CustomToolCallOutput { .. }
-                        | ResponseItem::Reasoning { .. }
-                        | ResponseItem::WebSearchCall { .. }
-                )
-        })
-        .map_or(0, |idx| idx + 1);
-
-    let mut attachments = Vec::new();
-    for item in &input[start..] {
-        let ResponseItem::Message { role, content, .. } = item else {
-            continue;
-        };
-        if role != "user" {
-            continue;
-        }
-        for content_item in content {
-            if let ContentItem::InputAudio {
-                data,
-                mime_type,
-                placeholder,
-            } = content_item
-                && let Some(nonce) = extract_audio_nonce(placeholder)
-            {
-                attachments.push(chaos_clamp::AntigravityAudioAttachment {
-                    nonce: nonce.to_string(),
-                    mime_type: mime_type.clone(),
-                    data_base64: data.clone(),
-                });
-            }
-        }
-    }
-    attachments
-}
-
-fn extract_audio_nonce(placeholder: &str) -> Option<&str> {
-    let rest = placeholder.rsplit_once(", id ")?.1;
-    let nonce = rest.strip_suffix(']')?;
-    (!nonce.is_empty() && nonce.bytes().all(|b| b.is_ascii_alphanumeric())).then_some(nonce)
 }
 
 /// How the clamp wiretap records traffic, resolved from `CHAOS_CLAMP_WIRETAP`.

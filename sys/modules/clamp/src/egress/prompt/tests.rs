@@ -269,7 +269,7 @@ fn sample_audio_attachment(nonce: &str) -> AntigravityAudioAttachment {
     AntigravityAudioAttachment {
         nonce: nonce.to_string(),
         mime_type: "audio/wav".to_string(),
-        data_base64: "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=".to_string(),
+        data_base64: Arc::from("UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="),
     }
 }
 
@@ -324,7 +324,7 @@ async fn armed_audio_splices_inline_data_beside_permanent_placeholder() {
         })
     );
     assert_eq!(guard.disarm().unwrap(), 1);
-    assert!(!format!("{attachment:?}").contains(&attachment.data_base64));
+    assert!(!format!("{attachment:?}").contains(attachment.data_base64.as_ref()));
 }
 
 #[tokio::test]
@@ -577,7 +577,7 @@ async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
             vec![AntigravityAudioAttachment {
                 nonce: "big12345".to_string(),
                 mime_type: "audio/wav".to_string(),
-                data_base64: "A".repeat(MAX_GENERATION_REQUEST_BYTES),
+                data_base64: Arc::from("A".repeat(MAX_GENERATION_REQUEST_BYTES)),
             }],
         )
         .unwrap();
@@ -592,4 +592,71 @@ async fn ambiguous_user_target_and_oversized_serialized_request_fail_loud() {
             .is_err()
     );
     assert_eq!(guard.disarm().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn late_guard_drop_does_not_disarm_a_newer_turn_and_function_response_echo_is_ignored() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+
+    // Turn 1 arms, then Turn 2 arms before Turn 1's guard drops (e.g. cancelled task).
+    let stale_guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("turn1aaa")],
+        )
+        .unwrap();
+    let active_guard = prompt
+        .arm_audio(
+            "gemini-4-neon-high".to_string(),
+            vec![sample_audio_attachment("turn2bbb")],
+        )
+        .unwrap();
+    drop(stale_guard);
+
+    // Turn 2 includes a role="user" functionResponse echoing the placeholder+nonce
+    // (for example from read_session_history). Only the text part matches, so it
+    // is unambiguous and splices cleanly.
+    let turn2_text = "[audio clip: tones.wav, 1.0 s, id turn2bbb]";
+    let req_with_tool_echo = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": format!("<USER_REQUEST>{turn2_text}</USER_REQUEST>")}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "read_session_history", "args": {}}}]},
+                {"role": "user", "parts": [{"functionResponse": {"name": "read_session_history", "response": {"output": turn2_text}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "read_session_history"}]}]
+        }
+    });
+    let rewritten = payload(
+        prompt
+            .rewrite(generation_request(GENERATE, req_with_tool_echo), CLOUD_CODE)
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        rewritten["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(active_guard.disarm().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn non_audio_request_is_not_rejected_by_audio_size_check() {
+    // System prompt pushes serialized body slightly over MAX_GENERATION_REQUEST_BYTES
+    // even though no audio is armed; the audio size check must only run when spliced.
+    let prompt = AntigravitySystemPrompt::new("X".repeat(1024));
+    let body = cloud_request_with_user_text(
+        "gemini-4-neon-high",
+        &"a".repeat(MAX_GENERATION_REQUEST_BYTES - 512),
+    );
+    let result = prompt
+        .rewrite(generation_request(GENERATE, body), CLOUD_CODE)
+        .await;
+    assert!(result.is_ok(), "unexpected error: {:?}", result.err());
 }

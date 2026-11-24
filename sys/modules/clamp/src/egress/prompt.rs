@@ -1,7 +1,10 @@
 //! ChaOS owns the system prompt; AGY supplies authentication and transport.
 //! Rewrite only supported generation requests, never OAuth or control traffic.
 
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 use rama::{
     error::BoxError,
@@ -23,7 +26,7 @@ pub struct AntigravityAudioAttachment {
     /// Validated MIME type (for example `"audio/wav"`).
     pub mime_type: String,
     /// Standard base64-encoded audio bytes.
-    pub data_base64: String,
+    pub data_base64: Arc<str>,
 }
 
 impl std::fmt::Debug for AntigravityAudioAttachment {
@@ -38,6 +41,7 @@ impl std::fmt::Debug for AntigravityAudioAttachment {
 
 #[derive(Clone)]
 struct ActiveAudioTurn {
+    generation_id: u64,
     authorized_model: String,
     attachments: Vec<AntigravityAudioAttachment>,
     spliced_requests: usize,
@@ -47,6 +51,7 @@ struct ActiveAudioTurn {
 /// example on turn cancellation) or when explicitly disarmed at turn end.
 pub struct AntigravityAudioGuard {
     audio: Arc<RwLock<Option<ActiveAudioTurn>>>,
+    generation_id: Option<u64>,
     disarmed: bool,
 }
 
@@ -55,18 +60,32 @@ impl AntigravityAudioGuard {
     /// main generation requests that received the splice.
     pub fn disarm(mut self) -> Result<usize, BoxError> {
         self.disarmed = true;
+        let Some(generation_id) = self.generation_id else {
+            return Ok(0);
+        };
         let mut guard = self
             .audio
             .write()
             .map_err(|_| "clamp audio attachment lock poisoned")?;
-        Ok(guard.take().map_or(0, |turn| turn.spliced_requests))
+        if guard
+            .as_ref()
+            .is_some_and(|turn| turn.generation_id == generation_id)
+        {
+            Ok(guard.take().map_or(0, |turn| turn.spliced_requests))
+        } else {
+            Ok(0)
+        }
     }
 }
 
 impl Drop for AntigravityAudioGuard {
     fn drop(&mut self) {
         if !self.disarmed
+            && let Some(generation_id) = self.generation_id
             && let Ok(mut guard) = self.audio.write()
+            && guard
+                .as_ref()
+                .is_some_and(|turn| turn.generation_id == generation_id)
         {
             *guard = None;
         }
@@ -79,6 +98,7 @@ impl Drop for AntigravityAudioGuard {
 pub(super) struct AntigravitySystemPrompt {
     instructions: Arc<RwLock<Arc<str>>>,
     audio: Arc<RwLock<Option<ActiveAudioTurn>>>,
+    next_audio_generation: Arc<AtomicU64>,
 }
 
 impl std::fmt::Debug for AntigravitySystemPrompt {
@@ -92,6 +112,7 @@ impl AntigravitySystemPrompt {
         Self {
             instructions: Arc::new(RwLock::new(Arc::from(text))),
             audio: Arc::new(RwLock::new(None)),
+            next_audio_generation: Arc::new(AtomicU64::new(1)),
         }
     }
 
@@ -112,17 +133,22 @@ impl AntigravitySystemPrompt {
             .audio
             .write()
             .map_err(|_| "clamp audio attachment lock poisoned")?;
-        if attachments.is_empty() {
+        let generation_id = if attachments.is_empty() {
             *guard = None;
+            None
         } else {
+            let generation_id = self.next_audio_generation.fetch_add(1, Ordering::Relaxed);
             *guard = Some(ActiveAudioTurn {
+                generation_id,
                 authorized_model: normalize_model_name(&authorized_model).to_string(),
                 attachments,
                 spliced_requests: 0,
             });
-        }
+            Some(generation_id)
+        };
         Ok(AntigravityAudioGuard {
             audio: Arc::clone(&self.audio),
+            generation_id,
             disarmed: false,
         })
     }
@@ -222,7 +248,7 @@ impl AntigravitySystemPrompt {
             false
         };
         let bytes = serde_json::to_vec(&payload)?;
-        if bytes.len() > MAX_GENERATION_REQUEST_BYTES {
+        if spliced && bytes.len() > MAX_GENERATION_REQUEST_BYTES {
             return Err(format!(
                 "clamp generation request with attached audio ({} bytes) exceeds {MAX_GENERATION_REQUEST_BYTES}-byte limit",
                 bytes.len()
@@ -230,11 +256,14 @@ impl AntigravitySystemPrompt {
             .into());
         }
         if spliced {
+            let active_generation = active_audio.as_ref().map(|turn| turn.generation_id);
             let mut guard = self
                 .audio
                 .write()
                 .map_err(|_| "clamp audio attachment lock poisoned")?;
-            if let Some(turn) = guard.as_mut() {
+            if let Some(turn) = guard.as_mut()
+                && Some(turn.generation_id) == active_generation
+            {
                 turn.spliced_requests = turn.spliced_requests.saturating_add(1);
             }
         }
@@ -370,7 +399,7 @@ fn splice_authorized_audio(
         parts.push(json!({
             "inlineData": {
                 "mimeType": attachment.mime_type,
-                "data": attachment.data_base64,
+                "data": attachment.data_base64.as_ref(),
             }
         }));
     }

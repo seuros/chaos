@@ -3,8 +3,10 @@
 //! Validates container magic bytes, structural headers, and file size caps
 //! before any audio payload is serialized into a prompt or forwarded upstream.
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -88,6 +90,12 @@ pub enum AudioError {
 
     #[error("unsupported or invalid audio file `{}`: {detail}", path.display())]
     UnsupportedFormat { path: PathBuf, detail: String },
+
+    #[error("local audio `{}` must be a regular file", path.display())]
+    NotRegularFile { path: PathBuf },
+
+    #[error("at most one local audio clip may be attached per turn")]
+    TooManyAttachments,
 }
 
 /// Read and validate a local WAV file, enforcing [`MAX_AUDIO_FILE_BYTES`].
@@ -100,7 +108,11 @@ pub fn load_local_wav_with_limit(
     path: &Path,
     max_bytes: usize,
 ) -> Result<ValidatedAudio, AudioError> {
-    let file = File::open(path).map_err(|source| AudioError::Read {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NONBLOCK);
+    let file = options.open(path).map_err(|source| AudioError::Read {
         path: path.to_path_buf(),
         source,
     })?;
@@ -108,6 +120,11 @@ pub fn load_local_wav_with_limit(
         path: path.to_path_buf(),
         source,
     })?;
+    if !metadata.is_file() {
+        return Err(AudioError::NotRegularFile {
+            path: path.to_path_buf(),
+        });
+    }
     let max_u64 = u64::try_from(max_bytes).unwrap_or(u64::MAX);
     if metadata.len() > max_u64 {
         return Err(AudioError::TooLarge {
@@ -159,12 +176,22 @@ pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
     if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Err("missing RIFF/WAVE magic header (only WAV is supported)".into());
     }
+    let riff_size = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    if riff_size < 4 {
+        return Err("WAV RIFF header size is smaller than the WAVE form tag".into());
+    }
+    let Some(riff_end) = riff_size.checked_add(8) else {
+        return Err("WAV RIFF header size overflow".into());
+    };
+    if riff_end > bytes.len() {
+        return Err("WAV RIFF declared extent exceeds file length".into());
+    }
 
     let mut cursor = 12usize;
     let mut byte_rate: Option<u32> = None;
     let mut data_size: Option<u32> = None;
 
-    while cursor + 8 <= bytes.len() {
+    while cursor + 8 <= riff_end {
         let chunk_id = &bytes[cursor..cursor + 4];
         let chunk_len = u32::from_le_bytes([
             bytes[cursor + 4],
@@ -177,20 +204,70 @@ pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
         let Some(chunk_end) = cursor.checked_add(chunk_len) else {
             return Err("WAV chunk length overflow".into());
         };
-        if chunk_end > bytes.len() {
-            return Err("WAV chunk extends past end of file".into());
+        if chunk_end > riff_end {
+            return Err("WAV chunk extends past declared RIFF extent".into());
         }
 
         if chunk_id == b"fmt " {
             if chunk_len < 16 {
                 return Err("WAV `fmt ` chunk is shorter than 16 bytes".into());
             }
+            let audio_format = u16::from_le_bytes([bytes[cursor], bytes[cursor + 1]]);
+            let channels = u16::from_le_bytes([bytes[cursor + 2], bytes[cursor + 3]]);
+            let sample_rate = u32::from_le_bytes([
+                bytes[cursor + 4],
+                bytes[cursor + 5],
+                bytes[cursor + 6],
+                bytes[cursor + 7],
+            ]);
             let rate = u32::from_le_bytes([
                 bytes[cursor + 8],
                 bytes[cursor + 9],
                 bytes[cursor + 10],
                 bytes[cursor + 11],
             ]);
+            let block_align = u16::from_le_bytes([bytes[cursor + 12], bytes[cursor + 13]]);
+            let bits_per_sample = u16::from_le_bytes([bytes[cursor + 14], bytes[cursor + 15]]);
+            if channels == 0 {
+                return Err("WAV `fmt ` chunk reports zero channels".into());
+            }
+            if sample_rate == 0 {
+                return Err("WAV `fmt ` chunk reports zero sample rate".into());
+            }
+            if block_align == 0 {
+                return Err("WAV `fmt ` chunk reports zero block align".into());
+            }
+            match audio_format {
+                1 => {
+                    if !matches!(bits_per_sample, 8 | 16 | 24 | 32) {
+                        return Err(format!(
+                            "WAV PCM `fmt ` chunk has unsupported bits_per_sample ({bits_per_sample})"
+                        ));
+                    }
+                }
+                3 => {
+                    if !matches!(bits_per_sample, 32 | 64) {
+                        return Err(format!(
+                            "WAV IEEE float `fmt ` chunk has unsupported bits_per_sample ({bits_per_sample})"
+                        ));
+                    }
+                }
+                0xFFFE => {
+                    if chunk_len < 40 {
+                        return Err("WAV extensible `fmt ` chunk is shorter than 40 bytes".into());
+                    }
+                    if bits_per_sample == 0 || bits_per_sample % 8 != 0 {
+                        return Err(format!(
+                            "WAV extensible `fmt ` chunk has invalid bits_per_sample ({bits_per_sample})"
+                        ));
+                    }
+                }
+                other => {
+                    return Err(format!(
+                        "unsupported WAV audio format tag 0x{other:04x} (only PCM, IEEE float, and extensible WAV are supported)"
+                    ));
+                }
+            }
             byte_rate = Some(rate);
         } else if chunk_id == b"data" {
             if chunk_len == 0 {

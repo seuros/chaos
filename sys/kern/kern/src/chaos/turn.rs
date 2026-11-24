@@ -10,7 +10,6 @@ use chaos_dtrace::HookResult;
 use chaos_epoll::OrCancelExt;
 use chaos_ipc::items::TurnItem;
 use chaos_ipc::models::DeveloperInstructions;
-use chaos_ipc::models::ResponseInputItem;
 use chaos_ipc::models::ResponseItem;
 use chaos_ipc::protocol::ApprovalPolicy;
 use chaos_ipc::protocol::EventMsg;
@@ -35,8 +34,9 @@ use crate::distill::InitialContextInjection;
 use crate::error::ChaosErr;
 use crate::error::Result as ChaosResult;
 use crate::parse_turn_item;
+use crate::prompt_images::PreparedUserInput;
+use crate::prompt_images::prepare_user_input_for_turn;
 use crate::prompt_images::response_input_item_from_user_input;
-use crate::prompt_images::try_response_input_item_from_user_input;
 use crate::stream_events_utils::last_assistant_message_from_item;
 use crate::tools::ToolRouter;
 use crate::tools::router::ToolRouterParams;
@@ -380,21 +380,23 @@ async fn run_turn_inner(
             return None;
         }
     }
-    let initial_input_for_turn: ResponseInputItem =
-        match try_response_input_item_from_user_input(input.clone()) {
-            Ok(item) => item,
-            Err(err) => {
-                sess.send_event(
-                    turn_context.as_ref(),
-                    EventMsg::Error(crate::protocol::ErrorEvent {
-                        message: err.to_string(),
-                        chaos_error_info: Some(chaos_ipc::protocol::ChaosErrorInfo::BadRequest),
-                    }),
-                )
-                .await;
-                return None;
-            }
-        };
+    let PreparedUserInput {
+        item: initial_input_for_turn,
+        audio_attachments: turn_audio_attachments,
+    } = match prepare_user_input_for_turn(input.clone()) {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            sess.send_event(
+                turn_context.as_ref(),
+                EventMsg::Error(crate::protocol::ErrorEvent {
+                    message: err.to_string(),
+                    chaos_error_info: Some(chaos_ipc::protocol::ChaosErrorInfo::BadRequest),
+                }),
+            )
+            .await;
+            return None;
+        }
+    };
     let response_item: ResponseItem = initial_input_for_turn.clone().into();
     let before_turn_input_messages = parse_turn_item(&response_item)
         .and_then(|item| match item {
@@ -624,6 +626,7 @@ async fn run_turn_inner(
             &mut turn_progress,
             Some(turn_metadata_header.as_str()),
             sampling_request_input,
+            &turn_audio_attachments,
             &mut server_model_warning_emitted_for_turn,
             cancellation_token.child_token(),
         ))

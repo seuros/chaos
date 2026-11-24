@@ -328,6 +328,16 @@ impl Session {
             });
         }
 
+        if input
+            .iter()
+            .any(|item| matches!(item, chaos_ipc::user_input::UserInput::LocalAudio { .. }))
+        {
+            return Err(SteerInputError::UnsupportedInput(
+                "local audio attachments are not supported while steering an active turn"
+                    .to_string(),
+            ));
+        }
+
         let mut turn_state = active_turn.turn_state.lock().await;
         turn_state.push_pending_input(response_input_item_from_user_input(input));
         Ok(active_turn_id.clone())

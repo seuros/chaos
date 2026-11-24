@@ -72,6 +72,8 @@ fn wav_with_odd_length_junk_chunk_before_data_parses_cleanly() {
     out.extend_from_slice(b"data");
     out.extend_from_slice(&8_000u32.to_le_bytes());
     out.resize(out.len() + 8_000, 0);
+    let riff_size = u32::try_from(out.len() - 8).unwrap();
+    out[4..8].copy_from_slice(&riff_size.to_le_bytes());
 
     assert_eq!(validate_wav_bytes(&out).unwrap(), Some(500));
 }
@@ -95,4 +97,51 @@ fn rejects_non_wav_truncated_empty_and_oversized_files() {
     file.write_all(&valid).unwrap();
     let err = load_local_wav_with_limit(file.path(), 64).unwrap_err();
     assert!(matches!(err, AudioError::TooLarge { .. }));
+}
+
+#[test]
+fn rejects_invalid_riff_extent_and_fmt_fields() {
+    // Declared RIFF size exceeds actual file length.
+    let mut oversized_riff = synthetic_pcm_wav(8_000, 100);
+    let bad_riff = u32::try_from(oversized_riff.len()).unwrap();
+    oversized_riff[4..8].copy_from_slice(&bad_riff.to_le_bytes());
+    assert!(validate_wav_bytes(&oversized_riff).is_err());
+
+    // Data chunk sits past declared RIFF extent (trailing garbage ignored).
+    let mut short_riff = synthetic_pcm_wav(8_000, 100);
+    // 4 ("WAVE") + 24 ("fmt " header+body) = 28 -> excludes "data" chunk.
+    short_riff[4..8].copy_from_slice(&28u32.to_le_bytes());
+    assert!(validate_wav_bytes(&short_riff).is_err());
+
+    // Unsupported format tag.
+    let mut bad_tag = synthetic_pcm_wav(8_000, 100);
+    bad_tag[20..22].copy_from_slice(&0x9999u16.to_le_bytes());
+    assert!(validate_wav_bytes(&bad_tag).is_err());
+
+    // Zero channels.
+    let mut zero_channels = synthetic_pcm_wav(8_000, 100);
+    zero_channels[22..24].copy_from_slice(&0u16.to_le_bytes());
+    assert!(validate_wav_bytes(&zero_channels).is_err());
+
+    // Invalid PCM bits_per_sample (12-bit).
+    let mut bad_bps = synthetic_pcm_wav(8_000, 100);
+    bad_bps[34..36].copy_from_slice(&12u16.to_le_bytes());
+    assert!(validate_wav_bytes(&bad_bps).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn rejects_named_pipe_without_blocking() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fifo_path = dir.path().join("pipe.wav");
+    let c_path = CString::new(fifo_path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: valid NUL-terminated path with standard mode bits.
+    let rc = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+    assert_eq!(rc, 0);
+
+    let err = load_local_wav(&fifo_path).unwrap_err();
+    assert!(matches!(err, AudioError::NotRegularFile { .. }));
 }

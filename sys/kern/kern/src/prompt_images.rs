@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use chaos_audio::AudioError;
 use chaos_audio::load_local_wav;
@@ -14,22 +15,50 @@ use chaos_pixbuf::PromptImageMode;
 use chaos_pixbuf::error::ImageProcessingError;
 use chaos_pixbuf::load_for_prompt;
 
-pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> ResponseInputItem {
-    try_response_input_item_from_user_input(items).unwrap_or_else(|err| {
-        ResponseInputItem::Message {
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: err.to_string(),
-            }],
-        }
-    })
+pub(crate) struct PreparedUserInput {
+    pub item: ResponseInputItem,
+    pub audio_attachments: Vec<chaos_clamp::AntigravityAudioAttachment>,
 }
 
-pub(crate) fn try_response_input_item_from_user_input(
+pub(crate) fn response_input_item_from_user_input(items: Vec<UserInput>) -> ResponseInputItem {
+    let mut image_index = 0;
+    ResponseInputItem::Message {
+        role: "user".to_string(),
+        content: items
+            .into_iter()
+            .flat_map(|item| match item {
+                UserInput::Text { text, .. } => vec![ContentItem::InputText { text }],
+                UserInput::Image { image_url } => {
+                    image_index += 1;
+                    remote_image_content_items(image_url)
+                }
+                UserInput::LocalImage { path } => {
+                    image_index += 1;
+                    local_image_content_items_with_label_number(
+                        &path,
+                        Some(image_index),
+                        PromptImageMode::ResizeToFit,
+                    )
+                }
+                UserInput::Mention { .. } => Vec::new(),
+                UserInput::EmbeddedResource { name, text, .. } => {
+                    let header = format!("[{name}]\n");
+                    vec![ContentItem::InputText {
+                        text: format!("{header}{text}"),
+                    }]
+                }
+                _ => Vec::new(),
+            })
+            .collect(),
+    }
+}
+
+pub(crate) fn prepare_user_input_for_turn(
     items: Vec<UserInput>,
-) -> Result<ResponseInputItem, AudioError> {
+) -> Result<PreparedUserInput, AudioError> {
     let mut image_index = 0;
     let mut content = Vec::new();
+    let mut audio_attachments = Vec::new();
     for item in items {
         match item {
             UserInput::Text { text, .. } => content.push(ContentItem::InputText { text }),
@@ -46,13 +75,19 @@ pub(crate) fn try_response_input_item_from_user_input(
                 ));
             }
             UserInput::LocalAudio { path } => {
+                if !audio_attachments.is_empty() {
+                    return Err(AudioError::TooManyAttachments);
+                }
                 let validated = load_local_wav(&path)?;
                 let nonce = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
                 let placeholder = validated.placeholder(&nonce);
-                content.push(ContentItem::InputAudio {
-                    data: validated.encode_base64(),
+                // Only the permanent text note enters canonical history and
+                // rollout logs; raw audio bytes stay scoped to the live turn.
+                content.push(ContentItem::InputText { text: placeholder });
+                audio_attachments.push(chaos_clamp::AntigravityAudioAttachment {
+                    nonce,
                     mime_type: validated.format.mime_type().to_string(),
-                    placeholder,
+                    data_base64: Arc::from(validated.encode_base64()),
                 });
             }
             UserInput::Mention { .. } => {}
@@ -65,9 +100,12 @@ pub(crate) fn try_response_input_item_from_user_input(
             _ => {}
         }
     }
-    Ok(ResponseInputItem::Message {
-        role: "user".to_string(),
-        content,
+    Ok(PreparedUserInput {
+        item: ResponseInputItem::Message {
+            role: "user".to_string(),
+            content,
+        },
+        audio_attachments,
     })
 }
 

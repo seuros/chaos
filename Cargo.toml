@@ -104,6 +104,7 @@ members = [
     "lib/libutil/git",
     "lib/libutil/pwd",
     "lib/libutil/pixbuf",
+    "lib/libutil/audio",
     "lib/libutil/conv",
     "lib/libutil/pty",
     "lib/libutil/jail-report",
@@ -235,6 +236,7 @@ chaos-uptime = { path = "lib/libutil/uptime" }
 chaos-glob = { path = "lib/libutil/glob" }
 chaos-pwd = { path = "lib/libutil/pwd" }
 chaos-pixbuf = { path = "lib/libutil/pixbuf" }
+chaos-audio = { path = "lib/libutil/audio" }
 chaos-conv = { path = "lib/libutil/conv" }
 chaos-pty = { path = "lib/libutil/pty" }
 chaos-jail-report = { path = "lib/libutil/jail-report" }

@@ -680,7 +680,9 @@ async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_au
         ))
         .unwrap();
         let (tx, rx) = tokio::sync::oneshot::channel::<Vec<u8>>();
+        let (polled_tx, polled_rx) = tokio::sync::oneshot::channel::<()>();
         let streaming_body = Body::from_stream(stream::once(async move {
+            let _ = polled_tx.send(());
             Ok::<Vec<u8>, Infallible>(rx.await.unwrap())
         }));
         let req = Request::builder()
@@ -693,8 +695,8 @@ async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_au
 
         let prompt_clone = prompt.clone();
         let rewrite_task = tokio::spawn(async move { prompt_clone.rewrite(req, CLOUD_CODE).await });
-        // Yield so `rewrite` snapshots `active_audio` and suspends on body collection.
-        tokio::task::yield_now().await;
+        // Wait until `rewrite` has snapshotted `active_audio` and is actively polling the body.
+        polled_rx.await.unwrap();
 
         let _replacement_guard = if replace_with_new_turn {
             Some(

@@ -114,11 +114,18 @@ impl ConfigBuilder {
         let config_toml: ConfigToml = merged_toml
             .try_into()
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+        let trust = crate::config_loader::resolve_active_project_trust(
+            &bootstrap,
+            cwd.as_path(),
+            &config_layer_stack,
+        )
+        .await?;
         harness_overrides.mcp_servers = Some(
             crate::config::load_effective_mcp_servers(
                 &bootstrap.storage_url,
                 &bootstrap.storage_home,
                 &config_layer_stack,
+                trust.is_trusted().then_some(cwd.as_path()),
             )
             .await?,
         );
@@ -126,14 +133,7 @@ impl ConfigBuilder {
             crate::config::load_agent_role_records(&bootstrap.storage_url, &bootstrap.storage_home)
                 .await?,
         );
-        harness_overrides.active_project_trust = Some(
-            crate::config_loader::resolve_active_project_trust(
-                &bootstrap,
-                cwd.as_path(),
-                &config_layer_stack,
-            )
-            .await?,
-        );
+        harness_overrides.active_project_trust = Some(trust);
         Config::load_config_with_layer_stack(
             config_toml,
             harness_overrides,

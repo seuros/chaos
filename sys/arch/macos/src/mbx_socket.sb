@@ -1,0 +1,7 @@
+(define mbx-cache-agent
+  (regex (string-append "^" (regex-quote (param "MBX_USER_TEMP"))
+                        "/mbx-session-[A-Za-z0-9]+/cache-agent[.]sock$")))
+(allow system-socket (socket-domain AF_UNIX))
+(allow network-bind (local unix-socket mbx-cache-agent))
+(allow network-inbound (local unix-socket mbx-cache-agent))
+(allow network-outbound (remote unix-socket mbx-cache-agent))

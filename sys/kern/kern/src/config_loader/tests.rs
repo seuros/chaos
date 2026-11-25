@@ -610,7 +610,10 @@ async fn reload_project_mcp_servers(
         .await?;
     tokio::fs::write(
         project_root.join(".mcp.json"),
-        r#"{"mcpServers": {"docs": {"command": "node", "args": ["server.js"]}}}"#,
+        r#"{"mcpServers": {
+            "docs": {"command": "node", "args": ["server.js"]},
+            "mise": {"command": "mise", "enabled": false}
+        }}"#,
     )
     .await?;
 
@@ -628,6 +631,7 @@ async fn reload_project_mcp_servers(
 #[tokio::test]
 async fn reloaded_dot_mcp_json_stays_disabled_when_project_is_untrusted() -> std::io::Result<()> {
     let servers = reload_project_mcp_servers(TrustLevel::Untrusted).await?;
+    assert!(!servers.contains_key("mise"));
     assert!(
         !servers.contains_key("docs"),
         "an in-session reload must not load an untrusted project's .mcp.json"
@@ -638,6 +642,7 @@ async fn reloaded_dot_mcp_json_stays_disabled_when_project_is_untrusted() -> std
 #[tokio::test]
 async fn reloaded_dot_mcp_json_loads_when_project_is_trusted() -> std::io::Result<()> {
     let servers = reload_project_mcp_servers(TrustLevel::Trusted).await?;
+    assert!(!servers["mise"].enabled);
     assert!(servers.contains_key("docs"));
     Ok(())
 }
@@ -811,10 +816,14 @@ prefix_rules = [
     #[test]
     fn parses_multiple_prefix_rules_from_raw_toml() -> anyhow::Result<()> {
         let toml_str = r#"
-prefix_rules = [
-    { pattern = [{ token = "rm" }], decision = "forbidden" },
-    { pattern = [{ token = "git" }, { any_of = ["push", "commit"] }], decision = "prompt", justification = "review changes before push or commit" },
-]
+[[prefix_rules]]
+pattern = [{ token = "rm" }]
+decision = "forbidden"
+
+[[prefix_rules]]
+pattern = [{ token = "git" }, { any_of = ["push", "commit"] }]
+decision = "prompt"
+justification = "review changes before push or commit"
 "#;
 
         let parsed: RequirementsExecPolicyToml = from_str(toml_str)?;

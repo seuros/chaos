@@ -53,6 +53,7 @@ use toml::Value as TomlValue;
 pub(crate) mod agent_roles;
 pub mod edit;
 pub mod loading;
+mod local_tools;
 mod machine_warnings;
 mod network_proxy_spec;
 pub(crate) mod parsing;
@@ -1301,6 +1302,7 @@ pub(crate) async fn load_effective_mcp_servers(
     storage_url: &str,
     storage_home: &std::path::Path,
     config_layer_stack: &ConfigLayerStack,
+    trusted_cwd: Option<&std::path::Path>,
 ) -> std::io::Result<HashMap<String, McpServerConfig>> {
     let global = load_global_mcp_servers_from_runtime_db(storage_url, storage_home).await?;
     let mut effective = global.into_iter().collect::<HashMap<_, _>>();
@@ -1325,6 +1327,12 @@ pub(crate) async fn load_effective_mcp_servers(
         effective.extend(layer_servers);
     }
 
+    if let Some(cwd) = trusted_cwd
+        && let std::collections::hash_map::Entry::Vacant(entry) = effective.entry("mise".into())
+        && let Some(server) = local_tools::mise_server(cwd).await
+    {
+        entry.insert(server);
+    }
     Ok(effective)
 }
 

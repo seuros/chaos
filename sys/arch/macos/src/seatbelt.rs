@@ -118,17 +118,18 @@ fn proxy_policy_inputs(network: Option<&NetworkProxy>) -> ProxyPolicyInputs {
             let allowed = network
                 .allow_unix_sockets()
                 .iter()
-                .filter_map(
-                    |socket_path| match normalize_path_for_sandbox(Path::new(socket_path)) {
+                .filter_map(|socket_path| {
+                    match normalize_path_for_sandbox(Path::new(socket_path)) {
                         Some(path) => Some((path.to_string_lossy().to_string(), path)),
                         None => {
                             warn!(
-                                "ignoring network.allow_unix_sockets entry because it could not be normalized: {socket_path}"
+                                "ignoring unnormalizable network.allow_unix_sockets \
+                                 entry: {socket_path}"
                             );
                             None
                         }
-                    },
-                )
+                    }
+                })
                 .collect::<BTreeMap<_, _>>()
                 .into_values()
                 .collect();
@@ -496,6 +497,24 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
         file_write_policy,
         network_policy,
     ];
+    // Never override an explicit proxy socket policy or grant access to
+    // unrelated sockets in the user's temporary directory.
+    let mut mbx_params = Vec::new();
+    if !enforce_managed_network
+        && network.is_none()
+        && let Some(cache) = chaos_parole::mbx::mbx_cache()
+        && let Some(tmp) = confstr_path(libc::_CS_DARWIN_USER_TEMP_DIR)
+        && {
+            // Seatbelt enforces the canonical roots. A lexical VFS lookup for
+            // /private/var/... misses TMPDIR when it was granted as /var/....
+            let roots = writable_roots(vfs_policy, sandbox_policy_cwd);
+            roots.iter().any(|root| root.root == cache)
+                && roots.iter().any(|root| root.is_path_writable(&tmp))
+        }
+    {
+        mbx_params.push(("MBX_USER_TEMP".to_owned(), tmp));
+        policy_sections.push(include_str!("mbx_socket.sb").to_owned());
+    }
     if include_platform_defaults {
         policy_sections.push(MACOS_RESTRICTED_READ_ONLY_PLATFORM_DEFAULTS.to_string());
     }
@@ -509,6 +528,7 @@ pub fn create_seatbelt_command_args_for_policies_with_extensions(
         file_read_dir_params,
         file_write_dir_params,
         platform_dir_params(),
+        mbx_params,
         unix_socket_dir_params(&proxy),
         seatbelt_extensions.dir_params,
     ]

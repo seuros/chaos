@@ -162,50 +162,22 @@ from these Cargo features.
 
 ### Shared build cache
 
-Mr. Boxington (`mbx`) optionally caches compilations across checkouts.
-It is not required to build or run FreeChaOS.
-
-The repository pins mbx 1.8.3 in `mise.toml`. On Linux or Apple Silicon macOS:
+`mbx` shares build artifacts across checkouts. Optional; plain Cargo is the default.
 
 ```bash
 mise install github:jdx/mr-boxington
 mise exec -- just cargo=mbx build
-mise exec -- just cargo=mbx qa
 ```
 
-Without mise, install `cargo install mbx --version 1.8.3 --locked`, then use
-`just cargo=mbx build` or `just cargo=mbx qa`. Direct commands such as
-`mbx check -p chaos-pwd` and `mbx nextest run -p chaos-pwd` also work.
-
-Plain `just` recipes, formatting, and dependency maintenance use Cargo.
-For an uncached check, use `MBX_DISABLE=1 just cargo=cargo check`.
-Do not combine mbx with `RUSTC_WRAPPER=sccache`.
-
-Existing `target/` directories are preserved unless an interactive user accepts
-mbx's migration prompt. New checkouts may get a managed `target` symlink; use
-`MBX_TARGET_VIEWS=0` to keep ordinary directories. Explicit `CARGO_TARGET_DIR`
-and `--target-dir` settings are respected. Concurrent builds in the same
-checkout still need separate target directories to avoid Cargo's lock.
-For sandboxed agents, both the cache and the target location must be writable;
-`MBX_CACHE_DIR` can place the cache inside an allowed directory.
-If `cargo` is an mbx shim and it cannot open a managed target lock, bypass mbx
-and use a separate target directory in a writable root. For example, from a
-writable source checkout:
+- **Cache:** On macOS and Linux, trusted workspace-write sessions grant the existing cache if `mbx` is on `PATH`. Lookup: `MBX_CACHE_DIR` → user `cache_dir` → platform default. Named profiles and separate target roots need explicit grants.
+- **Socket (macOS):** With writable cache and temp roots, allow `mbx-session-*/cache-agent.sock` in the user's temp directory. Proxy or managed network policy: no automatic socket grant; mbx can use FIFO.
+- **Target lock denied:** Bypass mbx and use a writable target directory, not the managed `target` symlink:
 
 ```bash
 MBX_DISABLE=1 CARGO_TARGET_DIR="$PWD/target-sandbox" cargo check
 ```
 
-Use a real writable directory. Disabling mbx alone does not change where an
-existing `target` symlink points.
-
-Inspect local cache activity with:
-
-```bash
-mbx doctor
-mbx cache stats
-mbx gc --dry-run
-```
+Diagnose with `mbx doctor`. Do not combine mbx with `RUSTC_WRAPPER=sccache`.
 
 ## LOGGING AND TRACING
 

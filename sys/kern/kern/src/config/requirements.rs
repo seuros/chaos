@@ -151,6 +151,9 @@ impl Config {
             &self.storage_url,
             self.storage_home.as_path(),
             &self.config_layer_stack,
+            self.active_project_trust
+                .is_trusted()
+                .then_some(self.cwd.as_path()),
         )
         .await?;
         self.mcp_servers = validation::constrain_mcp_servers(
@@ -333,7 +336,11 @@ impl Config {
                     Some(&constrained_sandbox_policy),
                 );
                 if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
-                    for path in &additional_writable_roots {
+                    let cache = active_project_trust
+                        .is_trusted()
+                        .then(chaos_parole::mbx::mbx_cache)
+                        .flatten();
+                    for path in additional_writable_roots.iter().chain(cache.iter()) {
                         if !writable_roots.iter().any(|existing| existing == path) {
                             writable_roots.push(path.clone());
                         }

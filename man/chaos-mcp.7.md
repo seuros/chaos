@@ -38,6 +38,10 @@ chaos mcp remove my-server  # Remove a server
 
 Manage global servers with `chaos mcp ...`; project-local definitions use `.mcp.json`.
 
+Trusted projects auto-connect `mise mcp` from `PATH` when supported. An explicit
+`mise` entry wins, even if disabled. Default tool: `list_commands`. Resources
+may expose environment secrets.
+
 ### Project-local `.mcp.json`
 
 Place a `.mcp.json` in your project root for cross-harness configuration shared

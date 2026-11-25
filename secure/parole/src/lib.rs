@@ -7,4 +7,5 @@
 //! config modules.
 
 pub mod macos_permissions;
+pub mod mbx;
 pub mod sandbox;

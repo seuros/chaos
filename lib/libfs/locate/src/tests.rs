@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
-use std::thread;
 use std::time::Duration;
 use std::time::Instant;
 use tempfile::TempDir;
@@ -264,7 +263,7 @@ fn create_temp_tree(file_count: usize) -> TempDir {
 
 #[test]
 fn session_scanned_file_count_is_monotonic_across_queries() {
-    let dir = create_temp_tree(200);
+    let dir = create_temp_tree(3);
     let reporter = Arc::new(RecordingReporter::default());
     let session = create_session(
         vec![dir.path().to_path_buf()],
@@ -274,17 +273,21 @@ fn session_scanned_file_count_is_monotonic_across_queries() {
     )
     .expect("session");
 
-    session.update_query("file-00");
-    thread::sleep(Duration::from_millis(20));
-    let first_snapshot = reporter.snapshot();
-    session.update_query("file-01");
-    thread::sleep(Duration::from_millis(20));
-    let second_snapshot = reporter.snapshot();
-    let _ = reporter.wait_for_complete(Duration::from_secs(5));
-    let completed_snapshot = reporter.snapshot();
-
-    assert!(second_snapshot.scanned_file_count >= first_snapshot.scanned_file_count);
-    assert!(completed_snapshot.scanned_file_count >= second_snapshot.scanned_file_count);
+    let mut previous = 0;
+    for query in ["file-0000", "file-0001"] {
+        reporter.clear();
+        session.update_query(query);
+        assert!(reporter.wait_for_complete(Duration::from_secs(5)));
+        let updates = reporter.updates();
+        let last = updates.last().expect("query emitted a snapshot");
+        assert!(last.walk_complete);
+        assert_eq!(last.scanned_file_count, 3);
+        for snapshot in updates {
+            assert_eq!(snapshot.query, query);
+            assert!(snapshot.scanned_file_count >= previous);
+            previous = snapshot.scanned_file_count;
+        }
+    }
 }
 
 #[test]
@@ -368,8 +371,9 @@ fn session_emits_complete_when_query_changes_with_no_matches() {
 
 #[test]
 fn dropping_session_does_not_cancel_siblings_with_shared_cancel_flag() {
-    let root_a = create_temp_tree(200);
-    let root_b = create_temp_tree(4_000);
+    let root_a = tempfile::tempdir().unwrap();
+    let root_b = tempfile::tempdir().unwrap();
+    fs::write(root_b.path().join("survivor.txt"), "sibling").unwrap();
     let cancel_flag = Arc::new(AtomicBool::new(false));
 
     let reporter_a = Arc::new(RecordingReporter::default());
@@ -386,18 +390,22 @@ fn dropping_session_does_not_cancel_siblings_with_shared_cancel_flag() {
         vec![root_b.path().to_path_buf()],
         FileSearchOptions::default(),
         reporter_b.clone(),
-        Some(cancel_flag),
+        Some(cancel_flag.clone()),
     )
     .expect("session_b");
 
-    session_a.update_query("file-0");
-    session_b.update_query("file-1");
-
-    thread::sleep(Duration::from_millis(5));
     drop(session_a);
-
-    let completed = reporter_b.wait_for_complete(Duration::from_secs(5));
-    assert_eq!(completed, true);
+    assert!(!cancel_flag.load(Ordering::Relaxed));
+    session_b.update_query("survivor");
+    assert!(reporter_b.wait_for_complete(Duration::from_secs(5)));
+    let snapshot = reporter_b.snapshot();
+    assert_eq!(snapshot.query, "survivor");
+    assert!(snapshot.walk_complete);
+    assert_eq!(snapshot.matches.len(), 1);
+    assert_eq!(
+        snapshot.matches[0].full_path(),
+        root_b.path().join("survivor.txt")
+    );
 }
 
 #[test]
@@ -427,31 +435,8 @@ fn session_emits_updates_when_query_changes() {
 }
 
 #[test]
-fn run_returns_matches_for_query() {
-    let dir = create_temp_tree(40);
-    let options = FileSearchOptions {
-        limit: NonZero::new(20).unwrap(),
-        exclude: Vec::new(),
-        threads: NonZero::new(2).unwrap(),
-        compute_indices: false,
-        include_hidden: true,
-        respect_gitignore: true,
-    };
-    let results = run("file-000", vec![dir.path().to_path_buf()], options, None).expect("run ok");
-
-    assert!(!results.matches.is_empty());
-    assert!(results.total_match_count >= results.matches.len());
-    assert!(
-        results
-            .matches
-            .iter()
-            .any(|m| m.path.to_string_lossy().contains("file-0000.txt"))
-    );
-}
-
-#[test]
 fn cancel_exits_run() {
-    let dir = create_temp_tree(200);
+    let dir = create_temp_tree(1);
     let cancel_flag = Arc::new(AtomicBool::new(true));
     let search_dir = dir.path().to_path_buf();
     let options = FileSearchOptions {
@@ -475,14 +460,10 @@ fn cancel_exits_run() {
     assert_eq!(results.total_match_count, 0);
 }
 
-/// Regression test for #3493: a parent directory's `.gitignore` with `*`
-/// must not suppress files discovered inside a child "repo" directory.
-///
-/// The fixture intentionally omits `git init` so that no `.git` directory
-/// exists. With `require_git(true)`, the walker skips all gitignore
-/// processing, making the parent's broad ignore harmless.
+/// Regression for #3493: parent rules never apply across the search boundary,
+/// and the root's own rules apply with or without a `.git` directory.
 #[test]
-fn parent_gitignore_outside_repo_does_not_hide_repo_files() {
+fn gitignore_uses_search_root_as_boundary_with_or_without_git() {
     let temp = tempfile::tempdir().unwrap();
     let parent = temp.path().join("home");
     let repo = parent.join("repo");
@@ -494,135 +475,27 @@ fn parent_gitignore_outside_repo_does_not_hide_repo_files() {
         ".vscode/*\n!.vscode/\n!.vscode/settings.json\n!package.json\n",
     )
     .unwrap();
-    fs::write(repo.join("package.json"), "{ \"name\": \"demo\" }\n").unwrap();
-    fs::write(repo.join(".vscode/settings.json"), "{ \"editor\": true }\n").unwrap();
-
-    let respect_results = run(
-        "package",
-        vec![repo.clone()],
-        FileSearchOptions {
-            limit: NonZero::new(20).unwrap(),
-            exclude: Vec::new(),
-            threads: NonZero::new(2).unwrap(),
-            compute_indices: false,
-            include_hidden: true,
-            respect_gitignore: true,
-        },
-        None,
-    )
-    .expect("run ok");
-    assert!(
-        respect_results
-            .matches
-            .iter()
-            .any(|m| m.path.as_path() == Path::new("package.json"))
-    );
-
-    let nested_file_results = run(
-        "settings",
-        vec![repo],
-        FileSearchOptions {
-            limit: NonZero::new(20).unwrap(),
-            exclude: Vec::new(),
-            threads: NonZero::new(2).unwrap(),
-            compute_indices: false,
-            include_hidden: true,
-            respect_gitignore: true,
-        },
-        None,
-    )
-    .expect("run ok");
-    assert!(
-        nested_file_results
-            .matches
-            .iter()
-            .any(|m| m.path.as_path() == Path::new(".vscode/settings.json"))
-    );
-}
-
-#[test]
-fn git_repo_still_respects_local_gitignore_when_enabled() {
-    let temp = tempfile::tempdir().unwrap();
-    let parent = temp.path().join("home");
-    let repo = parent.join("repo");
-    fs::create_dir_all(repo.join(".vscode")).unwrap();
-
-    fs::write(parent.join(".gitignore"), "*\n!.gitignore\n").unwrap();
-    fs::write(
-        repo.join(".gitignore"),
-        ".vscode/*\n!.vscode/\n!.vscode/settings.json\n!package.json\n",
-    )
-    .unwrap();
-    fs::write(repo.join("package.json"), "{ \"name\": \"demo\" }\n").unwrap();
-    fs::write(repo.join(".vscode/settings.json"), "{ \"editor\": true }\n").unwrap();
-    fs::write(
-        repo.join(".vscode/extensions.json"),
-        "{ \"extensions\": [] }\n",
-    )
-    .unwrap();
-
-    fs::create_dir_all(repo.join(".git")).unwrap();
-
-    let package_results = run(
-        "package",
-        vec![repo.clone()],
-        FileSearchOptions {
-            limit: NonZero::new(20).unwrap(),
-            exclude: Vec::new(),
-            threads: NonZero::new(2).unwrap(),
-            compute_indices: false,
-            include_hidden: true,
-            respect_gitignore: true,
-        },
-        None,
-    )
-    .expect("run ok");
-    assert!(
-        package_results
-            .matches
-            .iter()
-            .any(|m| m.path.as_path() == Path::new("package.json"))
-    );
-
-    let ignored_results = run(
-        "extensions.json",
-        vec![repo.clone()],
-        FileSearchOptions {
-            limit: NonZero::new(20).unwrap(),
-            exclude: Vec::new(),
-            threads: NonZero::new(2).unwrap(),
-            compute_indices: false,
-            include_hidden: true,
-            respect_gitignore: true,
-        },
-        None,
-    )
-    .expect("run ok");
-    assert!(
-        !ignored_results
-            .matches
-            .iter()
-            .any(|m| m.path.as_path() == Path::new(".vscode/extensions.json"))
-    );
-
-    let whitelisted_results = run(
-        "settings.json",
-        vec![repo],
-        FileSearchOptions {
-            limit: NonZero::new(20).unwrap(),
-            exclude: Vec::new(),
-            threads: NonZero::new(2).unwrap(),
-            compute_indices: false,
-            include_hidden: true,
-            respect_gitignore: true,
-        },
-        None,
-    )
-    .expect("run ok");
-    assert!(
-        whitelisted_results
-            .matches
-            .iter()
-            .any(|m| m.path.as_path() == Path::new(".vscode/settings.json"))
-    );
+    let package = Path::new("package.json");
+    let settings = Path::new(".vscode/settings.json");
+    let extensions = Path::new(".vscode/extensions.json");
+    for path in [package, settings, extensions] {
+        fs::write(repo.join(path), "").unwrap();
+    }
+    for is_repo in [false, true] {
+        if is_repo {
+            fs::create_dir(repo.join(".git")).unwrap();
+        }
+        let results = run(
+            "json",
+            vec![repo.clone()],
+            FileSearchOptions::default(),
+            None,
+        )
+        .unwrap();
+        let mut paths: Vec<_> = results.matches.iter().map(|m| m.path.as_path()).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, [settings, package], "is_repo={is_repo}");
+        assert_eq!(results.total_match_count, 2);
+        assert!(results.matches.iter().all(|m| m.indices.is_none()));
+    }
 }

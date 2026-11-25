@@ -1,5 +1,6 @@
 use super::tool::ApplyPatchWorkspace;
 use anyhow::Context;
+use assert_cmd::assert::Assert;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,8 +23,7 @@ fn test_apply_patch_scenarios() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Reads a scenario directory, copies the input files to a temporary directory, runs apply-patch,
-/// and asserts that the final state matches the expected state exactly.
+/// Run the patch once and check its optional CLI expectations and entire resulting tree.
 fn run_apply_patch_scenario(dir: &Path) -> anyhow::Result<()> {
     let workspace = ApplyPatchWorkspace::new()?;
 
@@ -36,10 +36,8 @@ fn run_apply_patch_scenario(dir: &Path) -> anyhow::Result<()> {
     // Read the patch.txt file
     let patch = fs::read_to_string(dir.join("patch.txt"))?;
 
-    // Run apply_patch in the temporary directory. We intentionally do not assert
-    // on the exit status here; the scenarios are specified purely in terms of
-    // final filesystem state, which we compare below.
-    workspace.run_arg_patch(patch)?;
+    let output = workspace.run_arg_patch(patch)?;
+    check_cli_expectations(dir, Assert::new(output))?;
 
     // Assert that the final state matches the expected state exactly
     let expected_dir = dir.join("expected");
@@ -53,6 +51,23 @@ fn run_apply_patch_scenario(dir: &Path) -> anyhow::Result<()> {
         dir.display()
     );
 
+    Ok(())
+}
+
+fn check_cli_expectations(dir: &Path, output: Assert) -> anyhow::Result<()> {
+    let success = dir.join("success.stdout");
+    let failure = dir.join("failure.stderr");
+    let output = output.append_context("scenario", dir.display().to_string());
+    match (success.try_exists()?, failure.try_exists()?) {
+        (true, false) => {
+            output.code(0).stdout(fs::read(success)?).stderr("");
+        }
+        (false, true) => {
+            output.code(1).stdout("").stderr(fs::read(failure)?);
+        }
+        (true, true) => anyhow::bail!("specify only one of success.stdout and failure.stderr"),
+        (false, false) => {} // Only the filesystem state is specified.
+    }
     Ok(())
 }
 

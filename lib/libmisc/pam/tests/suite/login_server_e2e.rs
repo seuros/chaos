@@ -4,7 +4,6 @@ use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::thread;
-use std::time::Duration;
 
 use super::auth_test_support::build_tokens;
 use super::auth_test_support::make_jwt;
@@ -21,6 +20,9 @@ use chaos_pam::ServerOptions;
 use chaos_pam::run_login_server;
 use core_test_support::skip_if_no_network;
 use tempfile::TempDir;
+
+// Denial and cancellation are handled by the callback server without a token exchange.
+const UNUSED_ISSUER: &str = "http://127.0.0.1:0";
 
 /// GET `url`, following a single HTTP redirect if the server returns 3xx.
 /// The Rama `EasyHttpWebClient` does not auto-follow redirects, so the test
@@ -326,13 +328,11 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
 async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let issuer = MockIssuer::start("org-123");
     let home = LoginHomeFixture::new()?;
-    let state = "state-entitlement".to_string();
+    let state = "state-entitlement";
 
     let opts =
-        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state.clone())
-            .build();
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), UNUSED_ISSUER, state).build();
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
@@ -383,13 +383,11 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
 async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let issuer = MockIssuer::start("org-123");
     let home = LoginHomeFixture::new()?;
-    let state = "state-generic-denial".to_string();
+    let state = "state-generic-denial";
 
     let opts =
-        LoginServerOptionsBuilder::new(home.chaos_home.clone(), issuer.url.clone(), state.clone())
-            .build();
+        LoginServerOptionsBuilder::new(home.chaos_home.clone(), UNUSED_ISSUER, state).build();
     let server = run_login_server(opts)?;
     let login_port = server.actual_port;
 
@@ -452,25 +450,21 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
 async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let issuer = MockIssuer::start("org-123");
     let first_home = LoginHomeFixture::new()?;
     let first_opts = LoginServerOptionsBuilder::new(
         first_home.chaos_home.clone(),
-        issuer.url.clone(),
+        UNUSED_ISSUER,
         "cancel_state",
     )
     .build();
 
     let first_server = run_login_server(first_opts)?;
     let login_port = first_server.actual_port;
-    let first_server_task = tokio::spawn(async move { first_server.block_until_done().await });
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let second_home = LoginHomeFixture::new()?;
     let second_opts = LoginServerOptionsBuilder::new(
         second_home.chaos_home.clone(),
-        issuer.url.clone(),
+        UNUSED_ISSUER,
         "cancel_state_2",
     )
     .port(login_port)
@@ -479,9 +473,9 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
     let second_server = run_login_server(second_opts)?;
     assert_eq!(second_server.actual_port, login_port);
 
-    let cancel_result = first_server_task
+    let cancel_result = first_server
+        .block_until_done()
         .await
-        .expect("first login server task panicked")
         .expect_err("login server should report cancellation");
     assert_eq!(cancel_result.kind(), io::ErrorKind::Interrupted);
 

@@ -20,7 +20,6 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_chaos::test_chaos;
 use core_test_support::wait_for_event;
-use serde_json::Value;
 use serde_json::json;
 
 fn collaboration_mode_for_model(model: String) -> CollaborationMode {
@@ -65,16 +64,6 @@ async fn submit_user_turn(
         })
         .await?;
     Ok(())
-}
-
-fn assert_no_matched_rules_invariant(output_item: &Value) {
-    let Some(output) = output_item.get("output").and_then(Value::as_str) else {
-        panic!("function_call_output should include string output payload: {output_item:?}");
-    };
-    assert!(
-        !output.contains("invariant failed: matched_rules must be non-empty"),
-        "unexpected invariant panic surfaced in output: {output}"
-    );
 }
 
 #[tokio::test]
@@ -159,30 +148,45 @@ async fn execpolicy_blocks_shell_invocation() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
+async fn blank_scripts_in_collaboration_mode_exit_successfully() -> Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_chaos().with_model(TEST_MODEL);
     let test = builder.build(&server).await?;
-    let call_id = "shell-empty-script-collab";
-    let args = json!({
-        "command": "",
-        "timeout_ms": 1_000,
-    });
 
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-empty-shell-1"),
-            ev_function_call(call_id, "shell_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-empty-shell-1"),
-        ]),
-    )
-    .await;
+    let cases = [
+        (
+            "shell-empty",
+            "shell_command",
+            json!({"command": "", "timeout_ms": 1_000}),
+        ),
+        (
+            "shell-whitespace",
+            "shell_command",
+            json!({"command": "  \n\t  ", "timeout_ms": 1_000}),
+        ),
+        (
+            "exec-empty",
+            "exec_command",
+            json!({"cmd": "", "yield_time_ms": 1_000}),
+        ),
+        (
+            "exec-whitespace",
+            "exec_command",
+            json!({"cmd": " \n \t", "yield_time_ms": 1_000}),
+        ),
+    ];
+    let mut events = vec![ev_response_created("resp-1")];
+    for (call_id, tool, args) in &cases {
+        events.push(ev_function_call(call_id, tool, &args.to_string()));
+    }
+    events.push(ev_completed("resp-1"));
+    mount_sse_once(&server, sse(events)).await;
+
     let results_mock = mount_sse_once(
         &server,
         sse(vec![
-            ev_assistant_message("msg-empty-shell-1", "done"),
-            ev_completed("resp-empty-shell-2"),
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
         ]),
     )
     .await;
@@ -190,7 +194,7 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
     let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
     submit_user_turn(
         &test,
-        "run an empty shell command",
+        "run the blank scripts with each executor",
         ApprovalPolicy::Interactive,
         SandboxPolicy::RootAccess,
         Some(collaboration_mode),
@@ -202,158 +206,25 @@ async fn shell_command_empty_script_with_collaboration_mode_does_not_panic() -> 
     })
     .await;
 
-    let output_item = results_mock.single_request().function_call_output(call_id);
-    assert_no_matched_rules_invariant(&output_item);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exec_empty_script_with_collaboration_mode_does_not_panic() -> Result<()> {
-    let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model(TEST_MODEL);
-    let test = builder.build(&server).await?;
-    let call_id = "exec-empty-script-collab";
-    let args = json!({
-        "cmd": "",
-        "yield_time_ms": 1_000,
-    });
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-empty-exec-1"),
-            ev_function_call(call_id, "exec_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-empty-exec-1"),
-        ]),
-    )
-    .await;
-    let results_mock = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-empty-exec-1", "done"),
-            ev_completed("resp-empty-exec-2"),
-        ]),
-    )
-    .await;
-
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
-    submit_user_turn(
-        &test,
-        "run empty exec command",
-        ApprovalPolicy::Interactive,
-        SandboxPolicy::RootAccess,
-        Some(collaboration_mode),
-    )
-    .await?;
-
-    wait_for_event(&test.process, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
-
-    let output_item = results_mock.single_request().function_call_output(call_id);
-    assert_no_matched_rules_invariant(&output_item);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
-    let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model(TEST_MODEL);
-    let test = builder.build(&server).await?;
-    let call_id = "shell-whitespace-script-collab";
-    let args = json!({
-        "command": "  \n\t  ",
-        "timeout_ms": 1_000,
-    });
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-whitespace-shell-1"),
-            ev_function_call(call_id, "shell_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-whitespace-shell-1"),
-        ]),
-    )
-    .await;
-    let results_mock = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-whitespace-shell-1", "done"),
-            ev_completed("resp-whitespace-shell-2"),
-        ]),
-    )
-    .await;
-
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
-    submit_user_turn(
-        &test,
-        "run whitespace shell command",
-        ApprovalPolicy::Interactive,
-        SandboxPolicy::RootAccess,
-        Some(collaboration_mode),
-    )
-    .await?;
-
-    wait_for_event(&test.process, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
-
-    let output_item = results_mock.single_request().function_call_output(call_id);
-    assert_no_matched_rules_invariant(&output_item);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exec_whitespace_script_with_collaboration_mode_does_not_panic() -> Result<()> {
-    let server = start_mock_server().await;
-    let mut builder = test_chaos().with_model(TEST_MODEL);
-    let test = builder.build(&server).await?;
-    let call_id = "exec-whitespace-script-collab";
-    let args = json!({
-        "cmd": " \n \t",
-        "yield_time_ms": 1_000,
-    });
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-whitespace-exec-1"),
-            ev_function_call(call_id, "exec_command", &serde_json::to_string(&args)?),
-            ev_completed("resp-whitespace-exec-1"),
-        ]),
-    )
-    .await;
-    let results_mock = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-whitespace-exec-1", "done"),
-            ev_completed("resp-whitespace-exec-2"),
-        ]),
-    )
-    .await;
-
-    let collaboration_mode = collaboration_mode_for_model(test.session_configured.model.clone());
-    submit_user_turn(
-        &test,
-        "run whitespace exec command",
-        ApprovalPolicy::Interactive,
-        SandboxPolicy::RootAccess,
-        Some(collaboration_mode),
-    )
-    .await?;
-
-    wait_for_event(&test.process, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
-
-    let output_item = results_mock.single_request().function_call_output(call_id);
-    assert_no_matched_rules_invariant(&output_item);
+    let request = results_mock.single_request();
+    for (call_id, tool, _) in cases {
+        let output = request
+            .function_call_output_text(call_id)
+            .unwrap_or_else(|| panic!("missing tool output for {call_id}"));
+        let success = if tool == "shell_command" {
+            "Exit code: 0"
+        } else {
+            "Process exited with code 0"
+        };
+        assert!(
+            output.lines().any(|line| line == success),
+            "{call_id}: {output}"
+        );
+        assert!(
+            output.trim_end().ends_with("\nOutput:"),
+            "{call_id}: {output}"
+        );
+    }
 
     Ok(())
 }

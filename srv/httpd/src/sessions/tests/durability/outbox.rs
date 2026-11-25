@@ -4,6 +4,10 @@ use chaos_journald::{
     ExecutionDelivery, ExecutionDeliveryRequest as DeliveryRequest, ExecutionDeliveryStatus,
     ExecutionEvent,
 };
+use chaos_snitch::tracing::{
+    self, subscriber,
+    subscriber::{layer::SubscriberExt, util::SubscriberInitExt},
+};
 use hmac::{Hmac, KeyInit, Mac};
 use rama::{
     http::{Body, HeaderMap, Request, Response, body::util::BodyExt, server::HttpServer},
@@ -13,6 +17,7 @@ use rama::{
 };
 use sha2::Sha256;
 use std::convert::Infallible;
+use tokio::sync::Notify;
 
 const KEY: &str = "test-webhook-key-not-a-real-secret-12345";
 
@@ -247,7 +252,29 @@ async fn delivery_claims_are_fenced_and_closed_history_cannot_be_rerouted() {
     fixture.db.close().await;
 }
 
-#[tokio::test]
+// Both store clients report the database error in the ledger's structured `error`
+// field. Only the trigger on an outbox UPDATE setting delivered_at_ms raises this.
+struct AckFailure(Arc<Notify>);
+
+impl subscriber::Layer<subscriber::Registry> for AckFailure {
+    fn on_event(
+        &self,
+        event: &tracing::Event<'_>,
+        _: subscriber::layer::Context<'_, subscriber::Registry>,
+    ) {
+        event.record(
+            &mut |field: &tracing::field::Field, value: &dyn std::fmt::Debug| {
+                if field.name() == "error"
+                    && format!("{value:?}").contains("injected UPDATE failure on execution_outbox")
+                {
+                    self.0.notify_one();
+                }
+            },
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn signed_webhook_retry_survives_lost_ack_and_never_follows_redirect_or_replays_execution() {
     let mut fixture = Fixture::new().await;
     let mut supervisor = fixture.start();
@@ -299,6 +326,12 @@ async fn signed_webhook_retry_survives_lost_ack_and_never_follows_redirect_or_re
             .is_err()
     );
     fixture.db.fail_outbox(true).await;
+    // The worker runs on this test's thread. Install before spawning so even a
+    // fast rejection leaves a Notify permit; no other fixture shares this subscriber.
+    let ack_failed = Arc::new(Notify::new());
+    let observer = subscriber::registry()
+        .with(AckFailure(ack_failed.clone()))
+        .set_default();
     let worker = config().spawn(fixture.manager.clone());
     let mut bodies = Vec::new();
     for _ in 0..2 {
@@ -315,8 +348,10 @@ async fn signed_webhook_retry_survives_lost_ack_and_never_follows_redirect_or_re
         bodies[0], bodies[1],
         "redirect/non-success retries must preserve exact immutable bytes"
     );
-    // Let the failed delivery acknowledgement finish before simulating a crash.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(5), ack_failed.notified())
+        .await
+        .expect("the database must reject the 204 delivery's acknowledgement before restart");
+    drop(observer);
     worker.abort();
     let _ = worker.await;
     assert!(deliveries(&fixture).await[0].delivered_at_ms.is_none());

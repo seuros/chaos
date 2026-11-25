@@ -33,14 +33,17 @@ fn cli_feature_surface_suite() -> Result<()> {
         "--no-alt-screen",
         "Resume a previous interactive session",
         "Fork a previous interactive session",
-        "[PROMPT]",
-        "[PROMPT]\n",
     ] {
         assert_eq!(help.contains(text), cfg!(feature = "tui"), "{text}");
     }
+    let usage_prompt = help.lines().any(|line| line.ends_with(" [PROMPT]"));
+    let prompt_argument = help
+        .lines()
+        .any(|line| line.split_whitespace().next() == Some("[PROMPT]"));
+    assert_eq!(usage_prompt, cfg!(feature = "tui"), "usage synopsis");
+    assert_eq!(prompt_argument, cfg!(feature = "tui"), "argument listing");
     for args in [
         &["--version"][..],
-        &["serve", "--help"][..],
         &["mcp", "list", "--help"][..],
         &["mcp", "get", "--help"][..],
         &["mcp", "add", "--help"][..],
@@ -87,10 +90,16 @@ fn cli_feature_surface_suite() -> Result<()> {
     #[cfg(not(feature = "tui"))]
     {
         use predicates::str::contains;
-        command(&home)
+        let no_command = command(&home)
             .assert()
             .failure()
             .stderr(contains("this build has no TUI"));
+        if !cfg!(feature = "mcpd") {
+            assert!(
+                !String::from_utf8_lossy(&no_command.get_output().stderr).contains("mcp serve"),
+                "headless error must not suggest the unavailable MCP daemon"
+            );
+        }
         command(&home)
             .arg("serve")
             .assert()
@@ -110,22 +119,26 @@ fn mcp_daemon_feature_surface_suite() -> Result<()> {
     );
     let serve_help = stdout(&home, &["serve", "--help"])?;
     for flag in ["--mcp", "--mcp-allowed-origin"] {
-        assert_eq!(serve_help.contains(flag), cfg!(feature = "mcpd"), "{flag}");
+        let listed = serve_help
+            .lines()
+            .any(|line| line.split_whitespace().next() == Some(flag));
+        assert_eq!(listed, cfg!(feature = "mcpd"), "{flag}");
     }
-    for (line, candidate) in [
-        ("chaos mcp s", "serve"),
-        ("chaos serve --mcp", "--mcp"),
-        ("chaos serve --mcp", "--mcp-allowed-origin"),
+    for (line, candidates) in [
+        ("chaos mcp s", &["serve"][..]),
+        ("chaos serve --mcp", &["--mcp", "--mcp-allowed-origin"][..]),
     ] {
         let completion = stdout(
             &home,
             &["__complete_word__", "--shell", "bash", "--line", line],
         )?;
-        assert_eq!(
-            completion.lines().any(|line| line == candidate),
-            cfg!(feature = "mcpd"),
-            "{candidate}: {completion}"
-        );
+        for &candidate in candidates {
+            assert_eq!(
+                completion.lines().any(|line| line == candidate),
+                cfg!(feature = "mcpd"),
+                "{candidate}: {completion}"
+            );
+        }
     }
     #[cfg(feature = "mcpd")]
     assert!(stdout(&home, &["mcp", "serve", "--help"])?.contains("MCP server"));
@@ -137,11 +150,6 @@ fn mcp_daemon_feature_surface_suite() -> Result<()> {
             .args(["serve", "--mcp-allowed-origin", "https://example.com"])
             .assert()
             .failure();
-        #[cfg(not(feature = "tui"))]
-        {
-            let error = command(&home).assert().failure();
-            assert!(!String::from_utf8_lossy(&error.get_output().stderr).contains("mcp serve"));
-        }
     }
     Ok(())
 }

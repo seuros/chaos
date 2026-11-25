@@ -47,6 +47,7 @@ async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
     chaos_kern::test_support::bootstrap_sqlite(temp_dir.path()).map_err(std::io::Error::other)?;
     ConfigBuilder::default()
         .chaos_home(temp_dir.path().to_path_buf())
+        .fallback_cwd(Some(temp_dir.path().to_path_buf()))
         .build()
         .await
 }
@@ -54,19 +55,24 @@ async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
 #[test]
 #[ignore]
 fn lib_suite() {
+    run_console_test(run_lib_suite);
+}
+
+// The full App fixture needs more stack than the default Rust test thread.
+pub(super) fn run_console_test<F: Future<Output = ()> + 'static>(body: fn() -> F) {
     std::thread::Builder::new()
-        .name("console-lib-suite".to_string())
+        .name("console-test".into())
         .stack_size(32 * 1024 * 1024)
-        .spawn(|| {
+        .spawn(move || {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .expect("build console test runtime")
-                .block_on(run_lib_suite());
+                .block_on(body());
         })
-        .expect("spawn console lib suite thread")
+        .expect("spawn console test thread")
         .join()
-        .expect("console lib suite panicked");
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
 }
 
 async fn run_lib_suite() {
@@ -76,20 +82,9 @@ async fn run_lib_suite() {
     super::cwd_prompt::tests::cwd_prompt_suite();
     super::onboarding::tests::onboarding_suite();
     super::pager_overlay::tests::pager_overlay_suite();
-    super::resume_picker::tests::resume_picker_suite().await;
-
     boot_core_returns_valid_managers()
         .await
         .expect("boot_core_returns_valid_managers");
-    untrusted_project_skips_trust_prompt()
-        .await
-        .expect("untrusted_project_skips_trust_prompt");
-    config_rebuild_changes_trust_defaults_with_cwd()
-        .await
-        .expect("config_rebuild_changes_trust_defaults_with_cwd");
-    theme_warning_uses_final_config()
-        .await
-        .expect("theme_warning_uses_final_config");
 }
 
 async fn boot_core_returns_valid_managers() -> std::io::Result<()> {
@@ -107,6 +102,7 @@ async fn boot_core_returns_valid_managers() -> std::io::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
 async fn untrusted_project_skips_trust_prompt() -> std::io::Result<()> {
     use chaos_ipc::config_types::TrustLevel;
     let temp_dir = TempDir::new()?;
@@ -123,6 +119,7 @@ async fn untrusted_project_skips_trust_prompt() -> std::io::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
 async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()> {
     use chaos_ipc::config_types::TrustLevel;
     use chaos_kern::config::set_project_trust_level;
@@ -169,45 +166,37 @@ async fn config_rebuild_changes_trust_defaults_with_cwd() -> std::io::Result<()>
     Ok(())
 }
 
-/// Regression: theme must be configured from the *final* config.
-///
-/// `run_ratatui_app` can reload config during onboarding and again
-/// during session resume/fork.  The syntax theme override (stored in
-/// a `OnceLock`) must use the final config's `tui_theme`, not the
-/// initial one — otherwise users resuming a thread in a project with
-/// a different theme get the wrong highlighting.
-///
-/// We verify the invariant indirectly: `validate_theme_name` (the
-/// pure validation core of `set_theme_override`) must be called with
-/// the *final* config's theme, and its warning must land in the
-/// final config's `startup_warnings`.
-async fn theme_warning_uses_final_config() -> std::io::Result<()> {
-    use crate::render::highlight::validate_theme_name;
+#[cfg(feature = "syntax")]
+#[tokio::test]
+async fn theme_warning_uses_final_config() -> color_eyre::Result<()> {
+    use chaos_kern::test_support::seed_user_settings_toml;
 
     let temp_dir = TempDir::new()?;
+    seed_user_settings_toml(temp_dir.path(), r#"tui.theme = "missing-before-reload""#)
+        .await
+        .map_err(std::io::Error::other)?;
+    let initial = build_config(&temp_dir).await?;
+    seed_user_settings_toml(temp_dir.path(), r#"tui.theme = "missing-after-reload""#)
+        .await
+        .map_err(std::io::Error::other)?;
+    let destination = build_config(&temp_dir).await?;
 
-    // initial_config has a valid theme — no warning.
-    let initial_config = build_config(&temp_dir).await?;
-    assert!(initial_config.tui_theme.is_none());
-
-    // Simulate resume/fork reload: the final config has an invalid theme.
-    let mut config = build_config(&temp_dir).await?;
-    config.tui_theme = Some("bogus-theme".into());
-
-    // Theme override must use the final config (not initial_config).
-    // This mirrors the real call site in run_ratatui_app.
-    if let Some(w) = validate_theme_name(config.tui_theme.as_deref()) {
-        config.startup_warnings.push(w);
-    }
-
-    assert_eq!(
-        config.startup_warnings.len(),
-        1,
-        "warning from final config's invalid theme should be present"
+    let target = resume_picker::SessionTarget {
+        process_id: ProcessId::new(),
+        keep_current: true,
+    };
+    let warnings = finalize_startup_config(initial, Some((&target, destination)), &[])
+        .await?
+        .startup_warnings;
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains(r#"Theme "missing-after-reload" not found"#)),
+        "{warnings:?}"
     );
     assert!(
-        config.startup_warnings[0].contains("bogus-theme"),
-        "warning should reference the final config's theme name"
+        !warnings.iter().any(|w| w.contains("missing-before-reload")),
+        "{warnings:?}"
     );
     Ok(())
 }

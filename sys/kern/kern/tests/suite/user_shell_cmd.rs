@@ -138,8 +138,11 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
     let fixture = builder.build(&server).await?;
 
     let call_id = "active-turn-shell-call";
+    let release_file = "release-model-shell";
     let args = serde_json::json!({
-        "command": "sleep 2; echo model-shell",
+        "command": format!(
+            "sh -c 'echo model-shell; while [ ! -f {release_file} ]; do sleep 0.02; done'"
+        ),
         "timeout_ms": 10_000,
     });
     let first = sse(vec![
@@ -174,11 +177,10 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
         })
         .await?;
 
-    let _ = wait_for_event_match(&fixture.process, |ev| match ev {
-        EventMsg::ExecCommandBegin(event) if event.source == ExecCommandSource::Agent => {
-            Some(event.clone())
-        }
-        _ => None,
+    // Stdout signals that the model command is running, not merely scheduled.
+    wait_for_event(&fixture.process, |ev| {
+        matches!(ev, EventMsg::ExecCommandOutputDelta(event)
+            if event.call_id == call_id && event.stream == ExecOutputStream::Stdout)
     })
     .await;
 
@@ -192,6 +194,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
 
     let mut saw_replaced_abort = false;
     let mut saw_user_shell_end = false;
+    let mut saw_model_shell_end = false;
     let mut saw_turn_complete = false;
     for _ in 0..200 {
         let event = timeout(Duration::from_secs(20), fixture.process.next_event())
@@ -203,7 +206,17 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
                 saw_replaced_abort = true;
             }
             EventMsg::ExecCommandEnd(ev) if ev.source == ExecCommandSource::UserShell => {
+                assert_eq!(ev.exit_code, 0, "user shell failed: {}", ev.stderr);
+                assert_eq!(ev.stdout, "user-shell");
                 saw_user_shell_end = true;
+                tokio::fs::write(fixture.cwd.path().join(release_file), b"").await?;
+            }
+            EventMsg::ExecCommandEnd(ev) if ev.call_id == call_id => {
+                assert_eq!(ev.source, ExecCommandSource::Agent);
+                assert!(saw_user_shell_end, "model shell ended before user shell");
+                assert_eq!(ev.exit_code, 0, "model shell failed: {}", ev.stderr);
+                assert_eq!(ev.stdout.trim_end(), "model-shell");
+                saw_model_shell_end = true;
             }
             EventMsg::TurnComplete(_) => {
                 saw_turn_complete = true;
@@ -214,6 +227,7 @@ async fn user_shell_command_does_not_replace_active_turn() -> anyhow::Result<()>
     }
 
     assert!(saw_turn_complete, "expected turn to complete");
+    assert!(saw_model_shell_end, "expected model shell to finish");
     assert!(
         saw_user_shell_end,
         "expected user shell command to finish while turn was active"

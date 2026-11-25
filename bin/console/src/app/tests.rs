@@ -51,13 +51,12 @@ use tokio::time;
 mod mouse_scroll;
 
 mod activity;
+mod mounted_logs;
 
 pub(crate) async fn app_tests_suite() {
     super::agent_navigation::tests::agent_navigation_state_preserves_order_wraps_and_formats_labels(
     );
     super::agent_navigation::tests::closed_agent_tabs_use_tombstones_and_expire();
-    super::pending_interactive_replay::tests::pending_interactive_replay_suite();
-
     normalize_harness_overrides_resolves_relative_add_dirs()
         .expect("normalize_harness_overrides_resolves_relative_add_dirs");
     startup_waiting_gate_is_only_for_fresh_or_exit_session_selection();

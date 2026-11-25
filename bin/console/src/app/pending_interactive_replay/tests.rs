@@ -103,12 +103,16 @@ fn snapshot_request_user_input_call_ids(store: &ProcessEventStore) -> Vec<String
         .collect()
 }
 
-pub(crate) fn pending_interactive_replay_suite() {
-    request_user_input_snapshot_replay_tracks_pending_prompts_fifo_by_turn();
-    resolved_process_approvals_and_elicitations_are_filtered_from_snapshots();
-    turn_abort_filters_pending_turn_scoped_approval_prompts();
+fn snapshot_ids(store: &ProcessEventStore) -> Vec<String> {
+    store
+        .snapshot()
+        .events
+        .into_iter()
+        .map(|ev| ev.id)
+        .collect()
 }
 
+#[test]
 fn request_user_input_snapshot_replay_tracks_pending_prompts_fifo_by_turn() {
     let mut store = ProcessEventStore::new(8);
     store.push_event(request_user_input_event("ev-1", "call-1", "turn-1"));
@@ -120,54 +124,50 @@ fn request_user_input_snapshot_replay_tracks_pending_prompts_fifo_by_turn() {
         "resolved request_user_input prompt should not replay on thread switch"
     );
 
-    let mut store = ProcessEventStore::new(8);
-    store.push_event(request_user_input_event("ev-1", "call-1", "turn-1"));
-    store.note_outbound_op(&user_input_answer("turn-1"));
+    store.push_event(request_user_input_event("other", "other-call", "turn-2"));
     store.push_event(request_user_input_event("ev-2", "call-2", "turn-1"));
-    assert_eq!(snapshot_request_user_input_call_ids(&store), vec!["call-2"]);
-
-    let mut store = ProcessEventStore::new(8);
-    store.push_event(request_user_input_event("ev-1", "call-1", "turn-1"));
-    store.push_event(request_user_input_event("ev-2", "call-2", "turn-1"));
+    assert_eq!(
+        snapshot_request_user_input_call_ids(&store),
+        ["other-call", "call-2"]
+    );
+    store.push_event(request_user_input_event("ev-3", "call-3", "turn-1"));
     store.note_outbound_op(&user_input_answer("turn-1"));
-    assert_eq!(snapshot_request_user_input_call_ids(&store), vec!["call-2"]);
+    assert_eq!(
+        snapshot_request_user_input_call_ids(&store),
+        ["other-call", "call-3"]
+    );
+    assert!(!store.has_pending_process_approvals());
 }
 
+#[test]
 fn resolved_process_approvals_and_elicitations_are_filtered_from_snapshots() {
     let mut store = ProcessEventStore::new(8);
-    assert_eq!(store.has_pending_process_approvals(), false);
+    assert!(!store.has_pending_process_approvals());
     store.push_event(exec_approval_event(
-        "ev-1",
+        "exec",
         "call-1",
         Some("approval-1"),
         "turn-1",
     ));
-    assert_eq!(store.has_pending_process_approvals(), true);
+    assert!(store.has_pending_process_approvals());
+    assert_eq!(snapshot_ids(&store), ["exec"]);
     store.note_outbound_op(&Op::ExecApproval {
         id: "approval-1".to_string(),
         turn_id: Some("turn-1".to_string()),
         decision: chaos_ipc::protocol::ReviewDecision::Approved,
     });
-    assert_eq!(store.has_pending_process_approvals(), false);
-    assert!(
-        store.snapshot().events.is_empty(),
-        "resolved exec approval prompt should not replay on thread switch"
-    );
+    assert!(!store.has_pending_process_approvals());
+    assert!(snapshot_ids(&store).is_empty());
 
-    let mut store = ProcessEventStore::new(8);
-    store.push_event(patch_approval_event("ev-1", "call-1", "turn-1"));
+    store.push_event(patch_approval_event("patch", "patch-call", "turn-1"));
+    let request_id = chaos_ipc::mcp::RequestId::String("request-1".to_string());
+    store.push_event(elicitation_event("form", "server-1", request_id.clone()));
+    assert_eq!(snapshot_ids(&store), ["patch", "form"]);
     store.note_outbound_op(&Op::PatchApproval {
-        id: "call-1".to_string(),
+        id: "patch-call".to_string(),
         decision: chaos_ipc::protocol::ReviewDecision::Approved,
     });
-    assert!(
-        store.snapshot().events.is_empty(),
-        "resolved patch approval prompt should not replay on thread switch"
-    );
-
-    let mut store = ProcessEventStore::new(8);
-    let request_id = chaos_ipc::mcp::RequestId::String("request-1".to_string());
-    store.push_event(elicitation_event("ev-1", "server-1", request_id.clone()));
+    assert_eq!(snapshot_ids(&store), ["form"]);
     store.note_outbound_op(&Op::ResolveElicitation {
         server_name: "server-1".to_string(),
         request_id,
@@ -175,16 +175,11 @@ fn resolved_process_approvals_and_elicitations_are_filtered_from_snapshots() {
         content: None,
         meta: None,
     });
-    assert!(
-        store.snapshot().events.is_empty(),
-        "resolved elicitation prompt should not replay on thread switch"
-    );
-
-    let mut store = ProcessEventStore::new(8);
-    store.push_event(request_user_input_event("ev-1", "call-1", "turn-1"));
-    assert_eq!(store.has_pending_process_approvals(), false);
+    assert!(snapshot_ids(&store).is_empty());
+    assert!(!store.has_pending_process_approvals());
 }
 
+#[test]
 fn turn_abort_filters_pending_turn_scoped_approval_prompts() {
     let mut store = ProcessEventStore::new(8);
     store.push_event(exec_approval_event(
@@ -194,6 +189,8 @@ fn turn_abort_filters_pending_turn_scoped_approval_prompts() {
         "turn-1",
     ));
     store.push_event(patch_approval_event("ev-2", "patch-call-1", "turn-1"));
+    store.push_event(patch_approval_event("other", "patch-call-2", "turn-2"));
+    assert_eq!(snapshot_ids(&store), ["ev-1", "ev-2", "other"]);
     store.push_event(Event {
         id: "ev-3".to_string(),
         msg: EventMsg::TurnAborted(chaos_ipc::protocol::TurnAbortedEvent {
@@ -202,11 +199,5 @@ fn turn_abort_filters_pending_turn_scoped_approval_prompts() {
         }),
     });
 
-    let snapshot = store.snapshot();
-    assert!(snapshot.events.iter().all(|event| {
-        !matches!(
-            &event.msg,
-            EventMsg::ExecApprovalRequest(_) | EventMsg::ApplyPatchApprovalRequest(_)
-        )
-    }));
+    assert_eq!(snapshot_ids(&store), ["other", "ev-3"]);
 }

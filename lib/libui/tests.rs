@@ -30,6 +30,17 @@ fn run_suite(name: &'static str, suite: impl FnOnce() + Send + 'static) {
         .expect("libui suite panicked");
 }
 
+// Replay with CHAOS_TEXTAREA_FUZZ_SEED=<u64> cargo test -p libui --lib
+// tests::textarea_fuzz_stress -- --exact --ignored
+#[test]
+#[ignore = "full 500 × 60 daily rotating textarea corpus"]
+fn textarea_fuzz_stress() {
+    run_suite(
+        "textarea_fuzz_stress",
+        crate::bottom_pane::tests::textarea_fuzz_stress,
+    );
+}
+
 macro_rules! libui_suites {
     ($($name:ident => $suite:expr;)*) => {
         $(

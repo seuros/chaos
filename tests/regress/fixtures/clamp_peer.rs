@@ -90,6 +90,10 @@ fn emit(value: Value) -> Result<()> {
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--version" {
+        println!("2.1.330 (Claude Code)");
+        return Ok(());
+    }
     let option = |name: &str| {
         args.windows(2)
             .find(|pair| pair[0] == name)

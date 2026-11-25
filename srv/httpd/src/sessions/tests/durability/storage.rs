@@ -196,14 +196,20 @@ impl Database {
         predicate: &str,
     ) {
         // Identifiers/operations come only from the fixed fault helpers above.
+        let message = format!("injected {operation} failure on {table}");
         self.fault_sql(
-            format!("CREATE TRIGGER {name} BEFORE {operation} ON {table}
-                WHEN {predicate} BEGIN SELECT RAISE(ABORT, 'injected write failure'); END;"),
-            format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
-                BEGIN IF {predicate} THEN RAISE EXCEPTION 'injected write failure'; END IF; RETURN NEW; END;
+            format!(
+                "CREATE TRIGGER {name} BEFORE {operation} ON {table}
+                WHEN {predicate} BEGIN SELECT RAISE(ABORT, '{message}'); END;"
+            ),
+            format!(
+                "CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN IF {predicate} THEN RAISE EXCEPTION '{message}'; END IF; RETURN NEW; END;
                 $$; CREATE TRIGGER {name} BEFORE {operation} ON {table}
-                FOR EACH ROW EXECUTE FUNCTION {name}();"),
-        ).await;
+                FOR EACH ROW EXECUTE FUNCTION {name}();"
+            ),
+        )
+        .await;
     }
 
     pub(super) async fn clear_outbox_fault(&self) {

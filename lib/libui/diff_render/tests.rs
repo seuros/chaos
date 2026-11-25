@@ -166,8 +166,8 @@ pub(crate) fn diff_render_suite() {
     ui_snapshot_apply_update_block_wraps_long_lines_text();
     ui_snapshot_apply_update_block_line_numbers_three_digits_text();
     ui_snapshot_apply_update_block_relativizes_path();
+    #[cfg(feature = "syntax")]
     ui_snapshot_syntax_highlighted_insert_wraps();
-    ui_snapshot_syntax_highlighted_insert_wraps_text();
     ui_snapshot_diff_gallery_80x24();
     ui_snapshot_diff_gallery_94x35();
     ui_snapshot_diff_gallery_120x40();
@@ -181,8 +181,7 @@ pub(crate) fn diff_render_suite() {
     light_truecolor_theme_uses_readable_gutter_and_line_backgrounds();
     light_theme_wrapped_lines_keep_number_gutter_contrast();
     ansi16_maps_to_ansi16_diff_palette();
-    add_diff_uses_path_extension_for_highlighting();
-    delete_diff_uses_path_extension_for_highlighting();
+    diff_uses_destination_language_for_highlighting();
     detect_lang_for_common_paths();
     wrap_styled_spans_single_line();
     wrap_styled_spans_splits_long_content();
@@ -192,7 +191,7 @@ pub(crate) fn diff_render_suite() {
     wrap_styled_spans_wraps_before_first_overflowing_char();
     fallback_wrapping_uses_display_width_for_tabs_and_wide_chars();
     large_update_diff_skips_highlighting();
-    rename_diff_uses_destination_extension_for_highlighting();
+    #[cfg(feature = "syntax")]
     update_diff_preserves_multiline_highlight_state_within_hunk();
 }
 
@@ -440,6 +439,7 @@ fn ui_snapshot_apply_update_block_relativizes_path() {
     snapshot_lines("apply_update_block_relativizes_path", lines, 80, 10);
 }
 
+#[cfg(feature = "syntax")]
 fn ui_snapshot_syntax_highlighted_insert_wraps() {
     let long_rust = "fn very_long_function_name(arg_one: String, arg_two: String, arg_three: String, arg_four: String) -> Result<String, Box<dyn std::error::Error>> { Ok(arg_one) }";
 
@@ -463,27 +463,8 @@ fn ui_snapshot_syntax_highlighted_insert_wraps() {
         lines.len()
     );
 
-    snapshot_lines("syntax_highlighted_insert_wraps", lines, 90, 10);
-}
-
-fn ui_snapshot_syntax_highlighted_insert_wraps_text() {
-    let long_rust = "fn very_long_function_name(arg_one: String, arg_two: String, arg_three: String, arg_four: String) -> Result<String, Box<dyn std::error::Error>> { Ok(arg_one) }";
-
-    let syntax_spans =
-        highlight_code_to_styled_spans(long_rust, "rust").expect("rust highlighting");
-    let spans = &syntax_spans[0];
-
-    let lines = push_wrapped_diff_line_with_syntax_and_style_context(
-        1,
-        DiffLineType::Insert,
-        long_rust,
-        80,
-        line_number_width(1),
-        spans,
-        current_diff_render_style_context(),
-    );
-
     snapshot_lines_text("syntax_highlighted_insert_wraps_text", &lines);
+    snapshot_lines("syntax_highlighted_insert_wraps", lines, 90, 10);
 }
 
 fn ui_snapshot_diff_gallery_80x24() {
@@ -767,46 +748,61 @@ fn ansi16_maps_to_ansi16_diff_palette() {
     );
 }
 
-fn add_diff_uses_path_extension_for_highlighting() {
-    let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
-    changes.insert(
-        PathBuf::from("highlight_add.rs"),
-        FileChange::Add {
-            content: "pub fn sum(a: i32, b: i32) -> i32 { a + b }\n".to_string(),
-        },
-    );
-
-    let lines = create_diff_summary(&changes, &PathBuf::from("/"), 80);
-    let has_rgb = lines.iter().any(|line| {
-        line.spans
+fn diff_uses_destination_language_for_highlighting() {
+    let rust = "fn sum() -> i32 { 42 }";
+    let python = "def scale(x):";
+    for (path, change, source, language) in [
+        (
+            "added.rs",
+            FileChange::Add {
+                content: rust.into(),
+            },
+            rust,
+            "rust",
+        ),
+        (
+            "deleted.py",
+            FileChange::Delete {
+                content: python.into(),
+            },
+            python,
+            "python",
+        ),
+        (
+            "before.xyzzy",
+            FileChange::Update {
+                unified_diff: diffy::create_patch("old\n", &format!("{rust}\n")).to_string(),
+                move_path: Some(PathBuf::from("after.rs")),
+            },
+            rust,
+            "rust",
+        ),
+    ] {
+        let deleted = matches!(change, FileChange::Delete { .. });
+        let lines = diff_summary_for_tests(&HashMap::from([(PathBuf::from(path), change)]));
+        let row = lines
             .iter()
-            .any(|s| matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..))))
-    });
-    assert!(
-        has_rgb,
-        "add diff for .rs file should produce syntax-highlighted (RGB) spans"
-    );
-}
-
-fn delete_diff_uses_path_extension_for_highlighting() {
-    let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
-    changes.insert(
-        PathBuf::from("highlight_delete.py"),
-        FileChange::Delete {
-            content: "def scale(x):\n    return x * 2\n".to_string(),
-        },
-    );
-
-    let lines = create_diff_summary(&changes, &PathBuf::from("/"), 80);
-    let has_rgb = lines.iter().any(|line| {
-        line.spans
-            .iter()
-            .any(|s| matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..))))
-    });
-    assert!(
-        has_rgb,
-        "delete diff for .py file should produce syntax-highlighted (RGB) spans"
-    );
+            .find(|line| line.to_string().ends_with(source))
+            .expect("rendered code line");
+        // Compare code spans, not arbitrary RGB in the header or gutter.
+        if cfg!(feature = "syntax") {
+            let mut expected = highlight_code_to_styled_spans(source, language)
+                .expect("supported fixture language")
+                .pop()
+                .expect("highlighted code line");
+            if deleted {
+                for span in &mut expected {
+                    span.style = span.style.add_modifier(ratatui::style::Modifier::DIM);
+                }
+            }
+            assert!(row.spans.ends_with(&expected), "{path}: {row:?}");
+        } else {
+            assert_eq!(
+                row.spans.last().expect("plain code").content.as_ref(),
+                source
+            );
+        }
+    }
 }
 
 fn detect_lang_for_common_paths() {
@@ -926,75 +922,38 @@ fn fallback_wrapping_uses_display_width_for_tabs_and_wide_chars() {
 }
 
 fn large_update_diff_skips_highlighting() {
-    let line_count = 10_500;
-    let original: String = (0..line_count).map(|i| format!("line {i}\n")).collect();
-    let modified: String = (0..line_count)
-        .map(|i| {
-            if i % 2 == 0 {
-                format!("line {i} changed\n")
-            } else {
-                format!("line {i}\n")
-            }
-        })
-        .collect();
-    let patch = diffy::create_patch(&original, &modified).to_string();
-
-    let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
-    changes.insert(
-        PathBuf::from("huge.rs"),
-        FileChange::Update {
-            unified_diff: patch,
-            move_path: None,
-        },
-    );
-
-    let lines = create_diff_summary(&changes, &PathBuf::from("/"), 80);
-
-    assert!(
-        lines.len() > 100,
-        "expected many output lines from large diff, got {}",
-        lines.len(),
-    );
-
-    for line in &lines {
-        for span in &line.spans {
-            if let Some(ratatui::style::Color::Rgb(..)) = span.style.fg {
-                panic!(
-                    "large diff should not have syntax-highlighted spans, \
-                         got RGB color in style {:?} for {:?}",
-                    span.style, span.content,
-                );
-            }
-        }
+    // Each hunk fits the highlighter separately (5,001 lines); only the
+    // whole-patch guard should force plain code. No need to compute a diff.
+    let context = " fn same() {}\n".repeat(4_999);
+    let hunk = format!("{context}-fn old() {{}}\n+fn new() {{}}\n");
+    let change = FileChange::Update {
+        unified_diff: format!(
+            "--- a\n+++ b\n@@ -1,5000 +1,5000 @@\n{hunk}@@ -6000,5000 +6000,5000 @@\n{hunk}"
+        ),
+        move_path: None,
+    };
+    let lines = diff_summary_for_tests(&HashMap::from([(PathBuf::from("huge.rs"), change)]));
+    let ctx = current_diff_render_style_context();
+    let add = style_add(ctx.theme, ctx.color_level, ctx.diff_backgrounds);
+    let del = style_del(ctx.theme, ctx.color_level, ctx.diff_backgrounds);
+    for (code, style, expected) in [
+        ("fn same() {}", Style::default(), 9_998),
+        ("fn old() {}", del, 2),
+        ("fn new() {}", add, 2),
+    ] {
+        let count = lines
+            .iter()
+            .filter(|row| {
+                row.spans
+                    .last()
+                    .is_some_and(|s| s.content == code && s.style == style)
+            })
+            .count();
+        assert_eq!(count, expected, "unhighlighted rows containing {code}");
     }
 }
 
-fn rename_diff_uses_destination_extension_for_highlighting() {
-    let original = "fn main() {}\n";
-    let modified = "fn main() { println!(\"hi\"); }\n";
-    let patch = diffy::create_patch(original, modified).to_string();
-
-    let mut changes: HashMap<PathBuf, FileChange> = HashMap::new();
-    changes.insert(
-        PathBuf::from("foo.xyzzy"),
-        FileChange::Update {
-            unified_diff: patch,
-            move_path: Some(PathBuf::from("foo.rs")),
-        },
-    );
-
-    let lines = create_diff_summary(&changes, &PathBuf::from("/"), 80);
-    let has_rgb = lines.iter().any(|line| {
-        line.spans
-            .iter()
-            .any(|s| matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..))))
-    });
-    assert!(
-        has_rgb,
-        "rename from .xyzzy to .rs should produce syntax-highlighted (RGB) spans"
-    );
-}
-
+#[cfg(feature = "syntax")]
 fn update_diff_preserves_multiline_highlight_state_within_hunk() {
     let original = "fn demo() {\n    let s = \"hello\";\n}\n";
     let modified = "fn demo() {\n    let s = \"hello\nworld\";\n}\n";

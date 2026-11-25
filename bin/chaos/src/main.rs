@@ -733,6 +733,7 @@ fn activity_origin(
 ) -> Option<chaos_kern::activity::fleet::OriginKind> {
     use chaos_kern::activity::fleet::OriginKind;
     match subcommand {
+        #[cfg(feature = "tui")]
         None | Some(Subcommand::Resume(_)) | Some(Subcommand::Fork(_)) => Some(OriginKind::Console),
         Some(Subcommand::Exec(_)) | Some(Subcommand::Review(_)) => Some(OriginKind::Exec),
         #[cfg(feature = "acp")]

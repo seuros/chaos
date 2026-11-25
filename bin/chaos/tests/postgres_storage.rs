@@ -4,26 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chaos_kern::runtime_db::{LogEntry, open_or_create_runtime_db};
 use tokio::time::timeout;
 
-#[test]
-fn console_logging_uses_the_mounted_runtime_database() {
-    let console_startup = include_str!("../../console/src/lib.rs");
-    let log_panel = include_str!("../../console/src/app/log_panel.rs");
-
-    for (path, source) in [
-        ("bin/console/src/lib.rs", console_startup),
-        ("bin/console/src/app/log_panel.rs", log_panel),
-    ] {
-        assert!(
-            !source.contains("StateRuntime::init"),
-            "{path} must not bypass the configured storage backend by opening SQLite directly"
-        );
-        assert!(
-            source.contains("get_runtime_db"),
-            "{path} must reuse the mounted runtime database"
-        );
-    }
-}
-
 #[tokio::test]
 async fn unavailable_postgres_fails_without_creating_sqlite() -> anyhow::Result<()> {
     let chaos_home = tempfile::tempdir()?;

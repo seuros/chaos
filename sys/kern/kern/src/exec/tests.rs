@@ -107,76 +107,41 @@ fn head_tail_buffer_default_preserves_prefix_and_suffix() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exec_persists_across_requests() -> anyhow::Result<()> {
-    skip_if_sandbox!(Ok(()));
-
-    let (session, turn) = test_session_and_turn().await;
-
-    let open_shell = exec_command(&session, &turn, "bash -i", 2_500).await?;
-    let process_id = open_shell.process_id.expect("expected process_id");
-
-    write_stdin(
-        &session,
-        process_id,
-        "export CHAOS_INTERACTIVE_SHELL_VAR=chaos\n",
-        2_500,
-    )
-    .await?;
-
-    let out_2 = write_stdin(
-        &session,
-        process_id,
-        "echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
-        2_500,
-    )
-    .await?;
-    assert!(
-        out_2.truncated_output().contains("chaos"),
-        "expected environment variable output"
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn multi_exec_sessions() -> anyhow::Result<()> {
     skip_if_sandbox!(Ok(()));
 
     let (session, turn) = test_session_and_turn().await;
 
-    let shell_a = exec_command(&session, &turn, "bash -i", 2_500).await?;
+    let shell_a = exec_command(&session, &turn, "bash -i", MIN_YIELD_TIME_MS).await?;
     let session_a = shell_a.process_id.expect("expected process id");
 
     write_stdin(
         &session,
         session_a,
-        "export CHAOS_INTERACTIVE_SHELL_VAR=chaos\n",
-        2_500,
+        "export CHAOS_INTERACTIVE_SHELL_VAR=session-a-only\n",
+        MIN_YIELD_TIME_MS,
     )
     .await?;
 
     let out_2 = exec_command(&session, &turn, "echo $CHAOS_INTERACTIVE_SHELL_VAR", 2_500).await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
     assert!(
         out_2.process_id.is_none(),
         "short command should not report a process id if it exits quickly"
     );
     assert!(
-        !out_2.truncated_output().contains("chaos"),
+        !out_2.truncated_output().contains("session-a-only"),
         "short command should run in a fresh shell"
     );
 
     let out_3 = write_stdin(
         &session,
-        shell_a.process_id.expect("expected process id"),
-        "echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
+        session_a,
+        "echo $CHAOS_INTERACTIVE_SHELL_VAR; exit\n",
         2_500,
     )
     .await?;
-    assert!(
-        out_3.truncated_output().contains("chaos"),
-        "session should preserve state"
-    );
+    let output = out_3.truncated_output();
+    assert!(output.lines().any(|s| s == "session-a-only"), "{output:?}");
 
     Ok(())
 }
@@ -185,41 +150,39 @@ async fn multi_exec_sessions() -> anyhow::Result<()> {
 async fn exec_yield_timeouts_preserve_the_process() -> anyhow::Result<()> {
     skip_if_sandbox!(Ok(()));
 
-    const TEST_VAR_VALUE: &str = "exec_var_123";
-
     let (session, turn) = test_session_and_turn().await;
-
-    let open_shell = exec_command(&session, &turn, "bash -i", 2_500).await?;
+    let gate = tempfile::NamedTempFile::new()?;
+    // Read the gate path as data, not shell source. Only releasing the gate can
+    // produce the marker; an echoed PTY input line cannot satisfy the assertion.
+    let open_shell = exec_command(
+        &session,
+        &turn,
+        r#"IFS= read -r -t 30 gate || exit 1
+           while [[ -e "$gate" ]]; do
+               (( SECONDS < 30 )) || exit 1
+               sleep 0.02
+           done
+           echo exec-resumed"#,
+        MIN_YIELD_TIME_MS,
+    )
+    .await?;
     let process_id = open_shell.process_id.expect("expected process id");
 
-    write_stdin(
+    let pending = write_stdin(
         &session,
         process_id,
-        format!("export CHAOS_INTERACTIVE_SHELL_VAR={TEST_VAR_VALUE}\n").as_str(),
-        2_500,
+        &format!("{}\n", gate.path().display()),
+        MIN_YIELD_TIME_MS,
     )
     .await?;
+    assert_eq!(pending.process_id, Some(process_id));
+    let output = pending.truncated_output();
+    assert!(!output.lines().any(|s| s == "exec-resumed"), "{output:?}");
 
-    let out_2 = write_stdin(
-        &session,
-        process_id,
-        "sleep 5 && echo $CHAOS_INTERACTIVE_SHELL_VAR\n",
-        10,
-    )
-    .await?;
-    assert!(
-        !out_2.truncated_output().contains(TEST_VAR_VALUE),
-        "timeout too short should yield incomplete output"
-    );
-
-    tokio::time::sleep(Duration::from_secs(7)).await;
-
-    let out_3 = write_stdin(&session, process_id, "", 100).await?;
-
-    assert!(
-        out_3.truncated_output().contains(TEST_VAR_VALUE),
-        "subsequent poll should retrieve output"
-    );
+    gate.close()?;
+    let resumed = write_stdin(&session, process_id, "", MIN_EMPTY_YIELD_TIME_MS).await?;
+    let output = resumed.truncated_output();
+    assert!(output.lines().any(|s| s == "exec-resumed"), "{output:?}");
 
     Ok(())
 }

@@ -24,69 +24,72 @@ async fn spawn_mcp_process() -> Result<(TempDir, McpProcess)> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn both_protocol_versions_keep_resources_templates_and_capability_gates() -> Result<()> {
-    for version in ["2025-06-18", "2025-11-25"] {
+async fn negotiated_protocol_keeps_resources_templates_and_capability_gates() -> Result<()> {
+    for (requested, negotiated) in [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-11-25", "2025-11-25"),
+        ("2099-01-01", "2025-11-25"),
+    ] {
         let (_home, mut mcp) = spawn_mcp_process().await?;
-        let initialize = timeout(
+        timeout(
             DEFAULT_READ_TIMEOUT,
-            mcp.initialize_with_protocol_version(version),
+            mcp.initialize_expecting_version(requested, negotiated),
         )
         .await??;
-        let JsonRpcMessage::Response(response) = initialize else {
-            anyhow::bail!("expected initialize response");
-        };
-        let result = response
-            .result
-            .ok_or_else(|| anyhow::anyhow!("initialize result"))?;
-        assert_eq!(result["protocolVersion"], version);
-        assert_eq!(
-            result["capabilities"].get("tasks").is_some(),
-            version == "2025-11-25"
-        );
-        mcp.send_initialized_notification().await?;
 
-        for (method, list_key, uri_key) in [
-            ("resources/list", "resources", "uri"),
+        for (method, list_key, uri_key, other_key, required_uris) in [
+            (
+                "resources/list",
+                "resources",
+                "uri",
+                "uriTemplate",
+                &[
+                    "chaos://sessions",
+                    "chaos://crons",
+                    "chaos://spool",
+                    "chaos://models",
+                    "chaos://modes",
+                    "chaos://mcp",
+                    "chaos://man",
+                    "chaos://machine",
+                ][..],
+            ),
             (
                 "resources/templates/list",
                 "resourceTemplates",
                 "uriTemplate",
+                "uri",
+                &["chaos://sessions/{id}", "chaos://man/{page}"][..],
             ),
         ] {
             let id = mcp.send_custom_request(method, None).await?;
-            let message = timeout(
+            let response = timeout(
                 DEFAULT_READ_TIMEOUT,
-                mcp.read_stream_until_response_or_error_message(id),
+                mcp.read_stream_until_response_message(id.clone()),
             )
             .await??;
-            let JsonRpcMessage::Response(response) = message else {
-                anyhow::bail!("expected {method} response");
-            };
-            assert!(response.error.is_none(), "{response:?}");
+            assert_eq!(response.id, Some(id.to_value()), "{requested} {method}");
             let result = response
                 .result
-                .ok_or_else(|| anyhow::anyhow!("{method} result"))?;
+                .with_context(|| format!("{method} result"))?;
             let entries = result[list_key]
                 .as_array()
-                .ok_or_else(|| anyhow::anyhow!("{list_key}"))?;
-            assert!(!entries.is_empty());
+                .with_context(|| format!("{requested} {list_key} array"))?;
             for entry in entries {
                 let uri = entry[uri_key]
                     .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("{uri_key}"))?;
-                assert_eq!(uri.contains('{'), uri_key == "uriTemplate");
+                    .with_context(|| format!("{requested} {uri_key} in {entry}"))?;
+                assert_eq!(uri.contains('{'), uri_key == "uriTemplate", "{uri}");
+                assert!(entry.get(other_key).is_none(), "{requested} {entry}");
+            }
+            for &uri in required_uris {
                 assert!(
-                    entry
-                        .get(if uri_key == "uri" {
-                            "uriTemplate"
-                        } else {
-                            "uri"
-                        })
-                        .is_none()
+                    entries.iter().any(|entry| entry[uri_key] == uri),
+                    "{requested} {method} missing {uri}"
                 );
             }
         }
-        // Neither version may call a capability this server did not declare.
+        // No negotiated session may call a capability the server did not declare.
         let id = mcp.send_custom_request("prompts/list", None).await?;
         let response = timeout(
             DEFAULT_READ_TIMEOUT,
@@ -99,78 +102,8 @@ async fn both_protocol_versions_keep_resources_templates_and_capability_gates() 
         let error = response
             .error
             .ok_or_else(|| anyhow::anyhow!("missing capability accepted"))?;
-        assert_eq!(error.code, ErrorCode::METHOD_NOT_FOUND);
+        assert_eq!(error.code, ErrorCode::METHOD_NOT_FOUND, "{requested}");
     }
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn initialize_negotiates_newer_client_protocol_to_latest_supported_version() -> Result<()> {
-    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
-
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.initialize_with_protocol_version("2025-11-25"),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(response) = message else {
-        anyhow::bail!("expected initialize response, got: {message:?}");
-    };
-
-    assert_eq!(serde_json::to_value(response.jsonrpc)?, json!("2.0"));
-    assert_eq!(
-        response.result.as_ref().unwrap()["protocolVersion"],
-        json!("2025-11-25")
-    );
-    // mcp-host 0.1.27's ResourcesCapability does not yet expose a
-    // `listTemplates` flag, so the wire only carries `listChanged` and
-    // `subscribe`. Resource templates are still served via
-    // `resources/templates/list` — the capability advertisement just hasn't
-    // landed upstream.
-    assert_eq!(
-        response.result.as_ref().unwrap()["capabilities"],
-        json!({
-            "tools": {
-                "listChanged": true
-            },
-            "resources": {
-                "listChanged": true,
-                "subscribe": true
-            },
-            "tasks": {
-                "list": {},
-                "cancel": {},
-                "requests": {
-                    "tools": {
-                        "call": {}
-                    }
-                }
-            },
-            "extensions": {
-                "io.modelcontextprotocol/ui": {
-                    "mimeTypes": ["text/html;profile=mcp-app"]
-                }
-            }
-        })
-    );
-    assert_eq!(
-        response.result.as_ref().unwrap()["serverInfo"],
-        json!({
-            "name": "chaos-mcp-server",
-            "title": "FreeChaOS",
-            "version": env!("CARGO_PKG_VERSION"),
-            "description": "Command center for the Agents of ChaOS",
-            "websiteUrl": "https://github.com/seuros/chaos"
-        })
-    );
-    assert_eq!(
-        response.result.as_ref().unwrap()["instructions"],
-        json!("Chaos — provider-agnostic coding agent")
-    );
-
-    mcp.send_initialized_notification().await?;
-
     Ok(())
 }
 
@@ -211,12 +144,7 @@ async fn tools_list_before_initialize_is_rejected() -> Result<()> {
 async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
     let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
 
-    let _ = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.initialize_with_protocol_version("2025-11-25"),
-    )
-    .await??;
-    mcp.send_initialized_notification().await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp.send_custom_request("tools/list", None).await?;
     let message = timeout(
@@ -256,114 +184,43 @@ async fn tools_list_succeeds_after_initialize_response() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resources_are_listed_after_initialize() -> Result<()> {
-    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
-    mcp.initialize().await?;
-
-    let request_id = mcp.send_custom_request("resources/list", None).await?;
-    let message = timeout(
+async fn read_json_resource(mcp: &mut McpProcess, uri: &str) -> Result<String> {
+    let request_id = mcp
+        .send_custom_request("resources/read", Some(json!({ "uri": uri })))
+        .await?;
+    let response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
+        mcp.read_stream_until_response_message(request_id),
     )
     .await??;
-
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-
-    let resources = resp.result.as_ref().unwrap()["resources"]
+    let result = response.result.with_context(|| format!("{uri} result"))?;
+    let [content] = result["contents"]
         .as_array()
-        .expect("resources array");
-    let uris: Vec<&str> = resources
-        .iter()
-        .filter_map(|resource| resource["uri"].as_str())
-        .collect();
-    assert!(uris.contains(&"chaos://sessions"));
-    assert!(uris.contains(&"chaos://crons"));
-    assert!(uris.contains(&"chaos://spool"));
-    assert!(uris.contains(&"chaos://models"));
-    assert!(uris.contains(&"chaos://modes"));
-    assert!(uris.contains(&"chaos://mcp"));
-    assert!(uris.contains(&"chaos://man"));
-    assert!(uris.contains(&"chaos://machine"));
-
-    Ok(())
+        .context("contents array")?
+        .as_slice()
+    else {
+        anyhow::bail!("expected one resource for {uri}");
+    };
+    assert_eq!(content["uri"], uri);
+    assert_eq!(content["mimeType"], "application/json");
+    Ok(content["text"]
+        .as_str()
+        .context("resource text")?
+        .to_owned())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn mcp_resource_can_be_read_after_initialize() -> Result<()> {
+async fn mcp_and_models_resources_can_be_read_after_initialize() -> Result<()> {
     let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
     mcp.initialize().await?;
 
-    let request_id = mcp
-        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://mcp" })))
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(response) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(response.id, Some(request_id.to_value()));
-    assert!(
-        response.error.is_none(),
-        "unexpected error: {:?}",
-        response.error
-    );
-
-    let content = &response.result.as_ref().unwrap()["contents"][0];
-    assert_eq!(content["uri"], json!("chaos://mcp"));
-    assert_eq!(content["mimeType"], json!("application/json"));
-    let payload: serde_json::Value =
-        serde_json::from_str(content["text"].as_str().expect("MCP status text"))?;
+    let text = read_json_resource(&mut mcp, "chaos://mcp").await?;
+    let payload: serde_json::Value = serde_json::from_str(&text)?;
     assert!(payload["revision"].is_null());
     assert!(payload["servers"].is_array());
 
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resource_templates_are_listed_after_initialize() -> Result<()> {
-    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
-    mcp.initialize().await?;
-
-    let request_id = mcp
-        .send_custom_request("resources/templates/list", None)
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-
-    let templates = resp.result.as_ref().unwrap()["resourceTemplates"]
-        .as_array()
-        .expect("resourceTemplates array");
-    assert!(
-        templates
-            .iter()
-            .filter_map(|template| template["uriTemplate"].as_str())
-            .any(|uri_template| uri_template == "chaos://sessions/{id}")
-    );
-    assert!(
-        templates
-            .iter()
-            .filter_map(|template| template["uriTemplate"].as_str())
-            .any(|uri_template| uri_template == "chaos://man/{page}")
-    );
-
+    // Cold, default home: the catalog wire contract must not require a provider server.
+    read_active_model_group(&mut mcp, &[]).await?;
     Ok(())
 }
 
@@ -539,6 +396,7 @@ async fn empty_cron_and_spool_resources_preserve_their_exact_wire_envelopes() ->
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
+    core_test_support::skip_if_no_network!(Ok(()));
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/models"))
@@ -556,7 +414,7 @@ async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
         .mount(&server)
         .await;
     let home = TempDir::new()?;
-    // User settings never hold literal credentials; the key arrives via env.
+    // Exercise the real CLI import; only the key's env var name belongs in settings.
     std::fs::write(
         home.path().join(mcp_test_support::SETTINGS_FILE),
         serde_json::to_vec_pretty(&json!({
@@ -574,75 +432,57 @@ async fn refresh_models_fetches_provider_catalog_through_mcp() -> Result<()> {
     let mut mcp =
         McpProcess::new_with_env(home.path(), &[("FIXTURE_API_KEY", Some("fixture-key"))]).await?;
     mcp.initialize().await?;
+    let endpoint = server.uri();
+    let private = ["FIXTURE_API_KEY", "fixture-key", endpoint.as_str()];
+    let cold = read_active_model_group(&mut mcp, &private).await?;
+    assert_eq!(cold["provider"], "fixture");
+    assert_eq!(cold["models"], json!([]));
+    assert!(
+        server
+            .received_requests()
+            .await
+            .context("recorded requests")?
+            .is_empty(),
+        "reading the cold catalog must not fetch models"
+    );
+
     let request_id = mcp
         .send_custom_request(
             "tools/call",
             Some(json!({"name": "refresh_models", "arguments": {"provider": "fixture"}})),
         )
         .await?;
-    let message = timeout(
+    let response = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id),
+        mcp.read_stream_until_response_message(request_id),
     )
     .await??;
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-    let result = resp.result.as_ref().expect("tool result");
+    let result = response.result.context("tool result")?;
     assert_ne!(result["isError"], json!(true), "{result}");
-    assert_eq!(result["structuredContent"]["provider"], "fixture");
+    let refreshed = &result["structuredContent"];
+    assert_eq!(refreshed["provider"], "fixture");
+    assert_eq!(refreshed["models"][0]["id"], "fixture-model");
+
+    let warm = read_active_model_group(&mut mcp, &private).await?;
+    assert_eq!(warm["provider"], "fixture");
+    assert_eq!(warm["models"], refreshed["models"]);
     assert_eq!(
-        result["structuredContent"]["models"][0]["id"],
-        "fixture-model"
+        server
+            .received_requests()
+            .await
+            .context("recorded requests")?
+            .len(),
+        1,
+        "only the explicit refresh should contact the provider"
     );
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn models_resource_can_be_read_after_initialize() -> Result<()> {
-    let (_chaos_home, mut mcp) = spawn_mcp_process().await?;
-    mcp.initialize().await?;
-
-    let request_id = mcp
-        .send_custom_request("resources/read", Some(json!({ "uri": "chaos://models" })))
-        .await?;
-    let message = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_or_error_message(request_id.clone()),
-    )
-    .await??;
-
-    let JsonRpcMessage::Response(resp) = message else {
-        anyhow::bail!("expected JSON-RPC response, got: {message:?}");
-    };
-    assert_eq!(resp.id, Some(request_id.to_value()));
-    assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
-
-    let result = resp.result.as_ref().unwrap();
-    let content = &result["contents"][0];
-    assert_eq!(content["uri"], json!("chaos://models"));
-    assert_eq!(content["mimeType"], json!("application/json"));
-
-    // The payload depends on which providers this machine has credentials for,
-    // so assert the grouped shape rather than an exact document.
-    let text = content["text"].as_str().expect("text payload");
-    let groups: serde_json::Value = serde_json::from_str(text)?;
-    let groups = groups.as_array().expect("providers array");
-    for group in groups {
-        for key in ["provider", "active", "models"] {
-            assert!(
-                group.get(key).is_some(),
-                "provider group missing '{key}': {group}"
-            );
-        }
-        assert!(
-            group["models"].is_array(),
-            "models must be an array: {group}"
-        );
-    }
-    // Credentials never travel with the catalog, and endpoints are none of a
-    // caller's business — it selects providers by id.
+async fn read_active_model_group(
+    mcp: &mut McpProcess,
+    private_values: &[&str],
+) -> Result<serde_json::Value> {
+    let text = read_json_resource(mcp, "chaos://models").await?;
     for forbidden in [
         "api_key",
         "bearer",
@@ -650,14 +490,25 @@ async fn models_resource_can_be_read_after_initialize() -> Result<()> {
         "Authorization",
         "base_url",
         "wire_api",
-    ] {
+    ]
+    .into_iter()
+    .chain(private_values.iter().copied())
+    {
         assert!(
             !text.contains(forbidden),
-            "payload leaked '{forbidden}': {text}"
+            "model catalog leaked '{forbidden}'"
         );
     }
-
-    Ok(())
+    let groups: Vec<serde_json::Value> = serde_json::from_str(&text)?;
+    for group in &groups {
+        assert!(group["provider"].is_string(), "{group}");
+        assert!(group["active"].is_boolean(), "{group}");
+        assert!(group["models"].is_array(), "{group}");
+    }
+    let mut active = groups.into_iter().filter(|group| group["active"] == true);
+    let group = active.next().context("missing active provider")?;
+    assert!(active.next().is_none(), "multiple active providers");
+    Ok(group)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -667,7 +518,7 @@ async fn cron_resource_reads_only_jobs_owned_by_this_mcp_session() -> Result<()>
         mcp_test_support::create_final_assistant_message_sse_response("Owner ready")?,
     ])
     .await;
-    super::chaos_tool::create_config_toml(chaos_home.path(), &server.uri())?;
+    super::chaos_tool::seed_mock_provider(chaos_home.path(), &server.uri()).await?;
     let pool = open_runtime_db(chaos_home.path()).await?;
     let store = CronStore::new(pool);
     store

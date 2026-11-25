@@ -115,6 +115,12 @@ fn init_optional_debug_file_layer() -> std::io::Result<(
     open_debug_log_file_layer::<tracing_subscriber::Registry>(DEBUG_LOG_FILTER)
 }
 
+fn mounted_log_layer(config: &Config) -> Option<(RuntimeDbHandle, runtime_db::LogDbLayer)> {
+    let store = get_runtime_db(config)?;
+    let layer = runtime_db::start_runtime_db_layer(store.clone());
+    Some((store, layer))
+}
+
 use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
 use crate::onboarding::onboarding_screen::run_onboarding_app;
 use crate::tui::Tui;
@@ -309,12 +315,12 @@ pub async fn run_main(
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
 
-    let log_state_db = get_runtime_db(&config);
-    let env_filter =
-        || EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
-    let log_db_layer = log_state_db
-        .as_ref()
-        .map(|db| runtime_db::start_runtime_db_layer(db.clone()).with_filter(env_filter()));
+    let (log_state_db, log_db_layer) = mounted_log_layer(&config).unzip();
+    let log_db_layer = log_db_layer.map(|layer| {
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
+        layer.with_filter(filter)
+    });
 
     let _ = tracing_subscriber::registry()
         .with(debug_file_layer)
@@ -555,83 +561,18 @@ async fn run_ratatui_app(
         None => None,
     };
 
-    // Tab preserves the selection shown before choosing a destination, even if
-    // loading that destination's cwd introduces different project defaults.
-    let kept_selection = action_and_target_session_if_resume_or_fork
-        .filter(|(_, target)| target.keep_current)
-        .map(|_| {
-            (
-                config.model.clone(),
-                config.model_provider_id.clone(),
-                config.model_provider.clone(),
-                config.model_reasoning_effort,
-            )
-        });
-    let mut config = match &session_selection {
-        resume_picker::SessionSelection::Resume(_) | resume_picker::SessionSelection::Fork(_) => {
-            load_config_or_exit_with_fallback_cwd(
-                cli_kv_overrides.clone(),
-                overrides.clone(),
-                fallback_cwd,
-            )
-            .await
-        }
-        _ => config,
+    let reloaded = if let Some((_, target)) = action_and_target_session_if_resume_or_fork {
+        let destination = load_config_or_exit_with_fallback_cwd(
+            cli_kv_overrides.clone(),
+            overrides.clone(),
+            fallback_cwd,
+        )
+        .await;
+        Some((target, destination))
+    } else {
+        None
     };
-    if let Some((model, provider_id, provider, effort)) = kept_selection {
-        config.model = model;
-        config.model_provider_id = provider_id;
-        config.model_provider = provider;
-        config.model_reasoning_effort = effort;
-    }
-
-    if let Some((_, target)) = action_and_target_session_if_resume_or_fork
-        && let Some(warning) = target
-            .apply_saved_selection(&mut config, &cli_kv_overrides)
-            .await?
-    {
-        config.startup_warnings.push(warning);
-    }
-
-    libui::theme::set_appearance(config.appearance.clone());
-
-    // Custom themes come from the runtime database; install them before the
-    // override so a stored name resolves. Without the syntax feature the
-    // parser is a stub, and every stored theme would be reported as invalid.
-    #[cfg(feature = "syntax")]
-    match chaos_kern::user_documents::enabled(
-        &config.chaos_home,
-        chaos_kern::user_documents::DocumentKind::Theme,
-    )
-    .await
-    {
-        Ok(documents) => {
-            let mut themes = std::collections::BTreeMap::new();
-            for document in documents {
-                match crate::render::highlight::parse_tmtheme(&document.source) {
-                    Some(theme) => {
-                        themes.insert(document.name, theme);
-                    }
-                    None => config.startup_warnings.push(format!(
-                        "Stored theme `{}` is not a valid .tmTheme; re-import or remove it \
-                         with `chaos themes`.",
-                        document.name
-                    )),
-                }
-            }
-            crate::render::highlight::set_custom_themes(themes);
-        }
-        Err(err) => config
-            .startup_warnings
-            .push(format!("Custom themes could not be loaded: {err:#}")),
-    }
-
-    // Configure syntax highlighting theme from the final config — onboarding
-    // and resume/fork can both reload config with a different tui_theme, so
-    // this must happen after the last possible reload.
-    if let Some(w) = crate::render::highlight::set_theme_override(config.tui_theme.clone()) {
-        config.startup_warnings.push(w);
-    }
+    let mut config = finalize_startup_config(config, reloaded, &cli_kv_overrides).await?;
 
     let active_profile = config.active_profile.clone();
     let should_show_trust_screen = should_show_trust_screen(&config);
@@ -671,6 +612,69 @@ async fn run_ratatui_app(
     session_log::log_session_end();
     // ignore error when collecting usage – report underlying error instead
     app_result
+}
+
+async fn finalize_startup_config(
+    current: Config,
+    reloaded: Option<(&resume_picker::SessionTarget, Config)>,
+    cli_kv_overrides: &[(String, toml::Value)],
+) -> color_eyre::Result<Config> {
+    let mut config = if let Some((target, mut destination)) = reloaded {
+        // Tab keeps the current model selection, not the current project's theme.
+        if target.keep_current {
+            destination.model = current.model;
+            destination.model_provider_id = current.model_provider_id;
+            destination.model_provider = current.model_provider;
+            destination.model_reasoning_effort = current.model_reasoning_effort;
+        }
+        if let Some(warning) = target
+            .apply_saved_selection(&mut destination, cli_kv_overrides)
+            .await?
+        {
+            destination.startup_warnings.push(warning);
+        }
+        destination
+    } else {
+        current
+    };
+
+    libui::theme::set_appearance(config.appearance.clone());
+
+    // Custom themes come from the runtime database; install them before the
+    // override so a stored name resolves. Without the syntax feature the
+    // parser is a stub, and every stored theme would be reported as invalid.
+    #[cfg(feature = "syntax")]
+    match chaos_kern::user_documents::enabled(
+        &config.chaos_home,
+        chaos_kern::user_documents::DocumentKind::Theme,
+    )
+    .await
+    {
+        Ok(documents) => {
+            let mut themes = std::collections::BTreeMap::new();
+            for document in documents {
+                match crate::render::highlight::parse_tmtheme(&document.source) {
+                    Some(theme) => {
+                        themes.insert(document.name, theme);
+                    }
+                    None => config.startup_warnings.push(format!(
+                        "Stored theme `{}` is not a valid .tmTheme; re-import or remove it \
+                         with `chaos themes`.",
+                        document.name
+                    )),
+                }
+            }
+            crate::render::highlight::set_custom_themes(themes);
+        }
+        Err(err) => config
+            .startup_warnings
+            .push(format!("Custom themes could not be loaded: {err:#}")),
+    }
+
+    if let Some(warning) = crate::render::highlight::set_theme_override(config.tui_theme.clone()) {
+        config.startup_warnings.push(warning);
+    }
+    Ok(config)
 }
 
 async fn resolve_saved_process_id(

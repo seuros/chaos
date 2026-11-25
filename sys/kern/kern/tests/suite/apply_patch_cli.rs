@@ -129,15 +129,17 @@ D (?:.+/)?delete\.txt
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-async fn apply_patch_cli_multiple_chunks(model_output: ApplyPatchModelOutput) -> Result<()> {
+async fn apply_patch_cli_multiple_chunks_with_eof_anchor(
+    model_output: ApplyPatchModelOutput,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
 
     let target = harness.path("multi.txt");
-    fs::write(&target, "line1\nline2\nline3\nline4\n")?;
+    fs::write(&target, "line1\nline2\nlast\nlast\n")?;
 
-    let patch = "*** Begin Patch\n*** Update File: multi.txt\n@@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch";
+    let patch = "*** Begin Patch\n*** Update File: multi.txt\n@@\n line1\n+inserted\n line2\n@@\n-last\n+changed4\n*** End of File\n*** End Patch";
     let call_id = "apply-multi-chunks";
     mount_apply_patch(&harness, call_id, patch, "ok", model_output).await;
 
@@ -145,7 +147,7 @@ async fn apply_patch_cli_multiple_chunks(model_output: ApplyPatchModelOutput) ->
 
     assert_eq!(
         fs::read_to_string(&target)?,
-        "line1\nchanged2\nline3\nchanged4\n"
+        "line1\ninserted\nline2\nlast\nchanged4\n"
     );
     Ok(())
 }
@@ -196,28 +198,6 @@ async fn apply_patch_cli_updates_file_appends_trailing_newline(
     let contents = fs::read_to_string(&target)?;
     assert!(contents.ends_with('\n'));
     assert_eq!(contents, "first line\nsecond line\n");
-    Ok(())
-}
-
-#[large_stack_test]
-#[test_case(ApplyPatchModelOutput::Freeform)]
-async fn apply_patch_cli_insert_only_hunk_modifies_file(
-    model_output: ApplyPatchModelOutput,
-) -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = apply_patch_harness().await?;
-
-    let target = harness.path("insert_only.txt");
-    fs::write(&target, "alpha\nomega\n")?;
-
-    let patch = "*** Begin Patch\n*** Update File: insert_only.txt\n@@\n alpha\n+beta\n omega\n*** End Patch";
-    let call_id = "apply-insert-only";
-    mount_apply_patch(&harness, call_id, patch, "ok", model_output).await;
-
-    harness.submit("insert lines via apply_patch").await?;
-
-    assert_eq!(fs::read_to_string(&target)?, "alpha\nbeta\nomega\n");
     Ok(())
 }
 
@@ -313,7 +293,7 @@ async fn apply_patch_cli_move_without_content_change_has_no_turn_diff(
 #[test_case(ApplyPatchModelOutput::Shell)]
 #[test_case(ApplyPatchModelOutput::ShellViaHeredoc)]
 #[test_case(ApplyPatchModelOutput::ShellCommandViaHeredoc)]
-async fn apply_patch_cli_add_overwrites_existing_file(
+async fn apply_patch_cli_add_rejects_whole_file_replacement(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -324,12 +304,14 @@ async fn apply_patch_cli_add_overwrites_existing_file(
     fs::write(&path, "old content\n")?;
 
     let patch = "*** Begin Patch\n*** Add File: duplicate.txt\n+new content\n*** End Patch";
-    let call_id = "apply-add-overwrite";
+    let call_id = "apply-add-replacement";
     mount_apply_patch(&harness, call_id, patch, "ok", model_output).await;
 
     harness.submit("apply add overwrite patch").await?;
 
-    assert_eq!(fs::read_to_string(&path)?, "new content\n");
+    let output = harness.apply_patch_output(call_id, model_output).await;
+    assert!(output.contains("use Update File"), "{output}");
+    assert_eq!(fs::read_to_string(&path)?, "old content\n");
     Ok(())
 }
 
@@ -393,66 +375,57 @@ async fn apply_patch_cli_reports_missing_context(
 
 #[large_stack_test]
 #[test_case(ApplyPatchModelOutput::Freeform)]
-async fn apply_patch_cli_reports_missing_target_file(
+async fn apply_patch_cli_reports_missing_targets_for_update_and_delete(
     model_output: ApplyPatchModelOutput,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let harness = apply_patch_harness().await?;
 
-    let patch = "*** Begin Patch\n*** Update File: missing.txt\n@@\n-nope\n+better\n*** End Patch";
-    let call_id = "apply-missing-file";
-    mount_apply_patch(&harness, call_id, patch, "fail", model_output).await;
-
-    harness.submit("attempt to update a missing file").await?;
-
-    let out = harness.apply_patch_output(call_id, model_output).await;
-    assert!(
-        out.contains("apply_patch verification failed"),
-        "expected verification failure message"
-    );
-    assert!(
-        out.contains("Failed to read file to update"),
-        "expected missing file diagnostics: {out}"
-    );
-    assert!(
-        out.contains("missing.txt"),
-        "expected missing file path in diagnostics: {out}"
-    );
-    assert!(!harness.path("missing.txt").exists());
-    Ok(())
-}
-
-#[large_stack_test]
-#[test_case(ApplyPatchModelOutput::Freeform)]
-async fn apply_patch_cli_delete_missing_file_reports_error(
-    model_output: ApplyPatchModelOutput,
-) -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = apply_patch_harness().await?;
-
-    let patch = "*** Begin Patch\n*** Delete File: missing.txt\n*** End Patch";
-    let call_id = "apply-delete-missing";
-    mount_apply_patch(&harness, call_id, patch, "fail", model_output).await;
-
-    harness.submit("attempt to delete missing file").await?;
-
-    let out = harness.apply_patch_output(call_id, model_output).await;
-
-    assert!(
-        out.contains("apply_patch verification failed"),
-        "expected verification failure message: {out}"
-    );
-    assert!(
-        out.contains("Failed to read"),
-        "missing delete diagnostics should mention read failure: {out}"
-    );
-    assert!(
-        out.contains("missing.txt"),
-        "missing delete diagnostics should surface target path: {out}"
-    );
-    assert!(!harness.path("missing.txt").exists());
+    let cases = [
+        (
+            "update",
+            "update.txt",
+            "*** Update File: update.txt\n@@\n-nope\n+better",
+            "Failed to read file to update",
+        ),
+        (
+            "delete",
+            "delete.txt",
+            "*** Delete File: delete.txt",
+            "Failed to read",
+        ),
+    ];
+    let mut events = vec![ev_response_created("resp-1")];
+    for (id, _, hunk, _) in cases {
+        let patch = format!("*** Begin Patch\n{hunk}\n*** End Patch");
+        events.push(ev_apply_patch_call(id, &patch, model_output));
+    }
+    events.push(ev_completed("resp-1"));
+    mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(events),
+            sse(vec![
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+    harness
+        .submit("attempt both operations on missing files")
+        .await?;
+    for (id, path, _, error) in cases {
+        let out = harness.apply_patch_output(id, model_output).await;
+        for expected in ["apply_patch verification failed", error, path] {
+            assert!(
+                out.contains(expected),
+                "{id}: expected {expected:?} in {out}"
+            );
+        }
+        assert!(!harness.path(path).exists(), "{id} created {path}");
+    }
     Ok(())
 }
 
@@ -973,25 +946,6 @@ async fn apply_patch_function_accepts_lenient_heredoc_wrapped_patch(
 
     let new_file = harness.path(file_name);
     assert_eq!(fs::read_to_string(new_file)?, "lenient\n");
-    Ok(())
-}
-
-#[large_stack_test]
-#[test_case(ApplyPatchModelOutput::Freeform)]
-async fn apply_patch_cli_end_of_file_anchor(model_output: ApplyPatchModelOutput) -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = apply_patch_harness().await?;
-
-    let target = harness.path("tail.txt");
-    fs::write(&target, "alpha\nlast\n")?;
-
-    let patch = "*** Begin Patch\n*** Update File: tail.txt\n@@\n-last\n+end\n*** End of File\n*** End Patch";
-    let call_id = "apply-eof";
-    mount_apply_patch(&harness, call_id, patch, "ok", model_output).await;
-
-    harness.submit("apply EOF-anchored patch").await?;
-    assert_eq!(fs::read_to_string(&target)?, "alpha\nend\n");
     Ok(())
 }
 

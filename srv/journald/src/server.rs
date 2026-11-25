@@ -64,6 +64,16 @@ pub fn sqlite_db_path() -> std::io::Result<PathBuf> {
 }
 
 pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()> {
+    run_with_watchdog_tick(config, || tokio::time::sleep(SOCKET_WATCH_INTERVAL)).await
+}
+
+async fn run_with_watchdog_tick<F>(
+    config: JournalServerConfig,
+    wait_for_tick: impl FnMut() -> F + Send + 'static,
+) -> Result<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     let socket_parent = config
         .socket_path
         .parent()
@@ -106,7 +116,7 @@ pub async fn run_sqlite_journal_server(config: JournalServerConfig) -> Result<()
     let graceful = graceful::Shutdown::new(async move {
         tokio::select! {
             () = graceful::default_signal() => {}
-            () = socket_released(watched, identity) => {}
+            () = socket_released(watched, identity, wait_for_tick) => {}
         }
     });
     let exec = Executor::graceful(graceful.guard());
@@ -164,9 +174,13 @@ pub(crate) async fn ensure_runtime_dir_permissions(path: &Path) -> Result<()> {
 
 /// Resolves once `path` stops naming the socket this server bound: a newer
 /// journald replaced it or its home was deleted, so no client can reach us.
-async fn socket_released(path: PathBuf, identity: SocketIdentity) {
+async fn socket_released<F: Future<Output = ()>>(
+    path: PathBuf,
+    identity: SocketIdentity,
+    mut wait_for_tick: impl FnMut() -> F,
+) {
     loop {
-        tokio::time::sleep(SOCKET_WATCH_INTERVAL).await;
+        wait_for_tick().await;
         match socket_identity(&path).await {
             Ok(current) if current == Some(identity) => {}
             Ok(_) => {

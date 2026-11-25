@@ -7,6 +7,9 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
     let mut recovery = Recovery::default();
     sample(&mut recovery, &config, snapshot(&config, 90.0, 5 << 30), 0);
     assert_eq!(recovery.phase(), Phase::Warning);
+    let instruction = recovery.instruction(&config, Duration::ZERO).unwrap();
+    assert!(!instruction.is_empty());
+    assert!(!instruction.contains("UNTRUSTED"));
     let id = recovery.request_wait("turn").unwrap();
     assert_eq!(recovery.request_wait("turn").unwrap(), id);
     // A few MB and a tiny temperature drop clear raw warnings, not the episode.
@@ -39,9 +42,10 @@ fn recovery_needs_all_headroom_and_five_minutes_not_a_single_good_reading() {
             .stable_seconds,
         300
     );
-    let instruction = recovery.instruction(&config, Duration::ZERO).unwrap();
-    assert!(!instruction.is_empty());
-    assert!(!instruction.contains("UNTRUSTED"));
+    assert_eq!(
+        recovery.instruction(&config, Duration::from_secs(360)),
+        None
+    );
 
     sample(
         &mut recovery,

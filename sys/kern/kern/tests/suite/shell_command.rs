@@ -5,215 +5,83 @@ use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::assert_regex_match;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::ev_shell_command_call_with_args;
 use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::skip_if_no_network;
-use core_test_support::test_chaos::TestChaosBuilder;
 use core_test_support::test_chaos::TestChaosHarness;
 use core_test_support::test_chaos::test_chaos;
 use serde_json::json;
 use test_case::test_case;
-
-const DEFAULT_SHELL_TIMEOUT_MS: i64 = 2_000;
-
-const MEDIUM_TIMEOUT: Duration = Duration::from_secs(5);
-
-fn shell_responses_with_timeout(
-    call_id: &str,
-    command: &str,
-    login: Option<bool>,
-    timeout_ms: i64,
-) -> Vec<String> {
-    let args = json!({
-        "command": command,
-        "timeout_ms": timeout_ms,
-        "login": login,
-    });
-
-    #[allow(clippy::expect_used)]
-    let arguments = serde_json::to_string(&args).expect("serialize shell command arguments");
-
-    vec![
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_function_call(call_id, "shell_command", &arguments),
-            ev_completed("resp-1"),
-        ]),
-        sse(vec![
-            ev_assistant_message("msg-1", "done"),
-            ev_completed("resp-2"),
-        ]),
-    ]
-}
-
-fn shell_responses(call_id: &str, command: &str, login: Option<bool>) -> Vec<String> {
-    shell_responses_with_timeout(call_id, command, login, DEFAULT_SHELL_TIMEOUT_MS)
-}
-
-async fn shell_command_harness_with(
-    configure: impl FnOnce(TestChaosBuilder) -> TestChaosBuilder,
-) -> Result<TestChaosHarness> {
-    let builder = configure(test_chaos());
-    TestChaosHarness::with_builder(builder).await
-}
 
 async fn mount_shell_responses(
     harness: &TestChaosHarness,
     call_id: &str,
     command: &str,
     login: Option<bool>,
-) {
-    mount_sse_sequence(harness.server(), shell_responses(call_id, command, login)).await;
-}
-
-async fn mount_shell_responses_with_timeout(
-    harness: &TestChaosHarness,
-    call_id: &str,
-    command: &str,
-    login: Option<bool>,
     timeout: Duration,
 ) {
+    let args = json!({
+        "command": command,
+        "timeout_ms": timeout.as_millis() as i64,
+        "login": login,
+    });
+
     mount_sse_sequence(
         harness.server(),
-        shell_responses_with_timeout(call_id, command, login, timeout.as_millis() as i64),
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_shell_command_call_with_args(call_id, &args),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
     )
     .await;
 }
 
-fn assert_shell_command_output(output: &str, expected: &str) -> Result<()> {
-    let normalized_output = output
-        .replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .trim_end_matches('\n')
-        .to_string();
-
-    let expected_pattern = format!(
-        r"(?s)^Exit code: 0\nWall time: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\n{expected}\n?$"
-    );
-
-    assert_regex_match(&expected_pattern, &normalized_output);
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_works() -> anyhow::Result<()> {
+#[test_case(None ; "default_login")]
+#[test_case(Some(true) ; "with_login")]
+#[test_case(Some(false) ; "without_login")]
+async fn shell_command_preserves_multiline_unicode_through_pipe(login: Option<bool>) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call";
-    mount_shell_responses(&harness, call_id, "echo 'hello, world'", None).await;
-    harness.submit("run the echo command").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "hello, world")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn output_with_login() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call-login-true";
-    mount_shell_responses(&harness, call_id, "echo 'hello, world'", Some(true)).await;
-    harness.submit("run the echo command with login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "hello, world")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn output_without_login() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call-login-false";
-    mount_shell_responses(&harness, call_id, "echo 'hello, world'", Some(false)).await;
-    harness.submit("run the echo command without login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "hello, world")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn multi_line_output_with_login() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call-first-extra-login";
+    let harness = TestChaosHarness::with_builder(test_chaos().with_model(TEST_MODEL)).await?;
+    let call_id = "shell-pipe";
     mount_shell_responses(
         &harness,
         call_id,
-        "echo 'first line\nsecond line'",
-        Some(true),
+        "echo 'first line\nnaïve café\nlast line' | tr 'f' 'F'",
+        login,
+        Duration::from_secs(5),
     )
     .await;
-    harness.submit("run the command with login").await?;
+    harness.submit("run the pipeline").await?;
 
     let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "first line\nsecond line")?;
+    let normalized = output.replace("\r\n", "\n").replace('\r', "\n");
+    assert_regex_match(
+        r"^Exit code: 0\nWall time: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\nFirst line\nnaïve caFé\nlast line\n?$",
+        &normalized,
+    );
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pipe_output_with_login() -> anyhow::Result<()> {
+async fn shell_command_times_out_with_timeout_ms() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call-second-extra-no-login";
-    mount_shell_responses(&harness, call_id, "echo 'hello, world' | cat", None).await;
-    harness.submit("run the command without login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "hello, world")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn pipe_output_without_login() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "shell-command-call-third-extra-login-false";
-    mount_shell_responses(&harness, call_id, "echo 'hello, world' | cat", Some(false)).await;
-    harness.submit("run the command without login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "hello, world")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_command_times_out_with_timeout_ms() -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
+    let harness = TestChaosHarness::with_builder(test_chaos().with_model(TEST_MODEL)).await?;
     let call_id = "shell-command-timeout";
     let command = "sleep 5";
-    mount_shell_responses_with_timeout(
-        &harness,
-        call_id,
-        command,
-        None,
-        Duration::from_millis(200),
-    )
-    .await;
+    mount_shell_responses(&harness, call_id, command, None, Duration::from_millis(200)).await;
     harness
         .submit("run a long command with a short timeout")
         .await?;
@@ -226,53 +94,6 @@ async fn shell_command_times_out_with_timeout_ms() -> anyhow::Result<()> {
         .to_string();
     let expected_pattern = r"(?s)^Exit code: 124\nWall time: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\ncommand timed out after [0-9]+ milliseconds\n?$";
     assert_regex_match(expected_pattern, &normalized_output);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[test_case(true ; "with_login")]
-#[test_case(false ; "without_login")]
-async fn unicode_output(login: bool) -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "unicode_output";
-    let command = "echo \"naïve_café\"";
-    mount_shell_responses_with_timeout(&harness, call_id, command, Some(login), MEDIUM_TIMEOUT)
-        .await;
-    harness.submit("run the command without login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "naïve_café")?;
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[test_case(true ; "with_login")]
-#[test_case(false ; "without_login")]
-async fn unicode_output_with_newlines(login: bool) -> anyhow::Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    #[allow(clippy::expect_used)]
-    let harness = shell_command_harness_with(|builder| builder.with_model(TEST_MODEL)).await?;
-
-    let call_id = "unicode_output";
-    mount_shell_responses_with_timeout(
-        &harness,
-        call_id,
-        "echo 'line1\nnaïve café\nline3'",
-        Some(login),
-        MEDIUM_TIMEOUT,
-    )
-    .await;
-    harness.submit("run the command without login").await?;
-
-    let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "line1\\nnaïve café\\nline3")?;
 
     Ok(())
 }

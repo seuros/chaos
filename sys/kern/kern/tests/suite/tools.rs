@@ -18,7 +18,6 @@ use core_test_support::responses::ev_custom_tool_call;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
-use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -26,23 +25,6 @@ use core_test_support::test_chaos::test_chaos;
 use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
-
-fn tool_names(body: &Value) -> Vec<String> {
-    body.get("tools")
-        .and_then(Value::as_array)
-        .map(|tools| {
-            tools
-                .iter()
-                .filter_map(|tool| {
-                    tool.get("name")
-                        .or_else(|| tool.get("type"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
@@ -55,7 +37,7 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
     let call_id = "custom-unsupported";
     let tool_name = "unsupported_tool";
 
-    mount_sse_once(
+    let first = mount_sse_once(
         &server,
         sse(vec![
             ev_response_created("resp-1"),
@@ -80,11 +62,19 @@ async fn custom_tool_unknown_returns_custom_output_error() -> Result<()> {
     )
     .await?;
 
-    let item = mock.single_request().function_call_output(call_id);
-    let output = item
-        .get("output")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let body = first.single_request().body_json();
+    let tools = body["tools"].as_array().context("advertised tools")?;
+    for name in ["exec_command", "write_stdin"] {
+        assert!(
+            tools.iter().any(|tool| tool["name"] == name),
+            "missing advertised tool: {name}"
+        );
+    }
+
+    let output = mock
+        .single_request()
+        .function_call_output_text(call_id)
+        .context("missing custom-tool error in follow-up request")?;
     let expected = format!("unsupported custom tool call: {tool_name}");
     assert_eq!(output, expected);
 
@@ -187,47 +177,6 @@ shell ok
     Ok(())
 }
 
-async fn collect_tools() -> Result<Vec<String>> {
-    let server = start_mock_server().await;
-
-    let responses = vec![sse(vec![
-        ev_response_created("resp-1"),
-        ev_assistant_message("msg-1", "done"),
-        ev_completed("resp-1"),
-    ])];
-    let mock = mount_sse_sequence(&server, responses).await;
-
-    let mut builder = test_chaos();
-    let test = builder.build(&server).await?;
-
-    test.submit_turn_with_policies(
-        "list tools",
-        ApprovalPolicy::Headless,
-        SandboxPolicy::RootAccess,
-    )
-    .await?;
-
-    let first_body = mock.single_request().body_json();
-    Ok(tool_names(&first_body))
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exec_tools_always_present() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let tools = collect_tools().await?;
-    assert!(
-        tools.iter().any(|name| name == "exec_command"),
-        "tools list should include exec_command: {tools:?}"
-    );
-    assert!(
-        tools.iter().any(|name| name == "write_stdin"),
-        "tools list should include write_stdin: {tools:?}"
-    );
-
-    Ok(())
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -296,8 +245,9 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
         // Reserialized plain-text format produced for model-facing shell
         // output.
         assert!(
-            output_str.contains("Exit code: 124") || output_str.contains("command timed out"),
-            "expected timeout indication in reserialized output: {output_str}"
+            output_str.lines().next() == Some("Exit code: 124")
+                && output_str.contains("command timed out"),
+            "expected timeout code and prefix in reserialized output: {output_str}"
         );
     } else {
         // Fallback: accept the signal classification path to deflake the test.
@@ -354,24 +304,31 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
     .await;
 
     let start = Instant::now();
-    let output_str = tokio::time::timeout(Duration::from_secs(10), async {
+    let turn = tokio::time::timeout(
+        Duration::from_secs(10),
         test.submit_turn_with_policies(
             "run a command with a detached grandchild",
             ApprovalPolicy::Headless,
             SandboxPolicy::RootAccess,
-        )
-        .await?;
-        let timeout_item = second_mock.single_request().function_call_output(call_id);
-        timeout_item
-            .get("output")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .context("timeout output string")
-    })
-    .await
-    .context("exec call should not hang waiting for grandchild pipes to close")??;
+        ),
+    )
+    .await;
     let elapsed = start.elapsed();
 
+    // The test only exercises a held-open pipe if the fixture actually spawned.
+    let pid: libc::pid_t = fs::read_to_string(pid_path)
+        .context("detached grandchild did not report its pid")?
+        .trim()
+        .parse()?;
+    anyhow::ensure!(pid > 0, "invalid grandchild pid: {pid}");
+    // SAFETY: this is the positive child PID written by our private fixture.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    turn.context("exec call should not hang waiting for grandchild pipes to close")??;
+
+    let output_str = second_mock
+        .single_request()
+        .function_call_output_text(call_id)
+        .context("timeout output string")?;
     if let Ok(output_json) = serde_json::from_str::<Value>(&output_str) {
         assert_eq!(
             output_json["metadata"]["exit_code"].as_i64(),
@@ -388,17 +345,11 @@ async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
         "command should return shortly after timeout even with live grandchildren: {elapsed:?}"
     );
 
-    if let Ok(pid_str) = fs::read_to_string(&pid_path)
-        && let Ok(pid) = pid_str.trim().parse::<libc::pid_t>()
-    {
-        unsafe { libc::kill(pid, libc::SIGKILL) };
-    }
-
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
+async fn shell_spawn_failure_returns_bounded_exec_error() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -411,7 +362,8 @@ async fn shell_spawn_failure_truncates_exec_error() -> Result<()> {
     let test = builder.build(&server).await?;
 
     let call_id = "shell-spawn-failure";
-    let bogus_component = "missing-bin-".repeat(700);
+    // Even a diagnostic which includes the full program name must remain bounded.
+    let bogus_component = "missing-bin-".repeat(1_000);
     let bogus_exe = test
         .cwd
         .path()

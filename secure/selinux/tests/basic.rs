@@ -220,22 +220,6 @@ prefix_rule {
 }
 
 #[test]
-fn justification_cannot_be_empty() {
-    let policy_src = r#"
-prefix_rule {
-    pattern = {"ls"},
-    decision = "prompt",
-    justification = "   ",
-}
-    "#;
-    let mut parser = PolicyParser::new();
-    let err = parser
-        .parse("test.rules", policy_src)
-        .expect_err("expected parse error");
-    assert!(err.to_string().contains("justification cannot be empty"));
-}
-
-#[test]
 fn rule_justification_validation_is_shared_by_prefix_and_network_rules() {
     for rule in [
         r#"prefix_rule {pattern = {"ls"}, decision = "prompt","#,

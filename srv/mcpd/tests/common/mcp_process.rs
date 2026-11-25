@@ -159,99 +159,61 @@ impl McpProcess {
 
     /// Performs the initialization handshake with the MCP server.
     pub async fn initialize(&mut self) -> anyhow::Result<()> {
-        let initialized = self
-            .initialize_with_protocol_version_and_capabilities(
-                "2025-11-25",
-                ClientCapabilities {
-                    elicitation: Some(ElicitationCapability {
-                        form: Some(FormElicitationCapability {}),
-                        url: None,
-                    }),
-                    experimental: None,
-                    extensions: None,
-                    roots: None,
-                    sampling: None,
-                    tasks: None,
-                },
-            )
-            .await?;
-        let JsonRpcMessage::Response(JsonRpcResponse {
-            jsonrpc,
-            id,
-            result,
-            error: _,
-        }) = initialized
-        else {
-            anyhow::bail!("expected initialize response message, got: {initialized:?}")
-        };
-        assert_eq!(serde_json::to_value(jsonrpc)?, json!("2.0"));
-        assert_eq!(id, Some(json!(0)));
-        // mcp-host's ResourcesCapability struct doesn't yet carry a
-        // `listTemplates` flag, so the on-the-wire capability set
-        // omits it even though the server still serves
-        // `resources/templates/list` requests.
-        assert_eq!(
-            result.as_ref().unwrap(),
-            &json!({
-                "capabilities": {
-                    "tools": {
-                        "listChanged": true
-                    },
-                    "resources": {
-                        "listChanged": true,
-                        "subscribe": true
-                    },
-                    "tasks": {
-                        "list": {},
-                        "cancel": {},
-                        "requests": {
-                            "tools": {
-                                "call": {}
-                            }
-                        }
-                    },
-                    "extensions": {
-                        "io.modelcontextprotocol/ui": {
-                            "mimeTypes": ["text/html;profile=mcp-app"]
-                        }
-                    },
-                },
-                "instructions": "Chaos — provider-agnostic coding agent",
-                "serverInfo": {
-                    "name": "chaos-mcp-server",
-                    "title": "FreeChaOS",
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "description": "Command center for the Agents of ChaOS",
-                    "websiteUrl": "https://github.com/seuros/chaos"
-                },
-                "protocolVersion": "2025-11-25"
-            })
-        );
-
-        self.send_initialized_notification().await?;
-
-        Ok(())
+        self.initialize_expecting_version("2025-11-25", "2025-11-25")
+            .await
     }
 
-    pub async fn initialize_with_protocol_version(
+    pub async fn initialize_expecting_version(
         &mut self,
-        protocol_version: &str,
-    ) -> anyhow::Result<JsonRpcMessage> {
-        self.initialize_with_protocol_version_and_capabilities(
-            protocol_version,
+        requested: &str,
+        negotiated: &str,
+    ) -> anyhow::Result<()> {
+        self.send_initialize_request(
+            requested,
             ClientCapabilities {
                 elicitation: Some(ElicitationCapability {
                     form: Some(FormElicitationCapability {}),
                     url: None,
                 }),
-                experimental: None,
-                extensions: None,
-                roots: None,
-                sampling: None,
-                tasks: None,
+                ..Default::default()
             },
         )
-        .await
+        .await?;
+
+        let response: serde_json::Value = self.read_jsonrpc_message().await?;
+        let mut capabilities = json!({
+            "tools": { "listChanged": true },
+            "resources": { "listChanged": true, "subscribe": true },
+            "extensions": {
+                "io.modelcontextprotocol/ui": { "mimeTypes": ["text/html;profile=mcp-app"] }
+            }
+        });
+        if negotiated == "2025-11-25" {
+            capabilities["tasks"] = json!({
+                "list": {}, "cancel": {}, "requests": { "tools": { "call": {} } }
+            });
+        }
+        assert_eq!(
+            response,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": {
+                    "protocolVersion": negotiated,
+                    "capabilities": capabilities,
+                    "instructions": "Chaos — provider-agnostic coding agent",
+                    "serverInfo": {
+                        "name": "chaos-mcp-server",
+                        "title": "FreeChaOS",
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "description": "Command center for the Agents of ChaOS",
+                        "websiteUrl": "https://github.com/seuros/chaos"
+                    }
+                }
+            }),
+            "initialize requesting {requested}"
+        );
+        self.send_initialized_notification().await
     }
 
     pub async fn initialize_with_protocol_version_and_capabilities(
@@ -259,7 +221,16 @@ impl McpProcess {
         protocol_version: &str,
         capabilities: ClientCapabilities,
     ) -> anyhow::Result<JsonRpcMessage> {
-        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        self.send_initialize_request(protocol_version, capabilities)
+            .await?;
+        self.read_jsonrpc_message().await
+    }
+
+    async fn send_initialize_request(
+        &mut self,
+        protocol_version: &str,
+        capabilities: ClientCapabilities,
+    ) -> anyhow::Result<()> {
         let params = InitializeRequest {
             capabilities,
             client_info: Implementation {
@@ -272,16 +243,9 @@ impl McpProcess {
             },
             protocol_version: protocol_version.to_string(),
         };
-        let params_value = serde_json::to_value(params)?;
-
-        self.send_jsonrpc_message(JsonRpcMessage::Request(JsonRpcRequest::new(
-            json!(request_id),
-            "initialize",
-            Some(params_value),
-        )))
-        .await?;
-
-        self.read_jsonrpc_message().await
+        self.send_request("initialize", Some(serde_json::to_value(params)?))
+            .await?;
+        Ok(())
     }
 
     pub async fn send_initialized_notification(&mut self) -> anyhow::Result<()> {
@@ -363,12 +327,11 @@ impl McpProcess {
         Ok(())
     }
 
-    async fn read_jsonrpc_message(&mut self) -> anyhow::Result<JsonRpcMessage> {
+    async fn read_jsonrpc_message<T: serde::de::DeserializeOwned>(&mut self) -> anyhow::Result<T> {
         let mut line = String::new();
         self.stdout.read_line(&mut line).await?;
-        let message = serde_json::from_str::<JsonRpcMessage>(&line)?;
-        eprintln!("read message from stdout: {message:?}");
-        Ok(message)
+        eprintln!("read message from stdout: {}", line.trim_end());
+        Ok(serde_json::from_str(&line)?)
     }
 
     pub async fn read_stream_until_request_message(&mut self) -> anyhow::Result<JsonRpcRequest> {

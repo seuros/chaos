@@ -4,8 +4,10 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::Context;
+use chaos_ipc::api::SettingsScope;
 use chaos_ipc::protocol::FileChange;
 use chaos_kern::spawn::CHAOS_SANDBOX_NETWORK_DISABLED_ENV_VAR;
+use chaos_kern::user_settings;
 use chaos_mcpd::ApprovalElicitationAction;
 use chaos_mcpd::ChaosToolParams;
 use chaos_mcpd::PatchApprovalElicitRequestMeta;
@@ -147,7 +149,7 @@ async fn chaos_tool_passes_base_instructions() -> anyhow::Result<()> {
 
     // Run `chaos mcp` with specific user settings.
     let chaos_home = TempDir::new()?;
-    create_config_toml(chaos_home.path(), &server.uri())?;
+    seed_mock_provider(chaos_home.path(), &server.uri()).await?;
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
 
@@ -391,7 +393,7 @@ async fn chaos_tool_provider_override() -> anyhow::Result<()> {
     let chaos_home = TempDir::new()?;
     // The default provider points nowhere: only an override that really lands
     // in the config can reach the mock server.
-    create_two_provider_config_toml(chaos_home.path(), &server.uri())?;
+    seed_two_providers(chaos_home.path(), &server.uri()).await?;
     let mut mcp = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -459,8 +461,8 @@ async fn chaos_tool_provider_override() -> anyhow::Result<()> {
 
 /// Default provider is deliberately unreachable so a `provider` override is the
 /// only way to get a successful turn.
-fn create_two_provider_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    write_settings(
+async fn seed_two_providers(chaos_home: &Path, server_uri: &str) -> anyhow::Result<()> {
+    seed_installation_settings(
         chaos_home,
         json!({
             "model": "dead-model",
@@ -485,15 +487,24 @@ fn create_two_provider_config_toml(chaos_home: &Path, server_uri: &str) -> std::
             }
         }),
     )
+    .await
 }
 
-/// User settings are a database document; tests stage them as JSON and the
-/// MCP harness imports them with `chaos config import` before serving.
-fn write_settings(chaos_home: &Path, settings: serde_json::Value) -> std::io::Result<()> {
-    std::fs::write(
-        chaos_home.join(mcp_test_support::SETTINGS_FILE),
-        serde_json::to_vec_pretty(&settings)?,
+/// Use the same validated, revision-checked write as `chaos config import`.
+async fn seed_installation_settings(
+    chaos_home: &Path,
+    settings: serde_json::Value,
+) -> anyhow::Result<()> {
+    mcp_test_support::bootstrap_sqlite(chaos_home)?;
+    let scope = SettingsScope::Installation;
+    let snapshot = user_settings::scoped_snapshot(chaos_home, scope).await?;
+    user_settings::commit(
+        chaos_home,
+        scope,
+        snapshot.revision,
+        serde_json::from_value(settings)?,
     )
+    .await
 }
 
 /// This handle is used to ensure that the MockServer and TempDir are not dropped while
@@ -511,7 +522,7 @@ pub struct McpHandle {
 async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle> {
     let server = create_mock_responses_server(responses).await;
     let chaos_home = TempDir::new()?;
-    create_config_toml(chaos_home.path(), &server.uri())?;
+    seed_mock_provider(chaos_home.path(), &server.uri()).await?;
     let mut mcp_process = McpProcess::new(chaos_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp_process.initialize()).await??;
     Ok(McpHandle {
@@ -524,8 +535,8 @@ async fn create_mcp_process(responses: Vec<String>) -> anyhow::Result<McpHandle>
 /// Create a Chaos config that uses the mock server as the model provider.
 /// It also uses `approval_policy = "supervised"` so that we exercise the
 /// elicitation code path for shell commands.
-pub(super) fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    write_settings(
+pub(super) async fn seed_mock_provider(chaos_home: &Path, server_uri: &str) -> anyhow::Result<()> {
+    seed_installation_settings(
         chaos_home,
         json!({
             "model": "mock-model",
@@ -543,6 +554,7 @@ pub(super) fn create_config_toml(chaos_home: &Path, server_uri: &str) -> std::io
             }
         }),
     )
+    .await
 }
 
 /// Task-augmented `chaos` call: tools/call with `task` metadata returns a
@@ -567,7 +579,7 @@ async fn chaos_tool_task_augmented_call() -> anyhow::Result<()> {
     )?])
     .await;
     let dir = TempDir::new()?;
-    create_config_toml(dir.path(), &server.uri())?;
+    seed_mock_provider(dir.path(), &server.uri()).await?;
     let mut mcp = McpProcess::new(dir.path()).await?;
     // A positive task test must negotiate task calls. Leave the shared
     // no-task initializer unchanged for ordinary/capability-negative clients.

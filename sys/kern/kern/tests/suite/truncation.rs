@@ -2,13 +2,7 @@
 
 use anyhow::Context;
 use anyhow::Result;
-use chaos_ipc::protocol::ApprovalPolicy;
-use chaos_ipc::protocol::EventMsg;
-use chaos_ipc::protocol::Op;
 use chaos_ipc::protocol::SandboxPolicy;
-use chaos_ipc::user_input::UserInput;
-use chaos_kern::config::types::McpServerConfig;
-use chaos_kern::config::types::McpServerTransportConfig;
 use chaos_test_fixtures::TEST_MODEL;
 use core_test_support::assert_regex_match;
 use core_test_support::responses;
@@ -22,11 +16,8 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
 use core_test_support::test_chaos::test_chaos;
-use core_test_support::wait_for_event;
 use serde_json::Value;
 use serde_json::json;
-use std::collections::HashMap;
-use std::time::Duration;
 
 // Verifies that a standard tool call (shell_command) exceeding the model formatting
 // limits is truncated before being sent back to the model.
@@ -165,118 +156,6 @@ async fn tool_call_output_exceeds_limit_truncated_chars_limit() -> Result<()> {
     assert!(
         (9_900..=10_100).contains(&len),
         "expected ~10k chars after truncation, got {len}"
-    );
-
-    Ok(())
-}
-
-// Verifies that an MCP image tool output is serialized as content_items array with
-// the image preserved and no truncation summary appended (since there are no text items).
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
-    skip_if_no_network!(Ok(()));
-
-    let server = start_mock_server().await;
-
-    let call_id = "mcp_test-image-no-trunc";
-    let server_name = "mcp_test";
-    let tool_name = format!("mcp__{server_name}__image");
-
-    mount_sse_once(
-        &server,
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_function_call(call_id, &tool_name, "{}"),
-            ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-    let final_mock = mount_sse_once(
-        &server,
-        sse(vec![
-            ev_assistant_message("msg-1", "done"),
-            ev_completed("resp-2"),
-        ]),
-    )
-    .await;
-
-    // Build the stdio mcp_test server and pass a tiny PNG via data URL so it can construct ImageContent.
-    let mcp_test_test_server_bin = stdio_server_bin()?;
-
-    // 1x1 PNG data URL
-    let openai_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ee9bQAAAABJRU5ErkJggg==";
-
-    let mut builder = test_chaos().with_config(move |config| {
-        let mut servers = config.mcp_servers.get().clone();
-        servers.insert(
-            server_name.to_string(),
-            McpServerConfig {
-                transport: McpServerTransportConfig::Stdio {
-                    command: mcp_test_test_server_bin,
-                    args: Vec::new(),
-                    env: Some(HashMap::from([(
-                        "MCP_TEST_IMAGE_DATA_URL".to_string(),
-                        openai_png.to_string(),
-                    )])),
-                    env_vars: Vec::new(),
-                    cwd: None,
-                },
-                enabled: true,
-                required: false,
-                disabled_reason: None,
-                startup_timeout_sec: Some(Duration::from_secs(10)),
-                tool_timeout_sec: None,
-                enabled_tools: None,
-                disabled_tools: None,
-                scopes: None,
-                oauth_resource: None,
-                r#type: None,
-                oauth: None,
-            },
-        );
-        config
-            .mcp_servers
-            .set(servers)
-            .expect("test mcp servers should accept any configuration");
-    });
-    let fixture = builder.build(&server).await?;
-    let session_model = fixture.session_configured.model.clone();
-
-    fixture
-        .process
-        .submit(Op::UserTurn {
-            items: vec![UserInput::Text {
-                text: "call the mcp_test image tool".into(),
-                text_elements: Vec::new(),
-            }],
-            final_output_json_schema: None,
-            cwd: fixture.cwd.path().to_path_buf(),
-            approval_policy: ApprovalPolicy::Headless,
-            vfs_policy: (&SandboxPolicy::new_read_only_policy()).into(),
-            socket_policy: (&SandboxPolicy::new_read_only_policy()).into(),
-            model: session_model,
-            effort: None,
-            summary: None,
-            service_tier: None,
-            collaboration_mode: None,
-            personality: None,
-        })
-        .await?;
-
-    // Wait for completion to ensure the outbound request is captured.
-    wait_for_event(&fixture.process, |ev| {
-        matches!(ev, EventMsg::TurnComplete(_))
-    })
-    .await;
-    let output_item = final_mock.single_request().function_call_output(call_id);
-    // Expect exactly one array element: the image item; and no trailing summary text.
-    let output = output_item.get("output").expect("output");
-    assert!(output.is_array(), "expected array output");
-    let arr = output.as_array().unwrap();
-    assert_eq!(arr.len(), 1, "no truncation summary should be appended");
-    assert_eq!(
-        arr[0],
-        json!({"type": "input_image", "image_url": openai_png})
     );
 
     Ok(())

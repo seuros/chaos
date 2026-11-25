@@ -236,20 +236,22 @@ async fn add_streamable_http_with_stored_bearer_token() -> Result<()> {
 }
 
 #[tokio::test]
-async fn add_streamable_http_rejects_removed_flag() -> Result<()> {
+async fn add_streamable_http_rejects_removed_flags() -> Result<()> {
     let harness = McpCliHarness::new()?;
 
-    harness.assert_failure_stderr(
-        &[
-            "mcp",
-            "add",
-            "github",
-            "--url",
-            "https://example.com/mcp",
-            "--with-bearer-token",
-        ],
-        "--with-bearer-token",
-    )?;
+    for flag in ["--with-bearer-token", "--command"] {
+        harness.assert_failure_stderr(
+            &[
+                "mcp",
+                "add",
+                "github",
+                "--url",
+                "https://example.com/mcp",
+                flag,
+            ],
+            &format!("unexpected argument '{flag}'"),
+        )?;
+    }
     harness.assert_no_servers().await?;
 
     Ok(())
@@ -266,12 +268,11 @@ async fn add_cant_add_command_and_url() -> Result<()> {
             "github",
             "--url",
             "https://example.com/mcp",
-            "--command",
             "--",
             "echo",
             "hello",
         ],
-        "unexpected argument '--command' found",
+        "the argument '--url' cannot be used with",
     )?;
     harness.assert_no_servers().await?;
 

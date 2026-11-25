@@ -666,6 +666,10 @@ pub(crate) async fn make_session_and_context_with_home(
     );
 
     let session = Session {
+        #[cfg(feature = "toolchain-access")]
+        toolchain_access: Default::default(),
+        #[cfg(feature = "toolchain-access")]
+        approved_toolchain_outputs: Default::default(),
         conversation_id,
         tx_event,
         mcp_notification_tx: async_channel::bounded(1).0,
@@ -753,6 +757,10 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     ));
 
     let session = Arc::new(Session {
+        #[cfg(feature = "toolchain-access")]
+        toolchain_access: Default::default(),
+        #[cfg(feature = "toolchain-access")]
+        approved_toolchain_outputs: Default::default(),
         conversation_id,
         tx_event,
         mcp_notification_tx: async_channel::bounded(1).0,

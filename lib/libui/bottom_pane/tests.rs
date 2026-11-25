@@ -2,6 +2,7 @@ use super::*;
 
 use chaos_ipc::product::OS_NAME;
 
+pub(crate) use super::textarea::tests::fuzz::rotating_stress as textarea_fuzz_stress;
 use crate::app_event::AppEvent;
 use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
 use crate::status_indicator_widget::StatusDetailsCapitalization;

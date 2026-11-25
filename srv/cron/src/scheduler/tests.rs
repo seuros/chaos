@@ -112,11 +112,14 @@ async fn dead_holder_hands_over_after_lease_expiry() {
     let tmp = tempfile::tempdir().expect("tmp");
     let provider = mount(tmp.path()).await;
     let runs = Arc::new(AtomicUsize::new(0));
-    let ttl = Duration::from_secs(1);
+    let ttl = Duration::from_secs(120);
     let job = due_job(&provider).await;
 
     let (mut holder, _holder_tx) = scheduler(&provider, counting(runs.clone(), None), ttl);
+    let ttl_ms = i64::try_from(ttl.as_millis()).expect("test TTL fits in milliseconds");
+    let earliest_expiry = jiff::Timestamp::now().as_millisecond() + ttl_ms;
     holder.tick().await;
+    let latest_expiry = jiff::Timestamp::now().as_millisecond() + ttl_ms;
     assert_eq!(runs.load(SeqCst), 1);
     drop(holder);
 
@@ -129,7 +132,20 @@ async fn dead_holder_hands_over_after_lease_expiry() {
         "a live lease keeps the successor idle"
     );
 
-    tokio::time::sleep(ttl + Duration::from_millis(200)).await;
+    // Only expire a deadline consistent with the requested TTL. Preserve the
+    // holder and token, and use a positive past time (zero is an orderly release).
+    let expired = sqlx::query(
+        "UPDATE execution_sessions SET expires_at_ms = 1
+         WHERE scope = 'cron:scheduler' AND lease_token IS NOT NULL
+           AND expires_at_ms BETWEEN ? AND ?",
+    )
+    // SQLite's storage clock and the host timestamps can round a millisecond differently.
+    .bind(earliest_expiry - 1)
+    .bind(latest_expiry + 1)
+    .execute(&provider.sqlite_pool().expect("sqlite pool"))
+    .await
+    .expect("expire scheduler lease");
+    assert_eq!(expired.rows_affected(), 1, "holder stored the expected TTL");
     successor.tick().await;
     assert_eq!(
         runs.load(SeqCst),

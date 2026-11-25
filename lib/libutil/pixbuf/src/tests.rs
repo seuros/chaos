@@ -27,21 +27,22 @@ async fn returns_original_image_when_within_bounds() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn downscales_large_image() {
+async fn oversized_images_resize_to_fit_and_original_png_keeps_its_bytes() {
+    // Above both upload limits, with a 2:1 aspect ratio.
+    let (width, height) = (2050, 1025);
     for (format, mime) in [
         (ImageFormat::Png, "image/png"),
         (ImageFormat::WebP, "image/webp"),
     ] {
         let temp_file = NamedTempFile::new().expect("temp file");
-        let image = ImageBuffer::from_pixel(4096, 2048, Rgba([200u8, 10, 10, 255]));
+        let image = ImageBuffer::from_pixel(width, height, Rgba([200u8, 10, 10, 255]));
         image
             .save_with_format(temp_file.path(), format)
             .expect("write image to temp file");
 
         let processed = load_and_resize_to_fit(temp_file.path()).expect("process image");
 
-        assert!(processed.width <= MAX_WIDTH);
-        assert!(processed.height <= MAX_HEIGHT);
+        assert_eq!((processed.width, processed.height), (1536, 768));
         assert_eq!(processed.mime, mime);
 
         let detected_format =
@@ -51,25 +52,15 @@ async fn downscales_large_image() {
         let loaded =
             image::load_from_memory(&processed.bytes).expect("read resized bytes back into image");
         assert_eq!(loaded.dimensions(), (processed.width, processed.height));
+        if format == ImageFormat::Png {
+            let bytes = std::fs::read(temp_file.path()).expect("read original PNG");
+            let original = load_for_prompt(temp_file.path(), PromptImageMode::Original)
+                .expect("load original PNG");
+            assert_eq!((original.width, original.height), (width, height));
+            assert_eq!(original.mime, mime);
+            assert_eq!(original.bytes, bytes);
+        }
     }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn preserves_large_image_in_original_mode() {
-    let temp_file = NamedTempFile::new().expect("temp file");
-    let image = ImageBuffer::from_pixel(4096, 2048, Rgba([180u8, 30, 30, 255]));
-    image
-        .save_with_format(temp_file.path(), ImageFormat::Png)
-        .expect("write png to temp file");
-
-    let original_bytes = std::fs::read(temp_file.path()).expect("read written image");
-    let processed =
-        load_for_prompt(temp_file.path(), PromptImageMode::Original).expect("process image");
-
-    assert_eq!(processed.width, 4096);
-    assert_eq!(processed.height, 2048);
-    assert_eq!(processed.mime, "image/png");
-    assert_eq!(processed.bytes, original_bytes);
 }
 
 #[tokio::test(flavor = "multi_thread")]

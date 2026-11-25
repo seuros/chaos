@@ -59,206 +59,56 @@ async fn insert_logs_persist_into_runtime_database() {
 }
 
 #[tokio::test]
-async fn query_logs_with_search_matches_substring() {
+async fn recent_logs_and_query_logs_after_return_ordered_batches() {
+    fn messages(rows: &[crate::LogRow]) -> Vec<&str> {
+        rows.iter()
+            .map(|row| row.message.as_deref().expect("log message"))
+            .collect()
+    }
+
     let chaos_home = unique_temp_dir();
     let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
         .await
         .expect("initialize runtime");
-
+    let query = LogQuery::default();
+    let entry = |message: &str| LogEntry {
+        ts: 10,
+        ts_nanos: 0,
+        level: "INFO".into(),
+        target: "cli".into(),
+        message: Some(message.into()),
+        process_id: Some("thread-1".into()),
+        process_uuid: None,
+        module_path: None,
+        file: None,
+        line: None,
+    };
     runtime
-        .insert_logs(&[
-            LogEntry {
-                ts: 1_700_000_001,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("alpha".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(42),
-                module_path: None,
-            },
-            LogEntry {
-                ts: 1_700_000_002,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("alphabet".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(43),
-                module_path: None,
-            },
-        ])
+        .insert_logs(&["one", "two", "three"].map(entry))
         .await
-        .expect("insert test logs");
-
-    let rows = runtime
-        .query_logs(&LogQuery {
-            search: Some("alphab".to_string()),
-            ..Default::default()
-        })
-        .await
-        .expect("query matching logs");
-
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].message.as_deref(), Some("alphabet"));
-
-    let _ = tokio::fs::remove_dir_all(chaos_home).await;
-}
-
-#[tokio::test]
-async fn recent_logs_returns_latest_rows_in_ascending_order() {
-    let chaos_home = unique_temp_dir();
-    let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-        .await
-        .expect("initialize runtime");
-
-    runtime
-        .insert_logs(&[
-            LogEntry {
-                ts: 10,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("first".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(1),
-                module_path: None,
-            },
-            LogEntry {
-                ts: 11,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("second".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(2),
-                module_path: None,
-            },
-            LogEntry {
-                ts: 12,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("third".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(3),
-                module_path: None,
-            },
-        ])
-        .await
-        .expect("insert test logs");
-
-    let rows = runtime
-        .recent_logs(&LogQuery::default(), 2)
-        .await
-        .expect("query recent logs");
-
-    let messages = rows
-        .iter()
-        .map(|row| row.message.as_deref().unwrap_or_default())
-        .collect::<Vec<_>>();
-    assert_eq!(messages, vec!["second", "third"]);
-
-    let _ = tokio::fs::remove_dir_all(chaos_home).await;
-}
-
-#[tokio::test]
-async fn query_logs_after_returns_only_newer_rows_in_ascending_order() {
-    let chaos_home = unique_temp_dir();
-    let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
-        .await
-        .expect("initialize runtime");
-
-    runtime
-        .insert_logs(&[
-            LogEntry {
-                ts: 20,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("one".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(1),
-                module_path: None,
-            },
-            LogEntry {
-                ts: 21,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("two".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(2),
-                module_path: None,
-            },
-            LogEntry {
-                ts: 22,
-                ts_nanos: 0,
-                level: "INFO".to_string(),
-                target: "cli".to_string(),
-                message: Some("three".to_string()),
-                process_id: Some("thread-1".to_string()),
-                process_uuid: None,
-                file: Some("main.rs".to_string()),
-                line: Some(3),
-                module_path: None,
-            },
-        ])
-        .await
-        .expect("insert test logs");
-
+        .expect("insert initial logs");
     let backfill = runtime
-        .recent_logs(&LogQuery::default(), 2)
+        .recent_logs(&query, 2)
         .await
         .expect("query recent logs");
-    let last_id = backfill.last().map(|row| row.id).unwrap_or(0);
+    assert_eq!(messages(&backfill), ["two", "three"]);
+    let last_id = backfill.last().expect("backfill cursor").id;
 
     runtime
-        .insert_log(&LogEntry {
-            ts: 23,
-            ts_nanos: 0,
-            level: "INFO".to_string(),
-            target: "cli".to_string(),
-            message: Some("four".to_string()),
-            process_id: Some("thread-1".to_string()),
-            process_uuid: None,
-            file: Some("main.rs".to_string()),
-            line: Some(4),
-            module_path: None,
-        })
+        .insert_logs(&["four", "five"].map(entry))
         .await
-        .expect("insert newer log");
-
+        .expect("insert newer logs");
     let rows = runtime
-        .query_logs_after(&LogQuery::default(), last_id, None)
+        .query_logs_after(&query, last_id, None)
         .await
-        .expect("query newer logs");
-
-    let messages = rows
-        .iter()
-        .map(|row| row.message.as_deref().unwrap_or_default())
-        .collect::<Vec<_>>();
-    assert_eq!(messages, vec!["four"]);
+        .expect("query logs after backfill cursor");
+    assert_eq!(messages(&rows), ["four", "five"]);
 
     let _ = tokio::fs::remove_dir_all(chaos_home).await;
 }
 
 #[tokio::test]
-async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
+async fn log_search_filters_by_substring_and_tail_advances_its_cursor() {
     let chaos_home = unique_temp_dir();
     let runtime = StateRuntime::init(chaos_home.clone(), "test-provider".to_string())
         .await
@@ -271,7 +121,7 @@ async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
                 ts_nanos: 0,
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
-                message: Some("one".to_string()),
+                message: Some("alpha".to_string()),
                 process_id: Some("thread-1".to_string()),
                 process_uuid: None,
                 file: Some("main.rs".to_string()),
@@ -283,7 +133,7 @@ async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
                 ts_nanos: 0,
                 level: "INFO".to_string(),
                 target: "cli".to_string(),
-                message: Some("two".to_string()),
+                message: Some("alphabet".to_string()),
                 process_id: Some("thread-1".to_string()),
                 process_uuid: None,
                 file: Some("main.rs".to_string()),
@@ -294,12 +144,22 @@ async fn tail_backfill_and_poll_advance_cursor_for_live_consumers() {
         .await
         .expect("insert initial logs");
 
+    let rows = runtime
+        .query_logs(&LogQuery {
+            search: Some("phab".into()),
+            ..Default::default()
+        })
+        .await
+        .expect("query by interior substring");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].message.as_deref(), Some("alphabet"));
+
     let backfill = runtime
         .tail_backfill(&LogQuery::default(), 1)
         .await
         .expect("tail backfill");
     assert_eq!(backfill.rows.len(), 1);
-    assert_eq!(backfill.rows[0].message.as_deref(), Some("two"));
+    assert_eq!(backfill.rows[0].message.as_deref(), Some("alphabet"));
 
     let zero_backfill = runtime
         .tail_backfill(&LogQuery::default(), 0)

@@ -5,18 +5,19 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+const GIT_CONFIG_ENV: [(&str, &str); 2] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];
+
 // Helper function to create a test git repository
 async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
     let repo_path = temp_dir.path().join("repo");
     fs::create_dir(&repo_path).expect("Failed to create repo dir");
-    let envs = vec![
-        ("GIT_CONFIG_GLOBAL", "/dev/null"),
-        ("GIT_CONFIG_NOSYSTEM", "1"),
-    ];
 
     // Initialize git repo
     Command::new("git")
-        .envs(envs.clone())
+        .envs(GIT_CONFIG_ENV)
         .args(["init"])
         .current_dir(&repo_path)
         .output()
@@ -25,7 +26,7 @@ async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
 
     // Configure git user (required for commits)
     Command::new("git")
-        .envs(envs.clone())
+        .envs(GIT_CONFIG_ENV)
         .args(["config", "user.name", "Test User"])
         .current_dir(&repo_path)
         .output()
@@ -33,7 +34,7 @@ async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
         .expect("Failed to set git user name");
 
     Command::new("git")
-        .envs(envs.clone())
+        .envs(GIT_CONFIG_ENV)
         .args(["config", "user.email", "test@example.com"])
         .current_dir(&repo_path)
         .output()
@@ -45,22 +46,33 @@ async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
     fs::write(&test_file, "test content").expect("Failed to write test file");
 
     Command::new("git")
-        .envs(envs.clone())
+        .envs(GIT_CONFIG_ENV)
         .args(["add", "."])
         .current_dir(&repo_path)
         .output()
         .await
         .expect("Failed to add files");
 
-    Command::new("git")
-        .envs(envs.clone())
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("Failed to commit");
+    commit_at(&repo_path, "Initial commit", "2000-01-01T00:00:00Z").await;
 
     repo_path
+}
+
+async fn commit_at(repo: &Path, subject: &str, date: &str) {
+    let output = Command::new("git")
+        .envs(GIT_CONFIG_ENV)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .args(["commit", "-am", subject])
+        .current_dir(repo)
+        .output()
+        .await
+        .expect("run git commit");
+    assert!(
+        output.status.success(),
+        "git commit {subject}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[tokio::test]
@@ -73,58 +85,18 @@ async fn test_recent_commits_non_git_directory_returns_empty() {
 #[tokio::test]
 async fn test_recent_commits_orders_and_limits() {
     skip_if_sandbox!();
-    use tokio::time::Duration;
-    use tokio::time::sleep;
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await;
 
-    // Make three distinct commits with small delays to ensure ordering by timestamp.
-    fs::write(repo_path.join("file.txt"), "one").unwrap();
-    Command::new("git")
-        .args(["add", "file.txt"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "first change"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git commit 1");
-
-    sleep(Duration::from_millis(1100)).await;
-
-    fs::write(repo_path.join("file.txt"), "two").unwrap();
-    Command::new("git")
-        .args(["add", "file.txt"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git add 2");
-    Command::new("git")
-        .args(["commit", "-m", "second change"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git commit 2");
-
-    sleep(Duration::from_millis(1100)).await;
-
-    fs::write(repo_path.join("file.txt"), "three").unwrap();
-    Command::new("git")
-        .args(["add", "file.txt"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git add 3");
-    Command::new("git")
-        .args(["commit", "-m", "third change"])
-        .current_dir(&repo_path)
-        .output()
-        .await
-        .expect("git commit 3");
+    for (subject, date) in [
+        ("first change", "2000-01-01T00:00:01Z"),
+        ("second change", "2000-01-01T00:00:02Z"),
+        ("third change", "2000-01-01T00:00:03Z"),
+    ] {
+        fs::write(repo_path.join("test.txt"), subject).unwrap();
+        commit_at(&repo_path, subject, date).await;
+    }
 
     // Request the latest 3 commits; should be our three changes in reverse time order.
     let entries = recent_commits(&repo_path, 3).await;

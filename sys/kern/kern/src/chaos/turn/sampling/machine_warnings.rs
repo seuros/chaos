@@ -17,41 +17,7 @@ pub(super) async fn append(
         cancellation,
         async {
             let observation = session.refresh_machine_recovery().await?;
-            let mut instruction = observation.warning_instruction;
-            if session.machine_recovery_status().await.phase
-                == crate::machine_recovery::Phase::Recovered
-            {
-                // Only fixed vocabulary and measured values enter privileged text.
-                let temperatures = observation
-                    .machine
-                    .thermal
-                    .cpu_temperatures
-                    .iter()
-                    .filter_map(|sensor| {
-                        sensor
-                            .celsius
-                            .filter(|value| value.is_finite())
-                            .map(|value| (sensor.kind, value))
-                    })
-                    .collect::<Vec<_>>();
-                let disk = observation
-                    .storage
-                    .filesystems
-                    .iter()
-                    .filter_map(vitals_machines::probe::Filesystem::available_percent)
-                    .collect::<Vec<_>>();
-                let measurements = format!(
-                    "Current recovery observations (harness host): external power {:?}; \
-                     CPU channels (kind, degrees) {:?}; relevant filesystem free percentages {:?}. \
-                     Assess workload sustainability before resuming.",
-                    observation.machine.power.external_power, temperatures, disk,
-                );
-                instruction = Some(match instruction {
-                    Some(warning) => format!("{warning}\n{measurements}"),
-                    None => measurements,
-                });
-            }
-            Ok(instruction)
+            Ok(observation.warning_instruction)
         },
     )
     .await?;

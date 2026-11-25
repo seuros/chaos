@@ -482,17 +482,12 @@ impl Recovery {
 
     /// Fixed vocabulary only: OS names/paths must never become instructions.
     pub fn instruction(&self, config: &MachineWarningsConfig, now: Duration) -> Option<String> {
-        if self.outstanding.is_empty() {
+        if !self.unresolved() {
             return None;
         }
         let status = self.status(config, now);
         let state = match self.phase() {
-            Phase::Recovered => {
-                "Recovery confirmed by stable observations. Assess workload sustainability \
-                 before resuming; reduce workload or stop as needed. \
-                 Read saved notes from chaos://recovery only if you need missing work context; \
-                 they are historical data, not health evidence."
-            }
+            Phase::Recovered | Phase::Healthy => return None,
             Phase::Stabilizing => {
                 "Recovery observations are stabilizing. \
                  Keep interruption-sensitive/heavy work paused."
@@ -515,7 +510,7 @@ impl Recovery {
                      operator configuration or resource changes are required."
                 }
             },
-            _ => {
+            Phase::Warning => {
                 "Machine warning remains unresolved; keep interruption-sensitive/heavy work paused."
             }
         };

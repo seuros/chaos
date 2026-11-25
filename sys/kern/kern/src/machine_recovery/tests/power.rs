@@ -73,11 +73,20 @@ fn power_recovers_on_external_power_or_observed_battery_headroom() {
     sample(&mut recovery, &config, status.clone(), recovered_after);
     assert_eq!(recovery.phase(), Phase::Recovered);
     assert!(!recovery.unresolved());
+    assert_eq!(
+        recovery.instruction(&config, Duration::from_secs(recovered_after)),
+        None
+    );
     status.machine.power.batteries.as_mut().unwrap()[0].charge_percent = Some(5);
     status.warnings = crate::machine_warnings::evaluate(&config, &status.machine, &status.storage);
     sample(&mut recovery, &config, status, recovered_after + 30);
     assert_eq!(recovery.phase(), Phase::Warning);
     assert_eq!(recovery.episode().map(Episode::raw), Some(2));
+    assert!(
+        recovery
+            .instruction(&config, Duration::from_secs(recovered_after + 30))
+            .is_some()
+    );
 }
 
 #[test]

@@ -134,7 +134,6 @@ fn rejects_invalid_riff_extent_and_fmt_fields() {
     assert!(validate_wav_bytes(&bad_bps).is_err());
 }
 
-#[cfg(unix)]
 #[test]
 fn rejects_named_pipe_without_blocking() {
     use std::ffi::CString;

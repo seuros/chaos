@@ -5,7 +5,6 @@
 
 use std::fs::OpenOptions;
 use std::io::Read;
-#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 use std::path::PathBuf;
@@ -110,7 +109,6 @@ pub fn load_local_wav_with_limit(
 ) -> Result<ValidatedAudio, AudioError> {
     let mut options = OpenOptions::new();
     options.read(true);
-    #[cfg(unix)]
     options.custom_flags(libc::O_NONBLOCK);
     let file = options.open(path).map_err(|source| AudioError::Read {
         path: path.to_path_buf(),
@@ -244,14 +242,16 @@ pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
                 1 => {
                     if !matches!(bits_per_sample, 8 | 16 | 24 | 32) {
                         return Err(format!(
-                            "WAV PCM `fmt ` chunk has unsupported bits_per_sample ({bits_per_sample})"
+                            "WAV PCM `fmt ` chunk has unsupported \
+                             bits_per_sample ({bits_per_sample})"
                         ));
                     }
                 }
                 3 => {
                     if !matches!(bits_per_sample, 32 | 64) {
                         return Err(format!(
-                            "WAV IEEE float `fmt ` chunk has unsupported bits_per_sample ({bits_per_sample})"
+                            "WAV IEEE float `fmt ` chunk has unsupported \
+                             bits_per_sample ({bits_per_sample})"
                         ));
                     }
                 }
@@ -261,13 +261,15 @@ pub fn validate_wav_bytes(bytes: &[u8]) -> Result<Option<u64>, String> {
                     }
                     if bits_per_sample == 0 || bits_per_sample % 8 != 0 {
                         return Err(format!(
-                            "WAV extensible `fmt ` chunk has invalid bits_per_sample ({bits_per_sample})"
+                            "WAV extensible `fmt ` chunk has invalid \
+                             bits_per_sample ({bits_per_sample})"
                         ));
                     }
                 }
                 other => {
                     return Err(format!(
-                        "unsupported WAV audio format tag 0x{other:04x} (only PCM, IEEE float, and extensible WAV are supported)"
+                        "unsupported WAV audio format tag 0x{other:04x} \
+                         (only PCM, IEEE float, and extensible WAV are supported)"
                     ));
                 }
             }

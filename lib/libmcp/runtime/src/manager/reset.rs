@@ -74,20 +74,9 @@ impl McpConnectionManager {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(server.to_string(), replacement.clone());
-        let setup = replacement
-            .setup
-            .as_ref()
-            .ok_or_else(|| anyhow!("replacement MCP client has no connection setup"))?;
-        emit_update(
-            &setup.tx_event,
-            McpStartupUpdateEvent {
-                server: server.to_string(),
-                status: McpStartupStatus::Starting,
-            },
-        )
-        .await;
-        let outcome = replacement.client().await;
-        let status = match &outcome {
+        // The caller reports this reconnect via McpServersRefreshed. Startup
+        // updates belong to a batch terminated by McpStartupComplete.
+        match replacement.client().await {
             Ok(client) => {
                 let tools = qualify_tools(client.listed_tools())
                     .into_values()
@@ -99,27 +88,14 @@ impl McpConnectionManager {
                 if let Err(error) = replacement.notify_current_sandbox_state().await {
                     warn!(server, %error, "failed to notify sandbox state after MCP reset");
                 }
-                McpStartupStatus::Ready
+                Ok(())
             }
             Err(error) => {
                 if let Some(catalog) = &replacement.catalog {
                     catalog.retire(server);
                 }
-                McpStartupStatus::Failed {
-                    error: mcp_init_error_display(server, None, error),
-                }
+                Err(anyhow!(mcp_init_error_display(server, None, &error)))
             }
-        };
-        emit_update(
-            &setup.tx_event,
-            McpStartupUpdateEvent {
-                server: server.to_string(),
-                status,
-            },
-        )
-        .await;
-        outcome
-            .map(|_| ())
-            .map_err(|error| anyhow!(startup_outcome_error_message(error)))
+        }
     }
 }

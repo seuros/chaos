@@ -71,9 +71,10 @@ Intel Mac bundles are not available.
 just install
 ```
 
-That drops the `chaos` binary into `~/.cargo/bin` (release profile,
-`-C target-cpu=native`). Add `~/.cargo/bin` to your `PATH` if it
-isn't already.
+That installs `chaos` into `~/.cargo/bin` using the release profile.
+`just debug` installs the debug build instead. Neither forces CPU-specific
+flags; use `just install-native` for a release tuned to the build machine.
+Add `~/.cargo/bin` to your `PATH` if it isn't already there.
 
 ### Drivers
 

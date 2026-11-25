@@ -191,8 +191,8 @@ cd chaos
 just install
 ```
 
-`just install` builds `bin/chaos` with `-C target-cpu=native` and drops
-the binary into `~/.cargo/bin/chaos`. For a one-shot debug run without
+`just install` builds for the default target CPU and installs `~/.cargo/bin/chaos`.
+Use `just install-native` for a release tuned to this machine. For a one-shot debug run without
 installing, use `just chaos`. For a local release run, use
 `just bigbang`. See [man/chaos-install.7.md](./man/chaos-install.7.md)
 for system requirements and logging controls.

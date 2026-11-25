@@ -26,8 +26,12 @@ bigbang *args:
 build *args:
     {{cargo}} build --bin chaos {{args}}
 
-# Install chaos into ~/.cargo/bin (release + target-cpu=native).
+# Install chaos into ~/.cargo/bin (release).
 install: (_install "")
+
+# Install the release build tuned for this CPU.
+install-native:
+    RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C target-cpu=native" just cargo="{{cargo}}" install
 
 # Install chaos into ~/.cargo/bin with debug assertions and line info.
 debug: (_install "--profile debug-install")
@@ -178,8 +182,8 @@ _install profile_flag:
     if [ -n "${RUSTUP_TOOLCHAIN:-}" ]; then
         set -- "+$RUSTUP_TOOLCHAIN"
     fi
-    RUSTFLAGS="-C target-cpu=native" {{cargo}} "$@" install --path bin/chaos --locked --force {{profile_flag}}
-    RUSTFLAGS="-C target-cpu=native" {{cargo}} "$@" install --path srv/journald --locked --force {{profile_flag}}
+    {{cargo}} "$@" install --path bin/chaos --locked --force {{profile_flag}}
+    {{cargo}} "$@" install --path srv/journald --locked --force {{profile_flag}}
 
 # Build a portable release tarball: chaos + install.sh.
 # Usage: just dist [output=chaos-dist.tar.gz]

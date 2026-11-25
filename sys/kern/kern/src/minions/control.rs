@@ -9,6 +9,7 @@ use crate::minions::router::ForkArgs;
 use crate::minions::router::ProcessTableOp;
 use crate::minions::router::ResumeArgs;
 use crate::minions::router::SpawnArgs;
+use crate::models_manager::catalog::ModelSelection;
 use crate::process_table::NewProcess;
 use crate::process_table::ProcessTableState;
 use crate::rollout::RolloutRecorder;
@@ -34,7 +35,9 @@ use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tracing::warn;
 
-const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent. The prior conversation history was forked from your parent agent. Treat the next user message as your new task, and use the forked history only as background context.";
+const FORKED_SPAWN_AGENT_OUTPUT_MESSAGE: &str = "You are the newly spawned agent. The prior \
+    conversation history was forked from your parent agent. Treat the next user message as your \
+    new task, and use the forked history only as background context.";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct SpawnAgentOptions {
@@ -93,8 +96,11 @@ fn verify_effective_spawn_binding(
              `{effective_provider}`"
         )));
     }
+    // Config can hold a picker ID; the child reports the account and wire slug separately.
     if let Some(expected_model) = expected_model
-        && effective_model != expected_model
+        && ModelSelection::resolve(expected_model, expected_provider).is_none_or(|selection| {
+            selection.provider_id != effective_provider || selection.model != effective_model
+        })
     {
         return Err(ChaosErr::InvalidRequest(format!(
             "spawned agent model mismatch for provider `{expected_provider}`: requested \

@@ -1188,6 +1188,21 @@ fn sanitize_forked_history_keeps_conversation_and_spawn_call() {
 }
 
 #[test]
+fn effective_spawn_binding_resolves_qualified_selection_on_the_requested_account() {
+    let verify = |requested| {
+        verify_effective_spawn_binding("account-a", Some(requested), "account-a", "model-a")
+    };
+    verify(r#"chaos:model:["account-a","model-a"]"#).expect("same account and wire model");
+    for invalid in [
+        r#"chaos:model:["account-b","model-a"]"#,
+        r#"chaos:model:["account-a","model-b"]"#,
+        "chaos:model:invalid",
+    ] {
+        assert!(verify(invalid).is_err(), "accepted {invalid}");
+    }
+}
+
+#[test]
 fn effective_spawn_binding_mismatch_fails_closed() {
     let provider_error =
         verify_effective_spawn_binding("account-a", Some("model-a"), "account-b", "model-a")

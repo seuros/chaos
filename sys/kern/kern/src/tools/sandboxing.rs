@@ -336,11 +336,14 @@ impl<'a> SandboxAttempt<'a> {
         &self,
         spec: CommandSpec,
         network: Option<&NetworkProxy>,
+        session: &Session,
     ) -> Result<crate::sandboxing::ExecRequest, SandboxTransformError> {
+        let policy =
+            session.toolchain_vfs(self.file_system_policy.clone(), &spec.cwd, self.sandbox_cwd);
         self.manager
             .transform(crate::sandboxing::SandboxTransformRequest {
                 spec,
-                file_system_policy: self.file_system_policy,
+                file_system_policy: &policy,
                 network_policy: self.network_policy,
                 sandbox: self.sandbox,
                 enforce_managed_network: self.enforce_managed_network,

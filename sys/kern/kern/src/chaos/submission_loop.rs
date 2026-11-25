@@ -9,6 +9,68 @@ use chaos_ipc::protocol::ItemCompletedEvent;
 use chaos_ipc::protocol::RolloutItem;
 use chaos_ipc::protocol::Submission;
 use chaos_ipc::protocol::WarningEvent;
+
+#[cfg(feature = "toolchain-access")]
+async fn startup_toolchain_prompt(
+    session: &Session,
+    config: &Config,
+) -> Option<(
+    chaos_ipc::mcp::RequestId,
+    tokio::time::Instant,
+    Vec<std::path::PathBuf>,
+)> {
+    use crate::protocol::ApprovalPolicy;
+    use chaos_ipc::approvals::{ElicitationRequest, ElicitationRequestEvent};
+    if !match config.permissions.approval_policy.value() {
+        ApprovalPolicy::Interactive | ApprovalPolicy::Supervised => true,
+        ApprovalPolicy::Granular(policy) => policy.allows_sandbox_approval(),
+        _ => false,
+    } {
+        return None;
+    }
+    let policy = &config.permissions.vfs_policy;
+    let mut paths = Vec::new();
+    let mut message = String::from("Allow these tool output directories for this session?");
+    for candidate in session.toolchain_access.candidates_for(&config.cwd) {
+        if policy.with_tool_output_write(&candidate.directory, &config.cwd) != *policy
+            && !paths.contains(&candidate.directory)
+        {
+            message.push_str(&format!(
+                "\n- {:?}: {:?}",
+                candidate.tool, candidate.directory
+            ));
+            paths.push(candidate.directory.clone());
+        }
+    }
+    if paths.is_empty() {
+        return None;
+    }
+    let id = chaos_ipc::mcp::RequestId::String(format!("toolchain-{}", session.conversation_id));
+    session
+        .send_event_raw(Event {
+            id: String::new(),
+            msg: EventMsg::ElicitationRequest(ElicitationRequestEvent {
+                turn_id: None,
+                server_name: "toolchain-access".into(),
+                id: id.clone(),
+                request: ElicitationRequest::Form {
+                    meta: None,
+                    message,
+                    requested_schema: serde_json::json!({
+                        "type": "object",
+                        "properties": {"approve": {"type": "boolean", "default": false}},
+                        "required": ["approve"]
+                    }),
+                },
+            }),
+        })
+        .await;
+    Some((
+        id,
+        tokio::time::Instant::now() + std::time::Duration::from_secs(60),
+        paths,
+    ))
+}
 use tracing::Instrument;
 use tracing::debug;
 use tracing::warn;
@@ -86,6 +148,8 @@ pub(crate) async fn submission_loop(
         .unwrap_or_else(|| tokio::sync::watch::channel(JournalWriterStatus::Ready).1);
     writer_status.mark_changed();
     let mut status_open = true;
+    #[cfg(feature = "toolchain-access")]
+    let mut toolchain_prompt = startup_toolchain_prompt(&sess, &config).await;
     let mut journal_paused = false;
     let mut interrupted_turn = None;
     loop {
@@ -183,6 +247,14 @@ pub(crate) async fn submission_loop(
                 continue;
             },
         };
+        // Never change the startup grant set after work has been admitted.
+        #[cfg(feature = "toolchain-access")]
+        if matches!(
+            &sub.op,
+            Op::UserTurn { .. } | Op::RunUserShellCommand { .. } | Op::Review { .. } | Op::Compact
+        ) {
+            toolchain_prompt = None;
+        }
         if journal_paused
             && matches!(
                 &sub.op,
@@ -419,6 +491,25 @@ pub(crate) async fn submission_loop(
                     content,
                     meta,
                 } => {
+                    #[cfg(feature = "toolchain-access")]
+                    if server_name == "toolchain-access"
+                        && toolchain_prompt
+                            .as_ref()
+                            .is_some_and(|(id, _, _)| id == &request_id)
+                    {
+                        if let Some((_, deadline, paths)) = toolchain_prompt.take()
+                            && tokio::time::Instant::now() < deadline
+                            && matches!(decision, chaos_ipc::approvals::ElicitationAction::Accept)
+                            && content
+                                .as_ref()
+                                .and_then(|value| value.get("approve"))
+                                .and_then(serde_json::Value::as_bool)
+                                == Some(true)
+                        {
+                            let _ = sess.approved_toolchain_outputs.set(paths);
+                        }
+                        return false;
+                    }
                     handlers::resolve_elicitation(
                         &sess,
                         server_name,

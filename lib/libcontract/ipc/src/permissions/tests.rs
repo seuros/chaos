@@ -636,3 +636,38 @@ fn file_system_access_mode_orders_by_conflict_precedence() {
     assert!(VfsAccessMode::Write > VfsAccessMode::Read);
     assert!(VfsAccessMode::None > VfsAccessMode::Write);
 }
+#[test]
+fn tool_output_write_preserves_ancestor_and_descendant_restrictions() -> std::io::Result<()> {
+    let temporary = tempfile::tempdir()?;
+    let root = temporary.path().canonicalize()?;
+    let output = root.join("output");
+    let private = output.join("private");
+    std::fs::create_dir_all(&private)?;
+    let baseline = VfsEntry {
+        path: VfsPath::Special {
+            value: VfsSpecialPath::Root,
+        },
+        access: VfsAccessMode::Read,
+    };
+    let policy = VfsPolicy::restricted(vec![baseline.clone()]);
+    assert!(
+        policy
+            .with_tool_output_write(&output, &root)
+            .can_write_path_with_cwd(&output, &root)
+    );
+    for (directory, access) in [
+        (&root, VfsAccessMode::Read),
+        (&private, VfsAccessMode::None),
+    ] {
+        let path = AbsolutePathBuf::from_absolute_path(directory)?;
+        let policy = VfsPolicy::restricted(vec![
+            baseline.clone(),
+            VfsEntry {
+                path: VfsPath::Path { path },
+                access,
+            },
+        ]);
+        assert_eq!(policy.with_tool_output_write(&output, &root), policy);
+    }
+    Ok(())
+}

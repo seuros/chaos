@@ -40,6 +40,57 @@ pub struct VfsSemanticSignature {
 }
 
 impl VfsPolicy {
+    /// Add an independently authorized tool output directory without overriding
+    /// explicit restrictions or existing protected writable-root carveouts.
+    pub fn with_tool_output_write(&self, directory: &Path, cwd: &Path) -> Self {
+        if self.kind != VfsPolicyKind::Restricted || self.has_full_disk_write_access() {
+            return self.clone();
+        }
+        let Ok(path) = AbsolutePathBuf::from_absolute_path(directory) else {
+            return self.clone();
+        };
+        if directory.parent().is_none()
+            || directory.canonicalize().as_deref().ok() != Some(directory)
+            || !directory.is_dir()
+            || directory.components().any(|component| {
+                matches!(
+                    component.as_os_str().to_str(),
+                    Some(".git" | ".agents" | ".chaos")
+                )
+            })
+        {
+            return self.clone();
+        }
+        let overlaps = |other: &Path| directory.starts_with(other) || other.starts_with(directory);
+        let restricted = self
+            .resolved_entries_with_cwd(cwd)
+            .into_iter()
+            .any(|entry| {
+                let effective = normalize_effective_absolute_path(entry.path.clone());
+                // A filesystem-wide read baseline is not a path-specific carveout.
+                (entry.access == VfsAccessMode::None
+                    || (!entry.access.can_write() && effective.as_path().parent().is_some()))
+                    && (overlaps(entry.path.as_path()) || overlaps(effective.as_path()))
+            });
+        if restricted
+            || self.get_writable_roots_with_cwd(cwd).iter().any(|root| {
+                root.read_only_subpaths
+                    .iter()
+                    .any(|path| overlaps(path.as_path()))
+            })
+        {
+            return self.clone();
+        }
+        let mut policy = self.clone();
+        if !self.can_write_path_with_cwd(directory, cwd) {
+            policy.entries.push(VfsEntry {
+                path: VfsPath::Path { path },
+                access: VfsAccessMode::Write,
+            });
+        }
+        policy
+    }
+
     pub(super) fn has_root_access(&self, predicate: impl Fn(VfsAccessMode) -> bool) -> bool {
         matches!(self.kind, VfsPolicyKind::Restricted)
             && self.entries.iter().any(|entry| {

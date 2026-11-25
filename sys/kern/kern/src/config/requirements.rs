@@ -336,11 +336,7 @@ impl Config {
                     Some(&constrained_sandbox_policy),
                 );
                 if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
-                    let cache = active_project_trust
-                        .is_trusted()
-                        .then(chaos_parole::mbx::mbx_cache)
-                        .flatten();
-                    for path in additional_writable_roots.iter().chain(cache.iter()) {
+                    for path in &additional_writable_roots {
                         if !writable_roots.iter().any(|existing| existing == path) {
                             writable_roots.push(path.clone());
                         }

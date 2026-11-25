@@ -39,6 +39,7 @@ members = [
     "secure/warden",
     "secure/watchdog",
     "secure/parole",
+    "secure/toolchain-access",
     "secure/contraband",
     "secure/selinux",
     "secure/vault",
@@ -160,6 +161,7 @@ chaos-doas = { path = "sys/exec/doas" }
 chaos-warden = { path = "secure/warden" }
 chaos-watchdog = { path = "secure/watchdog" }
 chaos-parole = { path = "secure/parole" }
+toolchain-access = { path = "secure/toolchain-access" }
 chaos-contraband = { path = "secure/contraband" }
 chaos-selinux = { path = "secure/selinux" }
 chaos-vault = { path = "secure/vault" }

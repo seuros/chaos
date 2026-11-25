@@ -621,7 +621,29 @@ impl Session {
         let permission_actor =
             crate::chaos::permissions::PermissionActor::spawn(&session_configuration);
 
+        #[cfg(feature = "toolchain-access")]
+        let toolchain_access = if config.active_project_trust.is_trusted()
+            && let Some(root) =
+                crate::git_info::resolve_root_git_project_for_trust(&session_configuration.cwd)
+        {
+            toolchain_access::Snapshot::discover(&root).await
+        } else {
+            toolchain_access::Snapshot::default()
+        };
+        #[cfg(feature = "toolchain-access")]
+        startup.mark("session_toolchain_discovery");
+        #[cfg(feature = "toolchain-access")]
+        tracing::debug!(
+            candidates = toolchain_access
+                .candidates_for(&session_configuration.cwd)
+                .count(),
+            "Discovered startup toolchain access candidates"
+        );
         let sess = Arc::new(Session {
+            #[cfg(feature = "toolchain-access")]
+            toolchain_access,
+            #[cfg(feature = "toolchain-access")]
+            approved_toolchain_outputs: std::sync::OnceLock::new(),
             conversation_id,
             tx_event: tx_event.clone(),
             mcp_notification_tx: mcp_notification_tx.clone(),

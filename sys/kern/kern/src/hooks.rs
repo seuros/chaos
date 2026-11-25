@@ -392,7 +392,7 @@ pub(crate) async fn for_turn(
     let program = argv.remove(0);
     argv.pop();
     let permissions = session.permission_snapshot(turn).await;
-    let vfs = permissions.effective_vfs_policy();
+    let vfs = session.toolchain_vfs(permissions.effective_vfs_policy(), &turn.cwd, &turn.cwd);
     let socket = permissions.effective_socket_policy();
     for hook in &registrations {
         let command = shell.derive_exec_args(&hook.definition.command, false);

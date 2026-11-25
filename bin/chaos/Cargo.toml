@@ -22,7 +22,8 @@ required-features = ["acp"]
 workspace = true
 
 [features]
-default = ["tui", "acp", "mcpd"]
+default = ["tui", "acp", "mcpd", "toolchain-access"]
+toolchain-access = ["chaos-kern/toolchain-access"]
 # Omit the ACP stdio agent and protocol stack from builds that do not need it.
 acp = ["dep:chaos-acpd"]
 # Omit MCP daemon transports without disabling clients or clamp transports.

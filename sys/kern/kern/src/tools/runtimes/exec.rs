@@ -187,7 +187,7 @@ impl<'a> ToolRuntime<ExecRequest, ExecProcess> for ExecRuntime<'a> {
         )
         .map_err(|_| ToolError::Rejected("missing command line for PTY".to_string()))?;
         let exec_env = attempt
-            .env_for(spec, req.network.as_ref())
+            .env_for(spec, req.network.as_ref(), &ctx.session)
             .map_err(|err| ToolError::Chaos(err.into()))?;
         self.manager
             .open_session_with_exec_env(&exec_env, req.tty, Box::new(NoopSpawnLifecycle))

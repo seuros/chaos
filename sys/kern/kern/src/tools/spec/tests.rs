@@ -1375,6 +1375,18 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
 }
 
 #[test]
+fn view_image_description_permits_conversation_attachments() {
+    let ToolSpec::Function(ResponsesApiTool { description, .. }) = create_view_image_tool(false)
+    else {
+        panic!("view_image should be a function tool");
+    };
+    assert!(description.contains("Use only when the user gives a full filepath"));
+    assert!(description.contains("local copy of an image shared in the current conversation"));
+    assert!(description.contains("authorized access to an attachment link"));
+    assert!(description.contains("already in your context within <image ...> tags"));
+}
+
+#[test]
 fn test_build_specs_minion_job_worker_tools_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests(TEST_MODEL, &config);

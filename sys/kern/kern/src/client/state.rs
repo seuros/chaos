@@ -430,6 +430,28 @@ impl ModelClient {
         }
     }
 
+    /// Stage a tool-returned image on the active Antigravity egress proxy.
+    ///
+    /// Returns `Ok(true)` when the session is clamped on Antigravity and the
+    /// image was staged for wire splicing, or `Ok(false)` for non-Antigravity
+    /// sessions (which keep standard MCP `ContentBlock::Image` delivery).
+    pub(crate) async fn stage_antigravity_tool_image(
+        &self,
+        attachment: chaos_clamp::AntigravityToolImageAttachment,
+    ) -> std::result::Result<bool, String> {
+        if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
+            return Ok(false);
+        }
+        let guard = self.state.antigravity_egress.lock().await;
+        let Some(egress) = guard.as_ref() else {
+            return Ok(false);
+        };
+        egress
+            .stage_antigravity_tool_image(attachment)
+            .map(|()| true)
+            .map_err(|error| error.to_string())
+    }
+
     /// Get the initialization response from the clamped subprocess.
     pub async fn clamp_init_response(&self) -> Option<serde_json::Value> {
         let guard = self.state.clamp_transport.lock().await;

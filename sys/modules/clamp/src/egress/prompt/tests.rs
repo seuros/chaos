@@ -720,3 +720,359 @@ async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_au
         );
     }
 }
+
+fn sample_tool_image(nonce: &str) -> AntigravityToolImageAttachment {
+    AntigravityToolImageAttachment {
+        nonce: nonce.to_string(),
+        mime_type: "image/png".to_string(),
+        data_base64: Arc::from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2dIAAAAASUVORK5CYII=",
+        ),
+    }
+}
+
+fn cloud_request_with_tool_image_marker(model: &str, tool_name: &str, marker: &str) -> Value {
+    json!({
+        "model": model,
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": "Look at the image"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": tool_name, "args": {"ServerName": "chaos", "ToolName": "view_image"}}}]},
+                {"role": "user", "parts": [{"functionResponse": {"name": tool_name, "response": {"output": marker}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "call_mcp_tool"}]}]
+        }
+    })
+}
+
+#[tokio::test]
+async fn staged_tool_image_splices_into_matching_call_mcp_tool_function_response() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let guard = prompt
+        .arm_tool_images("gemini-4-neon-medium".to_string())
+        .unwrap();
+    let image = sample_tool_image("img1111111111111");
+    prompt.stage_tool_image(image.clone()).unwrap();
+    let marker = antigravity_tool_image_marker(&image.nonce);
+
+    // Retry / subsequent step within the same turn splices cleanly each time.
+    for _ in 0..2 {
+        let req = generation_request(
+            GENERATE,
+            cloud_request_with_tool_image_marker("gemini-4-neon-medium", "call_mcp_tool", &marker),
+        );
+        let rewritten = payload(prompt.rewrite(req, CLOUD_CODE).await.unwrap()).await;
+        let fr = &rewritten["request"]["contents"][2]["parts"][0]["functionResponse"];
+        assert_eq!(
+            fr["parts"],
+            json!([{
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": image.data_base64.as_ref(),
+                }
+            }])
+        );
+    }
+
+    assert_eq!(guard.disarm().unwrap(), 2);
+
+    // After disarm, a subsequent request does not receive the image.
+    let req = generation_request(
+        GENERATE,
+        cloud_request_with_tool_image_marker("gemini-4-neon-medium", "call_mcp_tool", &marker),
+    );
+    let rewritten = payload(prompt.rewrite(req, CLOUD_CODE).await.unwrap()).await;
+    assert!(
+        rewritten["request"]["contents"][2]["parts"][0]["functionResponse"]
+            .get("parts")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn tool_image_ignores_user_text_non_mcp_tools_wrong_model_and_auxiliary_calls() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let guard = prompt
+        .arm_tool_images("gemini-4-neon-medium".to_string())
+        .unwrap();
+    let image = sample_tool_image("img2222222222222");
+    prompt.stage_tool_image(image.clone()).unwrap();
+    let marker = antigravity_tool_image_marker(&image.nonce);
+
+    // 1. Ordinary user text echoing the marker must not splice.
+    let user_text_req = generation_request(
+        GENERATE,
+        cloud_request_with_user_text("gemini-4-neon-medium", &marker),
+    );
+    let rewritten = payload(prompt.rewrite(user_text_req, CLOUD_CODE).await.unwrap()).await;
+    assert_eq!(
+        rewritten["request"]["contents"][0]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // 2. Non-call_mcp_tool functionResponse must not splice.
+    let other_tool_req = generation_request(
+        GENERATE,
+        cloud_request_with_tool_image_marker("gemini-4-neon-medium", "read_file", &marker),
+    );
+    let rewritten = payload(prompt.rewrite(other_tool_req, CLOUD_CODE).await.unwrap()).await;
+    assert!(
+        rewritten["request"]["contents"][2]["parts"][0]["functionResponse"]
+            .get("parts")
+            .is_none()
+    );
+
+    // 3. Wrong model must not splice.
+    let wrong_model_req = generation_request(
+        GENERATE,
+        cloud_request_with_tool_image_marker("gemini-4-flash", "call_mcp_tool", &marker),
+    );
+    let rewritten = payload(prompt.rewrite(wrong_model_req, CLOUD_CODE).await.unwrap()).await;
+    assert!(
+        rewritten["request"]["contents"][2]["parts"][0]["functionResponse"]
+            .get("parts")
+            .is_none()
+    );
+
+    // 4. Auxiliary call without tools must not splice.
+    let mut aux_body =
+        cloud_request_with_tool_image_marker("gemini-4-neon-medium", "call_mcp_tool", &marker);
+    aux_body["request"].as_object_mut().unwrap().remove("tools");
+    let aux_req = generation_request(GENERATE, aux_body);
+    let rewritten = payload(prompt.rewrite(aux_req, CLOUD_CODE).await.unwrap()).await;
+    assert!(
+        rewritten["request"]["contents"][2]["parts"][0]["functionResponse"]
+            .get("parts")
+            .is_none()
+    );
+
+    assert_eq!(guard.disarm().unwrap(), 0);
+}
+
+#[tokio::test]
+async fn duplicate_function_response_marker_fails_closed_and_stale_guard_drop_is_safe() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let stale_guard = prompt
+        .arm_tool_images("gemini-4-neon-medium".to_string())
+        .unwrap();
+    let active_guard = prompt
+        .arm_tool_images("gemini-4-neon-medium".to_string())
+        .unwrap();
+    drop(stale_guard);
+
+    let image = sample_tool_image("img3333333333333");
+    prompt.stage_tool_image(image.clone()).unwrap();
+    let marker = antigravity_tool_image_marker(&image.nonce);
+
+    let dup_body = json!({
+        "model": "gemini-4-neon-medium",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [
+                    {"functionResponse": {"name": "call_mcp_tool", "response": {"output": marker}}},
+                    {"functionResponse": {"name": "call_mcp_tool", "response": {"output": marker}}}
+                ]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "call_mcp_tool"}]}]
+        }
+    });
+    let err = prompt
+        .rewrite(generation_request(GENERATE, dup_body), CLOUD_CODE)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("ambiguous"),
+        "unexpected err: {err}"
+    );
+    assert_eq!(active_guard.disarm().unwrap(), 0);
+}
+
+#[test]
+fn staging_tool_image_validates_turn_mime_and_size_cap() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    // Staging without an armed turn fails.
+    assert!(
+        prompt
+            .stage_tool_image(sample_tool_image("unarmed"))
+            .is_err()
+    );
+
+    let _guard = prompt
+        .arm_tool_images("gemini-4-neon-medium".to_string())
+        .unwrap();
+
+    // Non-image MIME type rejected.
+    let bad_mime = AntigravityToolImageAttachment {
+        nonce: "badmime".to_string(),
+        mime_type: "text/plain".to_string(),
+        data_base64: Arc::from("aGVsbG8="),
+    };
+    assert!(prompt.stage_tool_image(bad_mime).is_err());
+
+    // Oversized image rejected.
+    let huge = AntigravityToolImageAttachment {
+        nonce: "huge".to_string(),
+        mime_type: "image/png".to_string(),
+        data_base64: Arc::from("A".repeat(MAX_STAGED_TOOL_IMAGE_BYTES + 1)),
+    };
+    assert!(prompt.stage_tool_image(huge).is_err());
+}
+
+#[tokio::test]
+async fn staged_tool_image_splices_into_model_role_function_response_like_antigravity_wire() {
+    let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+    let guard = prompt
+        .arm_tool_images("gemini-4-neon-high".to_string())
+        .unwrap();
+    let image = sample_tool_image("img4444444444444");
+    prompt.stage_tool_image(image.clone()).unwrap();
+    let marker = antigravity_tool_image_marker(&image.nonce);
+
+    // Antigravity emits functionResponse entries under role="model".
+    let body = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": "Look at the image"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "call_mcp_tool", "args": {"ServerName": "chaos", "ToolName": "view_image"}}}]},
+                {"role": "model", "parts": [{"functionResponse": {"name": "call_mcp_tool", "response": {"output": marker}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "call_mcp_tool"}]}]
+        }
+    });
+    let rewritten = payload(
+        prompt
+            .rewrite(generation_request(GENERATE, body), CLOUD_CODE)
+            .await
+            .unwrap(),
+    )
+    .await;
+    let fr = &rewritten["request"]["contents"][2]["parts"][0]["functionResponse"];
+    assert_eq!(
+        fr["parts"],
+        json!([{
+            "inlineData": {
+                "mimeType": "image/png",
+                "data": image.data_base64.as_ref(),
+            }
+        }])
+    );
+
+    // Model text echoing the same marker in a non-functionResponse part must not trigger ambiguity or splice.
+    let mut with_model_text = json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": "Look at the image"}]},
+                {"role": "model", "parts": [{"text": marker.clone()}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "call_mcp_tool"}]}]
+        }
+    });
+    let rewritten_text_only = payload(
+        prompt
+            .rewrite(
+                generation_request(GENERATE, with_model_text.take()),
+                CLOUD_CODE,
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        rewritten_text_only["request"]["contents"][1]["parts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    assert_eq!(guard.disarm().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn disarm_or_replacement_during_body_read_fails_rewrite_without_sending_tool_image() {
+    use futures::stream;
+    use std::convert::Infallible;
+
+    for replace_with_new_turn in [false, true] {
+        let prompt = AntigravitySystemPrompt::new("ChaOS instructions".to_string());
+        let guard = prompt
+            .arm_tool_images("gemini-4-neon-high".to_string())
+            .unwrap();
+        let image = sample_tool_image("imgrace123456789");
+        prompt.stage_tool_image(image.clone()).unwrap();
+        let marker = antigravity_tool_image_marker(&image.nonce);
+        let body_bytes = serde_json::to_vec(&cloud_request_with_tool_image_marker(
+            "gemini-4-neon-high",
+            "call_mcp_tool",
+            &marker,
+        ))
+        .unwrap();
+        let (first_half, second_half) = body_bytes.split_at(body_bytes.len() / 2);
+        let first_half = rama::bytes::Bytes::copy_from_slice(first_half);
+        let second_half = rama::bytes::Bytes::copy_from_slice(second_half);
+
+        let (first_chunk_polled_tx, first_chunk_polled_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let body = Body::from_stream(stream::unfold(
+            Some((
+                first_half,
+                second_half,
+                Some(first_chunk_polled_tx),
+                Some(release_rx),
+            )),
+            |state| async move {
+                let (first, second, polled_tx, release_rx) = state?;
+                if let Some(polled_tx) = polled_tx {
+                    let _ = polled_tx.send(());
+                    return Some((
+                        Ok::<_, Infallible>(first),
+                        Some((rama::bytes::Bytes::new(), second, None, release_rx)),
+                    ));
+                }
+                if let Some(release_rx) = release_rx {
+                    let _ = release_rx.await;
+                    return Some((Ok::<_, Infallible>(second), None));
+                }
+                None
+            },
+        ));
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(GENERATE)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
+            .unwrap();
+
+        let prompt_for_rewrite = prompt.clone();
+        let rewrite_task =
+            tokio::spawn(async move { prompt_for_rewrite.rewrite(req, CLOUD_CODE).await });
+
+        first_chunk_polled_rx.await.unwrap();
+        let _replacement = if replace_with_new_turn {
+            Some(
+                prompt
+                    .arm_tool_images("gemini-4-neon-high".to_string())
+                    .unwrap(),
+            )
+        } else {
+            assert_eq!(guard.disarm().unwrap(), 0);
+            None
+        };
+        let _ = release_tx.send(());
+
+        let err = rewrite_task.await.unwrap().unwrap_err();
+        assert!(
+            err.to_string().contains("authorization expired"),
+            "unexpected err: {err}"
+        );
+    }
+}

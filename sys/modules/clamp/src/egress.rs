@@ -55,6 +55,9 @@ mod prompt;
 pub use prompt::AntigravityAudioAttachment;
 pub use prompt::AntigravityAudioGuard;
 use prompt::AntigravitySystemPrompt;
+pub use prompt::AntigravityToolImageAttachment;
+pub use prompt::AntigravityToolImageGuard;
+pub use prompt::antigravity_tool_image_marker;
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
 /// endpoint, and the generative-language surface. Everything else the binary
@@ -301,6 +304,39 @@ impl EgressProxy {
             .as_ref()
             .ok_or("clamp egress was started without Antigravity prompt rewriting")?
             .disarm_audio()
+    }
+
+    /// Authorize turn-scoped tool-returned images on `authorized_model` for the
+    /// active Antigravity turn until the returned guard is disarmed or dropped.
+    pub fn arm_antigravity_tool_images(
+        &self,
+        authorized_model: String,
+    ) -> Result<AntigravityToolImageGuard, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .arm_tool_images(authorized_model)
+    }
+
+    /// Stage a validated tool-returned image for splicing into its matching
+    /// `functionResponse` during the active Antigravity turn.
+    pub fn stage_antigravity_tool_image(
+        &self,
+        attachment: AntigravityToolImageAttachment,
+    ) -> Result<(), BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .stage_tool_image(attachment)
+    }
+
+    /// Clear any turn-scoped Antigravity tool images and return the number of
+    /// main generation requests that received an image splice during the turn.
+    pub fn disarm_antigravity_tool_images(&self) -> Result<usize, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .disarm_tool_images()
     }
 
     /// Stop the proxy.

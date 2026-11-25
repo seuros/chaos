@@ -188,11 +188,16 @@ async fn handle_request(
             match dispatch_tool_call(Arc::clone(&session), turn_context, router, &name, arguments)
                 .await
             {
-                Ok((output, structured_output)) => ClampBridgeResponse::ToolResult {
-                    output: Box::new(output),
-                    structured_output,
-                    notices: take_steered_notices(&session).await,
-                },
+                Ok((mut output, structured_output)) => {
+                    if let Err(err) = stage_antigravity_tool_images(&session, &mut output).await {
+                        return ClampBridgeResponse::Error { message: err };
+                    }
+                    ClampBridgeResponse::ToolResult {
+                        output: Box::new(output),
+                        structured_output,
+                        notices: take_steered_notices(&session).await,
+                    }
+                }
                 Err(err) => ClampBridgeResponse::Error { message: err },
             }
         }
@@ -383,6 +388,65 @@ async fn dispatch_tool_call(
         .map_err(|err| format!("tool execution failed: {err}"))?;
     let structured_output = output.result.structured_output();
     Ok((output.into_response(), structured_output))
+}
+
+/// Under the Antigravity clamp, stage any tool-returned `InputImage` blocks on
+/// the session's egress proxy and replace them with per-image nonce markers so
+/// `agy` does not offload binary MCP images to disk behind a blocked native
+/// `read_file`. Non-Antigravity clamps leave `output` untouched.
+async fn stage_antigravity_tool_images(
+    session: &Arc<crate::chaos::Session>,
+    output: &mut ResponseInputItem,
+) -> Result<(), String> {
+    use chaos_ipc::models::FunctionCallOutputBody;
+    use chaos_ipc::models::FunctionCallOutputContentItem;
+
+    if !session.services.model_client.is_clamped()
+        || session.services.model_client.clamp_backend() != crate::config::ClampBackend::Antigravity
+    {
+        return Ok(());
+    }
+
+    let items = match output {
+        ResponseInputItem::FunctionCallOutput { output, .. }
+        | ResponseInputItem::CustomToolCallOutput { output, .. } => match &mut output.body {
+            FunctionCallOutputBody::ContentItems(items) => items,
+            FunctionCallOutputBody::Text(_) => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+
+    for item in items.iter_mut() {
+        let FunctionCallOutputContentItem::InputImage { image_url, .. } = item else {
+            continue;
+        };
+        let Some(data_url) = image_url.strip_prefix("data:") else {
+            return Err("clamp bridge image output must use a base64 data URL".to_string());
+        };
+        let Some((metadata, data)) = data_url.split_once(',') else {
+            return Err("clamp bridge image output contains an invalid data URL".to_string());
+        };
+        let Some(mime_type) = metadata.strip_suffix(";base64") else {
+            return Err("clamp bridge image output must be base64 encoded".to_string());
+        };
+        let nonce = uuid::Uuid::new_v4().simple().to_string();
+        let staged = session
+            .services
+            .model_client
+            .stage_antigravity_tool_image(chaos_clamp::AntigravityToolImageAttachment {
+                nonce: nonce.clone(),
+                mime_type: mime_type.to_owned(),
+                data_base64: Arc::from(data),
+            })
+            .await?;
+        if staged {
+            *item = FunctionCallOutputContentItem::InputText {
+                text: chaos_clamp::antigravity_tool_image_marker(&nonce),
+            };
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -947,7 +947,7 @@ impl ModelClientSession {
             };
             // The CLI is only the transport: the canonical system prompt goes
             // into its provider request, never into the user-content frame.
-            let audio_guard = {
+            let media_guards = {
                 let egress = clamp_state.antigravity_egress.lock().await;
                 match egress.as_ref() {
                     Some(egress) => {
@@ -956,16 +956,25 @@ impl ModelClientSession {
                         {
                             Err(error.to_string())
                         } else {
-                            egress
-                                .arm_antigravity_audio(model.clone(), audio_attachments.clone())
-                                .map_err(|error| error.to_string())
+                            match (
+                                egress.arm_antigravity_audio(
+                                    model.clone(),
+                                    audio_attachments.clone(),
+                                ),
+                                egress.arm_antigravity_tool_images(model.clone()),
+                            ) {
+                                (Ok(audio_guard), Ok(tool_images_guard)) => {
+                                    Ok((audio_guard, tool_images_guard))
+                                }
+                                (Err(error), _) | (_, Err(error)) => Err(error.to_string()),
+                            }
                         }
                     }
                     None => Err("Antigravity system-prompt egress is missing".to_string()),
                 }
             };
-            let audio_guard = match audio_guard {
-                Ok(guard) => guard,
+            let (audio_guard, tool_images_guard) = match media_guards {
+                Ok(guards) => guards,
                 Err(error) => {
                     let _ = tx_event
                         .send(Err(chaos_parrot::error::ApiError::Stream(error)))
@@ -1053,6 +1062,14 @@ impl ModelClientSession {
                     return;
                 }
             };
+            if let Err(error) = tool_images_guard.disarm() {
+                let _ = tx_event
+                    .send(Err(chaos_parrot::error::ApiError::Stream(
+                        error.to_string(),
+                    )))
+                    .await;
+                return;
+            }
 
             match turn {
                 Ok(turn) => {

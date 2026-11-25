@@ -9,6 +9,16 @@ should. The build identifies its source commit rather than a patch level.
 
 ## [Unreleased]
 
+## [47.17.1] - 2026-11-25
+
+### Added
+- Trusted projects auto-connect `mise mcp` unless explicitly configured.
+- Trusted workspace-write sessions allow the mbx cache on macOS and Linux,
+  plus the cache-agent socket on macOS when network policy permits.
+
+### Fixed
+- Machine recovery reports health without prompting the model for another turn.
+
 ## [47.17.0] - 2026-11-24
 
 ### Changed

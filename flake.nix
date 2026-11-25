@@ -3,9 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # The project pins its toolchain in rust-toolchain.toml (currently 1.98.0),
-    # which is newer than nixpkgs' rustc. The rust overlay builds with the
-    # exact pinned compiler; see `makeRustPlatform` below.
+    # Use the compiler pinned in rust-toolchain.toml for builds and dev shells.
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";

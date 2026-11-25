@@ -615,7 +615,7 @@ pub(crate) fn create_view_image_tool(can_request_original_image_detail: bool) ->
 
     ToolSpec::Function(ResponsesApiTool {
         name: VIEW_IMAGE_TOOL_NAME.to_string(),
-        description: "View a local image from the filesystem (only use if given a full filepath by the user, and the image isn't already attached to the thread context within <image ...> tags)."
+        description: "View a local image from the filesystem. Use only when the user gives a full filepath, or to inspect a local copy of an image shared in the current conversation (for example, downloaded through authorized access to an attachment link). Skip it if the image is already in your context within <image ...> tags."
             .to_string(),
         strict: false,
         defer_loading: None,

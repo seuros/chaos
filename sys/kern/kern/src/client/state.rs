@@ -430,6 +430,32 @@ impl ModelClient {
         }
     }
 
+    /// Return a direct staging handle for the currently armed Antigravity
+    /// tool-image slot on this session's active egress proxy, if any.
+    pub(crate) async fn active_antigravity_tool_image_staging_handle(
+        &self,
+    ) -> std::result::Result<Option<chaos_clamp::AntigravityToolImageStagingHandle>, String> {
+        if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
+            return Ok(None);
+        }
+        let guard = self.state.antigravity_egress.lock().await;
+        let Some(egress) = guard.as_ref() else {
+            return Ok(None);
+        };
+        egress
+            .active_antigravity_tool_image_staging_handle()
+            .map_err(|error| error.to_string())
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn replace_antigravity_egress_for_test(
+        &self,
+        proxy: Option<chaos_clamp::EgressProxy>,
+    ) -> Option<chaos_clamp::EgressProxy> {
+        let mut guard = self.state.antigravity_egress.lock().await;
+        std::mem::replace(&mut *guard, proxy)
+    }
+
     /// Get the initialization response from the clamped subprocess.
     pub async fn clamp_init_response(&self) -> Option<serde_json::Value> {
         let guard = self.state.clamp_transport.lock().await;

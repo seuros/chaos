@@ -55,6 +55,10 @@ mod prompt;
 pub use prompt::AntigravityAudioAttachment;
 pub use prompt::AntigravityAudioGuard;
 use prompt::AntigravitySystemPrompt;
+pub use prompt::AntigravityToolImageAttachment;
+pub use prompt::AntigravityToolImageGuard;
+pub use prompt::AntigravityToolImageStagingHandle;
+pub use prompt::antigravity_tool_image_marker;
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
 /// endpoint, and the generative-language surface. Everything else the binary
@@ -303,6 +307,38 @@ impl EgressProxy {
             .disarm_audio()
     }
 
+    /// Authorize turn-scoped tool-returned images on `authorized_model` for the
+    /// active Antigravity turn until the returned guard is disarmed or dropped.
+    pub fn arm_antigravity_tool_images(
+        &self,
+        authorized_model: String,
+    ) -> Result<AntigravityToolImageGuard, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .arm_tool_images(authorized_model)
+    }
+
+    /// Return a direct staging handle for the currently armed Antigravity
+    /// tool-image slot on this proxy instance, if any.
+    pub fn active_antigravity_tool_image_staging_handle(
+        &self,
+    ) -> Result<Option<AntigravityToolImageStagingHandle>, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .active_tool_image_staging_handle()
+    }
+
+    /// Clear any turn-scoped Antigravity tool images and return the number of
+    /// main generation requests that received an image splice during the turn.
+    pub fn disarm_antigravity_tool_images(&self) -> Result<usize, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .disarm_tool_images()
+    }
+
     /// Stop the proxy.
     pub fn shutdown(self) {
         self.task.abort();
@@ -438,25 +474,27 @@ async fn inspect_and_forward(
         return Ok(error_response(StatusCode::FORBIDDEN));
     }
 
-    let req = if let Some(prompt) = &state.policy.system_prompt {
-        match prompt.rewrite(req, &host).await {
-            Ok(req) => req,
+    let (req, redacted_record_body) = if let Some(prompt) = &state.policy.system_prompt {
+        match prompt.rewrite_for_egress(req, &host).await {
+            Ok(rewritten) => (rewritten.request, rewritten.redacted_record_body),
             Err(err) => {
                 warn!("egress: system-prompt replacement failed: {err}");
                 return Ok(error_response(StatusCode::BAD_GATEWAY));
             }
         }
     } else {
-        req
+        (req, None)
     };
-    // Record the effective provider request, not the discarded CLI prompt.
-    let (mut upstream_req, record) = match RecordParts::capture(req).await {
-        Ok(captured) => captured,
-        Err(err) => {
-            warn!("egress: failed to read request body: {err}");
-            return Ok(error_response(StatusCode::BAD_GATEWAY));
-        }
-    };
+    // Record the effective provider request (with spliced tool images redacted),
+    // not the discarded CLI prompt.
+    let (mut upstream_req, record) =
+        match RecordParts::capture_with_request(req, redacted_record_body).await {
+            Ok(captured) => captured,
+            Err(err) => {
+                warn!("egress: failed to read request body: {err}");
+                return Ok(error_response(StatusCode::BAD_GATEWAY));
+            }
+        };
     if state.policy.gateway.is_some() {
         // HTTP/1 requests inside CONNECT can use origin-form targets.
         if upstream_req.uri().scheme().is_none() {

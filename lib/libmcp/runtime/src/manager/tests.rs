@@ -93,8 +93,36 @@ fn storing_managed_tools_moves_the_original_vector_and_schema() {
 }
 
 #[test]
+fn headless_recognizes_only_the_single_approval_field() -> anyhow::Result<()> {
+    let mut schema = serde_json::json!({
+        "type": "object", "properties": {"approve": {"type": "boolean"}}, "required": ["approve"]
+    });
+    for expected in [true, false] {
+        let request = serde_json::from_value(serde_json::json!({
+            "message": "Push?", "requestedSchema": schema
+        }))?;
+        assert_eq!(
+            super::elicitation::approval_content(&request),
+            expected.then(|| serde_json::json!({"approve":true}))
+        );
+        schema["properties"]["reason"] = serde_json::json!({"type":"string"});
+    }
+    let confirm = serde_json::from_value(serde_json::json!({
+        "message": "Confirm?",
+        "requestedSchema": {
+            "type": "object", "properties": {"confirm": {"type":"boolean","default":false}}
+        }
+    }))?;
+    assert_eq!(
+        super::elicitation::approval_content(&confirm),
+        Some(serde_json::json!({"confirm":true}))
+    );
+    Ok(())
+}
+
+#[test]
 fn elicitation_granular_policy_defaults_to_prompting() {
-    assert!(elicitation_is_rejected_by_policy(ApprovalPolicy::Headless));
+    assert!(!elicitation_is_rejected_by_policy(ApprovalPolicy::Headless));
     assert!(!elicitation_is_rejected_by_policy(
         ApprovalPolicy::Interactive
     ));

@@ -278,16 +278,26 @@ impl ClientHandler for ChaosClientHandler {
         request: CreateElicitationRequest,
     ) -> ClientHandlerResultFuture<'_, CreateElicitationResponse> {
         Box::pin(async move {
-            if self
+            let policy = *self
                 .elicitation_requests
                 .approval_policy
                 .lock()
-                .is_ok_and(|policy| elicitation_is_rejected_by_policy(*policy))
-            {
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let headless = policy == chaos_ipc::protocol::ApprovalPolicy::Headless;
+            if headless || elicitation_is_rejected_by_policy(policy) {
+                let content = if headless {
+                    super::elicitation::approval_content(&request)
+                } else {
+                    None
+                };
                 return Ok(TaskOrResult::Result(
                     mcp_guest::protocol::CreateElicitationResult {
-                        action: ElicitationAction::Decline,
-                        content: None,
+                        action: if content.is_some() {
+                            ElicitationAction::Accept
+                        } else {
+                            ElicitationAction::Decline
+                        },
+                        content,
                     },
                 ));
             }

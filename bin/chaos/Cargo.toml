@@ -91,6 +91,3 @@ pretty_assertions = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
 vt100 = { workspace = true }
-
-[package.metadata.cargo-shear]
-ignored = ["sqlx", "chaos-sysctl"]

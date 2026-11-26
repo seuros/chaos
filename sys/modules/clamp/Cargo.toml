@@ -39,4 +39,4 @@ tokio-util = { workspace = true, features = ["codec"] }
 
 [package.metadata.cargo-shear]
 # Examples reuse acp-guest's support module through #[path] outside this crate.
-ignored = ["chaos-abi", "chaos-ipc", "libc", "tokio-util"]
+ignored = ["chaos-abi", "tokio-util"]

@@ -130,10 +130,6 @@ resolver = "3"
 
 [workspace.package]
 version = "47.17.1"
-# Track the edition for all workspace crates in one place. Individual
-# crates can still override this value, but keeping it here means new
-# crates created with `cargo new -w ...` automatically inherit the 2024
-# edition.
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -158,11 +154,9 @@ chaos-sh = { path = "sys/exec/sh" }
 chaos-doas = { path = "sys/exec/doas" }
 
 # Internal — secure/
-chaos-warden = { path = "secure/warden" }
 chaos-watchdog = { path = "secure/watchdog" }
 chaos-parole = { path = "secure/parole" }
 toolchain-access = { path = "secure/toolchain-access" }
-chaos-contraband = { path = "secure/contraband" }
 chaos-selinux = { path = "secure/selinux" }
 chaos-vault = { path = "secure/vault" }
 
@@ -411,7 +405,6 @@ tree-sitter = "0.27.1"
 tree-sitter-bash = "0.25"
 tui-input = { version = "0.15.5", default-features = false, features = ["crossterm"] }
 tui-tree-widget = "0.24.1"
-# uds_windows removed — Chaos targets Linux/macOS/FreeBSD only
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.3"
 url = "2"
@@ -474,34 +467,17 @@ unnecessary_sort_by = "deny"
 unnecessary_to_owned = "deny"
 unwrap_used = "deny"
 
-# cargo-shear cannot see workspace-level deps used only by member crates,
-# platform-specific deps, or deps used only via feature flags / proc macros.
 [workspace.metadata.cargo-shear]
 ignored = [
     "icu_provider",
     "openssl-sys",
-    "chaos-vault",
-    # workspace re-exports — shear cannot trace through workspace dep graph
     "chaos-watchdog",
-    "chaos-snitch",
-    "flate2",
-    "chaos-contraband",
     "ratatui-macros",
-    "zeroize",
-    "include_dir",
-    "chaos-warden",
-    "tar",
     "opentelemetry_sdk",
-    "chaos-ration",
-    "chaos-libration",
-    "chaos-minions",
-    "chaos-parole",
-    "chaos-recall",
 ]
 
 [profile.dev]
-# Full DWARF is expensive for this 86-crate workspace. Level 1 keeps useful
-# file/line backtraces while reducing compile, link, memory, and disk costs.
+# Keep line numbers for backtraces without full debug info.
 debug = 1
 
 [profile.test]
@@ -509,24 +485,14 @@ debug = 1
 
 [profile.debug-install]
 inherits = "dev"
-# Reduce generated code and unwind metadata for the installed binary.
-# Debug info and unwind tables are separate; keep both for diagnostics.
 opt-level = 1
 
 [profile.release]
-# ThinLTO keeps ~95% of the runtime win of FatLTO on chaos's workload
-# (I/O-bound: tokio + rustls + model streaming + IPC, with hot CPU work
-# already inside opt-level=3 crates like serde_json / tree-sitter / rustls).
-# FatLTO + codegen-units=1 cost ~5 min of serial linking on a 20-core box
-# for <1% end-to-end gain — pure build-time theater for this codebase.
-# 8 codegen units unlock parallel linking while leaving headroom for
-# cross-unit optimization.
+# Use ThinLTO to retain parallel linking.
 lto = "thin"
 split-debuginfo = "off"
 strip = "symbols"
 codegen-units = 8
 
 [profile.ci-test]
-debug = 1         # Reduce debug symbol size
 inherits = "test"
-opt-level = 0

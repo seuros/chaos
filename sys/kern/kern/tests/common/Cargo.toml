@@ -35,4 +35,4 @@ chaos-test-fixtures = { workspace = true }
 pretty_assertions = { workspace = true }
 
 [package.metadata.cargo-shear]
-ignored = ["sha1", "rama"]
+ignored = ["sha1"]

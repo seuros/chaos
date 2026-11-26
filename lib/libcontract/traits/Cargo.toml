@@ -22,4 +22,4 @@ mcp-host = { workspace = true }
 workspace = true
 
 [package.metadata.cargo-shear]
-ignored = ["tokio", "serde"]
+ignored = ["serde"]

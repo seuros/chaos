@@ -40,4 +40,4 @@ tempfile = { workspace = true }
 # Required because:
 # `icu_provider`: contains a required `sync` feature for `icu_decimal`
 # `strum`: as strum_macros in non-nightly builds
-ignored = ["icu_provider", "strum"]
+ignored = ["icu_provider"]

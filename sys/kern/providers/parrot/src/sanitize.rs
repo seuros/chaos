@@ -32,6 +32,8 @@ pub enum JsonSchema {
     String {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
+        #[serde(rename = "enum", default, skip_serializing_if = "Vec::is_empty")]
+        values: Vec<String>,
     },
     /// Preserve integer constraints: tool handlers may reject floating-point JSON.
     Integer {
@@ -58,6 +60,15 @@ pub enum JsonSchema {
         )]
         additional_properties: Option<AdditionalProperties>,
     },
+}
+
+impl JsonSchema {
+    pub fn string(description: Option<String>) -> Self {
+        Self::String {
+            description,
+            values: Vec::new(),
+        }
+    }
 }
 
 impl From<&JsonSchema> for JsonValue {
@@ -270,6 +281,7 @@ fn collapse_single_schema_combiners(map: &serde_json::Map<String, JsonValue>) ->
         if let Some(options) = map.get(combiner).and_then(JsonValue::as_array) {
             let branch = select_single_non_null_branch(options)
                 .cloned()
+                .or_else(|| merge_string_choices(options))
                 .or_else(|| merge_object_schema_branches(options));
             if let Some(branch) = branch {
                 return Some(merge_schema_branch(map, combiner, branch));
@@ -284,6 +296,25 @@ fn collapse_single_schema_combiners(map: &serde_json::Map<String, JsonValue>) ->
     }
 
     None
+}
+
+/// A union is a finite set of strings only when *every* non-null branch is
+/// constrained. In particular, don't narrow a free-form string to a sibling's tag.
+fn merge_string_choices(options: &[JsonValue]) -> Option<JsonValue> {
+    let mut choices = Vec::new();
+    for option in options.iter().filter(|option| !is_null_schema(option)) {
+        let values = match option.get("const") {
+            Some(value) => std::slice::from_ref(value),
+            None => option.get("enum")?.as_array()?.as_slice(),
+        };
+        for value in values {
+            let value = value.as_str()?;
+            if !choices.contains(&value) {
+                choices.push(value);
+            }
+        }
+    }
+    (!choices.is_empty()).then(|| json!({"type": "string", "enum": choices}))
 }
 
 /// The limited wire model cannot express tagged unions. Keep their object
@@ -317,8 +348,8 @@ fn merge_object_schema_branches(options: &[JsonValue]) -> Option<JsonValue> {
         for (name, schema) in branch.get("properties")?.as_object()? {
             if let Some(existing) = properties.get_mut(name) {
                 if existing != schema {
-                    // Constraints such as a discriminator's const differ by
-                    // variant. Keep the common type, not the first const.
+                    // Preserve alternatives (including discriminator values)
+                    // for the combiner pass instead of keeping the first schema.
                     let common_type = existing
                         .get("type")
                         .filter(|ty| Some(*ty) == schema.get("type"))
@@ -461,6 +492,20 @@ fn sanitize_json_schema_subset(value: &mut JsonValue) {
             let ty = ty.unwrap_or_else(|| "string".to_string());
             map.insert("type".to_string(), JsonValue::String(ty.to_string()));
 
+            if ty == "string" {
+                if let Some(value) = map.get("const").and_then(JsonValue::as_str) {
+                    map.insert("enum".to_string(), json!([value]));
+                } else if let Some(values) = map.get_mut("enum") {
+                    // Drop unsupported mixed-type enums rather than rejecting the tool.
+                    if !values
+                        .as_array()
+                        .is_some_and(|v| v.iter().all(JsonValue::is_string))
+                    {
+                        map.remove("enum");
+                    }
+                }
+            }
+
             // Ensure object schemas have properties map
             if ty == "object" {
                 if !map.contains_key("properties") {
@@ -487,3 +532,6 @@ fn sanitize_json_schema_subset(value: &mut JsonValue) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests;

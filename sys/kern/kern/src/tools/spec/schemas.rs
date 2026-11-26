@@ -25,7 +25,8 @@ pub(crate) fn exec_output_schema() -> JsonValue {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier for polling command lifecycle through tasks:// resources. Omit server for internal tasks."
+                "description": "Task identifier for polling command lifecycle \
+                    through tasks:// resources. Omit server for internal tasks."
             },
             "original_token_count": {
                 "type": "integer",
@@ -86,7 +87,8 @@ pub(crate) fn spawn_agent_output_schema() -> JsonValue {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier for polling agent lifecycle through tasks:// resources. Omit server for internal tasks."
+                "description": "Task identifier for polling agent lifecycle \
+                    through tasks:// resources. Omit server for internal tasks."
             }
         },
         "required": ["agent_id", "nickname", "task_id"],
@@ -130,7 +132,8 @@ pub(crate) fn wait_output_schema() -> JsonValue {
             },
             "timed_out": {
                 "type": "boolean",
-                "description": "Whether the wait call returned due to timeout before any agent reached a final status."
+                "description": "Whether the wait call returned due to timeout \
+                    before any agent reached a final status."
             }
         },
         "required": ["status", "timed_out"],
@@ -168,14 +171,14 @@ pub(crate) fn create_file_system_permissions_schema() -> JsonSchema {
             (
                 "read".to_string(),
                 JsonSchema::Array {
-                    items: Box::new(JsonSchema::String { description: None }),
+                    items: Box::new(JsonSchema::string(None)),
                     description: Some("Absolute paths to grant read access to.".to_string()),
                 },
             ),
             (
                 "write".to_string(),
                 JsonSchema::Array {
-                    items: Box::new(JsonSchema::String { description: None }),
+                    items: Box::new(JsonSchema::string(None)),
                     description: Some("Absolute paths to grant write access to.".to_string()),
                 },
             ),
@@ -219,34 +222,37 @@ pub(crate) fn create_approval_parameters(
     let mut properties = BTreeMap::from([
         (
             "sandbox_permissions".to_string(),
-            JsonSchema::String {
-                description: Some(
+            JsonSchema::string(Some(
                     if exec_permission_approvals_enabled {
-                        "Sandbox permissions for the command. Use \"with_additional_permissions\" to request additional sandboxed filesystem or network permissions (preferred), or \"require_escalated\" to request running without sandbox restrictions; defaults to \"use_default\"."
+                        "Sandbox permissions for the command. Use \
+                         \"with_additional_permissions\" to request additional \
+                         sandboxed filesystem or network permissions \
+                         (preferred), or \"require_escalated\" to request \
+                         running without sandbox restrictions; defaults to \
+                         \"use_default\"."
                     } else {
-                        "Sandbox permissions for the command. Set to \"require_escalated\" to request running without sandbox restrictions; defaults to \"use_default\"."
+                        "Sandbox permissions for the command. Set to \
+                         \"require_escalated\" to request running without \
+                         sandbox restrictions; defaults to \"use_default\"."
                     }
                     .to_string(),
-                ),
-            },
+                )),
         ),
         (
             "justification".to_string(),
-            JsonSchema::String {
-                description: Some(
+            JsonSchema::string(Some(
                     r#"Only set if sandbox_permissions is \"require_escalated\".
                     Request approval from the user to run this command outside the sandbox.
                     Phrased as a simple question that summarizes the purpose of the
                     command as it relates to the task at hand - e.g. 'Do you want to
                     fetch and pull the latest version of this git branch?'"#
                     .to_string(),
-                ),
-            },
+                )),
         ),
         (
             "prefix_rule".to_string(),
             JsonSchema::Array {
-                items: Box::new(JsonSchema::String { description: None }),
+                items: Box::new(JsonSchema::string(None)),
                 description: Some(
                     r#"Only specify when sandbox_permissions is `require_escalated`.
                         Suggest a prefix command pattern that will allow you to fulfill similar requests from the user in the future.

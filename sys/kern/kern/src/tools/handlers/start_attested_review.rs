@@ -62,7 +62,8 @@ impl ToolHandler for StartAttestedReviewHandler {
             .any(|tool| tool.server_name == server && tool.tool_name == REVIEW_VERDICT_TOOL);
         if !review_sink_available {
             return Err(model_error(&format!(
-                "MCP server `{server}` does not expose `{REVIEW_VERDICT_TOOL}` for the current session"
+                "MCP server `{server}` does not expose `{REVIEW_VERDICT_TOOL}` \
+                 for the current session"
             )));
         }
         let idempotency_key = args.idempotency_key.trim();
@@ -116,61 +117,70 @@ pub(crate) fn tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "instructions".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Blind review artifact and exact acceptance criteria for the reviewer. ChaOS appends the strict review-output contract."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Blind review artifact and exact acceptance criteria for \
+                     the reviewer. ChaOS appends the strict review-output \
+                     contract."
+                    .to_string(),
+            )),
         ),
         (
             "model_provider".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Configured provider/account id. ChaOS resolves its credential identity without exposing it."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Configured provider/account id. ChaOS resolves its \
+                     credential identity without exposing it."
+                    .to_string(),
+            )),
         ),
         (
             "model".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Exact cached model slug. Its canonical family must be known.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Exact cached model slug. Its canonical family \
+                     must be known."
+                    .to_string(),
+            )),
         ),
         (
             "server".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Configured MCP server that currently exposes `submit_review_verdict`."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Configured MCP server that currently exposes \
+                     `submit_review_verdict`."
+                    .to_string(),
+            )),
         ),
         (
             "review_scope".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Stable public review-round scope. Independent reviewer runs for the same round must pass the same value so ChaOS emits one shared opaque run subject."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Stable public review-round scope. Independent reviewer \
+                     runs for the same round must pass the same value so ChaOS \
+                     emits one shared opaque run subject."
+                    .to_string(),
+            )),
         ),
         (
             "idempotency_key".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Stable key allocated by the review service for this exact verdict and any retry."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Stable key allocated by the review service for this exact \
+                     verdict and any retry."
+                    .to_string(),
+            )),
         ),
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: TOOL_NAME.to_string(),
-        description: "Start one host-attested independent review through a selected MCP server's currently visible `submit_review_verdict` capability. ChaOS binds an exact configured provider/account and canonical model family, runs the reviewer with strict structured output, persists the state machine before side effects, and submits the verdict with protected provenance. Pass the same review_scope for every independent reviewer in one review round. Use only after the user authorized independent or multi-model review. Returns a run id immediately; use resume_attested_review until terminal. PRECONDITION: the reviewer has no MCP tools; verdict submission uses THIS session's selection/claim state on `server`, so select and claim the review work on that server yourself first or submission is rejected."
+        description: "Start one host-attested independent review through a \
+            selected MCP server's currently visible `submit_review_verdict` \
+            capability. ChaOS binds an exact configured provider/account and \
+            canonical model family, runs the reviewer with strict structured \
+            output, persists the state machine before side effects, and \
+            submits the verdict with protected provenance. Pass the same \
+            review_scope for every independent reviewer in one review round. \
+            Use only after the user authorized independent or multi-model \
+            review. Returns a run id immediately; use resume_attested_review \
+            until terminal. PRECONDITION: the reviewer has no MCP tools; \
+            verdict submission uses THIS session's selection/claim state on \
+            `server`, so select and claim the review work on that server \
+            yourself first or submission is rejected."
             .to_string(),
         strict: false,
         defer_loading: None,

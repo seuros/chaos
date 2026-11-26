@@ -36,7 +36,7 @@ pub(crate) fn create_tool_group_control_tool(name: &str, catalog: &ToolGroupCata
     let properties = BTreeMap::from([(
         "groups".to_string(),
         JsonSchema::Array {
-            items: Box::new(JsonSchema::String { description: None }),
+            items: Box::new(JsonSchema::string(None)),
             description: Some(format!(
                 "One or more capability group IDs. Available groups:\n{available}"
             )),
@@ -45,7 +45,8 @@ pub(crate) fn create_tool_group_control_tool(name: &str, catalog: &ToolGroupCata
     ToolSpec::Function(ResponsesApiTool {
         name: name.to_string(),
         description: format!(
-            "{action} one or more capability groups for this session. The next model sample sees the updated tool set."
+            "{action} one or more capability groups for this session. The next \
+             model sample sees the updated tool set."
         ),
         strict: false,
         defer_loading: None,
@@ -61,15 +62,20 @@ pub(crate) fn create_tool_group_control_tool(name: &str, catalog: &ToolGroupCata
 pub(crate) fn create_switch_mode_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "mode_id".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "Target mode id from the caller-filtered chaos://modes resource.".to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "Target mode id from the caller-filtered \
+             chaos://modes resource."
+                .to_string(),
+        )),
     )]);
     ToolSpec::Function(ResponsesApiTool {
         name: "switch_mode".to_string(),
-        description: "Switch this ChaOS session to another allowed mode. Read chaos://modes for the caller-filtered catalog. For structural changes to an attached plan, switch to Plan mode yourself and return to execution afterward; no operator intervention is needed for the switch. The next model sample uses the new mode. Cannot change parent, sibling, or global modes."
+        description: "Switch this ChaOS session to another allowed mode. Read \
+            chaos://modes for the caller-filtered catalog. For structural \
+            changes to an attached plan, switch to Plan mode yourself and \
+            return to execution afterward; no operator intervention is needed \
+            for the switch. The next model sample uses the new mode. Cannot \
+            change parent, sibling, or global modes."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -85,16 +91,18 @@ pub(crate) fn create_switch_mode_tool() -> ToolSpec {
 pub(crate) fn create_refresh_models_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "refresh_models".to_string(),
-        description: "Force a fresh model catalog fetch for a configured provider, updating its cache. Equivalent to chaos --provider <provider> models --refresh. Returns provider and models; does not switch the session provider. Read chaos://models for cached catalogs."
+        description: "Force a fresh model catalog fetch for a configured \
+            provider, updating its cache. Equivalent to chaos --provider \
+            <provider> models --refresh. Returns provider and models; does not \
+            switch the session provider. Read chaos://models for cached \
+            catalogs."
             .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties: BTreeMap::from([(
                 "provider".to_string(),
-                JsonSchema::String {
-                    description: Some("Configured provider ID.".to_string()),
-                },
+                JsonSchema::string(Some("Configured provider ID.".to_string())),
             )]),
             required: Some(vec!["provider".to_string()]),
             additional_properties: Some(false.into()),
@@ -104,9 +112,7 @@ pub(crate) fn create_refresh_models_tool() -> ToolSpec {
 }
 
 pub(crate) fn create_hook_tool(name: &str) -> ToolSpec {
-    let string = |description: &str| JsonSchema::String {
-        description: Some(description.into()),
-    };
+    let string = |description: &str| JsonSchema::string(Some(description.into()));
     let integer = |description: &str| JsonSchema::Integer {
         description: Some(description.into()),
     };
@@ -125,44 +131,104 @@ pub(crate) fn create_hook_tool(name: &str) -> ToolSpec {
         }
     }
     if matches!(name, "hooks_create" | "hooks_update" | "hooks_preview") {
-        properties.insert("definition".into(), JsonSchema::Object {
-            properties: BTreeMap::from([
-                ("event".into(), string("session_start, before_turn, or stop.")),
-                ("command".into(), string("Shell command. Use environment references, not embedded secrets.")),
-                ("project".into(), string("Omit for global; use '.' for the current project. Project trust is also required.")),
-                ("matcher".into(), string("Optional event matcher regex; not supported for stop.")),
-                ("timeout_sec".into(), integer("Timeout in seconds, 1..600; default 30.")),
-                ("order".into(), integer("Display/result order within scope; default 0.")),
-                ("status_message".into(), string("Optional status label.")),
-            ]),
-            required: Some(vec!["event".into(), "command".into()]),
-            additional_properties: Some(false.into()),
-        });
+        properties.insert(
+            "definition".into(),
+            JsonSchema::Object {
+                properties: BTreeMap::from([
+                    (
+                        "event".into(),
+                        string("session_start, before_turn, or stop."),
+                    ),
+                    (
+                        "command".into(),
+                        string(
+                            "Shell command. Use environment references, \
+                                not embedded secrets.",
+                        ),
+                    ),
+                    (
+                        "project".into(),
+                        string(
+                            "Omit for global; use '.' for the current project. \
+                             Project trust is also required.",
+                        ),
+                    ),
+                    (
+                        "matcher".into(),
+                        string(
+                            "Optional event matcher regex; \
+                                not supported for stop.",
+                        ),
+                    ),
+                    (
+                        "timeout_sec".into(),
+                        integer("Timeout in seconds, 1..600; default 30."),
+                    ),
+                    (
+                        "order".into(),
+                        integer(
+                            "Display/result order within scope; \
+                                 default 0.",
+                        ),
+                    ),
+                    ("status_message".into(), string("Optional status label.")),
+                ]),
+                required: Some(vec!["event".into(), "command".into()]),
+                additional_properties: Some(false.into()),
+            },
+        );
         if name != "hooks_preview" {
             required.push("definition".into());
         }
     }
     if name != "hooks_delete" {
-        properties.insert("enabled".into(), JsonSchema::Boolean {
-            description: Some("Request recurring execution authorization. Creation defaults to disabled; updates preserve current state.".into()),
-        });
+        properties.insert(
+            "enabled".into(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "Request recurring execution authorization. Creation \
+                     defaults to disabled; updates preserve current state."
+                        .into(),
+                ),
+            },
+        );
         if name == "hooks_set_enabled" {
             required.push("enabled".into());
         }
     }
     if name == "hooks_preview" {
-        properties.insert("action".into(), string("Proposed action: create, update, enable, disable, or delete. Preview never executes or writes."));
+        properties.insert(
+            "action".into(),
+            string(
+                "Proposed action: create, update, enable, disable, or delete. \
+             Preview never executes or writes.",
+            ),
+        );
         required.push("action".into());
     }
     ToolSpec::Function(ResponsesApiTool {
         name: name.into(),
         description: if name == "hooks_preview" {
-            "Validate and preview a database hook change without executing, saving, or approving it. Read chaos://hooks for current definitions."
+            "Validate and preview a database hook change without executing, \
+             saving, or approving it. Read chaos://hooks for current \
+             definitions."
         } else {
-            "Manage a database hook. Requires human form elicitation by default, including disable/delete; the operator may explicitly permit unattended changes with hook_approval_policy=automatic. Under on-request policy, decline, cancellation, timeout, or unavailable elicitation makes no change. Read chaos://hooks first; never bypass approval using shell/SQL. Commands run under the session sandbox at the next hook event."
-        }.into(),
-        strict: false, defer_loading: None,
-        parameters: JsonSchema::Object { properties, required: Some(required), additional_properties: Some(false.into()) },
+            "Manage a database hook. Requires human form elicitation by \
+             default, including disable/delete; the operator may explicitly \
+             permit unattended changes with hook_approval_policy=automatic. \
+             Under on-request policy, decline, cancellation, timeout, or \
+             unavailable elicitation makes no change. Read chaos://hooks \
+             first; never bypass approval using shell/SQL. Commands run under \
+             the session sandbox at the next hook event."
+        }
+        .into(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(required),
+            additional_properties: Some(false.into()),
+        },
         output_schema: None,
     })
 }
@@ -171,26 +237,33 @@ pub(crate) fn create_compaction_control_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "action".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Action to request. Use `compact_now` to compact at the next safe turn-loop boundary, or `defer_once` to extend only the current pressure window to Chaos's fixed safety ceiling."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Action to request. Use `compact_now` to compact at the \
+                     next safe turn-loop boundary, or `defer_once` to extend \
+                     only the current pressure window to Chaos's fixed safety \
+                     ceiling."
+                    .to_string(),
+            )),
         ),
         (
             "window_id".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "The current compaction_reflex window_id. Required for `defer_once`; optional for `compact_now`, but if supplied it must be current."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "The current compaction_reflex window_id. Required for \
+                     `defer_once`; optional for `compact_now`, but if supplied \
+                     it must be current."
+                    .to_string(),
+            )),
         ),
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: "compaction_control".to_string(),
-        description: "Exercise bounded control over this session's automatic compaction timing. `defer_once` is available only after the current compaction reflex, cannot stack, and never overrides Chaos's fixed safety ceiling. `compact_now` may be requested at any time; when agent-managed titles are available, review whether the current session title is still accurate before requesting it. Doing nothing means continue with normal automatic compaction."
+        description: "Exercise bounded control over this session's automatic \
+            compaction timing. `defer_once` is available only after the \
+            current compaction reflex, cannot stack, and never overrides \
+            Chaos's fixed safety ceiling. `compact_now` may be requested at \
+            any time; when agent-managed titles are available, review whether \
+            the current session title is still accurate before requesting it. \
+            Doing nothing means continue with normal automatic compaction."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -206,16 +279,19 @@ pub(crate) fn create_compaction_control_tool() -> ToolSpec {
 pub(crate) fn create_set_session_title_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "title".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "A short, concrete, distinctive 2-6 word title naming the session's primary work."
-                    .to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "A short, concrete, distinctive 2-6 word title naming the \
+             session's primary work."
+                .to_string(),
+        )),
     )]);
     ToolSpec::Function(ResponsesApiTool {
         name: "set_session_title".to_string(),
-        description: "Name the current Chaos session so the user can identify its terminal tab and resume entry. Use this once the primary work is clear, and update it only when the session's purpose materially changes. Choose a distinctive title another session would not plausibly share. User-authored names cannot be replaced."
+        description: "Name the current Chaos session so the user can identify \
+            its terminal tab and resume entry. Use this once the primary work \
+            is clear, and update it only when the session's purpose materially \
+            changes. Choose a distinctive title another session would not \
+            plausibly share. User-authored names cannot be replaced."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -234,7 +310,10 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
             "before_seq".to_string(),
             JsonSchema::Integer {
                 description: Some(
-                    "Exclusive sequence cursor returned by an earlier call. When omitted, reads immediately before the latest compaction, or from the journal end if no compaction has occurred."
+                    "Exclusive sequence cursor returned by an earlier call. \
+                     When omitted, reads immediately before the latest \
+                     compaction, or from the journal end if no compaction has \
+                     occurred."
                         .to_string(),
                 ),
             },
@@ -252,7 +331,8 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
             "max_bytes".to_string(),
             JsonSchema::Integer {
                 description: Some(
-                    "Approximate maximum transcript text bytes to return. Defaults to 24000 and is capped at 64000."
+                    "Approximate maximum transcript text bytes to return. \
+                     Defaults to 24000 and is capped at 64000."
                         .to_string(),
                 ),
             },
@@ -260,7 +340,11 @@ pub(crate) fn create_read_session_history_tool() -> ToolSpec {
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: "read_session_history".to_string(),
-        description: "Read a bounded page of this agent's own canonical session transcript. By default it opens immediately before the latest compaction, preserving journal sequence provenance while omitting hidden reasoning, encrypted payloads, images, and telemetry. Use next_before_seq to page farther back."
+        description: "Read a bounded page of this agent's own canonical \
+            session transcript. By default it opens immediately before the \
+            latest compaction, preserving journal sequence provenance while \
+            omitting hidden reasoning, encrypted payloads, images, and \
+            telemetry. Use next_before_seq to page farther back."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -277,18 +361,18 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "query".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Literal text to find in this agent's canonical session transcript."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Literal text to find in this agent's canonical \
+                     session transcript."
+                    .to_string(),
+            )),
         ),
         (
             "before_seq".to_string(),
             JsonSchema::Integer {
                 description: Some(
-                    "Exclusive sequence cursor returned by an earlier search. When omitted, searches the whole journal."
+                    "Exclusive sequence cursor returned by an earlier search. \
+                     When omitted, searches the whole journal."
                         .to_string(),
                 ),
             },
@@ -306,7 +390,8 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
             "max_bytes".to_string(),
             JsonSchema::Integer {
                 description: Some(
-                    "Approximate maximum excerpt bytes to return. Defaults to 24000 and is capped at 64000."
+                    "Approximate maximum excerpt bytes to return. Defaults to \
+                     24000 and is capped at 64000."
                         .to_string(),
                 ),
             },
@@ -314,7 +399,11 @@ pub(crate) fn create_search_session_history_tool() -> ToolSpec {
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: "search_session_history".to_string(),
-        description: "Search this agent's own canonical persisted session transcript using bounded literal matching (ASCII case-insensitive; other text exact). Results are newest first and carry journal sequence numbers; hidden reasoning, encrypted payloads, images, and telemetry are omitted."
+        description: "Search this agent's own canonical persisted session \
+            transcript using bounded literal matching (ASCII case-insensitive; \
+            other text exact). Results are newest first and carry journal \
+            sequence numbers; hidden reasoning, encrypted payloads, images, \
+            and telemetry are omitted."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -332,24 +421,25 @@ pub(crate) fn create_set_parent_effort_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "effort".to_string(),
-            JsonSchema::String {
-                description: Some(format!(
-                    "Reasoning effort for subsequent parent turns. One of: {levels}."
-                )),
-            },
+            JsonSchema::string(Some(format!(
+                "Reasoning effort for subsequent parent turns. \
+                 One of: {levels}."
+            ))),
         ),
         (
             "reason".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Brief user-visible reason for changing effort (optional).".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Brief user-visible reason for changing effort \
+                 (optional)."
+                    .to_string(),
+            )),
         ),
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: "set_parent_effort".to_string(),
-        description: "Changes this parent session's reasoning effort for subsequent turns. It cannot change the effort of the turn already in progress."
+        description: "Changes this parent session's reasoning effort for \
+            subsequent turns. It cannot change the effort of the turn already \
+            in progress."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -369,33 +459,34 @@ pub(crate) fn create_exec_command_tool(
     let mut properties = BTreeMap::from([
         (
             "cmd".to_string(),
-            JsonSchema::String {
-                description: Some("Shell command to execute.".to_string()),
-            },
+            JsonSchema::string(Some("Shell command to execute.".to_string())),
         ),
         (
             "workdir".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional working directory to run the command in; defaults to the turn cwd."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional working directory to run the command in; \
+                     defaults to the turn cwd."
+                    .to_string(),
+            )),
         ),
         (
             "shell".to_string(),
-            JsonSchema::String {
-                description: Some("Shell binary to launch. Defaults to the user's default shell.".to_string()),
-            },
+            JsonSchema::string(Some(
+                "Shell binary to launch. Defaults to the user's \
+                 default shell."
+                    .to_string(),
+            )),
         ),
         (
             "tty".to_string(),
             JsonSchema::Boolean {
                 description: Some(
-                    "Whether to allocate a TTY for the command. Defaults to false (plain pipes); set to true to open a PTY and access TTY process."
+                    "Whether to allocate a TTY for the command. Defaults to \
+                     false (plain pipes); set to true to open a PTY and access \
+                     TTY process."
                         .to_string(),
                 ),
-            }
+            },
         ),
         (
             "yield_time_ms".to_string(),
@@ -431,9 +522,11 @@ pub(crate) fn create_exec_command_tool(
 
     ToolSpec::Function(ResponsesApiTool {
         name: "exec_command".to_string(),
-        description:
-            "Runs a command with pipes or an optional PTY, returning output plus a task ID for lifecycle tracking and, when still running, a session ID for ongoing interaction."
-                .to_string(),
+        description: "Runs a command with pipes or an optional PTY, returning \
+             output plus a task ID for lifecycle tracking and, when still \
+             running, a \
+             session ID for ongoing interaction."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -455,9 +548,9 @@ pub(crate) fn create_write_stdin_tool() -> ToolSpec {
         ),
         (
             "chars".to_string(),
-            JsonSchema::String {
-                description: Some("Bytes to write to stdin (may be empty to poll).".to_string()),
-            },
+            JsonSchema::string(Some(
+                "Bytes to write to stdin (may be empty to poll).".to_string(),
+            )),
         ),
         (
             "yield_time_ms".to_string(),
@@ -498,15 +591,15 @@ pub(crate) fn create_shell_tool(exec_permission_approvals_enabled: bool) -> Tool
         (
             "command".to_string(),
             JsonSchema::Array {
-                items: Box::new(JsonSchema::String { description: None }),
+                items: Box::new(JsonSchema::string(None)),
                 description: Some("The command to execute".to_string()),
             },
         ),
         (
             "workdir".to_string(),
-            JsonSchema::String {
-                description: Some("The working directory to execute the command in".to_string()),
-            },
+            JsonSchema::string(Some(
+                "The working directory to execute the command in".to_string(),
+            )),
         ),
         (
             "timeout_ms".to_string(),
@@ -544,17 +637,17 @@ pub(crate) fn create_shell_command_tool(
     let mut properties = BTreeMap::from([
         (
             "command".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "The shell script to execute in the user's default shell".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "The shell script to execute in the user's \
+                 default shell"
+                    .to_string(),
+            )),
         ),
         (
             "workdir".to_string(),
-            JsonSchema::String {
-                description: Some("The working directory to execute the command in".to_string()),
-            },
+            JsonSchema::string(Some(
+                "The working directory to execute the command in".to_string(),
+            )),
         ),
         (
             "timeout_ms".to_string(),
@@ -598,24 +691,30 @@ pub(crate) fn create_shell_command_tool(
 pub(crate) fn create_view_image_tool(can_request_original_image_detail: bool) -> ToolSpec {
     let mut properties = BTreeMap::from([(
         "path".to_string(),
-        JsonSchema::String {
-            description: Some("Local filesystem path to an image file".to_string()),
-        },
+        JsonSchema::string(Some("Local filesystem path to an image file".to_string())),
     )]);
     if can_request_original_image_detail {
         properties.insert(
             "detail".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional detail override. The only supported value is `original`; omit this field for default resized behavior. Use `original` to preserve the file's original resolution instead of resizing to fit. This is important when high-fidelity image perception or precise localization is needed, especially for CUA agents.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional detail override. The only supported value is \
+                     `original`; omit this field for default resized behavior. \
+                     Use `original` to preserve the file's original resolution \
+                     instead of resizing to fit. This is important when \
+                     high-fidelity image perception or precise localization is \
+                     needed, especially for CUA agents."
+                    .to_string(),
+            )),
         );
     }
 
     ToolSpec::Function(ResponsesApiTool {
         name: VIEW_IMAGE_TOOL_NAME.to_string(),
-        description: "View a local image from the filesystem. Use only when the user gives a full filepath, or to inspect a local copy of an image shared in the current conversation (for example, downloaded through authorized access to an attachment link). Skip it if the image is already in your context within <image ...> tags."
+        description: "View a local image from the filesystem. Use only when \
+            the user gives a full filepath, or to inspect a local copy of an \
+            image shared in the current conversation (for example, downloaded \
+            through authorized access to an attachment link). Skip it if the \
+            image is already in your context within <image ...> tags."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -632,38 +731,34 @@ pub(crate) fn create_collab_input_items_schema() -> JsonSchema {
     let properties = BTreeMap::from([
         (
             "type".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Input item type: text, image, local_image, skill, or mention.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Input item type: text, image, local_image, skill, \
+                     or mention."
+                    .to_string(),
+            )),
         ),
         (
             "text".to_string(),
-            JsonSchema::String {
-                description: Some("Text content when type is text.".to_string()),
-            },
+            JsonSchema::string(Some("Text content when type is text.".to_string())),
         ),
         (
             "image_url".to_string(),
-            JsonSchema::String {
-                description: Some("Image URL when type is image.".to_string()),
-            },
+            JsonSchema::string(Some("Image URL when type is image.".to_string())),
         ),
         (
             "path".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Path when type is local_image/skill, or structured mention target such as app://<connector-id> when type is mention."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Path when type is local_image/skill, or structured \
+                     mention target such as app://<connector-id> when type is \
+                     mention."
+                    .to_string(),
+            )),
         ),
         (
             "name".to_string(),
-            JsonSchema::String {
-                description: Some("Display name when type is skill or mention.".to_string()),
-            },
+            JsonSchema::string(Some(
+                "Display name when type is skill or mention.".to_string(),
+            )),
         ),
     ]);
 
@@ -674,7 +769,8 @@ pub(crate) fn create_collab_input_items_schema() -> JsonSchema {
             additional_properties: Some(false.into()),
         }),
         description: Some(
-            "Structured input items. Use this to pass explicit mentions (for example app:// connector paths)."
+            "Structured input items. Use this to pass explicit mentions (for \
+             example app:// connector paths)."
                 .to_string(),
         ),
     }
@@ -685,31 +781,29 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
     let mut properties = BTreeMap::from([
         (
             "message".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Initial plain-text task for the new agent. Use either message or items."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Initial plain-text task for the new agent. \
+                     Use either message or items."
+                    .to_string(),
+            )),
         ),
         ("items".to_string(), create_collab_input_items_schema()),
         (
             "agent_type".to_string(),
-            JsonSchema::String {
-                description: Some(crate::minions::role::spawn_tool_spec::build(
-                    &config.agent_roles,
-                )),
-            },
+            JsonSchema::string(Some(crate::minions::role::spawn_tool_spec::build(
+                &config.agent_roles,
+            ))),
         ),
         (
             "topics".to_string(),
             JsonSchema::Array {
-                items: Box::new(JsonSchema::String { description: None }),
+                items: Box::new(JsonSchema::string(None)),
                 description: Some(
-                    "Topic tags for dynamic role routing (e.g. [\"ruby\", \"rails\"]). \
-                     The kernel selects a matching persona at random and emits its catchphrase. \
-                     Ignored when `agent_type` is set. \
-                     Unmatched topics are surfaced to the user as a warning."
+                    "Topic tags for dynamic role routing (e.g. [\"ruby\", \
+                     \"rails\"]). The kernel selects a matching persona at \
+                     random and emits its catchphrase. Ignored when \
+                     `agent_type` is set. Unmatched topics are surfaced to the \
+                     user as a warning."
                         .to_string(),
                 ),
             },
@@ -718,55 +812,58 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             "fork_context".to_string(),
             JsonSchema::Boolean {
                 description: Some(
-                    "When true, fork the current thread history into the new agent before sending the initial prompt. This must be used when you want the new agent to have exactly the same context as you."
+                    "When true, fork the current thread history into the new \
+                     agent before sending the initial prompt. This must be \
+                     used when you want the new agent to have exactly the same \
+                     context as you."
                         .to_string(),
                 ),
             },
         ),
         (
             "model_provider".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional configured model provider/account id for the new agent. The host \
-                     validates the selected model against that provider's cached catalog and \
-                     fails closed when the provider cannot be rebound."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional configured model provider/account id for the new \
+                     agent. The host validates the selected model against that \
+                     provider's cached catalog and fails closed when the \
+                     provider cannot be rebound."
+                    .to_string(),
+            )),
         ),
         (
             "model".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional model override for the new agent. Replaces the inherited model."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional model override for the new agent. Replaces the \
+                     inherited model."
+                    .to_string(),
+            )),
         ),
         (
             "reasoning_effort".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional reasoning effort override for the new agent. Replaces the inherited reasoning effort."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional reasoning effort override for the new agent. \
+                     Replaces the inherited reasoning effort."
+                    .to_string(),
+            )),
         ),
         (
             "mode".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional initial mode id for the child. When allowed_modes is omitted, this creates a fixed single-mode child with no switch_mode tool. Use mode `plan` for a fixed planner minion."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Optional initial mode id for the child. When \
+                     allowed_modes is omitted, this creates a fixed \
+                     single-mode child with no switch_mode tool. Use mode \
+                     `plan` for a fixed planner minion."
+                    .to_string(),
+            )),
         ),
         (
             "allowed_modes".to_string(),
             JsonSchema::Array {
-                items: Box::new(JsonSchema::String { description: None }),
+                items: Box::new(JsonSchema::string(None)),
                 description: Some(
-                    "Optional child-visible mode catalog. It must be a subset of the caller's catalog and cannot elevate capabilities beyond the active parent mode."
+                    "Optional child-visible mode catalog. It must be a subset \
+                     of the caller's catalog and cannot elevate capabilities \
+                     beyond the active parent mode."
                         .to_string(),
                 ),
             },
@@ -775,7 +872,9 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             "allow_mode_switching".to_string(),
             JsonSchema::Boolean {
                 description: Some(
-                    "Whether the child may switch among allowed_modes. The kernel rejects switching with fewer than two allowed modes."
+                    "Whether the child may switch among allowed_modes. The \
+                     kernel rejects switching with fewer than two allowed \
+                     modes."
                         .to_string(),
                 ),
             },
@@ -786,11 +885,15 @@ pub(crate) fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
         && config.planning.available
         && (config.planning_authoring || config.attached_plan.is_some())
     {
-        properties.insert("plan".into(), JsonSchema::String {
-            description: Some(
-                "Explicit plan UUID or workspace/plan reference to attach to the child. Omitted means no attachment, even with fork_context. Execution can pass only its attached plan.".into(),
-            ),
-        });
+        properties.insert(
+            "plan".into(),
+            JsonSchema::string(Some(
+                "Explicit plan UUID or workspace/plan reference to attach to \
+                 the child. Omitted means no attachment, even with \
+                 fork_context. Execution can pass only its attached plan."
+                    .into(),
+            )),
+        );
     }
 
     ToolSpec::Function(ResponsesApiTool {
@@ -848,23 +951,19 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
     let job_properties = BTreeMap::from([
         (
             "id".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Synopsis-wide unique job id used to correlate the result.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Synopsis-wide unique job id used to correlate \
+                 the result."
+                    .to_string(),
+            )),
         ),
         (
             "message".to_string(),
-            JsonSchema::String {
-                description: Some("Plain-text task for this agent.".to_string()),
-            },
+            JsonSchema::string(Some("Plain-text task for this agent.".to_string())),
         ),
         (
             "agent_type".to_string(),
-            JsonSchema::String {
-                description: Some(available_roles),
-            },
+            JsonSchema::string(Some(available_roles)),
         ),
         (
             "allow_replay".to_string(),
@@ -879,12 +978,12 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "mode".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Legacy control-flow mode: sequence, parallel_all, fallback, or race. \
-                     Provide exactly one of mode or tree.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Legacy control-flow mode: sequence, parallel_all, \
+                     fallback, or race. Provide exactly one of mode or \
+                     tree."
+                    .to_string(),
+            )),
         ),
         (
             "tree".to_string(),
@@ -912,7 +1011,8 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
             "timeout_ms".to_string(),
             JsonSchema::Integer {
                 description: Some(
-                    "Overall timeout in milliseconds. Defaults to 1800000 and is clamped between 10000 and 3600000."
+                    "Overall timeout in milliseconds. Defaults to 1800000 and \
+                     is clamped between 10000 and 3600000."
                         .to_string(),
                 ),
             },
@@ -921,21 +1021,22 @@ pub(crate) fn create_run_synopsis_tool(config: &ToolsConfig) -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "run_synopsis".to_string(),
-        description: "Only use `run_synopsis` when the user explicitly authorizes sub-agents, \
-            delegation, or parallel agent work. Provide jobs and exactly one of mode or tree. \
-            Legacy modes: sequence, parallel_all, fallback, race. \
-            Tree nodes: sequence/fallback/parallel_all/race {id,children}; \
-            timeout {id,timeout_ms,child}; retry {id,attempts,child}, at most 3 total tries, \
-            every descendant job must allow_replay=true; \
-            condition {id,pointer,predicate:{op:exists|equals,value?}}; \
-            job {id,job_id,result_key?}. Every declared job must appear exactly once in the tree; \
-            all node IDs/result keys must be unique. \
-            Only job/condition leaves, no tools or interactions. \
-            Limits:128 nodes,depth16,16 concurrent leaves,256 attempts. \
-            Retries spawn fresh children. \
-            The call blocks, returns each job's latest status/message plus a session-owned run_id \
-            for workflow_status/cancel_workflow, and automatically closes all agents it spawned. \
-            No restart replay."
+        description: "Only use `run_synopsis` when the user explicitly \
+            authorizes sub-agents, delegation, or parallel agent work. Provide \
+            jobs and exactly one of mode or tree. Legacy modes: sequence, \
+            parallel_all, fallback, race. Tree nodes: \
+            sequence/fallback/parallel_all/race {id,children}; timeout \
+            {id,timeout_ms,child}; retry {id,attempts,child}, at most 3 total \
+            tries, every descendant job must allow_replay=true; condition \
+            {id,pointer,predicate:{op:exists|equals,value?}}; job \
+            {id,job_id,result_key?}. Every declared job must appear exactly \
+            once in the tree; all node IDs/result keys must be unique. Only \
+            job/condition leaves, no tools or interactions. Limits:128 \
+            nodes,depth16,16 concurrent leaves,256 attempts. Retries spawn \
+            fresh children. The call blocks, returns each job's latest \
+            status/message plus a session-owned run_id for \
+            workflow_status/cancel_workflow, and automatically closes all \
+            agents it spawned. No restart replay."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -981,30 +1082,29 @@ pub(crate) fn create_spawn_minions_on_csv_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "csv_path".to_string(),
-        JsonSchema::String {
-            description: Some("Path to the CSV file containing input rows.".to_string()),
-        },
+        JsonSchema::string(Some(
+            "Path to the CSV file containing input rows.".to_string(),
+        )),
     );
     properties.insert(
         "instruction".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "Instruction template to apply to each CSV row. Use {column_name} placeholders to inject values from the row."
-                    .to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "Instruction template to apply to each CSV row. Use \
+                 {column_name} placeholders to inject values from the row."
+                .to_string(),
+        )),
     );
     properties.insert(
         "id_column".to_string(),
-        JsonSchema::String {
-            description: Some("Optional column name to use as stable item id.".to_string()),
-        },
+        JsonSchema::string(Some(
+            "Optional column name to use as stable item id.".to_string(),
+        )),
     );
     properties.insert(
         "output_csv_path".to_string(),
-        JsonSchema::String {
-            description: Some("Optional output CSV path for exported results.".to_string()),
-        },
+        JsonSchema::string(Some(
+            "Optional output CSV path for exported results.".to_string(),
+        )),
     );
     properties.insert(
         "max_concurrency".to_string(),
@@ -1042,7 +1142,13 @@ pub(crate) fn create_spawn_minions_on_csv_tool() -> ToolSpec {
     );
     ToolSpec::Function(ResponsesApiTool {
         name: "spawn_minions_on_csv".to_string(),
-        description: "Process a CSV by spawning one task sub-agent per row. The instruction string is a template where `{column}` placeholders are replaced with row values. Each task must call `report_minion_job_result` with a JSON object (matching `output_schema` when provided); missing reports are treated as failures. This call blocks until all rows finish and automatically exports results to `output_csv_path` (or a default path)."
+        description: "Process a CSV by spawning one task sub-agent per row. \
+            The instruction string is a template where `{column}` placeholders \
+            are replaced with row values. Each task must call \
+            `report_minion_job_result` with a JSON object (matching \
+            `output_schema` when provided); missing reports are treated as \
+            failures. This call blocks until all rows finish and automatically \
+            exports results to `output_csv_path` (or a default path)."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -1059,15 +1165,11 @@ pub(crate) fn create_report_minion_job_result_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "job_id".to_string(),
-        JsonSchema::String {
-            description: Some("Identifier of the job.".to_string()),
-        },
+        JsonSchema::string(Some("Identifier of the job.".to_string())),
     );
     properties.insert(
         "item_id".to_string(),
-        JsonSchema::String {
-            description: Some("Identifier of the job item.".to_string()),
-        },
+        JsonSchema::string(Some("Identifier of the job item.".to_string())),
     );
     properties.insert(
         "result".to_string(),
@@ -1081,16 +1183,17 @@ pub(crate) fn create_report_minion_job_result_tool() -> ToolSpec {
         "stop".to_string(),
         JsonSchema::Boolean {
             description: Some(
-                "Optional. When true, cancels the remaining job items after this result is recorded."
+                "Optional. When true, cancels the remaining job items after \
+                 this result is recorded."
                     .to_string(),
             ),
         },
     );
     ToolSpec::Function(ResponsesApiTool {
         name: "report_minion_job_result".to_string(),
-        description:
-            "Worker-only tool to report a result for a minion job item. Main agents should not call this."
-                .to_string(),
+        description: "Worker-only tool to report a result for a minion job \
+             item. Main agents should not call this."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -1110,25 +1213,23 @@ pub(crate) fn create_send_input_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "id".to_string(),
-            JsonSchema::String {
-                description: Some("Agent id to message (from spawn_agent).".to_string()),
-            },
+            JsonSchema::string(Some("Agent id to message (from spawn_agent).".to_string())),
         ),
         (
             "message".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Legacy plain-text message to send to the agent. Use either message or items."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Legacy plain-text message to send to the agent. Use \
+                     either message or items."
+                    .to_string(),
+            )),
         ),
         ("items".to_string(), create_collab_input_items_schema()),
         (
             "interrupt".to_string(),
             JsonSchema::Boolean {
                 description: Some(
-                    "When true, stop the agent's current task and handle this immediately. When false (default), queue this message."
+                    "When true, stop the agent's current task and handle this \
+                     immediately. When false (default), queue this message."
                         .to_string(),
                 ),
             },
@@ -1137,7 +1238,10 @@ pub(crate) fn create_send_input_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "send_input".to_string(),
-        description: "Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send_input if you believe your assigned task is highly dependent on the context of a previous task."
+        description: "Send a message to an existing agent. Use interrupt=true \
+            to redirect work immediately. You should reuse the agent by \
+            send_input if you believe your assigned task is highly dependent \
+            on the context of a previous task."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -1154,19 +1258,22 @@ pub(crate) fn create_send_to_supervisor_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "message".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Plain-text message to send to your supervisor. Use either message or items."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Plain-text message to send to your supervisor. Use either \
+                 message or items."
+                    .to_string(),
+            )),
         ),
         ("items".to_string(), create_collab_input_items_schema()),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "send_to_supervisor".to_string(),
-        description: "Send a message to your supervisor. Use it for important progress, blockers, questions, or early findings. The message is queued without interrupting the supervisor's current turn. Your final response is returned automatically, so do not use this tool merely to repeat it."
+        description: "Send a message to your supervisor. Use it for important \
+            progress, blockers, questions, or early findings. The message is \
+            queued without interrupting the supervisor's current turn. Your \
+            final response is returned automatically, so do not use this tool \
+            merely to repeat it."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -1183,16 +1290,14 @@ pub(crate) fn create_resume_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "id".to_string(),
-        JsonSchema::String {
-            description: Some("Agent id to resume.".to_string()),
-        },
+        JsonSchema::string(Some("Agent id to resume.".to_string())),
     );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "resume_agent".to_string(),
-        description:
-            "Resume a previously closed agent by id so it can receive send_input and wait_agent calls."
-                .to_string(),
+        description: "Resume a previously closed agent by id so it can receive \
+             send_input and wait_agent calls."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -1209,7 +1314,7 @@ pub(crate) fn create_wait_agent_tool() -> ToolSpec {
     properties.insert(
         "ids".to_string(),
         JsonSchema::Array {
-            items: Box::new(JsonSchema::String { description: None }),
+            items: Box::new(JsonSchema::string(None)),
             description: Some(
                 "Agent ids to wait on. Pass multiple ids to wait for whichever finishes first."
                     .to_string(),
@@ -1220,14 +1325,21 @@ pub(crate) fn create_wait_agent_tool() -> ToolSpec {
         "timeout_ms".to_string(),
         JsonSchema::Integer {
             description: Some(format!(
-                "Optional timeout in milliseconds. Defaults to {DEFAULT_WAIT_TIMEOUT_MS}, min {MIN_WAIT_TIMEOUT_MS}, max {MAX_WAIT_TIMEOUT_MS}. Prefer longer waits (minutes) to avoid busy polling."
+                "Optional timeout in milliseconds. Defaults to \
+                 {DEFAULT_WAIT_TIMEOUT_MS}, min {MIN_WAIT_TIMEOUT_MS}, max \
+                 {MAX_WAIT_TIMEOUT_MS}. Prefer longer waits (minutes) to avoid \
+                 busy polling."
             )),
         },
     );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "wait_agent".to_string(),
-        description: "Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns empty status when timed out. Once the agent reaches a final status, a notification message will be received containing the same completed status."
+        description: "Wait for agents to reach a final status. Completed \
+            statuses may include the agent's final message. Returns empty \
+            status when timed out. Once the agent reaches a final status, a \
+            notification message will be received containing the same \
+            completed status."
             .to_string(),
         strict: false,
         defer_loading: None,
@@ -1246,22 +1358,23 @@ pub(crate) fn create_request_user_input_tool(
     let mut option_props = BTreeMap::new();
     option_props.insert(
         "label".to_string(),
-        JsonSchema::String {
-            description: Some("User-facing label (1-5 words).".to_string()),
-        },
+        JsonSchema::string(Some("User-facing label (1-5 words).".to_string())),
     );
     option_props.insert(
         "description".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "One short sentence explaining impact/tradeoff if selected.".to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "One short sentence explaining impact/tradeoff \
+             if selected."
+                .to_string(),
+        )),
     );
 
     let options_schema = JsonSchema::Array {
         description: Some(
-            "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically."
+            "Provide 2-3 mutually exclusive choices. Put the recommended \
+             option first and suffix its label with \"(Recommended)\". Do not \
+             include an \"Other\" option in this list; the client will add a \
+             free-form \"Other\" option automatically."
                 .to_string(),
         ),
         items: Box::new(JsonSchema::Object {
@@ -1274,23 +1387,23 @@ pub(crate) fn create_request_user_input_tool(
     let mut question_props = BTreeMap::new();
     question_props.insert(
         "id".to_string(),
-        JsonSchema::String {
-            description: Some("Stable identifier for mapping answers (snake_case).".to_string()),
-        },
+        JsonSchema::string(Some(
+            "Stable identifier for mapping answers (snake_case).".to_string(),
+        )),
     );
     question_props.insert(
         "header".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "Short header label shown in the UI (12 or fewer chars).".to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "Short header label shown in the UI \
+             (12 or fewer chars)."
+                .to_string(),
+        )),
     );
     question_props.insert(
         "question".to_string(),
-        JsonSchema::String {
-            description: Some("Single-sentence prompt shown to the user.".to_string()),
-        },
+        JsonSchema::string(Some(
+            "Single-sentence prompt shown to the user.".to_string(),
+        )),
     );
     question_props.insert("options".to_string(), options_schema);
 
@@ -1329,11 +1442,11 @@ pub(crate) fn create_request_permissions_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "reason".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "Optional short explanation for why additional permissions are needed.".to_string(),
-            ),
-        },
+        JsonSchema::string(Some(
+            "Optional short explanation for why additional permissions \
+             are needed."
+                .to_string(),
+        )),
     );
     properties.insert(
         "permissions".to_string(),
@@ -1358,14 +1471,15 @@ pub(crate) fn create_close_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
         "id".to_string(),
-        JsonSchema::String {
-            description: Some("Agent id to close (from spawn_agent).".to_string()),
-        },
+        JsonSchema::string(Some("Agent id to close (from spawn_agent).".to_string())),
     );
 
     ToolSpec::Function(ResponsesApiTool {
         name: "close_agent".to_string(),
-        description: "Close an agent when it is no longer needed and return its last known status. Don't keep agents open for too long if they are not needed anymore.".to_string(),
+        description: "Close an agent when it is no longer needed and return \
+            its last known status. Don't keep agents open for too long if they \
+            are not needed anymore."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -1381,11 +1495,11 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
     let barrier_properties = BTreeMap::from([
         (
             "id".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Identifier shared by concurrent calls that should rendezvous".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Identifier shared by concurrent calls that should \
+                 rendezvous"
+                    .to_string(),
+            )),
         ),
         (
             "participants".to_string(),
@@ -1449,18 +1563,31 @@ pub(crate) fn create_test_sync_tool() -> ToolSpec {
 pub(crate) fn create_list_mcp_resources_tool() -> ToolSpec {
     create_list_mcp_tool(
         "list_mcp_resources",
-        "Lists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.",
-        "Optional MCP server name. When omitted, lists internal resources and resources from every configured server. Internal entries have no server field.",
-        "Opaque cursor returned by a previous list_mcp_resources call for the same server.",
+        "Lists resources provided by MCP servers. Resources allow servers to \
+         share data that provides context to language models, such as files, \
+         database schemas, or application-specific information. Prefer \
+         resources over web search when possible.",
+        "Optional MCP server name. When omitted, lists internal resources and \
+         resources from every configured server. Internal entries have no \
+         server field.",
+        "Opaque cursor returned by a previous list_mcp_resources call for the \
+         same server.",
     )
 }
 
 pub(crate) fn create_list_mcp_resource_templates_tool() -> ToolSpec {
     create_list_mcp_tool(
         "list_mcp_resource_templates",
-        "Lists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.",
-        "Optional MCP server name. When omitted, lists internal resource templates and templates from all configured servers. Internal entries have no server field.",
-        "Opaque cursor returned by a previous list_mcp_resource_templates call for the same server.",
+        "Lists resource templates provided by MCP servers. Parameterized \
+         resource templates allow servers to share data that takes parameters \
+         and provides context to language models, such as files, database \
+         schemas, or application-specific information. Prefer resource \
+         templates over web search when possible.",
+        "Optional MCP server name. When omitted, lists internal resource \
+         templates and templates from all configured servers. Internal entries \
+         have no server field.",
+        "Opaque cursor returned by a previous list_mcp_resource_templates call \
+         for the same server.",
     )
 }
 
@@ -1473,15 +1600,11 @@ fn create_list_mcp_tool(
     let properties = BTreeMap::from([
         (
             "server".to_string(),
-            JsonSchema::String {
-                description: Some(server_description.to_string()),
-            },
+            JsonSchema::string(Some(server_description.to_string())),
         ),
         (
             "cursor".to_string(),
-            JsonSchema::String {
-                description: Some(cursor_description.to_string()),
-            },
+            JsonSchema::string(Some(cursor_description.to_string())),
         ),
     ]);
 
@@ -1539,7 +1662,8 @@ pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
             "The expanded URI is passed to the server without requiring the resource ",
             "to currently exist or appear in list_mcp_resources.",
         ),
-        "Omit for internal resources. For external resources, specify the configured MCP server.",
+        "Omit for internal resources. For external resources, specify the \
+         configured MCP server.",
     );
     properties.insert(
         "subscribed".to_string(),
@@ -1552,15 +1676,18 @@ pub(crate) fn create_set_mcp_resource_subscription_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "set_mcp_resource_subscription".to_string(),
-        description: "Subscribe to or unsubscribe from update notifications for an MCP resource. External servers must advertise resource subscription support. Omit server for internal resources: subscribing returns a one-time snapshot with no active subscription; unsubscribing is a no-op. Resources may be transient and need not appear in resources/list.".to_string(),
+        description: "Subscribe to or unsubscribe from update notifications \
+            for an MCP resource. External servers must advertise resource \
+            subscription support. Omit server for internal resources: \
+            subscribing returns a one-time snapshot with no active \
+            subscription; unsubscribing is a no-op. Resources may be transient \
+            and need not appear in resources/list."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec![
-                "uri".to_string(),
-                "subscribed".to_string(),
-            ]),
+            required: Some(vec!["uri".to_string(), "subscribed".to_string()]),
             additional_properties: Some(false.into()),
         },
         output_schema: None,
@@ -1574,15 +1701,11 @@ fn mcp_resource_uri_properties(
     BTreeMap::from([
         (
             "server".to_string(),
-            JsonSchema::String {
-                description: Some(server_description.to_string()),
-            },
+            JsonSchema::string(Some(server_description.to_string())),
         ),
         (
             "uri".to_string(),
-            JsonSchema::String {
-                description: Some(uri_description.to_string()),
-            },
+            JsonSchema::string(Some(uri_description.to_string())),
         ),
         (
             "parameters".to_string(),
@@ -1590,16 +1713,14 @@ fn mcp_resource_uri_properties(
                 properties: BTreeMap::new(),
                 required: None,
                 additional_properties: Some(
-                    JsonSchema::String {
-                        description: Some(
-                            concat!(
-                                "Raw, decoded template parameter value ",
-                                "(for example github-actions[bot]); ",
-                                "do not percent-encode it yourself.",
-                            )
-                            .to_string(),
-                        ),
-                    }
+                    JsonSchema::string(Some(
+                        concat!(
+                            "Raw, decoded template parameter value ",
+                            "(for example github-actions[bot]); ",
+                            "do not percent-encode it yourself.",
+                        )
+                        .to_string(),
+                    ))
                     .into(),
                 ),
             },
@@ -1611,15 +1732,11 @@ pub(crate) fn create_call_mcp_tool_async_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "server".to_string(),
-            JsonSchema::String {
-                description: Some("MCP server name.".to_string()),
-            },
+            JsonSchema::string(Some("MCP server name.".to_string())),
         ),
         (
             "tool".to_string(),
-            JsonSchema::String {
-                description: Some("Tool name (must declare taskSupport).".to_string()),
-            },
+            JsonSchema::string(Some("Tool name (must declare taskSupport).".to_string())),
         ),
         (
             "arguments".to_string(),
@@ -1655,17 +1772,15 @@ pub(crate) fn create_cancel_mcp_task_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "server".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Omit for internal tasks; required for external MCP tasks.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Omit for internal tasks; required for external \
+                 MCP tasks."
+                    .to_string(),
+            )),
         ),
         (
             "task_id".to_string(),
-            JsonSchema::String {
-                description: Some("Task ID to cancel.".to_string()),
-            },
+            JsonSchema::string(Some("Task ID to cancel.".to_string())),
         ),
     ]);
 

@@ -87,25 +87,28 @@ pub(crate) fn tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "run_id".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Run id returned by start_attested_review in this same ChaOS process."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Run id returned by start_attested_review \
+                 in this same ChaOS process."
+                    .to_string(),
+            )),
         ),
         (
             "wait_ms".to_string(),
             JsonSchema::Integer {
                 description: Some(format!(
-                    "Maximum time to poll this invocation. Defaults to {DEFAULT_WAIT_MS} and is capped at {MAX_WAIT_MS}."
+                    "Maximum time to poll this invocation. Defaults to \
+                     {DEFAULT_WAIT_MS} and is capped at {MAX_WAIT_MS}."
                 )),
             },
         ),
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: TOOL_NAME.to_string(),
-        description: "Resume an owner-fenced, persisted attested review state machine. It never respawns an acknowledged attempt and retries an acknowledgement-unknown submission with byte-identical arguments, idempotency key, and protected provenance."
+        description: "Resume an owner-fenced, persisted attested review state \
+            machine. It never respawns an acknowledged attempt and retries an \
+            acknowledgement-unknown submission with byte-identical arguments, \
+            idempotency key, and protected provenance."
             .to_string(),
         strict: false,
         defer_loading: None,

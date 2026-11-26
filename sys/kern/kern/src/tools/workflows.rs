@@ -52,19 +52,19 @@ pub(crate) fn register(builder: &mut ToolRegistryBuilder) {
     for (name, description, properties, required) in [
         (
             "run_workflow",
-            "Execute a session-owned bounded tree. \
-             Nodes: sequence/fallback/parallel_all/race {id,children}; \
-             timeout {id,timeout_ms,child}; retry {id,attempts,child}, \
-             at most 3 total tries and affirmative idempotency required; \
-             condition {id,pointer,predicate:{op:exists|equals,value?}}; \
-             call {id,tool,arguments,bindings:[{source,target}],result_key?}; \
-             ask {id,message,schema?,result_key?}; \
-             sample {id,prompt,system?,max_tokens?,result_key?}. \
-             IDs/result keys unique; input reserved. \
-             Bindings read JSON Pointers from input/prior results. \
-             Limits:128 nodes,depth16,16 concurrent leaves,256 attempts. \
-             Calls retain live caller policy; no nested runners/control changes. \
-             Unsupported interactions fail normally. Default timeout120s,max1h. No restart replay.",
+            "Execute a session-owned bounded tree. Nodes: \
+             sequence/fallback/parallel_all/race {id,children}; timeout \
+             {id,timeout_ms,child}; retry {id,attempts,child}, at most 3 total \
+             tries and affirmative idempotency required; condition \
+             {id,pointer,predicate:{op:exists|equals,value?}}; call \
+             {id,tool,arguments,bindings:[{source,target}],result_key?}; ask \
+             {id,message,schema?,result_key?}; sample \
+             {id,prompt,system?,max_tokens?,result_key?}. IDs/result keys \
+             unique; input reserved. Bindings read JSON Pointers from \
+             input/prior results. Limits:128 nodes,depth16,16 concurrent \
+             leaves,256 attempts. Calls retain live caller policy; no nested \
+             runners/control changes. Unsupported interactions fail normally. \
+             Default timeout120s,max1h. No restart replay.",
             BTreeMap::from([
                 ("tree".into(), object()),
                 ("input".into(), object()),
@@ -80,14 +80,14 @@ pub(crate) fn register(builder: &mut ToolRegistryBuilder) {
         (
             "workflow_status",
             "Inspect an owned workflow/synopsis run; IDs grant no cross-session access.",
-            BTreeMap::from([("run_id".into(), JsonSchema::String { description: None })]),
+            BTreeMap::from([("run_id".into(), JsonSchema::string(None))]),
             vec!["run_id".into()],
         ),
         (
             "cancel_workflow",
             "Cancel an owned workflow/synopsis run. \
              Cancelling is not terminal until cleanup completes.",
-            BTreeMap::from([("run_id".into(), JsonSchema::String { description: None })]),
+            BTreeMap::from([("run_id".into(), JsonSchema::string(None))]),
             vec!["run_id".into()],
         ),
     ] {

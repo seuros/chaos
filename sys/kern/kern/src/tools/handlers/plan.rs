@@ -88,9 +88,7 @@ pub(crate) fn planning_tool(
     authoring: bool,
     planning: chaos_proc::planning::PlanningCapabilities,
 ) -> ToolSpec {
-    let string = |s: &str| JsonSchema::String {
-        description: Some(s.into()),
-    };
+    let string = |s: &str| JsonSchema::string(Some(s.into()));
     let integer = |s: &str| JsonSchema::Integer {
         description: Some(s.into()),
     };
@@ -159,10 +157,13 @@ pub(crate) fn planning_tool(
         change.extend([
             ("workspace".into(), string("Workspace UUID or six-hex code, required for create.")),
             ("title".into(), string("Title for create/edit/add_task/edit_task.")),
-            ("body".into(), string("Initial Markdown body for create/add_task; omitted means empty. Use clarify for subsequent changes.")),
+            ("body".into(), string(
+                "Initial Markdown body for create/add_task; omitted means \
+                 empty. Use clarify for subsequent changes.")),
             ("text".into(), string("Required for clarify: an appended intent change. Omit task to clarify the plan.")),
             ("parent".into(), string(if planning.dependencies {
-                "Parent task for nesting or prerequisite task for a dependency. Omit for root nesting."
+                "Parent task for nesting or prerequisite task for a \
+                 dependency. Omit for root nesting."
             } else { "Parent task for nesting. Omit for root nesting." })),
             ("position".into(), integer("Required for add_task/move_task; display order, unrelated to task identity.")),
             ("projects".into(), JsonSchema::Array { description: Some("Required for edit_task: project UUIDs in this workspace.".into()), items: Box::new(string("Project UUID")) }),
@@ -185,7 +186,8 @@ pub(crate) fn planning_tool(
         (
             "request_id".into(),
             string(if authoring {
-                "Required for change/consolidate. Unique retry key; reuse only with identical arguments."
+                "Required for change/consolidate. Unique retry key; reuse only \
+                 with identical arguments."
             } else {
                 "Required for change. Unique retry key; reuse only with identical arguments."
             }),
@@ -215,7 +217,8 @@ pub(crate) fn planning_tool(
         properties.insert(
             "plan".into(),
             string(
-                "Plan UUID or six-hex/four-hex reference. Defaults to explicit session attachment.",
+                "Plan UUID or six-hex/four-hex reference. Defaults to explicit \
+                 session attachment.",
             ),
         );
         properties.insert(
@@ -225,17 +228,35 @@ pub(crate) fn planning_tool(
             ),
         );
     }
-    properties.insert("job".into(), string("Job ID for consolidation status. Cancellation uses cancel_mcp_task and the returned background task ID."));
+    properties.insert(
+        "job".into(),
+        string(
+            "Job ID for consolidation status. Cancellation uses \
+             cancel_mcp_task and the returned background task ID.",
+        ),
+    );
     ToolSpec::Function(ResponsesApiTool {
         name: if authoring { "plan" } else { "plan_progress" }.into(),
         description: if authoring {
-            "Author durable database plans. Attach explicitly before execution. Read bounded pages; IDs are immutable, ordering is separate. After replanning, switch back to execution mode yourself."
+            "Author durable database plans. Attach explicitly before \
+             execution. Read bounded pages; IDs are immutable, ordering is \
+             separate. After replanning, switch back to execution mode \
+             yourself."
         } else {
-            "Read and update the explicitly attached database plan. Read task bodies and pending clarifications before execution. Revision conflicts require re-reading, not blind retries. For intent or structural changes, switch to Plan mode yourself, revise, then return to execution."
-        }.into(),
+            "Read and update the explicitly attached database plan. Read task \
+             bodies and pending clarifications before execution. Revision \
+             conflicts require re-reading, not blind retries. For intent or \
+             structural changes, switch to Plan mode yourself, revise, then \
+             return to execution."
+        }
+        .into(),
         strict: false,
         defer_loading: None,
-        parameters: JsonSchema::Object { properties, required: Some(vec!["action".into()]), additional_properties: Some(false.into()) },
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".into()]),
+            additional_properties: Some(false.into()),
+        },
         output_schema: None,
     })
 }
@@ -308,9 +329,17 @@ impl ToolHandler for PlanHandler {
             Operation::List | Operation::Projects if authoring => {
                 let workspace = match args.workspace {
                     Some(w) => w,
-                    None => db.planning_checkout(&installation, &turn.cwd).await.map_err(error)?
-                        .map(|checkout|checkout.workspace_id)
-                        .ok_or_else(|| error("no checkout binding; operator must register workspace/projects or supply workspace ID"))?,
+                    None => db
+                        .planning_checkout(&installation, &turn.cwd)
+                        .await
+                        .map_err(error)?
+                        .map(|checkout| checkout.workspace_id)
+                        .ok_or_else(|| {
+                            error(
+                                "no checkout binding; operator must register \
+                             workspace/projects or supply workspace ID",
+                            )
+                        })?,
                 };
                 if args.action == Operation::List {
                     output(
@@ -440,7 +469,8 @@ impl ToolHandler for PlanHandler {
                 let change = args.change.ok_or_else(|| error("change is required"))?;
                 if !authoring && !change.progress_only() {
                     return Err(error(
-                        "intent and structural edits require Plan mode; switch_mode yourself, edit, then return",
+                        "intent and structural edits require Plan mode; \
+                         switch_mode yourself, edit, then return",
                     ));
                 }
                 let mutation = PlanMutation {

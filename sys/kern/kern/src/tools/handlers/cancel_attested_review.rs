@@ -74,25 +74,26 @@ pub(crate) fn tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
             "attempt_id".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Attempt id returned by an attested review run owned by this ChaOS process."
-                        .to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Attempt id returned by an attested review run \
+                 owned by this ChaOS process."
+                    .to_string(),
+            )),
         ),
         (
             "reason".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Non-empty durable reason for cancelling the reviewer attempt.".to_string(),
-                ),
-            },
+            JsonSchema::string(Some(
+                "Non-empty durable reason for cancelling \
+                 the reviewer attempt."
+                    .to_string(),
+            )),
         ),
     ]);
     ToolSpec::Function(ResponsesApiTool {
         name: TOOL_NAME.to_string(),
-        description: "Cancel a nonterminal attested reviewer attempt owned by this ChaOS process. ChaOS records the cancellation before idempotently stopping the reviewer process."
+        description: "Cancel a nonterminal attested reviewer attempt owned by \
+            this ChaOS process. ChaOS records the cancellation before \
+            idempotently stopping the reviewer process."
             .to_string(),
         strict: false,
         defer_loading: None,

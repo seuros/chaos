@@ -11,9 +11,7 @@ use crate::tools::registry::{ToolHandler, ToolKind};
 pub(crate) const NAME: &str = "save_recovery_checkpoint";
 
 pub(crate) fn tool() -> ToolSpec {
-    let string = |description: &str| JsonSchema::String {
-        description: Some(description.into()),
-    };
+    let string = |description: &str| JsonSchema::string(Some(description.into()));
     let mut properties = BTreeMap::from([(
         "summary".into(),
         string("Concise progress summary. Required."),
@@ -40,15 +38,14 @@ pub(crate) fn tool() -> ToolSpec {
     }
     ToolSpec::Function(ResponsesApiTool {
         name: NAME.into(),
-        description: "Save a session-owned recovery note in the runtime database, \
-                      only while a host warning is unresolved. Keep the serialized note \
-                      within 16 KiB; omit secrets and copied source. The kernel supplies \
-                      ownership, short recovery/checkpoint IDs, time, \
-                      and historical health evidence. \
-                      Success is returned only after commit. Read chaos://recovery \
-                      to reread notes, including after restart. \
-                      Save BEFORE wait_for_machine_recovery; do not create checkpoint files. \
-                      The newest 32 notes are retained per session."
+        description: "Save a session-owned recovery note in the runtime \
+            database, only while a host warning is unresolved. Keep the \
+            serialized note within 16 KiB; omit secrets and copied source. The \
+            kernel supplies ownership, short recovery/checkpoint IDs, time, \
+            and historical health evidence. Success is returned only after \
+            commit. Read chaos://recovery to reread notes, including after \
+            restart. Save BEFORE wait_for_machine_recovery; do not create \
+            checkpoint files. The newest 32 notes are retained per session."
             .into(),
         strict: false,
         defer_loading: None,

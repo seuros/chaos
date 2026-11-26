@@ -482,10 +482,7 @@ fn dynamic_tool_to_model_tool_keeps_output_schema_absent() {
     assert_eq!(
         model_tool.parameters,
         JsonSchema::Object {
-            properties: BTreeMap::from([(
-                "id".to_string(),
-                JsonSchema::String { description: None }
-            )]),
+            properties: BTreeMap::from([("id".to_string(), JsonSchema::string(None))]),
             required: Some(vec!["id".to_string()]),
             additional_properties: None,
         }
@@ -906,7 +903,7 @@ fn find_tool<'a>(tools: &'a [ConfiguredToolSpec], expected_name: &str) -> &'a Co
 fn strip_descriptions_schema(schema: &mut JsonSchema) {
     match schema {
         JsonSchema::Boolean { description }
-        | JsonSchema::String { description }
+        | JsonSchema::String { description, .. }
         | JsonSchema::Number { description }
         | JsonSchema::Integer { description } => {
             *description = None;
@@ -1366,6 +1363,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
     assert!(properties.contains_key("detail"));
     let Some(JsonSchema::String {
         description: Some(description),
+        ..
     }) = properties.get("detail")
     else {
         panic!("view_image detail should include a description");
@@ -2200,10 +2198,7 @@ fn test_build_specs_mcp_tools_converted() {
             name: "test_server/do_something_cool".to_string(),
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([
-                    (
-                        "string_argument".to_string(),
-                        JsonSchema::String { description: None }
-                    ),
+                    ("string_argument".to_string(), JsonSchema::string(None)),
                     (
                         "number_argument".to_string(),
                         JsonSchema::Number { description: None }
@@ -2212,10 +2207,7 @@ fn test_build_specs_mcp_tools_converted() {
                         "object_argument".to_string(),
                         JsonSchema::Object {
                             properties: BTreeMap::from([
-                                (
-                                    "string_property".to_string(),
-                                    JsonSchema::String { description: None }
-                                ),
+                                ("string_property".to_string(), JsonSchema::string(None)),
                                 (
                                     "number_property".to_string(),
                                     JsonSchema::Number { description: None }
@@ -2330,9 +2322,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([(
                     "query".to_string(),
-                    JsonSchema::String {
-                        description: Some("search query".to_string())
-                    }
+                    JsonSchema::string(Some("search query".to_string()))
                 )]),
                 required: None,
                 additional_properties: None,
@@ -2508,7 +2498,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
                 properties: BTreeMap::from([(
                     "tags".to_string(),
                     JsonSchema::Array {
-                        items: Box::new(JsonSchema::String { description: None }),
+                        items: Box::new(JsonSchema::string(None)),
                         description: None
                     }
                 )]),
@@ -2564,10 +2554,7 @@ fn test_mcp_tool_anyof_defaults_to_string() {
         ToolSpec::Function(ResponsesApiTool {
             name: "dash/value".to_string(),
             parameters: JsonSchema::Object {
-                properties: BTreeMap::from([(
-                    "value".to_string(),
-                    JsonSchema::String { description: None }
-                )]),
+                properties: BTreeMap::from([("value".to_string(), JsonSchema::string(None))]),
                 required: None,
                 additional_properties: None,
             },
@@ -2613,6 +2600,7 @@ fn shell_tool_with_request_permission_includes_additional_permissions() {
 
     let Some(JsonSchema::String {
         description: Some(description),
+        ..
     }) = properties.get("sandbox_permissions")
     else {
         panic!("expected sandbox_permissions description");
@@ -2755,10 +2743,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
             name: "test_server/do_something_cool".to_string(),
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([
-                    (
-                        "string_argument".to_string(),
-                        JsonSchema::String { description: None }
-                    ),
+                    ("string_argument".to_string(), JsonSchema::string(None)),
                     (
                         "number_argument".to_string(),
                         JsonSchema::Number { description: None }
@@ -2767,10 +2752,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
                         "object_argument".to_string(),
                         JsonSchema::Object {
                             properties: BTreeMap::from([
-                                (
-                                    "string_property".to_string(),
-                                    JsonSchema::String { description: None }
-                                ),
+                                ("string_property".to_string(), JsonSchema::string(None)),
                                 (
                                     "number_property".to_string(),
                                     JsonSchema::Number { description: None }
@@ -2784,7 +2766,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
                                 JsonSchema::Object {
                                     properties: BTreeMap::from([(
                                         "addtl_prop".to_string(),
-                                        JsonSchema::String { description: None }
+                                        JsonSchema::string(None)
                                     ),]),
                                     required: Some(vec!["addtl_prop".to_string(),]),
                                     additional_properties: Some(false.into()),
@@ -2807,8 +2789,7 @@ fn test_get_model_tools_mcp_tools_with_additional_properties_schema() {
 
 #[test]
 fn chat_tools_include_top_level_name() {
-    let properties =
-        BTreeMap::from([("foo".to_string(), JsonSchema::String { description: None })]);
+    let properties = BTreeMap::from([("foo".to_string(), JsonSchema::string(None))]);
     let tools = vec![ToolSpec::Function(ResponsesApiTool {
         name: "demo".to_string(),
         description: "A demo tool".to_string(),

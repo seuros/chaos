@@ -9,8 +9,8 @@
 
 use chaos_realpath::AbsolutePathBuf;
 use chaos_realpath::AbsolutePathBufGuard;
-use dirs::home_dir;
 use pretty_assertions::assert_eq;
+use std::env::home_dir;
 use tempfile::tempdir;
 
 #[test]

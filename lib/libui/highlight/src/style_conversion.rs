@@ -1,6 +1,6 @@
-use ratatui::style::Color as RtColor;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
+use ratatui_core::style::Color as RtColor;
+use ratatui_core::style::Modifier;
+use ratatui_core::style::Style;
 use syntect::highlighting::Color as SyntectColor;
 use syntect::highlighting::FontStyle;
 use syntect::highlighting::Style as SyntectStyle;

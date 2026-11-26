@@ -164,7 +164,7 @@ pub(crate) fn build_seatbelt_extensions(
 }
 
 fn addressbook_dir() -> Option<PathBuf> {
-    Some(dirs::home_dir()?.join("Library/Application Support/AddressBook"))
+    Some(std::env::home_dir()?.join("Library/Application Support/AddressBook"))
 }
 
 fn normalize_bundle_ids(bundle_ids: &[String]) -> Vec<String> {

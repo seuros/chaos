@@ -7,6 +7,25 @@ use super::redact_sensitive_url_parts;
 use super::sanitize_url_for_logging;
 
 #[test]
+fn authorize_url_round_trips_reserved_characters() {
+    let state = "a+b & c=✓%";
+    let url = super::build_authorize_url(
+        "https://example.com",
+        "client",
+        "http://localhost/callback",
+        &crate::pkce::generate_pkce(),
+        state,
+        Some("org+one"),
+    );
+    let url = url::Url::parse(&url).expect("valid authorize URL");
+    let pairs = url
+        .query_pairs()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(pairs["state"], state);
+    assert_eq!(pairs["allowed_workspace_id"], "org+one");
+}
+
+#[test]
 fn token_endpoint_errors_keep_useful_messages_without_losing_codes() {
     for (body, code, message, display) in [
         (

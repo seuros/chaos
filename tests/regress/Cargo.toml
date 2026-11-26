@@ -38,7 +38,6 @@ chaos-uptime = { workspace = true }
 chaos-wchar = { workspace = true }
 chaos-which = { workspace = true }
 chaos_journald = { workspace = true }
-dirs = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

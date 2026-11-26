@@ -2,8 +2,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chaos_sh::parse_command::extract_shell_command;
-use dirs::home_dir;
 use shlex::try_join;
+use std::env::home_dir;
 
 pub fn escape_command(command: &[String]) -> String {
     try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "))

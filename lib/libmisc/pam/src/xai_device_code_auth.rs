@@ -73,14 +73,6 @@ struct OAuthErrorResponse {
     error_description: Option<String>,
 }
 
-fn form_body(fields: &[(&str, &str)]) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    for (key, value) in fields {
-        serializer.append_pair(key, value);
-    }
-    serializer.finish()
-}
-
 fn validated_endpoint(issuer: &str, endpoint: &str, field: &str) -> io::Result<String> {
     let issuer = Url::parse(issuer).map_err(io::Error::other)?;
     let endpoint = Url::parse(endpoint).map_err(io::Error::other)?;
@@ -158,7 +150,7 @@ pub async fn request_xai_device_code(opts: &XaiDeviceCodeOptions) -> io::Result<
             "xAI OIDC discovery did not advertise device authorization",
         )
     })?;
-    let body = form_body(&[
+    let body = crate::form_body(&[
         ("client_id", &opts.client_id),
         ("scope", XAI_OAUTH_SCOPE),
         ("referrer", XAI_OAUTH_REFERRER),
@@ -229,7 +221,7 @@ pub async fn complete_xai_device_code_login(
             ));
         }
 
-        let body = form_body(&[
+        let body = crate::form_body(&[
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ("client_id", &opts.client_id),
             ("device_code", &device_code.device_code),

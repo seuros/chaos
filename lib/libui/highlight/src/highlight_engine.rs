@@ -1,5 +1,5 @@
-use ratatui::text::Line;
-use ratatui::text::Span;
+use ratatui_core::text::Line;
+use ratatui_core::text::Span;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Theme;
 use syntect::util::LinesWithEndings;

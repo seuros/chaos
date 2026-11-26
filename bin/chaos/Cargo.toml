@@ -59,10 +59,8 @@ chaos-console = { workspace = true, optional = true }
 chaos-snitch = { workspace = true }
 chaos-client = { workspace = true }
 rama = { workspace = true }
-libc = { workspace = true }
 mimalloc = { workspace = true }
 owo-colors = { workspace = true, optional = true }
-regex-lite = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true, optional = true }

@@ -59,7 +59,6 @@ base64 = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
 derive_more = { workspace = true, features = ["is_variant"] }
 diffy = { workspace = true }
-dirs = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
 mermaid-rs-renderer = { workspace = true }
 resvg = { workspace = true }

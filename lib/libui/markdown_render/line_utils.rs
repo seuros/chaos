@@ -1,6 +1,6 @@
 use chaos_wchar::normalize_markdown_hash_location_suffix;
-use dirs::home_dir;
 use regex_lite::Regex;
+use std::env::home_dir;
 use std::path::Path;
 use std::sync::LazyLock;
 use url::Url;

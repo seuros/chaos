@@ -102,7 +102,7 @@ schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 # tmTheme import validation only: the plist loader, no regex engine.
-syntect = { version = "5", default-features = false, features = ["plist-load"] }
+syntect = { workspace = true, features = ["plist-load"] }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
 shlex = { workspace = true }
@@ -115,7 +115,6 @@ lease-machines = { workspace = true }
 suspect-machines = { workspace = true }
 throttle-machines = { workspace = true }
 tempfile = { workspace = true }
-test-log = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true, features = [
     "formatting",
@@ -180,6 +179,7 @@ insta = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 test-case = "3.4.0"
+test-log = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

@@ -264,9 +264,7 @@ anyhow = "1"
 arboard = { version = "3", features = ["wayland-data-control"] }
 assert_cmd = "2"
 async-channel = "2"
-async-stream = "0.3.6"
 base64 = "0.23.1"
-bytes = "1"
 chardetng = "1"
 color-eyre = "0.6.5"
 cookie_store = { version = "0.22.1", default-features = false }
@@ -276,12 +274,9 @@ csv = "1"
 ctor = "1"
 derive_more = "2"
 diffy = "0.5.2"
-dirs = "7"
 dotenvy = "0.15.7"
 encoding_rs = "0.8.42"
-fd-lock = "4"
 env-flags = "0.1.1"
-env_logger = "0.11.11"
 flate2 = "1"
 futures = { version = "0.3", default-features = false }
 gethostname = "1"
@@ -312,7 +307,6 @@ mlua = { version = "0.12.2", features = ["lua54", "vendored", "async", "serializ
 model2vec-rs = { version = "=0.3.0", default-features = false, features = ["local-only", "fancy-regex"] }
 multimap = "0.10.1"
 notify = "8"
-objc2-foundation = { version = "0.3.2", default-features = false }
 openssl-sys = "0.9"
 # Keep the telemetry family aligned with Rama 0.4's OpenTelemetry 0.32 types.
 opentelemetry-appender-tracing = "0.32"
@@ -327,13 +321,14 @@ pgvector = { version = "0.4.2", default-features = false }
 portable-pty = "0.9"
 predicates = "3"
 pretty_assertions = "1"
-pulldown-cmark = "0.13"
+pulldown-cmark = { version = "0.13", default-features = false }
 quick-xml = "0.42"
 rama = { version = "0.4", features = ["http-full", "rustls", "ring", "compression", "socks5", "opentelemetry", "unix"] }
 rama-http-hyperium = { version = "0.4" }
 rama-http-types = { version = "0.4" }
 rand = "0.10"
 ratatui = "0.30.2"
+ratatui-core = "0.1.2"
 ratatui-hypertile = "0.4.2"
 ratatui-hypertile-extras = { version = "0.4.2", default-features = false, features = [
     "crossterm",
@@ -350,7 +345,6 @@ rustls-native-certs = "0.8.5"
 rustls-pki-types = "1"
 schemars = "1"
 seccompiler = "0.5"
-semver = "1"
 serde = "1"
 serde_json = "1"
 serde_path_to_error = "0.1.20"
@@ -394,7 +388,7 @@ strum_macros = "0.28"
 supports-color = "3"
 termprofile = { version = "0.2.5", features = ["convert"] }
 supports-hyperlinks = "3"
-syntect = "5"
+syntect = { version = "5", default-features = false }
 sys-locale = "0.3.2"
 unicodeit = "0.2"
 tempfile = "3"
@@ -421,7 +415,6 @@ tui-tree-widget = "0.24.1"
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.3"
 url = "2"
-urlencoding = "2.1"
 uuid = "1"
 vt100 = "0.18.1"
 walkdir = "2"
@@ -492,19 +485,15 @@ ignored = [
     "chaos-watchdog",
     "chaos-snitch",
     "flate2",
-    "semver",
     "chaos-contraband",
     "ratatui-macros",
     "zeroize",
     "include_dir",
     "chaos-warden",
-    "async-stream",
-    "env_logger",
     "tar",
     "opentelemetry_sdk",
     "chaos-ration",
     "chaos-libration",
-    "fd-lock",
     "chaos-minions",
     "chaos-parole",
     "chaos-recall",

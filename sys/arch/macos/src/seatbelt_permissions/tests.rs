@@ -228,7 +228,7 @@ fn contacts_read_only_emit_contacts_read_clauses() {
         ],
     );
 
-    let expected_dir_params = dirs::home_dir()
+    let expected_dir_params = std::env::home_dir()
         .map(|home| {
             vec![(
                 "ADDRESSBOOK_DIR".to_string(),
@@ -264,7 +264,7 @@ fn contacts_read_write_emit_write_clauses() {
         ],
     );
 
-    let expected_dir_params = dirs::home_dir()
+    let expected_dir_params = std::env::home_dir()
         .map(|home| {
             vec![(
                 "ADDRESSBOOK_DIR".to_string(),

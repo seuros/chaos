@@ -18,7 +18,6 @@ chaos-ipc = { workspace = true }
 chaos-parole = { workspace = true }
 chaos-pf = { workspace = true }
 chaos-realpath = { workspace = true }
-dirs = { workspace = true }
 libc = { workspace = true }
 rama = { workspace = true }
 url = { workspace = true }

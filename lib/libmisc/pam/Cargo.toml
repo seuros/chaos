@@ -33,7 +33,6 @@ tokio = { workspace = true, features = [
 state-machines = { workspace = true }
 tokio-util = { workspace = true }
 url = { workspace = true }
-urlencoding = { workspace = true }
 webbrowser = { workspace = true }
 
 [dev-dependencies]

@@ -1,8 +1,8 @@
 use super::CHAOS_HOME_DIR_NAME;
 use super::CHAOS_HOME_ENV_VAR;
 use super::find_chaos_home_from_env;
-use dirs::home_dir;
 use pretty_assertions::assert_eq;
+use std::env::home_dir;
 use std::io::ErrorKind;
 use tempfile::TempDir;
 

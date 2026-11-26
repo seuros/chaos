@@ -1,4 +1,3 @@
-use dirs::home_dir;
 use path_absolutize::Absolutize;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -6,6 +5,7 @@ use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as SerdeError;
 use std::cell::RefCell;
+use std::env::home_dir;
 use std::path::Display;
 use std::path::Path;
 use std::path::PathBuf;

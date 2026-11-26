@@ -479,36 +479,27 @@ fn build_authorize_url(
     state: &str,
     forced_chatgpt_workspace_id: Option<&str>,
 ) -> String {
-    let mut query = vec![
-        ("response_type".to_string(), "code".to_string()),
-        ("client_id".to_string(), client_id.to_string()),
-        ("redirect_uri".to_string(), redirect_uri.to_string()),
+    let originator = originator();
+    let mut query = url::form_urlencoded::Serializer::new(String::new());
+    query.extend_pairs([
+        ("response_type", "code"),
+        ("client_id", client_id),
+        ("redirect_uri", redirect_uri),
         (
-            "scope".to_string(),
-            "openid profile email offline_access api.connectors.read api.connectors.invoke"
-                .to_string(),
+            "scope",
+            "openid profile email offline_access api.connectors.read api.connectors.invoke",
         ),
-        (
-            "code_challenge".to_string(),
-            pkce.code_challenge.to_string(),
-        ),
-        ("code_challenge_method".to_string(), "S256".to_string()),
-        ("id_token_add_organizations".to_string(), "true".to_string()),
-        ("codex_cli_simplified_flow".to_string(), "true".to_string()),
-        ("state".to_string(), state.to_string()),
-        (
-            "originator".to_string(),
-            originator().value.as_str().to_string(),
-        ),
-    ];
+        ("code_challenge", pkce.code_challenge.as_str()),
+        ("code_challenge_method", "S256"),
+        ("id_token_add_organizations", "true"),
+        ("codex_cli_simplified_flow", "true"),
+        ("state", state),
+        ("originator", originator.value.as_str()),
+    ]);
     if let Some(workspace_id) = forced_chatgpt_workspace_id {
-        query.push(("allowed_workspace_id".to_string(), workspace_id.to_string()));
+        query.append_pair("allowed_workspace_id", workspace_id);
     }
-    let qs = query
-        .into_iter()
-        .map(|(k, v)| format!("{k}={}", urlencoding::encode(&v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let qs = query.finish();
     format!("{issuer}/oauth/authorize?{qs}")
 }
 
@@ -701,13 +692,13 @@ pub(crate) async fn exchange_code_for_tokens(
     let resp = client
         .post(&token_url)
         .header("Content-Type", crate::MIME_FORM_URLENCODED)
-        .body(format!(
-            "grant_type=authorization_code&code={}&redirect_uri={}&client_id={}&code_verifier={}",
-            urlencoding::encode(code),
-            urlencoding::encode(redirect_uri),
-            urlencoding::encode(client_id),
-            urlencoding::encode(&pkce.code_verifier)
-        ))
+        .body(crate::form_body(&[
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", redirect_uri),
+            ("client_id", client_id),
+            ("code_verifier", &pkce.code_verifier),
+        ]))
         .send()
         .await;
     let resp = match resp {
@@ -820,19 +811,14 @@ fn compose_success_url(port: u16, issuer: &str, id_token: &str, access_token: &s
         "https://platform.api.openai.org"
     };
 
-    let mut params = vec![
-        ("id_token", id_token.to_string()),
-        ("needs_setup", needs_setup.to_string()),
-        ("org_id", org_id.to_string()),
-        ("project_id", project_id.to_string()),
-        ("plan_type", plan_type.to_string()),
-        ("platform_url", platform_url.to_string()),
-    ];
-    let qs = params
-        .drain(..)
-        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(&v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    let qs = crate::form_body(&[
+        ("id_token", id_token),
+        ("needs_setup", if needs_setup { "true" } else { "false" }),
+        ("org_id", org_id),
+        ("project_id", project_id),
+        ("plan_type", plan_type),
+        ("platform_url", platform_url),
+    ]);
     format!("http://127.0.0.1:{port}/success?{qs}")
 }
 
@@ -1069,14 +1055,19 @@ pub(crate) async fn obtain_api_key(
     let resp = client
         .post(&token_url)
         .header("Content-Type", crate::MIME_FORM_URLENCODED)
-        .body(format!(
-            "grant_type={}&client_id={}&requested_token={}&subject_token={}&subject_token_type={}",
-            urlencoding::encode("urn:ietf:params:oauth:grant-type:token-exchange"),
-            urlencoding::encode(client_id),
-            urlencoding::encode("openai-api-key"),
-            urlencoding::encode(id_token),
-            urlencoding::encode("urn:ietf:params:oauth:token-type:id_token")
-        ))
+        .body(crate::form_body(&[
+            (
+                "grant_type",
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ),
+            ("client_id", client_id),
+            ("requested_token", "openai-api-key"),
+            ("subject_token", id_token),
+            (
+                "subject_token_type",
+                "urn:ietf:params:oauth:token-type:id_token",
+            ),
+        ]))
         .send()
         .await
         .map_err(io::Error::other)?;

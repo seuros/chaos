@@ -430,10 +430,11 @@ impl ModelClient {
         }
     }
 
-    /// Return the currently armed Antigravity tool-image turn generation, if any.
-    pub(crate) async fn active_antigravity_tool_image_generation(
+    /// Return a direct staging handle for the currently armed Antigravity
+    /// tool-image slot on this session's active egress proxy, if any.
+    pub(crate) async fn active_antigravity_tool_image_staging_handle(
         &self,
-    ) -> std::result::Result<Option<u64>, String> {
+    ) -> std::result::Result<Option<chaos_clamp::AntigravityToolImageStagingHandle>, String> {
         if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
             return Ok(None);
         }
@@ -442,32 +443,17 @@ impl ModelClient {
             return Ok(None);
         };
         egress
-            .active_antigravity_tool_image_generation()
+            .active_antigravity_tool_image_staging_handle()
             .map_err(|error| error.to_string())
     }
 
-    /// Stage a tool-returned image on the active Antigravity egress proxy,
-    /// bound to the originating turn generation captured before tool dispatch.
-    ///
-    /// Returns `Ok(true)` when the session is clamped on Antigravity and the
-    /// image was staged for wire splicing, or `Ok(false)` for non-Antigravity
-    /// sessions (which keep standard MCP `ContentBlock::Image` delivery).
-    pub(crate) async fn stage_antigravity_tool_image(
+    #[cfg(test)]
+    pub(crate) async fn replace_antigravity_egress_for_test(
         &self,
-        expected_generation_id: u64,
-        attachment: chaos_clamp::AntigravityToolImageAttachment,
-    ) -> std::result::Result<bool, String> {
-        if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
-            return Ok(false);
-        }
-        let guard = self.state.antigravity_egress.lock().await;
-        let Some(egress) = guard.as_ref() else {
-            return Ok(false);
-        };
-        egress
-            .stage_antigravity_tool_image(expected_generation_id, attachment)
-            .map(|()| true)
-            .map_err(|error| error.to_string())
+        proxy: Option<chaos_clamp::EgressProxy>,
+    ) -> Option<chaos_clamp::EgressProxy> {
+        let mut guard = self.state.antigravity_egress.lock().await;
+        std::mem::replace(&mut *guard, proxy)
     }
 
     /// Get the initialization response from the clamped subprocess.

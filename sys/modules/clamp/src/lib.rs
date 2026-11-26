@@ -37,6 +37,7 @@ pub use egress::AntigravityAudioAttachment;
 pub use egress::AntigravityAudioGuard;
 pub use egress::AntigravityToolImageAttachment;
 pub use egress::AntigravityToolImageGuard;
+pub use egress::AntigravityToolImageStagingHandle;
 pub use egress::EgressPolicy;
 pub use egress::EgressProxy;
 pub use egress::antigravity_tool_image_marker;

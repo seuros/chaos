@@ -2,7 +2,7 @@
 //! Rewrite only supported generation requests, never OAuth or control traffic.
 
 use std::sync::{
-    Arc, RwLock,
+    Arc, RwLock, Weak,
     atomic::{AtomicU64, Ordering},
 };
 
@@ -139,10 +139,57 @@ pub struct AntigravityToolImageGuard {
     disarmed: bool,
 }
 
+/// Direct handle to a single armed Antigravity tool-image slot on a specific
+/// egress proxy instance.
+///
+/// Staging through this handle writes directly into the originating proxy's
+/// slot and never re-resolves the session's current proxy, so a late tool
+/// completion cannot land on a replacement proxy even when its generation
+/// counter also starts at `1`.
+#[derive(Clone)]
+pub struct AntigravityToolImageStagingHandle {
+    tool_images: Weak<RwLock<Option<ActiveToolImageTurn>>>,
+    generation_id: u64,
+}
+
+impl std::fmt::Debug for AntigravityToolImageStagingHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AntigravityToolImageStagingHandle")
+            .field("generation_id", &self.generation_id)
+            .finish()
+    }
+}
+
+impl AntigravityToolImageStagingHandle {
+    /// Return the monotonic turn generation bound to this staging handle.
+    pub fn generation_id(&self) -> u64 {
+        self.generation_id
+    }
+
+    /// Stage a validated tool-returned image into the exact originating proxy
+    /// slot and turn generation. Fails closed if the originating proxy was
+    /// replaced/dropped or if the turn generation has expired or been re-armed.
+    pub fn stage(&self, attachment: AntigravityToolImageAttachment) -> Result<(), BoxError> {
+        let Some(tool_images) = self.tool_images.upgrade() else {
+            return Err("Antigravity tool image egress proxy is no longer active".into());
+        };
+        stage_tool_image_into_slot(&tool_images, self.generation_id, attachment)
+    }
+}
+
 impl AntigravityToolImageGuard {
     /// Return the monotonic turn generation owned by this guard.
     pub fn generation_id(&self) -> u64 {
         self.generation_id
+    }
+
+    /// Return a direct staging handle bound to this guard's proxy slot and
+    /// turn generation.
+    pub fn staging_handle(&self) -> AntigravityToolImageStagingHandle {
+        AntigravityToolImageStagingHandle {
+            tool_images: Arc::downgrade(&self.tool_images),
+            generation_id: self.generation_id,
+        }
     }
 
     /// Clear the active turn's staged tool images and return the number of
@@ -275,65 +322,28 @@ impl AntigravitySystemPrompt {
         })
     }
 
-    pub(super) fn active_tool_image_generation(&self) -> Result<Option<u64>, BoxError> {
+    pub(super) fn active_tool_image_staging_handle(
+        &self,
+    ) -> Result<Option<AntigravityToolImageStagingHandle>, BoxError> {
         let guard = self
             .tool_images
             .read()
             .map_err(|_| "clamp tool image lock poisoned")?;
-        Ok(guard.as_ref().map(|turn| turn.generation_id))
+        Ok(guard
+            .as_ref()
+            .map(|turn| AntigravityToolImageStagingHandle {
+                tool_images: Arc::downgrade(&self.tool_images),
+                generation_id: turn.generation_id,
+            }))
     }
 
+    #[cfg(test)]
     pub(super) fn stage_tool_image(
         &self,
         expected_generation_id: u64,
         attachment: AntigravityToolImageAttachment,
     ) -> Result<(), BoxError> {
-        if attachment.nonce.trim().is_empty() {
-            return Err("clamp tool image nonce must not be empty".into());
-        }
-        if !attachment.mime_type.starts_with("image/") {
-            return Err(format!(
-                "clamp tool image has unsupported MIME type `{}`",
-                attachment.mime_type
-            )
-            .into());
-        }
-        if attachment.data_base64.is_empty() {
-            return Err("clamp tool image payload must not be empty".into());
-        }
-        let mut guard = self
-            .tool_images
-            .write()
-            .map_err(|_| "clamp tool image lock poisoned")?;
-        let Some(turn) = guard.as_mut() else {
-            return Err("no active Antigravity turn is armed for tool images".into());
-        };
-        if turn.generation_id != expected_generation_id {
-            return Err("Antigravity tool image turn generation expired before staging".into());
-        }
-        if turn
-            .images
-            .iter()
-            .any(|existing| existing.nonce == attachment.nonce)
-        {
-            return Err(format!(
-                "duplicate Antigravity tool image nonce `{}`",
-                attachment.nonce
-            )
-            .into());
-        }
-        let new_total = turn
-            .total_base64_bytes
-            .saturating_add(attachment.data_base64.len());
-        if new_total > MAX_STAGED_TOOL_IMAGE_BYTES {
-            return Err(format!(
-                "staged Antigravity tool images ({new_total} base64 bytes) exceed {MAX_STAGED_TOOL_IMAGE_BYTES}-byte limit"
-            )
-            .into());
-        }
-        turn.total_base64_bytes = new_total;
-        turn.images.push(attachment);
-        Ok(())
+        stage_tool_image_into_slot(&self.tool_images, expected_generation_id, attachment)
     }
 
     pub(super) fn disarm_tool_images(&self) -> Result<usize, BoxError> {
@@ -498,12 +508,16 @@ impl AntigravitySystemPrompt {
             }
         }
         // Keep spliced screenshot bytes out of wiretap records while leaving
-        // the upstream request body (`bytes`) intact.
+        // the upstream request body (`bytes`) intact. Fail closed to a stub
+        // body if any spliced part cannot be located for redaction.
         let redacted_record_body = if spliced_image_parts.is_empty() {
             None
         } else {
-            redact_spliced_tool_images(&mut payload, &envelope, &spliced_image_parts);
-            Some(payload)
+            Some(redacted_record_body_or_stub(
+                payload,
+                &envelope,
+                &spliced_image_parts,
+            ))
         };
         // Neither framing nor body digests from the CLI describe the new body.
         for name in [
@@ -793,11 +807,83 @@ fn splice_authorized_tool_images(
     Ok(spliced)
 }
 
+fn stage_tool_image_into_slot(
+    tool_images: &RwLock<Option<ActiveToolImageTurn>>,
+    expected_generation_id: u64,
+    attachment: AntigravityToolImageAttachment,
+) -> Result<(), BoxError> {
+    if attachment.nonce.trim().is_empty() {
+        return Err("clamp tool image nonce must not be empty".into());
+    }
+    if !attachment.mime_type.starts_with("image/") {
+        return Err(format!(
+            "clamp tool image has unsupported MIME type `{}`",
+            attachment.mime_type
+        )
+        .into());
+    }
+    if attachment.data_base64.is_empty() {
+        return Err("clamp tool image payload must not be empty".into());
+    }
+    let mut guard = tool_images
+        .write()
+        .map_err(|_| "clamp tool image lock poisoned")?;
+    let Some(turn) = guard.as_mut() else {
+        return Err("no active Antigravity turn is armed for tool images".into());
+    };
+    if turn.generation_id != expected_generation_id {
+        return Err("Antigravity tool image turn generation expired before staging".into());
+    }
+    if turn
+        .images
+        .iter()
+        .any(|existing| existing.nonce == attachment.nonce)
+    {
+        return Err(format!(
+            "duplicate Antigravity tool image nonce `{}`",
+            attachment.nonce
+        )
+        .into());
+    }
+    let new_total = turn
+        .total_base64_bytes
+        .saturating_add(attachment.data_base64.len());
+    if new_total > MAX_STAGED_TOOL_IMAGE_BYTES {
+        return Err(format!(
+            "staged Antigravity tool images ({new_total} base64 bytes) exceed {MAX_STAGED_TOOL_IMAGE_BYTES}-byte limit"
+        )
+        .into());
+    }
+    turn.total_base64_bytes = new_total;
+    turn.images.push(attachment);
+    Ok(())
+}
+
+fn redacted_record_body_or_stub(
+    mut payload: Value,
+    envelope: &GenerationEnvelope,
+    spliced: &[SplicedToolImagePart],
+) -> Value {
+    if redact_spliced_tool_images(&mut payload, envelope, spliced) {
+        payload
+    } else {
+        warn!(
+            spliced_count = spliced.len(),
+            "egress: failed to redact all spliced tool images; recording stub body"
+        );
+        json!({
+            "redacted": true,
+            "reason": "tool_image_redaction_incomplete",
+            "spliced_tool_images": spliced.len(),
+        })
+    }
+}
+
 fn redact_spliced_tool_images(
     payload: &mut Value,
     envelope: &GenerationEnvelope,
     spliced: &[SplicedToolImagePart],
-) {
+) -> bool {
     let request = match envelope {
         GenerationEnvelope::CloudCode => payload.get_mut("request"),
         GenerationEnvelope::Gemini { .. } => Some(payload),
@@ -807,10 +893,10 @@ fn redact_spliced_tool_images(
         .and_then(|req| req.get_mut("contents"))
         .and_then(Value::as_array_mut)
     else {
-        return;
+        return false;
     };
     for loc in spliced {
-        if let Some(inline_data) = contents
+        let Some(inline_data) = contents
             .get_mut(loc.content_idx)
             .and_then(|content| content.get_mut("parts"))
             .and_then(Value::as_array_mut)
@@ -821,16 +907,23 @@ fn redact_spliced_tool_images(
             .and_then(|parts| parts.get_mut(loc.inline_data_idx))
             .and_then(|part| part.get_mut("inlineData"))
             .and_then(Value::as_object_mut)
-        {
-            inline_data.insert(
+        else {
+            return false;
+        };
+        if inline_data
+            .insert(
                 "data".to_string(),
                 Value::String(format!(
                     "[redacted tool image: {} base64 bytes]",
                     loc.data_base64_len
                 )),
-            );
+            )
+            .is_none()
+        {
+            return false;
         }
     }
+    true
 }
 
 #[cfg(test)]

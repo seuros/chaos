@@ -287,3 +287,147 @@ fn steered_user_text_becomes_notices_and_other_items_stay_pending() {
     assert_eq!(notices, vec!["No update for 2m; post a line.".to_string()]);
     assert_eq!(other, vec![developer]);
 }
+
+#[tokio::test]
+async fn antigravity_tool_image_staging_handle_rejects_late_stage_after_proxy_replacement() {
+    use chaos_ipc::models::{
+        FunctionCallOutputBody, FunctionCallOutputContentItem, FunctionCallOutputPayload,
+    };
+
+    struct NoopSink;
+    impl chaos_clamp::WiretapSink for NoopSink {
+        fn record(&self, _exchange: chaos_clamp::WiretapExchange) {}
+    }
+
+    let (home, _workspace, session) = session_bridge_fixture().await;
+    session
+        .services
+        .model_client
+        .set_clamped(true, Some(crate::config::ClampBackend::Antigravity))
+        .await;
+
+    let start_proxy = |label: &str| {
+        let ca_path = home.path().join(format!("egress-ca-{label}.pem"));
+        let policy = chaos_clamp::EgressPolicy::antigravity()
+            .with_antigravity_system_prompt(format!("instructions {label}"));
+        chaos_clamp::EgressProxy::start(policy, Arc::new(NoopSink), Some(ca_path))
+    };
+
+    // Start proxy #1 and arm turn 1 (generation 1).
+    let proxy1 = start_proxy("one").await.expect("start proxy 1");
+    let guard1 = proxy1
+        .arm_antigravity_tool_images("gemini-4-neon-high".to_string())
+        .expect("arm proxy 1");
+    assert_eq!(guard1.generation_id(), 1);
+    session
+        .services
+        .model_client
+        .replace_antigravity_egress_for_test(Some(proxy1))
+        .await;
+
+    // Capture the turn context + staging handle at bridge request start.
+    let (_turn_context, handle1) = active_clamp_turn_and_tool_image_handle(&session, true)
+        .await
+        .expect("capture handle 1")
+        .expect("active turn");
+    let handle1 = handle1.expect("armed handle 1");
+    assert_eq!(handle1.generation_id(), 1);
+
+    // Replace the session's egress proxy with proxy #2 and arm it (also generation 1).
+    drop(guard1);
+    let proxy2 = start_proxy("two").await.expect("start proxy 2");
+    let guard2 = proxy2
+        .arm_antigravity_tool_images("gemini-4-neon-high".to_string())
+        .expect("arm proxy 2");
+    assert_eq!(guard2.generation_id(), 1);
+    if let Some(old_proxy) = session
+        .services
+        .model_client
+        .replace_antigravity_egress_for_test(Some(proxy2))
+        .await
+    {
+        old_proxy.shutdown();
+    }
+
+    // Late tool completion from turn 1 must fail closed rather than staging into proxy #2.
+    let mut late_output = ResponseInputItem::FunctionCallOutput {
+        call_id: "call_late".to_string(),
+        tool_name: None,
+        output: FunctionCallOutputPayload {
+            body: FunctionCallOutputBody::ContentItems(vec![
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,iVBORw0KGgo=".to_string(),
+                    detail: None,
+                },
+            ]),
+            success: Some(true),
+        },
+    };
+    let err = stage_antigravity_tool_images(&session, Some(&handle1), &mut late_output)
+        .expect_err("late staging against replaced proxy must fail");
+    assert!(
+        err.contains("no longer active") || err.contains("no active Antigravity turn"),
+        "unexpected error: {err}"
+    );
+    // Output must not have been rewritten into a nonce marker on failure.
+    assert!(matches!(
+        late_output,
+        ResponseInputItem::FunctionCallOutput {
+            output: FunctionCallOutputPayload {
+                body: FunctionCallOutputBody::ContentItems(ref items),
+                ..
+            },
+            ..
+        } if matches!(items.as_slice(), [FunctionCallOutputContentItem::InputImage { .. }])
+    ));
+
+    // A fresh bridge call on proxy #2 captures a new handle and stages cleanly.
+    let (_turn_context, handle2) = active_clamp_turn_and_tool_image_handle(&session, true)
+        .await
+        .expect("capture handle 2")
+        .expect("active turn");
+    let handle2 = handle2.expect("armed handle 2");
+    assert_eq!(handle2.generation_id(), 1);
+
+    let mut fresh_output = ResponseInputItem::FunctionCallOutput {
+        call_id: "call_fresh".to_string(),
+        tool_name: None,
+        output: FunctionCallOutputPayload {
+            body: FunctionCallOutputBody::ContentItems(vec![
+                FunctionCallOutputContentItem::InputImage {
+                    image_url: "data:image/png;base64,iVBORw0KGgo=".to_string(),
+                    detail: None,
+                },
+            ]),
+            success: Some(true),
+        },
+    };
+    stage_antigravity_tool_images(&session, Some(&handle2), &mut fresh_output)
+        .expect("fresh handle on replacement proxy should stage");
+    match fresh_output {
+        ResponseInputItem::FunctionCallOutput {
+            output:
+                FunctionCallOutputPayload {
+                    body: FunctionCallOutputBody::ContentItems(items),
+                    ..
+                },
+            ..
+        } => match items.as_slice() {
+            [FunctionCallOutputContentItem::InputText { text }] => {
+                assert!(text.starts_with("[chaos-image id "));
+            }
+            other => panic!("expected rewritten marker, got {other:?}"),
+        },
+        other => panic!("unexpected output: {other:?}"),
+    }
+
+    drop(guard2);
+    if let Some(proxy) = session
+        .services
+        .model_client
+        .replace_antigravity_egress_for_test(None)
+        .await
+    {
+        proxy.shutdown();
+    }
+}

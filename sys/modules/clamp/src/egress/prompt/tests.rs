@@ -925,21 +925,19 @@ async fn late_tool_image_staging_for_expired_generation_leaves_replacement_turn_
     let turn1_guard = prompt
         .arm_tool_images("gemini-4-neon-high".to_string())
         .unwrap();
-    let turn1_gen = prompt.active_tool_image_generation().unwrap().unwrap();
-    assert_eq!(turn1_gen, turn1_guard.generation_id());
+    let turn1_handle = prompt.active_tool_image_staging_handle().unwrap().unwrap();
+    assert_eq!(turn1_handle.generation_id(), turn1_guard.generation_id());
 
     // Turn 1 ends or is superseded by Turn 2 before Turn 1's tool dispatch finishes.
     let turn2_guard = prompt
         .arm_tool_images("gemini-4-neon-high".to_string())
         .unwrap();
-    let turn2_gen = prompt.active_tool_image_generation().unwrap().unwrap();
-    assert_ne!(turn1_gen, turn2_gen);
+    let turn2_handle = prompt.active_tool_image_staging_handle().unwrap().unwrap();
+    assert_ne!(turn1_handle.generation_id(), turn2_handle.generation_id());
     drop(turn1_guard);
 
     let late_image = sample_tool_image("imglate111111111");
-    let err = prompt
-        .stage_tool_image(turn1_gen, late_image.clone())
-        .unwrap_err();
+    let err = turn1_handle.stage(late_image.clone()).unwrap_err();
     assert!(
         err.to_string().contains("generation expired"),
         "unexpected err: {err}"
@@ -958,11 +956,9 @@ async fn late_tool_image_staging_for_expired_generation_leaves_replacement_turn_
             .is_none()
     );
 
-    // Turn 2 can still stage and splice its own image cleanly using its own generation.
+    // Turn 2 can still stage and splice its own image cleanly using its own handle.
     let turn2_image = sample_tool_image("imgturn222222222");
-    prompt
-        .stage_tool_image(turn2_gen, turn2_image.clone())
-        .unwrap();
+    turn2_handle.stage(turn2_image.clone()).unwrap();
     let turn2_marker = antigravity_tool_image_marker(&turn2_image.nonce);
     let turn2_req = generation_request(
         GENERATE,
@@ -979,6 +975,86 @@ async fn late_tool_image_staging_for_expired_generation_leaves_replacement_turn_
         }])
     );
     assert_eq!(turn2_guard.disarm().unwrap(), 1);
+}
+
+#[tokio::test]
+async fn late_tool_image_staging_handle_fails_closed_after_prompt_replacement() {
+    let prompt1 = AntigravitySystemPrompt::new("ChaOS instructions 1".to_string());
+    let turn1_guard = prompt1
+        .arm_tool_images("gemini-4-neon-high".to_string())
+        .unwrap();
+    let turn1_handle = prompt1.active_tool_image_staging_handle().unwrap().unwrap();
+    assert_eq!(turn1_handle.generation_id(), 1);
+
+    // Replace the proxy/prompt completely; the replacement also starts at generation 1.
+    drop(turn1_guard);
+    drop(prompt1);
+    let prompt2 = AntigravitySystemPrompt::new("ChaOS instructions 2".to_string());
+    let turn2_guard = prompt2
+        .arm_tool_images("gemini-4-neon-high".to_string())
+        .unwrap();
+    let turn2_handle = prompt2.active_tool_image_staging_handle().unwrap().unwrap();
+    assert_eq!(turn2_handle.generation_id(), 1);
+
+    // The old handle fails closed and cannot stage into the replacement prompt.
+    let late_image = sample_tool_image("imgreplaced11111");
+    let err = turn1_handle.stage(late_image.clone()).unwrap_err();
+    assert!(
+        err.to_string().contains("no longer active"),
+        "unexpected err: {err}"
+    );
+    let late_marker = antigravity_tool_image_marker(&late_image.nonce);
+    let late_req = generation_request(
+        GENERATE,
+        cloud_request_with_tool_image_marker("gemini-4-neon-high", "call_mcp_tool", &late_marker),
+    );
+    let rewritten = payload(prompt2.rewrite(late_req, CLOUD_CODE).await.unwrap()).await;
+    assert!(
+        rewritten["request"]["contents"][2]["parts"][0]["functionResponse"]
+            .get("parts")
+            .is_none()
+    );
+    assert_eq!(turn2_guard.disarm().unwrap(), 0);
+}
+
+#[test]
+fn redacted_record_body_or_stub_fails_closed_when_index_misses() {
+    let secret = "c2VjcmV0LXNjcmVlbnNob3QtYnl0ZXM=";
+    let payload = json!({
+        "model": "gemini-4-neon-high",
+        "request": {
+            "contents": [{
+                "role": "model",
+                "parts": [{
+                    "functionResponse": {
+                        "name": "call_mcp_tool",
+                        "response": {"output": "ok"},
+                        "parts": [{
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": secret,
+                            }
+                        }]
+                    }
+                }]
+            }]
+        }
+    });
+    // Out-of-bounds index simulates an unexpected structure mismatch during redaction.
+    let recorded = redacted_record_body_or_stub(
+        payload,
+        &GenerationEnvelope::CloudCode,
+        &[SplicedToolImagePart {
+            content_idx: 0,
+            part_idx: 0,
+            inline_data_idx: 9,
+            data_base64_len: secret.len(),
+        }],
+    );
+    assert_eq!(recorded["redacted"], json!(true));
+    assert_eq!(recorded["reason"], json!("tool_image_redaction_incomplete"));
+    assert_eq!(recorded["spliced_tool_images"], json!(1));
+    assert!(!recorded.to_string().contains(secret));
 }
 
 #[test]

@@ -23,7 +23,6 @@ use tracing::debug;
 use tracing::warn;
 
 use crate::chaos::built_tools;
-use crate::client::active_clamp_turn_context;
 use crate::client_common::tools::FreeformTool;
 use crate::client_common::tools::ResponsesApiTool;
 use crate::client_common::tools::ToolSpec;
@@ -154,11 +153,23 @@ async fn handle_request(
             message: "session closed".to_string(),
         };
     };
-    let Some(turn_context) = active_clamp_turn_context(&session).await else {
-        return ClampBridgeResponse::Error {
-            message: "no active turn for clamp bridge".to_string(),
+    // Capture the active turn context and (for tool calls) the exact armed
+    // Antigravity tool-image staging handle together under `active_turn` so
+    // both describe the same originating turn before any async setup or
+    // tool dispatch runs.
+    let capture_tool_image_handle = matches!(request_kind, ClampRequestKind::CallTool { .. });
+    let (turn_context, tool_image_handle) =
+        match active_clamp_turn_and_tool_image_handle(&session, capture_tool_image_handle).await {
+            Ok(Some(captured)) => captured,
+            Ok(None) => {
+                return ClampBridgeResponse::Error {
+                    message: "no active turn for clamp bridge".to_string(),
+                };
+            }
+            Err(err) => {
+                return ClampBridgeResponse::Error { message: err };
+            }
         };
-    };
     // The task keeps the context captured when the turn started. The prompt is
     // rendered from the effective context, which re-reads the plan attachment,
     // the active mode and permissions before every sample. List and dispatch
@@ -185,25 +196,15 @@ async fn handle_request(
                 .collect(),
         },
         ClampRequestKind::CallTool { name, arguments } => {
-            let tool_image_generation = match session
-                .services
-                .model_client
-                .active_antigravity_tool_image_generation()
-                .await
-            {
-                Ok(generation) => generation,
-                Err(err) => {
-                    return ClampBridgeResponse::Error { message: err };
-                }
-            };
             match dispatch_tool_call(Arc::clone(&session), turn_context, router, &name, arguments)
                 .await
             {
                 Ok((mut output, structured_output)) => {
-                    if let Err(err) =
-                        stage_antigravity_tool_images(&session, tool_image_generation, &mut output)
-                            .await
-                    {
+                    if let Err(err) = stage_antigravity_tool_images(
+                        &session,
+                        tool_image_handle.as_ref(),
+                        &mut output,
+                    ) {
                         return ClampBridgeResponse::Error { message: err };
                     }
                     ClampBridgeResponse::ToolResult {
@@ -404,13 +405,41 @@ async fn dispatch_tool_call(
     Ok((output.into_response(), structured_output))
 }
 
-/// Under the Antigravity clamp, stage any tool-returned `InputImage` blocks on
-/// the session's egress proxy and replace them with per-image nonce markers so
-/// `agy` does not offload binary MCP images to disk behind a blocked native
-/// `read_file`. Non-Antigravity clamps leave `output` untouched.
-async fn stage_antigravity_tool_images(
+async fn active_clamp_turn_and_tool_image_handle(
+    session: &crate::chaos::Session,
+    capture_tool_image_handle: bool,
+) -> Result<
+    Option<(
+        Arc<crate::chaos::TurnContext>,
+        Option<chaos_clamp::AntigravityToolImageStagingHandle>,
+    )>,
+    String,
+> {
+    let active = session.active_turn.lock().await;
+    let Some((_, task)) = active.as_ref().and_then(|turn| turn.tasks.first()) else {
+        return Ok(None);
+    };
+    let turn_context = Arc::clone(&task.turn_context);
+    let tool_image_handle = if capture_tool_image_handle {
+        session
+            .services
+            .model_client
+            .active_antigravity_tool_image_staging_handle()
+            .await?
+    } else {
+        None
+    };
+    Ok(Some((turn_context, tool_image_handle)))
+}
+
+/// Under the Antigravity clamp, stage any tool-returned `InputImage` blocks
+/// directly through the staging handle captured for the originating turn and
+/// replace them with per-image nonce markers so `agy` does not offload binary
+/// MCP images to disk behind a blocked native `read_file`. Non-Antigravity
+/// clamps leave `output` untouched.
+fn stage_antigravity_tool_images(
     session: &Arc<crate::chaos::Session>,
-    tool_image_generation: Option<u64>,
+    tool_image_handle: Option<&chaos_clamp::AntigravityToolImageStagingHandle>,
     output: &mut ResponseInputItem,
 ) -> Result<(), String> {
     use chaos_ipc::models::FunctionCallOutputBody;
@@ -435,7 +464,7 @@ async fn stage_antigravity_tool_images(
         let FunctionCallOutputContentItem::InputImage { image_url, .. } = item else {
             continue;
         };
-        let Some(expected_generation) = tool_image_generation else {
+        let Some(handle) = tool_image_handle else {
             return Err("no active Antigravity turn was armed when tool call started".to_string());
         };
         let Some(data_url) = image_url.strip_prefix("data:") else {
@@ -448,23 +477,16 @@ async fn stage_antigravity_tool_images(
             return Err("clamp bridge image output must be base64 encoded".to_string());
         };
         let nonce = uuid::Uuid::new_v4().simple().to_string();
-        let staged = session
-            .services
-            .model_client
-            .stage_antigravity_tool_image(
-                expected_generation,
-                chaos_clamp::AntigravityToolImageAttachment {
-                    nonce: nonce.clone(),
-                    mime_type: mime_type.to_owned(),
-                    data_base64: Arc::from(data),
-                },
-            )
-            .await?;
-        if staged {
-            *item = FunctionCallOutputContentItem::InputText {
-                text: chaos_clamp::antigravity_tool_image_marker(&nonce),
-            };
-        }
+        handle
+            .stage(chaos_clamp::AntigravityToolImageAttachment {
+                nonce: nonce.clone(),
+                mime_type: mime_type.to_owned(),
+                data_base64: Arc::from(data),
+            })
+            .map_err(|error| error.to_string())?;
+        *item = FunctionCallOutputContentItem::InputText {
+            text: chaos_clamp::antigravity_tool_image_marker(&nonce),
+        };
     }
 
     Ok(())

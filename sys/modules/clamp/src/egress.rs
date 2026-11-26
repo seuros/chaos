@@ -57,6 +57,7 @@ pub use prompt::AntigravityAudioGuard;
 use prompt::AntigravitySystemPrompt;
 pub use prompt::AntigravityToolImageAttachment;
 pub use prompt::AntigravityToolImageGuard;
+pub use prompt::AntigravityToolImageStagingHandle;
 pub use prompt::antigravity_tool_image_marker;
 
 /// Hosts `agy` is known to need: the Cloud Code agent backend, the OAuth token
@@ -318,25 +319,15 @@ impl EgressProxy {
             .arm_tool_images(authorized_model)
     }
 
-    /// Return the currently armed Antigravity tool-image turn generation, if any.
-    pub fn active_antigravity_tool_image_generation(&self) -> Result<Option<u64>, BoxError> {
-        self.system_prompt
-            .as_ref()
-            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
-            .active_tool_image_generation()
-    }
-
-    /// Stage a validated tool-returned image for splicing into its matching
-    /// `functionResponse` during the originating Antigravity turn generation.
-    pub fn stage_antigravity_tool_image(
+    /// Return a direct staging handle for the currently armed Antigravity
+    /// tool-image slot on this proxy instance, if any.
+    pub fn active_antigravity_tool_image_staging_handle(
         &self,
-        expected_generation_id: u64,
-        attachment: AntigravityToolImageAttachment,
-    ) -> Result<(), BoxError> {
+    ) -> Result<Option<AntigravityToolImageStagingHandle>, BoxError> {
         self.system_prompt
             .as_ref()
             .ok_or("clamp egress was started without Antigravity prompt rewriting")?
-            .stage_tool_image(expected_generation_id, attachment)
+            .active_tool_image_staging_handle()
     }
 
     /// Clear any turn-scoped Antigravity tool images and return the number of

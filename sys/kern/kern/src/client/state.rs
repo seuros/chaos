@@ -430,13 +430,31 @@ impl ModelClient {
         }
     }
 
-    /// Stage a tool-returned image on the active Antigravity egress proxy.
+    /// Return the currently armed Antigravity tool-image turn generation, if any.
+    pub(crate) async fn active_antigravity_tool_image_generation(
+        &self,
+    ) -> std::result::Result<Option<u64>, String> {
+        if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
+            return Ok(None);
+        }
+        let guard = self.state.antigravity_egress.lock().await;
+        let Some(egress) = guard.as_ref() else {
+            return Ok(None);
+        };
+        egress
+            .active_antigravity_tool_image_generation()
+            .map_err(|error| error.to_string())
+    }
+
+    /// Stage a tool-returned image on the active Antigravity egress proxy,
+    /// bound to the originating turn generation captured before tool dispatch.
     ///
     /// Returns `Ok(true)` when the session is clamped on Antigravity and the
     /// image was staged for wire splicing, or `Ok(false)` for non-Antigravity
     /// sessions (which keep standard MCP `ContentBlock::Image` delivery).
     pub(crate) async fn stage_antigravity_tool_image(
         &self,
+        expected_generation_id: u64,
         attachment: chaos_clamp::AntigravityToolImageAttachment,
     ) -> std::result::Result<bool, String> {
         if !self.is_clamped() || self.clamp_backend() != ClampBackend::Antigravity {
@@ -447,7 +465,7 @@ impl ModelClient {
             return Ok(false);
         };
         egress
-            .stage_antigravity_tool_image(attachment)
+            .stage_antigravity_tool_image(expected_generation_id, attachment)
             .map(|()| true)
             .map_err(|error| error.to_string())
     }

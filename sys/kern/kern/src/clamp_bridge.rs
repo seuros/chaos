@@ -185,11 +185,25 @@ async fn handle_request(
                 .collect(),
         },
         ClampRequestKind::CallTool { name, arguments } => {
+            let tool_image_generation = match session
+                .services
+                .model_client
+                .active_antigravity_tool_image_generation()
+                .await
+            {
+                Ok(generation) => generation,
+                Err(err) => {
+                    return ClampBridgeResponse::Error { message: err };
+                }
+            };
             match dispatch_tool_call(Arc::clone(&session), turn_context, router, &name, arguments)
                 .await
             {
                 Ok((mut output, structured_output)) => {
-                    if let Err(err) = stage_antigravity_tool_images(&session, &mut output).await {
+                    if let Err(err) =
+                        stage_antigravity_tool_images(&session, tool_image_generation, &mut output)
+                            .await
+                    {
                         return ClampBridgeResponse::Error { message: err };
                     }
                     ClampBridgeResponse::ToolResult {
@@ -396,6 +410,7 @@ async fn dispatch_tool_call(
 /// `read_file`. Non-Antigravity clamps leave `output` untouched.
 async fn stage_antigravity_tool_images(
     session: &Arc<crate::chaos::Session>,
+    tool_image_generation: Option<u64>,
     output: &mut ResponseInputItem,
 ) -> Result<(), String> {
     use chaos_ipc::models::FunctionCallOutputBody;
@@ -420,6 +435,9 @@ async fn stage_antigravity_tool_images(
         let FunctionCallOutputContentItem::InputImage { image_url, .. } = item else {
             continue;
         };
+        let Some(expected_generation) = tool_image_generation else {
+            return Err("no active Antigravity turn was armed when tool call started".to_string());
+        };
         let Some(data_url) = image_url.strip_prefix("data:") else {
             return Err("clamp bridge image output must use a base64 data URL".to_string());
         };
@@ -433,11 +451,14 @@ async fn stage_antigravity_tool_images(
         let staged = session
             .services
             .model_client
-            .stage_antigravity_tool_image(chaos_clamp::AntigravityToolImageAttachment {
-                nonce: nonce.clone(),
-                mime_type: mime_type.to_owned(),
-                data_base64: Arc::from(data),
-            })
+            .stage_antigravity_tool_image(
+                expected_generation,
+                chaos_clamp::AntigravityToolImageAttachment {
+                    nonce: nonce.clone(),
+                    mime_type: mime_type.to_owned(),
+                    data_base64: Arc::from(data),
+                },
+            )
             .await?;
         if staged {
             *item = FunctionCallOutputContentItem::InputText {

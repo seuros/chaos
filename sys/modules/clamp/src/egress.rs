@@ -318,16 +318,25 @@ impl EgressProxy {
             .arm_tool_images(authorized_model)
     }
 
+    /// Return the currently armed Antigravity tool-image turn generation, if any.
+    pub fn active_antigravity_tool_image_generation(&self) -> Result<Option<u64>, BoxError> {
+        self.system_prompt
+            .as_ref()
+            .ok_or("clamp egress was started without Antigravity prompt rewriting")?
+            .active_tool_image_generation()
+    }
+
     /// Stage a validated tool-returned image for splicing into its matching
-    /// `functionResponse` during the active Antigravity turn.
+    /// `functionResponse` during the originating Antigravity turn generation.
     pub fn stage_antigravity_tool_image(
         &self,
+        expected_generation_id: u64,
         attachment: AntigravityToolImageAttachment,
     ) -> Result<(), BoxError> {
         self.system_prompt
             .as_ref()
             .ok_or("clamp egress was started without Antigravity prompt rewriting")?
-            .stage_tool_image(attachment)
+            .stage_tool_image(expected_generation_id, attachment)
     }
 
     /// Clear any turn-scoped Antigravity tool images and return the number of
@@ -474,25 +483,27 @@ async fn inspect_and_forward(
         return Ok(error_response(StatusCode::FORBIDDEN));
     }
 
-    let req = if let Some(prompt) = &state.policy.system_prompt {
-        match prompt.rewrite(req, &host).await {
-            Ok(req) => req,
+    let (req, redacted_record_body) = if let Some(prompt) = &state.policy.system_prompt {
+        match prompt.rewrite_for_egress(req, &host).await {
+            Ok(rewritten) => (rewritten.request, rewritten.redacted_record_body),
             Err(err) => {
                 warn!("egress: system-prompt replacement failed: {err}");
                 return Ok(error_response(StatusCode::BAD_GATEWAY));
             }
         }
     } else {
-        req
+        (req, None)
     };
-    // Record the effective provider request, not the discarded CLI prompt.
-    let (mut upstream_req, record) = match RecordParts::capture(req).await {
-        Ok(captured) => captured,
-        Err(err) => {
-            warn!("egress: failed to read request body: {err}");
-            return Ok(error_response(StatusCode::BAD_GATEWAY));
-        }
-    };
+    // Record the effective provider request (with spliced tool images redacted),
+    // not the discarded CLI prompt.
+    let (mut upstream_req, record) =
+        match RecordParts::capture_with_request(req, redacted_record_body).await {
+            Ok(captured) => captured,
+            Err(err) => {
+                warn!("egress: failed to read request body: {err}");
+                return Ok(error_response(StatusCode::BAD_GATEWAY));
+            }
+        };
     if state.policy.gateway.is_some() {
         // HTTP/1 requests inside CONNECT can use origin-form targets.
         if upstream_req.uri().scheme().is_none() {

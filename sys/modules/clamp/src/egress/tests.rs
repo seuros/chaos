@@ -365,3 +365,113 @@ fn session_authority_mints_a_ca_backed_leaf_covering_every_allowlisted_host() {
     session_authority(&["not a domain".to_owned()])
         .expect_err("non-domain allowlist entry must be rejected");
 }
+
+#[tokio::test]
+async fn egress_redacts_spliced_tool_image_from_wiretap_sink_while_forwarding_bytes_upstream() {
+    let synthetic_base64 = "c3ludGhldGljLXRvb2wtaW1hZ2UtYnl0ZXM=";
+    let exec = Executor::default();
+    let listener = TcpListener::build(exec.clone())
+        .bind_address("127.0.0.1:0")
+        .await
+        .unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let expected_b64 = synthetic_base64.to_string();
+    let http = HttpServer::auto(exec.clone()).service(Arc::new(service_fn(move |req: Request| {
+        let expected_b64 = expected_b64.clone();
+        async move {
+            let length: usize = req.headers()["content-length"]
+                .to_str()
+                .unwrap()
+                .parse()
+                .unwrap();
+            let body = req.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(length, body.len());
+            let payload: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            let inline = &payload["request"]["contents"][2]["parts"][0]["functionResponse"]["parts"]
+                [0]["inlineData"];
+            assert_eq!(inline["mimeType"], "image/png");
+            assert_eq!(inline["data"], expected_b64);
+            Ok::<_, std::convert::Infallible>(
+                Response::builder()
+                    .status(200)
+                    .body(Body::from("data: done\n\n"))
+                    .unwrap(),
+            )
+        }
+    })));
+    let gateway = tokio::spawn(async move { listener.serve(http).await });
+
+    let policy = EgressPolicy::antigravity()
+        .with_antigravity_system_prompt("canonical instructions".to_string())
+        .with_gateway(Some(
+            chaos_client::Egress::parse(&format!("http://127.0.0.1:{port}/egress/chaos")).unwrap(),
+        ));
+    let prompt = policy.system_prompt.clone().unwrap();
+    let guard = prompt
+        .arm_tool_images("gemini-4-neon-high".to_string())
+        .unwrap();
+    let nonce = "redactiontest123";
+    prompt
+        .stage_tool_image(
+            guard.generation_id(),
+            AntigravityToolImageAttachment {
+                nonce: nonce.to_string(),
+                mime_type: "image/png".to_string(),
+                data_base64: Arc::from(synthetic_base64),
+            },
+        )
+        .unwrap();
+    let marker = antigravity_tool_image_marker(nonce);
+
+    let sink = Arc::new(TestSink::default());
+    let state = EgressState {
+        policy,
+        sink: sink.clone(),
+        tls: None,
+        exec,
+    };
+    let req_body = serde_json::json!({
+        "model": "gemini-4-neon-high",
+        "project": "test-project",
+        "request": {
+            "contents": [
+                {"role": "user", "parts": [{"text": "inspect image"}]},
+                {"role": "model", "parts": [{"functionCall": {"name": "call_mcp_tool", "args": {"ServerName": "chaos", "ToolName": "view_image"}}}]},
+                {"role": "model", "parts": [{"functionResponse": {"id": "call_1", "name": "call_mcp_tool", "response": {"output": marker}}}]}
+            ],
+            "tools": [{"functionDeclarations": [{"name": "call_mcp_tool"}]}]
+        }
+    });
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1internal:streamGenerateContent?alt=sse")
+        .header("host", "cloudcode-pa.googleapis.com")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&req_body).unwrap()))
+        .unwrap();
+
+    let response = inspect_and_forward(request, state).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let _ = response.into_body().collect().await.unwrap();
+    assert_eq!(guard.disarm().unwrap(), 1);
+    gateway.abort();
+
+    let recorded = sink.recorded.lock().unwrap();
+    assert_eq!(recorded.len(), 1);
+    let request_json = serde_json::to_string(recorded[0].request.as_ref().unwrap()).unwrap();
+    let debug_repr = format!("{:?}", recorded[0]);
+    assert!(
+        !request_json.contains(synthetic_base64) && !debug_repr.contains(synthetic_base64),
+        "wiretap sink must not retain spliced screenshot bytes"
+    );
+    let recorded_inline = &recorded[0].request.as_ref().unwrap()["request"]["contents"][2]["parts"]
+        [0]["functionResponse"]["parts"][0]["inlineData"];
+    assert_eq!(recorded_inline["mimeType"], "image/png");
+    assert_eq!(
+        recorded_inline["data"],
+        format!(
+            "[redacted tool image: {} base64 bytes]",
+            synthetic_base64.len()
+        )
+    );
+}

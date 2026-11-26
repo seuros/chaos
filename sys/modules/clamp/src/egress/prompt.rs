@@ -6,6 +6,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
+use chaos_snitch::tracing::warn;
 use rama::{
     error::BoxError,
     http::{
@@ -103,7 +104,7 @@ impl Drop for AntigravityAudioGuard {
 /// egress proxy splices `inlineData` into the matching `functionResponse`.
 #[derive(Clone, PartialEq, Eq)]
 pub struct AntigravityToolImageAttachment {
-    /// Random per-image nonce embedded in the bridge placeholder (`[chaos-image id <nonce>]`).
+    /// Random per-image nonce embedded in the bridge placeholder (`[chaos-image id <nonce>; image available this turn only]`).
     pub nonce: String,
     /// Validated image MIME type (for example `"image/png"`).
     pub mime_type: String,
@@ -139,6 +140,11 @@ pub struct AntigravityToolImageGuard {
 }
 
 impl AntigravityToolImageGuard {
+    /// Return the monotonic turn generation owned by this guard.
+    pub fn generation_id(&self) -> u64 {
+        self.generation_id
+    }
+
     /// Clear the active turn's staged tool images and return the number of
     /// authorized main generation requests that received an image splice.
     pub fn disarm(mut self) -> Result<usize, BoxError> {
@@ -269,8 +275,17 @@ impl AntigravitySystemPrompt {
         })
     }
 
+    pub(super) fn active_tool_image_generation(&self) -> Result<Option<u64>, BoxError> {
+        let guard = self
+            .tool_images
+            .read()
+            .map_err(|_| "clamp tool image lock poisoned")?;
+        Ok(guard.as_ref().map(|turn| turn.generation_id))
+    }
+
     pub(super) fn stage_tool_image(
         &self,
+        expected_generation_id: u64,
         attachment: AntigravityToolImageAttachment,
     ) -> Result<(), BoxError> {
         if attachment.nonce.trim().is_empty() {
@@ -293,6 +308,9 @@ impl AntigravitySystemPrompt {
         let Some(turn) = guard.as_mut() else {
             return Err("no active Antigravity turn is armed for tool images".into());
         };
+        if turn.generation_id != expected_generation_id {
+            return Err("Antigravity tool image turn generation expired before staging".into());
+        }
         if turn
             .images
             .iter()
@@ -326,10 +344,24 @@ impl AntigravitySystemPrompt {
         Ok(guard.take().map_or(0, |turn| turn.spliced_requests))
     }
 
+    #[cfg(test)]
     pub(super) async fn rewrite(&self, req: Request, host: &str) -> Result<Request, BoxError> {
+        self.rewrite_for_egress(req, host)
+            .await
+            .map(|rewritten| rewritten.request)
+    }
+
+    pub(super) async fn rewrite_for_egress(
+        &self,
+        req: Request,
+        host: &str,
+    ) -> Result<RewrittenRequest, BoxError> {
         let path = req.uri().path_or_root();
         let Some(envelope) = generation_envelope(host, &path)? else {
-            return Ok(req);
+            return Ok(RewrittenRequest {
+                request: req,
+                redacted_record_body: None,
+            });
         };
         if req.method() != Method::POST {
             return Err("clamp generation requests must use POST".into());
@@ -417,13 +449,14 @@ impl AntigravitySystemPrompt {
         } else {
             false
         };
-        let spliced_images = if let Some(turn) = active_tool_images.as_ref()
+        let spliced_image_parts = if let Some(turn) = active_tool_images.as_ref()
             && !turn.images.is_empty()
         {
             splice_authorized_tool_images(request, request_model.as_deref(), turn)?
         } else {
-            false
+            Vec::new()
         };
+        let spliced_images = !spliced_image_parts.is_empty();
         let bytes = serde_json::to_vec(&payload)?;
         if (spliced_audio || spliced_images) && bytes.len() > MAX_GENERATION_REQUEST_BYTES {
             return Err(format!(
@@ -464,6 +497,14 @@ impl AntigravitySystemPrompt {
                 );
             }
         }
+        // Keep spliced screenshot bytes out of wiretap records while leaving
+        // the upstream request body (`bytes`) intact.
+        let redacted_record_body = if spliced_image_parts.is_empty() {
+            None
+        } else {
+            redact_spliced_tool_images(&mut payload, &envelope, &spliced_image_parts);
+            Some(payload)
+        };
         // Neither framing nor body digests from the CLI describe the new body.
         for name in [
             TRANSFER_ENCODING.as_str(),
@@ -478,8 +519,23 @@ impl AntigravitySystemPrompt {
             CONTENT_LENGTH,
             HeaderValue::from_str(&bytes.len().to_string())?,
         );
-        Ok(Request::from_parts(parts, Body::from(bytes)))
+        Ok(RewrittenRequest {
+            request: Request::from_parts(parts, Body::from(bytes)),
+            redacted_record_body,
+        })
     }
+}
+
+pub(super) struct RewrittenRequest {
+    pub(super) request: Request,
+    pub(super) redacted_record_body: Option<Value>,
+}
+
+struct SplicedToolImagePart {
+    content_idx: usize,
+    part_idx: usize,
+    inline_data_idx: usize,
+    data_base64_len: usize,
 }
 
 enum GenerationEnvelope {
@@ -607,7 +663,7 @@ fn splice_authorized_audio(
 /// Format the placeholder marker returned over the clamp MCP bridge in place of
 /// an offloaded image block.
 pub fn antigravity_tool_image_marker(nonce: &str) -> String {
-    format!("[chaos-image id {nonce}]")
+    format!("[chaos-image id {nonce}; image available this turn only]")
 }
 
 fn json_value_contains_str(value: &Value, needle: &str) -> bool {
@@ -623,22 +679,31 @@ fn json_value_contains_str(value: &Value, needle: &str) -> bool {
     }
 }
 
-/// Splice staged tool-returned images into their matching `role: "user"`
+/// Splice staged tool-returned images into their matching `call_mcp_tool`
 /// `functionResponse` parts on a main agentic generation request.
+///
+/// Chaos's MCP bridge does not receive `agy`'s provider `functionCall.id`, so
+/// placement is a per-turn bearer-marker + envelope check: the random marker
+/// must appear inside `functionResponse.response` on a `call_mcp_tool`
+/// response (under `role: "user" | "model" | "function"`, as `agy` emits
+/// `functionResponse` entries under `role: "model"`). If a marker appears in
+/// more than one `call_mcp_tool` response (for example if echoed into a later
+/// tool output), only that ambiguous image is omitted rather than failing the
+/// whole turn.
 fn splice_authorized_tool_images(
     request: &mut serde_json::Map<String, Value>,
     request_model: Option<&str>,
     turn: &ActiveToolImageTurn,
-) -> Result<bool, BoxError> {
+) -> Result<Vec<SplicedToolImagePart>, BoxError> {
     if request_model != Some(turn.authorized_model.as_str()) {
-        return Ok(false);
+        return Ok(Vec::new());
     }
     let has_tools = request
         .get("tools")
         .and_then(Value::as_array)
         .is_some_and(|tools| !tools.is_empty());
     if !has_tools {
-        return Ok(false);
+        return Ok(Vec::new());
     }
 
     let Some(contents) = request.get_mut("contents").and_then(Value::as_array_mut) else {
@@ -652,8 +717,9 @@ fn splice_authorized_tool_images(
         for (content_idx, content) in contents.iter().enumerate() {
             // Antigravity emits `functionResponse` entries under `role: "model"`,
             // while standard Gemini API uses `role: "user"` or `role: "function"`.
-            // Matching strictly on `part.functionResponse` with `name == "call_mcp_tool"`
-            // still prevents ordinary user/model text from selecting staged media.
+            // Matching strictly on `part.functionResponse.response` with
+            // `name == "call_mcp_tool"` prevents ordinary user/model text and
+            // non-response metadata fields from selecting staged media.
             if !matches!(
                 content.get("role").and_then(Value::as_str),
                 Some("user" | "model" | "function")
@@ -668,7 +734,9 @@ fn splice_authorized_tool_images(
                     && function_response.is_object()
                     && function_response.get("name").and_then(Value::as_str)
                         == Some("call_mcp_tool")
-                    && json_value_contains_str(function_response, &marker)
+                    && function_response
+                        .get("response")
+                        .is_some_and(|response| json_value_contains_str(response, &marker))
                 {
                     matched_parts.push((content_idx, part_idx));
                 }
@@ -678,19 +746,21 @@ fn splice_authorized_tool_images(
             [] => continue,
             [(content_idx, part_idx)] => targets.push((*content_idx, *part_idx, image_idx)),
             _ => {
-                return Err(format!(
-                    "ambiguous Antigravity functionResponse for tool image id {}",
-                    image.nonce
-                )
-                .into());
+                warn!(
+                    nonce = %image.nonce,
+                    matches = matched_parts.len(),
+                    "egress: omitting ambiguous Antigravity tool image match"
+                );
+                continue;
             }
         }
     }
 
     if targets.is_empty() {
-        return Ok(false);
+        return Ok(Vec::new());
     }
 
+    let mut spliced = Vec::with_capacity(targets.len());
     for (content_idx, part_idx, image_idx) in targets {
         let image = &turn.images[image_idx];
         let function_response = contents[content_idx]
@@ -705,15 +775,62 @@ fn splice_authorized_tool_images(
             .or_insert_with(|| json!([]))
             .as_array_mut()
             .ok_or("matched Antigravity functionResponse parts field is not an array")?;
+        let inline_data_idx = parts.len();
         parts.push(json!({
             "inlineData": {
                 "mimeType": image.mime_type,
                 "data": image.data_base64.as_ref(),
             }
         }));
+        spliced.push(SplicedToolImagePart {
+            content_idx,
+            part_idx,
+            inline_data_idx,
+            data_base64_len: image.data_base64.len(),
+        });
     }
 
-    Ok(true)
+    Ok(spliced)
+}
+
+fn redact_spliced_tool_images(
+    payload: &mut Value,
+    envelope: &GenerationEnvelope,
+    spliced: &[SplicedToolImagePart],
+) {
+    let request = match envelope {
+        GenerationEnvelope::CloudCode => payload.get_mut("request"),
+        GenerationEnvelope::Gemini { .. } => Some(payload),
+    };
+    let Some(contents) = request
+        .and_then(Value::as_object_mut)
+        .and_then(|req| req.get_mut("contents"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for loc in spliced {
+        if let Some(inline_data) = contents
+            .get_mut(loc.content_idx)
+            .and_then(|content| content.get_mut("parts"))
+            .and_then(Value::as_array_mut)
+            .and_then(|parts| parts.get_mut(loc.part_idx))
+            .and_then(|part| part.get_mut("functionResponse"))
+            .and_then(|fr| fr.get_mut("parts"))
+            .and_then(Value::as_array_mut)
+            .and_then(|parts| parts.get_mut(loc.inline_data_idx))
+            .and_then(|part| part.get_mut("inlineData"))
+            .and_then(Value::as_object_mut)
+        {
+            inline_data.insert(
+                "data".to_string(),
+                Value::String(format!(
+                    "[redacted tool image: {} base64 bytes]",
+                    loc.data_base64_len
+                )),
+            );
+        }
+    }
 }
 
 #[cfg(test)]

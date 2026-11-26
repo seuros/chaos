@@ -282,10 +282,20 @@ pub(crate) struct RecordParts {
 
 impl RecordParts {
     pub(crate) async fn capture(req: Request) -> Result<(Request, Self), BoxError> {
+        Self::capture_with_request(req, None).await
+    }
+
+    pub(crate) async fn capture_with_request(
+        req: Request,
+        request_override: Option<serde_json::Value>,
+    ) -> Result<(Request, Self), BoxError> {
         let (parts, body) = req.into_parts();
         // Buffer the request (prompt + tool schemas), never the SSE response.
         let bytes = body.collect().await?.to_bytes();
-        let request = serde_json::from_slice(&bytes).ok();
+        let request = match request_override {
+            Some(override_value) => Some(override_value),
+            None => serde_json::from_slice(&bytes).ok(),
+        };
         let record = Self {
             method: parts.method.to_string(),
             path: parts.uri.request_target().into_owned(),

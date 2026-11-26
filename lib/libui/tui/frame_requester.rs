@@ -57,6 +57,13 @@ impl FrameRequester {
 }
 
 impl FrameRequester {
+    /// Observe frame requests directly without running the draw scheduler.
+    #[cfg(test)]
+    pub(crate) fn test_channel() -> (Self, mpsc::UnboundedReceiver<Instant>) {
+        let (frame_schedule_tx, rx) = mpsc::unbounded_channel();
+        (Self { frame_schedule_tx }, rx)
+    }
+
     /// Create a no-op frame requester for tests.
     pub fn test_dummy() -> Self {
         let (tx, _rx) = mpsc::unbounded_channel();

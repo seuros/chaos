@@ -472,43 +472,36 @@ fn base_footer_mode_tracks_empty_state_after_quit_hint_expires() {
 
     tokio::runtime::Builder::new_current_thread()
         .enable_time()
+        .start_paused(true)
         .build()
         .unwrap()
         .block_on(async {
-            let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(8);
-            let frames = FrameRequester::new(draw_tx);
-            composer.quit_shortcut.arm(
-                ctrl_c,
-                Instant::now() + std::time::Duration::from_millis(20),
-                Some(frames.clone()),
-            );
-            composer.quit_shortcut.clear();
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(40), draw_rx.recv())
-                    .await
-                    .is_err()
-            );
+            use tokio::time::{Instant as Clock, timeout};
 
-            composer.quit_shortcut.arm(
-                ctrl_c,
-                Instant::now() + std::time::Duration::from_millis(20),
-                Some(frames.clone()),
-            );
-            composer.quit_shortcut.arm(
-                ctrl_d,
-                Instant::now() + std::time::Duration::from_millis(100),
-                Some(frames.clone()),
-            );
-            assert!(
-                tokio::time::timeout(std::time::Duration::from_millis(40), draw_rx.recv())
-                    .await
-                    .is_err()
-            );
-            tokio::time::timeout(std::time::Duration::from_millis(200), draw_rx.recv())
+            let (frames, mut requests) = FrameRequester::test_channel();
+            let short = Duration::from_millis(20);
+            let short_deadline = || (Clock::now() + short).into_std();
+            composer
+                .quit_shortcut
+                .arm(ctrl_c, short_deadline(), Some(frames.clone()));
+            composer.quit_shortcut.clear();
+            assert!(timeout(short * 2, requests.recv()).await.is_err());
+
+            composer
+                .quit_shortcut
+                .arm(ctrl_c, short_deadline(), Some(frames.clone()));
+            let replacement = Clock::now() + short * 5;
+            composer
+                .quit_shortcut
+                .arm(ctrl_d, replacement.into_std(), Some(frames));
+            assert!(timeout(short * 2, requests.recv()).await.is_err());
+            timeout(short * 4, requests.recv())
                 .await
-                .expect("replacement quit hint did not expire")
-                .unwrap();
-            assert!(!composer.quit_shortcut_hint_visible());
+                .expect("replacement quit hint did not request a frame")
+                .expect("frame request channel closed");
+            let now = Clock::now();
+            assert!(now >= replacement);
+            assert!(!composer.quit_shortcut.visible_at(now.into_std()));
         });
 }
 

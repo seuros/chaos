@@ -9,6 +9,14 @@ should. The build identifies its source commit rather than a patch level.
 
 ## [Unreleased]
 
+## [47.17.2] - 2026-11-26
+
+### Changed
+- Headless sessions automatically accept single-checkbox MCP confirmation forms
+  from Skipper and Dictator without answering requests for other user input.
+- Skipper can stage and commit changes in a tracked submodule without staging
+  its new revision in the parent repository.
+
 ## [47.17.1] - 2026-11-25
 
 ### Added

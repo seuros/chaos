@@ -9331,6 +9331,7 @@ async fn review_queues_user_messages_snapshot() {
             target: ReviewTarget::UncommittedChanges,
             user_facing_hint: Some("current changes".to_string()),
             reviewer: None,
+            instructions: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);

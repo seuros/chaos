@@ -166,7 +166,7 @@ from these Cargo features.
 `mbx` shares build artifacts across checkouts. Optional; plain Cargo is the default.
 
 ```bash
-mise install github:jdx/mr-boxington
+mise install mr-boxington
 mise exec -- just cargo=mbx build
 ```
 

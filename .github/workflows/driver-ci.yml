@@ -1,0 +1,52 @@
+name: Rust driver CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Dictator and tests
+    runs-on: ubuntu-24.04
+    env:
+      MBX_VERSION: "1.31.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mr-boxington-action@7234d3dd1a6ca8f6c381eea8e4dfb03f18fcf777 # v1.3.0
+        with:
+          version: ${{ env.MBX_VERSION }}
+          cache-generation: driver-ci-mbx-${{ env.MBX_VERSION }}
+
+      - name: Verify mbx version
+        run: |
+          mbx --version
+          test "$(mbx --version)" = "mbx $MBX_VERSION"
+
+      # Dictator tests its own linter from source. Other drivers use the release.
+      - uses: seuros/setup-dictator@85477ef5fa265bfdfeee1d43978229e512ac38da
+        if: hashFiles('.github/ci/dictator.sh') == ''
+        with:
+          version: "0.28.3"
+
+      - name: Dictator
+        run: |
+          if [[ -f .github/ci/dictator.sh ]]; then
+            bash -euo pipefail .github/ci/dictator.sh
+          else
+            dictator lint .
+          fi
+
+      - name: Workspace tests
+        run: mbx test --locked --workspace --all-features
+
+      - name: Driver-specific checks
+        if: hashFiles('.github/ci/checks.sh') != ''
+        run: bash -euo pipefail .github/ci/checks.sh

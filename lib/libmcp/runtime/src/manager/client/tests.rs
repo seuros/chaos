@@ -8,8 +8,19 @@ fn terminal_client_does_not_advertise_an_apps_renderer() {
 }
 
 #[test]
-fn headless_client_does_not_advertise_elicitation() {
+fn client_without_elicitation_support_omits_capability() {
     assert!(client_capabilities(false).elicitation.is_none());
+}
+
+#[test]
+fn headless_client_advertises_form_elicitation() {
+    let policy = chaos_ipc::protocol::ApprovalPolicy::Headless;
+    let capabilities = client_capabilities(!elicitation_is_rejected_by_policy(policy));
+    assert!(
+        capabilities
+            .elicitation
+            .is_some_and(|cap| cap.form.is_some())
+    );
 }
 
 #[test]

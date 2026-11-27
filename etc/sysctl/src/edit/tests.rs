@@ -182,7 +182,7 @@ fn batch_write_table_upsert_keeps_sibling_entries() {
 name = "linear"
 url = "https://linear.example"
 
-[mcp_servers.linear.http_headers]
+[mcp_servers.linear.headers]
 foo = "bar"
 
 [sandbox_workspace_write]
@@ -221,7 +221,7 @@ network_access = false
         Some("https://linear.example/v2")
     );
     assert_eq!(
-        string_at(&value, &["mcp_servers", "linear", "http_headers", "foo"]),
+        string_at(&value, &["mcp_servers", "linear", "headers", "foo"]),
         Some("bar")
     );
     assert_eq!(

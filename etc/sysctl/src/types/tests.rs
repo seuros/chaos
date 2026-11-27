@@ -292,7 +292,7 @@ fn deserialize_streamable_http_server_config_variants() {
             name: "streamable http with headers",
             input: r#"
                 url = "https://example.com/mcp"
-                http_headers = { "X-Foo" = "bar" }
+                headers = { "X-Foo" = "bar" }
                 env_http_headers = { "X-Token" = "TOKEN_ENV" }
             "#,
             expected_transport: streamable_http_transport(
@@ -363,7 +363,7 @@ fn deserialize_rejects_invalid_transport_fields() {
             name: "stdio with http headers",
             input: r#"
                 command = "echo"
-                http_headers = { "X-Foo" = "bar" }
+                headers = { "X-Foo" = "bar" }
             "#,
             expected_message: None,
         },

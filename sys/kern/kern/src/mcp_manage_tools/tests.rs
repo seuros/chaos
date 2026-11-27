@@ -165,6 +165,13 @@ fn add_http_server_persists_http_headers() {
     )
     .expect("add http server");
 
+    let json: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("read file")).expect("parse json");
+    let entry = &json["mcpServers"]["docs"];
+    assert_eq!(entry["type"], "http");
+    assert_eq!(entry["headers"]["Authorization"], "Bearer token");
+    assert!(entry.get("http_headers").is_none());
+
     let doc = load_dot_mcp_json(&path).expect("reload file");
     let server = &doc.mcp_servers["docs"];
     match &server.transport {

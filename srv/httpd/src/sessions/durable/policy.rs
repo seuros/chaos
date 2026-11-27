@@ -107,7 +107,7 @@ fn fingerprint(config: &Config, auth: &AuthManager) -> Result<String, ApiError> 
                 .get("bearer_token_env_var")
                 .and_then(Value::as_str)
                 .is_some_and(env_present)
-            || ["http_headers", "env_http_headers"].iter().any(|field| {
+            || ["headers", "env_http_headers"].iter().any(|field| {
                 server
                     .get(*field)
                     .and_then(Value::as_object)

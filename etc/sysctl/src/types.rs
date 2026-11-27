@@ -128,6 +128,7 @@ pub struct RawMcpServerConfig {
     pub env_vars: Option<Vec<String>>,
     #[serde(default)]
     pub cwd: Option<PathBuf>,
+    #[serde(rename = "headers")]
     pub http_headers: Option<HashMap<String, String>>,
     #[serde(default)]
     pub env_http_headers: Option<HashMap<String, String>>,
@@ -209,7 +210,7 @@ impl<'de> Deserialize<'de> for McpServerConfig {
                 raw.bearer_token_env_var.as_ref(),
             )?;
             throw_if_set("stdio", "bearer_token", raw.bearer_token.as_ref())?;
-            throw_if_set("stdio", "http_headers", raw.http_headers.as_ref())?;
+            throw_if_set("stdio", "headers", raw.http_headers.as_ref())?;
             throw_if_set("stdio", "env_http_headers", raw.env_http_headers.as_ref())?;
             throw_if_set("stdio", "oauth_resource", raw.oauth_resource.as_ref())?;
             McpServerTransportConfig::Stdio {
@@ -291,6 +292,7 @@ pub enum McpServerTransportConfig {
         bearer_token_env_var: Option<String>,
         /// Additional HTTP headers to include in requests to this server.
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "headers")]
         http_headers: Option<HashMap<String, String>>,
         /// HTTP headers where the value is sourced from an environment variable.
         #[serde(default, skip_serializing_if = "Option::is_none")]

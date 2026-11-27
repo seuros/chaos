@@ -42,7 +42,7 @@ fn toml_value_to_item_handles_nested_config_tables() {
 [mcp_servers.docs]
 command = "docs-server"
 
-[mcp_servers.docs.http_headers]
+[mcp_servers.docs.headers]
 X-Doc = "42"
 "#;
 
@@ -73,7 +73,7 @@ X-Doc = "42"
     );
 
     let http_headers = docs
-        .get("http_headers")
+        .get("headers")
         .and_then(TomlItem::as_table)
         .expect("http_headers table");
     assert_eq!(

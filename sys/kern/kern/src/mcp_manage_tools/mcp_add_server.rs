@@ -100,7 +100,7 @@ fn build_server_config(params: &McpAddServerParams) -> Result<McpServerConfig, S
     };
     let transport_type = match &transport {
         McpServerTransportConfig::Stdio { .. } => "stdio",
-        McpServerTransportConfig::StreamableHttp { .. } => "streamable_http",
+        McpServerTransportConfig::StreamableHttp { .. } => "http",
     };
 
     Ok(McpServerConfig {

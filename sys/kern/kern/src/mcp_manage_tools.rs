@@ -17,7 +17,6 @@ use chaos_traits::catalog::ToolExposure;
 use chaos_traits::catalog::tool_infos_to_catalog_tools_with_parallel;
 use mcp_host::prelude::{ToolInfo, ToolOutput};
 use serde::Deserialize;
-use serde::Serialize;
 
 pub use mcp_add_server::McpAddServerParams;
 pub use mcp_add_server::add_server_to_dot_mcp_json;
@@ -25,7 +24,7 @@ pub use mcp_server::McpServerActionParams;
 
 pub const DOT_MCP_JSON: &str = ".mcp.json";
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, serde::Serialize, Default)]
 #[serde(default, rename_all = "camelCase")]
 struct DotMcpJson {
     #[serde(rename = "mcpServers")]

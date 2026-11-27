@@ -79,7 +79,6 @@ use filter::StartupOutcomeError;
 use handler::root_uri_from_cwd;
 
 pub use client::CHAOS_MCP_CLIENT_ID_ENV;
-pub use client::MCP_SANDBOX_STATE_LOGGER;
 pub use client::McpClientIdentity;
 pub use client::SandboxState;
 pub use filter::ToolFilter;

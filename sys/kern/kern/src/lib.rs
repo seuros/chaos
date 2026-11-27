@@ -83,7 +83,6 @@ mod network_policy_decision;
 pub mod network_proxy_loader;
 mod original_image_detail;
 mod planning_consolidation;
-pub use chaos_mcp_runtime::manager::MCP_SANDBOX_STATE_LOGGER;
 pub use chaos_mcp_runtime::manager::SandboxState;
 pub use text_encoding::bytes_to_string_smart;
 mod mcp_tool_call;

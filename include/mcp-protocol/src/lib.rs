@@ -15,6 +15,9 @@ pub use mcp_goals as goals;
 /// Inbox wake notification method.
 pub const FLEET_INBOX_NOTIFICATION: &str = "notifications/chaos/fleet/inbox";
 
+/// Client-to-server sandbox state notification.
+pub const SANDBOX_STATE_NOTIFICATION: &str = "notifications/chaos/sandbox/state";
+
 /// Client-only host information request.
 pub const FLEET_HOST_INFO_REQUEST: &str = "chaos/fleet/hostInfo";
 

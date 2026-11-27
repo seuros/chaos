@@ -46,9 +46,6 @@ const MCP_CLIENT_ID_DESCRIPTION_PREFIX: &str = "chaos-mcp-client-id:";
 /// Trusted identity injected into every managed stdio MCP child.
 pub const CHAOS_MCP_CLIENT_ID_ENV: &str = "CHAOS_MCP_CLIENT_ID";
 
-/// Logger name used to identify sandbox state notifications.
-pub const MCP_SANDBOX_STATE_LOGGER: &str = "chaos/alcatraz-state";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxState {
@@ -340,19 +337,15 @@ impl ManagedClient {
         Ok(())
     }
 
-    /// Sends sandbox state as a standard MCP log notification.
+    /// Sends sandbox state as a Chaos notification.
     pub(super) async fn notify_sandbox_state_change(
         &self,
         sandbox_state: &SandboxState,
     ) -> Result<()> {
         self.session
             .notify_value(
-                "notifications/message",
-                Some(serde_json::json!({
-                    "level": "info",
-                    "logger": "chaos/alcatraz-state",
-                    "data": serde_json::to_value(sandbox_state)?,
-                })),
+                chaos_mcp_protocol::SANDBOX_STATE_NOTIFICATION,
+                Some(serde_json::to_value(sandbox_state)?),
             )
             .await
             .map_err(|e| anyhow!("{e}"))?;
@@ -582,10 +575,8 @@ pub(super) fn client_capabilities(
         roots: Some(mcp_guest::protocol::RootsCapability {
             list_changed: Some(true),
         }),
-        sampling: Some(mcp_guest::protocol::SamplingCapability {
-            context: None,
-            tools: None,
-        }),
+        // Sampling is deprecated (SEP-2577) and has no handler here.
+        sampling: None,
         // Do not advertise a capability that the active approval policy
         // guarantees will be declined. MCP clients treat that as a user
         // rejection, rather than as an unsupported prompt.
